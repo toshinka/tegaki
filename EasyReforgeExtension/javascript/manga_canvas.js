@@ -1,5 +1,5 @@
-/* EasyReforge Manga Prompter - Main Prompt Live Sync & CSP-Style Panel Editor (v3.7.5)
-   Logical Koma Reassignment & Style-First Ordering */
+/* EasyReforge Manga Prompter - Main Prompt Live Sync & CSP-Style Panel Editor (v3.7.6)
+   Internal Consistency, Slot-Preserving Parser & LoRA Scope Diagnostics */
 
 (function () {
     'use strict';
@@ -40,7 +40,9 @@
         parsedPrompt: {
             style: '',
             page: '',
-            regions: {}
+            regions: {},
+            rawSlotsCount: 0,
+            loraScopes: { style: [], page: [], regions: {} }
         }
     };
 
@@ -48,6 +50,26 @@
 
     function generateId() {
         return 'p_' + Math.random().toString(36).substr(2, 9);
+    }
+
+    // --- メタデータの整合性再同期 (コマ1全体 残留バグ修正) ---
+    function refreshPanelDerivedMetadata() {
+        const isSingleFullPanel =
+            state.panels.length === 1 &&
+            Math.abs(state.panels[0].rect.x) < 0.001 &&
+            Math.abs(state.panels[0].rect.y) < 0.001 &&
+            Math.abs(state.panels[0].rect.w - 1.0) < 0.001 &&
+            Math.abs(state.panels[0].rect.h - 1.0) < 0.001;
+
+        state.panels.forEach((p) => {
+            p.color = colorForKomaNumber(p.index);
+
+            if (isSingleFullPanel && p.index === 1) {
+                p.name = 'コマ 1 (全体)';
+            } else {
+                p.name = `コマ ${p.index}` + ((p.zIndex || 0) > 0 ? ' (重なり)' : '');
+            }
+        });
     }
 
     function pushHistory() {
@@ -72,6 +94,7 @@
             const snap = JSON.parse(state.history[state.historyIndex]);
             state.panels = snap.panels;
             if (snap.interactionMode) state.interactionMode = snap.interactionMode;
+            refreshPanelDerivedMetadata();
             updateInteractionModeUI();
             render();
             syncToGradio();
@@ -85,6 +108,7 @@
             const snap = JSON.parse(state.history[state.historyIndex]);
             state.panels = snap.panels;
             if (snap.interactionMode) state.interactionMode = snap.interactionMode;
+            refreshPanelDerivedMetadata();
             updateInteractionModeUI();
             render();
             syncToGradio();
@@ -224,11 +248,12 @@
 
         sorted.forEach((p, idx) => {
             p.index = idx + 1;
-            p.name = `コマ ${idx + 1}` + (p.zIndex > 0 ? ' (重なり)' : '');
             p.color = colorForKomaNumber(idx + 1);
             if (p.weight === undefined) p.weight = 1.0;
             p.interactionMode = state.interactionMode;
         });
+
+        refreshPanelDerivedMetadata();
     }
 
     // --- コマ番号スワップ（論理コマ番号の再割当） ---
@@ -242,57 +267,72 @@
         // 物理矩形 (x, y, w, h) や stable ID はそのまま、論理番号 (index) と 色のみをスワップ
         panelA.index = komaB;
         panelB.index = komaA;
-        panelA.color = colorForKomaNumber(panelA.index);
-        panelB.color = colorForKomaNumber(panelB.index);
-        panelA.name = `コマ ${panelA.index}` + (panelA.zIndex > 0 ? ' (重なり)' : '');
-        panelB.name = `コマ ${panelB.index}` + (panelB.zIndex > 0 ? ' (重なり)' : '');
 
+        refreshPanelDerivedMetadata();
         pushHistory();
         render();
         renderSummaryList();
         syncToGradio();
     };
 
-    // メインプロンプト欄のリアルタイム解析 (v3.7.5: STYLE -> PAGE -> REGIONS)
+    // メインプロンプト欄のリアルタイム解析 (v3.7.6: 位置保持型スロットパース & LoRAスコープ検出)
     function parseMainPrompt() {
         const mainPromptEl = document.querySelector('#txt2img_prompt textarea') || 
                              document.querySelector('#img2img_prompt textarea') ||
                              document.querySelector('#prompt textarea');
         if (!mainPromptEl) return;
 
-        const text = mainPromptEl.value.trim();
-        if (!text) {
-            state.parsedPrompt = { style: '', page: '', regions: {} };
+        const text = mainPromptEl.value;
+        if (!text.trim()) {
+            state.parsedPrompt = { style: '', page: '', regions: {}, rawSlotsCount: 0, loraScopes: { style: [], page: [], regions: {} } };
             renderSummaryList();
             return;
         }
 
-        const chunks = text.split(/\bBREAK\b/i).map(c => c.trim()).filter(c => c.length > 0);
-        const style = chunks.length > 0 ? chunks[0] : '';
-        const page = chunks.length > 1 ? chunks[1] : '';
+        // 位置保持型スプリット（空slotも保持してインデックスを一致させる）
+        const rawSlots = text.split(/\bBREAK\b/i).map(c => c.trim());
+        const style = rawSlots.length > 0 ? rawSlots[0] : '';
+        const page = rawSlots.length > 1 ? rawSlots[1] : '';
         const regions = {};
+        const loraScopes = { style: [], page: [], regions: {} };
+
+        const loraRegex = /<lora:[^>]+>/gi;
+        if (style) loraScopes.style = style.match(loraRegex) || [];
+        if (page) loraScopes.page = page.match(loraRegex) || [];
 
         const tagRegex = /^(\[?(コマ|koma|panel|p)\s*(\d+)\]?|(\d+)\s*(コマ|koma|panel|p))\s*:?\s*/i;
 
-        for (let i = 2; i < chunks.length; i++) {
-            const chunk = chunks[i];
-            const match = chunk.match(tagRegex);
-            let pNum = i - 1;
+        for (let i = 2; i < rawSlots.length; i++) {
+            const chunk = rawSlots[i];
+            let pNum = i - 1; // スロット位置準拠 (1, 2, 3...)
             let cleanText = chunk;
 
+            const match = chunk.match(tagRegex);
             if (match) {
                 const numStr = match[3] || match[4];
                 if (numStr) pNum = parseInt(numStr, 10);
                 cleanText = chunk.replace(tagRegex, '').trim();
             }
+
+            const loras = chunk.match(loraRegex) || [];
+            if (loras.length > 0) {
+                loraScopes.regions[pNum] = loras;
+            }
+
             regions[pNum] = cleanText;
         }
 
-        state.parsedPrompt = { style, page, regions };
+        state.parsedPrompt = {
+            style,
+            page,
+            regions,
+            rawSlotsCount: rawSlots.length,
+            loraScopes
+        };
         renderSummaryList();
     }
 
-    // メインプロンプト欄へのテンプレート挿入 (v3.7.5: STYLE -> PAGE -> koma 1..N)
+    // メインプロンプト欄へのテンプレート挿入 (v3.7.6: STYLE -> PAGE -> koma 1..N)
     window.mangaPrompterInsertTemplateToMainPrompt = function () {
         const mainPromptEl = document.querySelector('#txt2img_prompt textarea') || 
                              document.querySelector('#img2img_prompt textarea') ||
@@ -348,8 +388,6 @@
             rect: newRect2,
             zIndex: target.zIndex || 0,
             index: newIndex,
-            color: colorForKomaNumber(newIndex),
-            name: `コマ ${newIndex}`,
             weight: target.weight || 1.0,
             interactionMode: state.interactionMode
         };
@@ -359,6 +397,7 @@
         state.selectedIds.add(newPanel.id);
         state.primarySelectedId = newPanel.id;
 
+        refreshPanelDerivedMetadata();
         pushHistory();
         render();
         syncToGradio();
@@ -390,9 +429,9 @@
             // 連番の再正規化 (1..N)
             state.panels.sort((a, b) => a.index - b.index).forEach((p, i) => {
                 p.index = i + 1;
-                p.color = colorForKomaNumber(p.index);
             });
 
+            refreshPanelDerivedMetadata();
             pushHistory();
             render();
             syncToGradio();
@@ -440,8 +479,8 @@
             state.panels = state.panels.filter(p => p.id !== bestNeighbor.id);
             state.panels.sort((a, b) => a.index - b.index).forEach((p, i) => {
                 p.index = i + 1;
-                p.color = colorForKomaNumber(p.index);
             });
+            refreshPanelDerivedMetadata();
             pushHistory();
             render();
             syncToGradio();
@@ -461,9 +500,9 @@
         // コマ番号を 1..N に再連番化
         state.panels.sort((a, b) => a.index - b.index).forEach((p, i) => {
             p.index = i + 1;
-            p.color = colorForKomaNumber(p.index);
         });
 
+        refreshPanelDerivedMetadata();
         pushHistory();
         render();
         syncToGradio();
@@ -477,8 +516,6 @@
                 id: newId,
                 rect: { x: 0, y: 0, w: 1, h: 1 },
                 zIndex: 0,
-                color: PANEL_COLORS[0],
-                name: 'コマ 1 (全体)',
                 index: 1,
                 weight: 1.0,
                 interactionMode: state.interactionMode
@@ -489,6 +526,8 @@
         state.primarySelectedId = newId;
         state.history = [];
         state.historyIndex = -1;
+
+        refreshPanelDerivedMetadata();
         pushHistory();
         render();
         syncToGradio();
@@ -520,7 +559,7 @@
                 { rect: { x: 0, y: 0, w: 0.5, h: 0.333 }, zIndex: 0 },
                 { rect: { x: 0.5, y: 0.333, w: 0.5, h: 0.333 }, zIndex: 0 },
                 { rect: { x: 0, y: 0.333, w: 0.5, h: 0.333 }, zIndex: 0 },
-                { rect: { x: 0.5, y: 0.666, w: 0.5, h: 0.334 }, zIndex: 0 },
+                { rect: { x: 0, y: 0.666, w: 0.5, h: 0.334 }, zIndex: 0 },
                 { rect: { x: 0, y: 0.666, w: 0.5, h: 0.334 }, zIndex: 0 },
             ]
         };
@@ -532,8 +571,6 @@
             id: generateId(),
             rect: { ...t.rect },
             zIndex: t.zIndex,
-            color: '#888888',
-            name: '',
             weight: 1.0,
             interactionMode: state.interactionMode
         }));
@@ -656,8 +693,6 @@
             rect: newRect2,
             zIndex: target.zIndex || 0,
             index: newIndex,
-            color: colorForKomaNumber(newIndex),
-            name: `コマ ${newIndex}`,
             weight: target.weight || 1.0,
             interactionMode: state.interactionMode
         };
@@ -667,6 +702,7 @@
         state.selectedIds.add(newPanel.id);
         state.primarySelectedId = newPanel.id;
 
+        refreshPanelDerivedMetadata();
         pushHistory();
         render();
         syncToGradio();
@@ -862,6 +898,7 @@
         const onUp = () => {
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
+            refreshPanelDerivedMetadata();
             pushHistory();
             syncToGradio();
         };
@@ -941,6 +978,7 @@
         const onUp = () => {
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
+            refreshPanelDerivedMetadata();
             pushHistory();
             syncToGradio();
         };
@@ -1121,6 +1159,7 @@
         const onUp = () => {
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
+            refreshPanelDerivedMetadata();
             pushHistory();
             syncToGradio();
         };
@@ -1192,8 +1231,6 @@
                             rect: { x: bx, y: by, w: bw, h: bh },
                             zIndex: state.panels.length,
                             index: newIndex,
-                            color: colorForKomaNumber(newIndex),
-                            name: `コマ ${newIndex}`,
                             weight: 1.0,
                             interactionMode: state.interactionMode
                         };
@@ -1201,6 +1238,7 @@
                         state.selectedIds.clear();
                         state.selectedIds.add(newPanel.id);
                         state.primarySelectedId = newPanel.id;
+                        refreshPanelDerivedMetadata();
                         pushHistory();
                         render();
                         syncToGradio();
@@ -1225,19 +1263,38 @@
         });
     }
 
-    // --- 右サイドバーのコマ一覧サマリー表示 ＆ コマ番号ドラッグ入替 ---
+    // --- 右サイドバーのコマ一覧サマリー表示 ＆ Preflight・LoRA警告 ---
     function renderSummaryList() {
         const container = document.getElementById('manga-panels-summary-container');
         if (!container) return;
 
         container.innerHTML = '';
 
+        const numPanels = state.panels.length;
+        const expectedSlots = numPanels + 2;
+        const actualSlots = state.parsedPrompt.rawSlotsCount || 0;
+
+        // Preflight ステータスバッジの更新
+        const badgeEl = document.getElementById('manga-preflight-status-badge');
+        if (badgeEl) {
+            if (actualSlots === 0) {
+                badgeEl.textContent = '未入力 (テンプレ挿入推奨)';
+                badgeEl.className = 'manga-preflight-badge warn';
+            } else if (actualSlots === expectedSlots) {
+                badgeEl.textContent = `✓ 整合性OK (${numPanels}コマ / ${actualSlots}スロット)`;
+                badgeEl.className = 'manga-preflight-badge ok';
+            } else {
+                badgeEl.textContent = `⚠ スロット数不一致 (必要:${expectedSlots} / 現在:${actualSlots})`;
+                badgeEl.className = 'manga-preflight-badge error';
+            }
+        }
+
         // 1. 全体画風・品質 (第1chunk)
         const styleBox = document.createElement('div');
         styleBox.className = 'manga-summary-base-box';
         const styleSnippet = state.parsedPrompt.style ? state.parsedPrompt.style : '(未入力 - clean illustration, monochrome 等の全体共通画風)';
         styleBox.innerHTML = `
-            <div class="manga-summary-base-title">🎨 [全体画風・品質 - 第1chunk]</div>
+            <div class="manga-summary-base-title">🎨 [全体画風・品質 - 第1スロット]</div>
             <div class="manga-summary-prompt-text ${state.parsedPrompt.style ? '' : 'empty'}">${escapeHtml(styleSnippet)}</div>
         `;
         container.appendChild(styleBox);
@@ -1248,7 +1305,7 @@
         pageBox.style.marginTop = '6px';
         const pageSnippet = state.parsedPrompt.page ? state.parsedPrompt.page : '(未入力 - 4koma manga 等の全体構造)';
         pageBox.innerHTML = `
-            <div class="manga-summary-base-title">🧭 [ページ構造 - 第2chunk]</div>
+            <div class="manga-summary-base-title">🧭 [ページ構造 - 第2スロット]</div>
             <div class="manga-summary-prompt-text ${state.parsedPrompt.page ? '' : 'empty'}">${escapeHtml(pageSnippet)}</div>
         `;
         container.appendChild(pageBox);
@@ -1268,6 +1325,18 @@
             const curWeight = (p.weight !== undefined ? p.weight : 1.0).toFixed(2);
             const curColor = p.color || colorForKomaNumber(p.index);
 
+            // LoRA スコープ警告の検出
+            const detectedLoras = state.parsedPrompt.loraScopes.regions[p.index] || [];
+            let loraWarnHtml = '';
+            if (detectedLoras.length > 0) {
+                loraWarnHtml = `
+                    <div class="manga-lora-scope-warn" title="現行Attention方式ではLoRA本体は全体適用されます（トリガー単語・構図の局所化のみ保証）">
+                        ⚠ LoRAタグ検出: <code>${escapeHtml(detectedLoras.join(' '))}</code><br>
+                        <span style="font-size: 10px; color: #9a3412;">(注意: LoRA本体は全体適用され、トリガー単語の局所化として動作します)</span>
+                    </div>
+                `;
+            }
+
             item.innerHTML = `
                 <div class="manga-summary-header-row">
                     <span class="manga-summary-tag manga-drag-handle" style="background: ${curColor}; color: #ffffff; cursor: grab;" title="ドラッグして他のコマと番号・適用領域を交換" draggable="true">☷ [コマ${p.index}]</span>
@@ -1275,6 +1344,7 @@
                     <button type="button" class="manga-card-del-btn" title="コマ削除" onclick="window.mangaPrompterDelete('${p.id}')">×</button>
                 </div>
                 <div class="manga-summary-prompt-text ${regionText ? '' : 'empty'}">${escapeHtml(promptSnippet)}</div>
+                ${loraWarnHtml}
                 <div class="manga-summary-weight-row">
                     <label class="manga-summary-weight-label">重み: <span class="manga-weight-badge" id="manga-w-val-${p.id}">${curWeight}</span></label>
                     <input type="range" class="manga-summary-weight-slider" min="0.1" max="2.0" step="0.05" value="${curWeight}" data-id="${p.id}">
