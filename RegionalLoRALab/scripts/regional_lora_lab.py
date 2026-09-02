@@ -1,6 +1,6 @@
 """
 Regional LoRA Lab - Main Script
-Version: Phase 0.5 (Patch Residency & Wrapper Chaining Probe)
+Version: Phase 0.5 Final (Exact Tensor Restore & Wrapper Chaining Probe)
 Project: Regional LoRA Engine for Stable Diffusion WebUI reForge
 """
 
@@ -46,7 +46,12 @@ def find_lora_file_by_name(name):
 class RegionalLoRALabScript(scripts.Script):
     def __init__(self):
         super().__init__()
-        self.last_probe_result = None
+        self.original_wrapper = None
+        self.wrapper_call_count = 0
+        self.previous_wrapper_call_count = 0
+        self.wrapper_installed = False
+        self.active_mode = None
+        self.restore_success = True
 
     def title(self):
         return "Regional LoRA Lab (Research)"
@@ -75,22 +80,31 @@ class RegionalLoRALabScript(scripts.Script):
                     label="テスト用LoRA (Phase 0.5 実体化プローブ用)", 
                     choices=lora_list, 
                     value="(None)",
-                    info="未選択の場合はクローンとモデル構造の検証のみ実行します"
+                    info="未選択の場合はクローンとモデル構造・Wrapper Chainの検証のみ実行します"
                 )
 
             with gr.Row():
                 gr.Markdown("""
                 > **【Regional LoRA Lab - Phase 0.5 稼働中】**  
-                > 共有 underlying model における `UnetPatcher.clone()` の独立性、`patch_model()` / `unpatch_model()` による重み実体化（Materialization）の所要時間・復元完全性、および `model_function_wrapper` のチェーン性を診断します。  
-                > ※ 生成テンソルへの変更は行いません（完全安全検証）。
+                > ※ 生成結果へRegional処理は適用しません。  
+                > Probe中はLoRA weightの一時materialize / restoreおよびWrapper Chainingの検証を行います。  
+                > 終了時にbase weightおよびwrapper状態へ完全に復元します。
                 """)
 
         return [is_enabled, mode, selected_lora, debug_log]
 
     def before_process_batch(self, p, is_enabled, mode, selected_lora, debug_log, *args, **kwargs):
+        self.active_mode = None
+        self.restore_success = True
+        self.wrapper_call_count = 0
+        self.previous_wrapper_call_count = 0
+        self.original_wrapper = None
+        self.wrapper_installed = False
+
         if not is_enabled:
             return
 
+        self.active_mode = mode
         if debug_log:
             prompts = kwargs.get("prompts", [getattr(p, 'prompt', '')])
             raw_prompt = prompts[0] if isinstance(prompts, list) and prompts else str(prompts)
@@ -133,10 +147,10 @@ class RegionalLoRALabScript(scripts.Script):
                     print("[RLL][Probe] ========================================")
                 return
 
-            # --- Phase 0.5: Patcher Residency Probe ---
+            # --- Phase 0.5: Patcher Residency & Multi-Layer Restore & Wrapper Chaining Probe ---
             if "Phase 0.5:" in mode:
                 print("[RLL][Phase 0.5 Probe] ========================================")
-                print(f"[RLL][Phase 0.5 Probe] Starting Patcher Residency & Materialization Probe")
+                print(f"[RLL][Phase 0.5 Probe] Starting Patcher Residency, Multi-Layer Exact Restore & Wrapper Chaining Probe")
 
                 # 1. Identity Probe
                 clone_A = unet.clone()
@@ -154,14 +168,30 @@ class RegionalLoRALabScript(scripts.Script):
                 print(f"[RLL][Identity Probe] Patches Dict ID    : Base={id(unet.patches):#x}, A={id(clone_A.patches):#x} (is separate: {not same_patches_dict})")
                 print(f"[RLL][Identity Probe] Model Options ID   : Base={id(unet.model_options):#x}, A={id(clone_A.model_options):#x} (is separate: {not same_model_options})")
 
-                # 2. Wrapper Chaining Probe
-                existing_wrapper = unet.model_options.get("model_function_wrapper", None)
-                if existing_wrapper is not None:
-                    print(f"[RLL][Wrapper Probe][WARN] Existing model_function_wrapper detected ({existing_wrapper}). Chaining required.")
-                else:
-                    print(f"[RLL][Wrapper Probe] No existing model_function_wrapper. Clean intercept point available.")
+                # 2. Wrapper Chaining Probe (Setup dummy chain)
+                self.original_wrapper = unet.model_options.get("model_function_wrapper", None)
+                prev_wrapper = self.original_wrapper
 
-                # 3. Patch Registration & Weight Residency Probe
+                def rll_chain_test_wrapper(model_function, params):
+                    self.wrapper_call_count += 1
+                    if prev_wrapper is not None:
+                        def inner_model_fn(input_x, timestep, **c):
+                            self.previous_wrapper_call_count += 1
+                            return model_function(input_x, timestep, **c)
+                        out = prev_wrapper(inner_model_fn, params)
+                    else:
+                        out = model_function(params["input"], params["timestep"], **params["c"])
+                    return out
+
+                unet.model_options["model_function_wrapper"] = rll_chain_test_wrapper
+                self.wrapper_installed = True
+
+                if prev_wrapper is not None:
+                    print(f"[RLL][Wrapper Probe] Existing wrapper detected ({prev_wrapper}). Chained successfully.")
+                else:
+                    print(f"[RLL][Wrapper Probe] No existing wrapper. Clean RLL test wrapper installed.")
+
+                # 3. Patch Registration & Multi-Layer Exact Tensor Restore Probe
                 lora_file = find_lora_file_by_name(selected_lora) if selected_lora and selected_lora != "(None)" else None
 
                 if lora_file and os.path.exists(lora_file):
@@ -188,43 +218,83 @@ class RegionalLoRALabScript(scripts.Script):
                     assert len_base_before == len_base_after, "Base patches modified unexpectedly!"
                     assert len_B_before == len_B_after, "Clone B patches modified unexpectedly!"
 
-                    # 対象重みの特定 (代表層)
-                    sample_key = None
-                    for k in clone_A.patches:
-                        if hasattr(clone_A.model, "diffusion_model"):
-                            sample_key = k
+                    # 複数層 (3〜5層: Input, Middle, Output, Attention, Conv) の選定
+                    candidate_keys = list(clone_A.patches.keys())
+                    selected_sample_keys = []
+
+                    # 異なるブロックから代表キーを抽出
+                    for filter_tag in ["input_blocks", "middle_block", "output_blocks", "attn", "conv"]:
+                        for k in candidate_keys:
+                            if filter_tag in k and k not in selected_sample_keys:
+                                selected_sample_keys.append(k)
+                                break
+                        if len(selected_sample_keys) >= 5:
                             break
 
-                    if sample_key:
-                        raw_weight = ldm_patched.modules.utils.get_attr(clone_A.model, sample_key)
-                        norm_base = raw_weight.float().norm().item()
+                    if not selected_sample_keys and candidate_keys:
+                        selected_sample_keys = candidate_keys[:min(5, len(candidate_keys))]
 
-                        # Materialization (patch_model)
+                    print(f"[RLL][Restore Probe] Selecting {len(selected_sample_keys)} representative layers across blocks for Exact Restore test:")
+                    for idx, sk in enumerate(selected_sample_keys):
+                        print(f"  [{idx + 1}] {sk}")
+
+                    # Step 1: Base snapshots の保存 (detach().clone())
+                    base_snapshots = {}
+                    for sk in selected_sample_keys:
+                        raw_w = ldm_patched.modules.utils.get_attr(clone_A.model, sk)
+                        base_snapshots[sk] = raw_w.detach().clone()
+
+                    patched = False
+                    try:
+                        # Step 2: Materialization (patch_model)
                         t_p0 = time.perf_counter()
                         clone_A.patch_model()
+                        patched = True
                         t_patch = (time.perf_counter() - t_p0) * 1000.0
 
-                        mat_weight = ldm_patched.modules.utils.get_attr(clone_A.model, sample_key)
-                        norm_patched = mat_weight.float().norm().item()
+                        # Materialized 状態の検証 (変化していることの確認)
+                        any_changed = False
+                        for sk in selected_sample_keys:
+                            mat_w = ldm_patched.modules.utils.get_attr(clone_A.model, sk)
+                            if not torch.equal(base_snapshots[sk], mat_w):
+                                any_changed = True
 
-                        # Restoration (unpatch_model)
-                        t_u0 = time.perf_counter()
-                        clone_A.unpatch_model()
-                        t_unpatch = (time.perf_counter() - t_u0) * 1000.0
+                        print(f"[RLL][Materialization Probe] patch_model() executed in {t_patch:.2f} ms (Weight delta verified: {any_changed})")
 
-                        restored_weight = ldm_patched.modules.utils.get_attr(clone_A.model, sample_key)
-                        norm_restored = restored_weight.float().norm().item()
+                    finally:
+                        # Step 3: Restoration (unpatch_model) - 厳格な try/finally 保証
+                        if patched:
+                            t_u0 = time.perf_counter()
+                            clone_A.unpatch_model()
+                            t_unpatch = (time.perf_counter() - t_u0) * 1000.0
+                            print(f"[RLL][Materialization Probe] unpatch_model() executed in {t_unpatch:.2f} ms")
+                            print(f"[RLL][Timing Probe] Roundtrip repatch cost: {t_patch + t_unpatch:.2f} ms per step")
 
-                        is_restored_exact = math.isclose(norm_base, norm_restored, rel_tol=1e-5, abs_tol=1e-6)
-                        weight_changed = not math.isclose(norm_base, norm_patched, rel_tol=1e-5, abs_tol=1e-6)
+                    # Step 4: Exact Tensor Comparison (全要素完全一致・最大絶対誤差・平均絶対誤差)
+                    all_exact = True
+                    for idx, sk in enumerate(selected_sample_keys):
+                        restored_w = ldm_patched.modules.utils.get_attr(clone_A.model, sk).detach()
+                        base_snap = base_snapshots[sk]
 
-                        print(f"[RLL][Materialization Probe] Sample Layer : {sample_key}")
-                        print(f"[RLL][Materialization Probe] Base Weight Norm      : {norm_base:.6f}")
-                        print(f"[RLL][Materialization Probe] Materialized Norm (A)  : {norm_patched:.6f} (Changed: {weight_changed})")
-                        print(f"[RLL][Materialization Probe] Restored Base Norm     : {norm_restored:.6f} (Exact Match: {is_restored_exact})")
-                        print(f"[RLL][Timing Probe] patch_model() time       : {t_patch:.2f} ms")
-                        print(f"[RLL][Timing Probe] unpatch_model() time     : {t_unpatch:.2f} ms")
-                        print(f"[RLL][Timing Probe] Roundtrip repatch cost   : {t_patch + t_unpatch:.2f} ms per step")
+                        exact_equal = torch.equal(base_snap, restored_w)
+                        diff = (base_snap.float() - restored_w.float()).abs()
+                        max_abs_diff = diff.max().item()
+                        mean_abs_diff = diff.mean().item()
+
+                        print(f"[RLL][Restore Probe] Layer [{idx + 1}] {sk[:55]}...")
+                        print(f"  torch.equal   = {exact_equal}")
+                        print(f"  max_abs_diff  = {max_abs_diff:.8f}")
+                        print(f"  mean_abs_diff = {mean_abs_diff:.8f}")
+
+                        if not exact_equal or max_abs_diff > 0.0:
+                            all_exact = False
+
+                    self.restore_success = all_exact
+                    if all_exact:
+                        print(f"[RLL][Restore Probe][SUCCESS] All {len(selected_sample_keys)} layers bit-exact restored (max_abs_diff = 0.0). No residual contamination detected.")
+                    else:
+                        print(f"[RLL][Restore Probe][WARN] Some layers showed numerical differences after unpatch.")
+
                 else:
                     print(f"[RLL][Residency Probe] No LoRA selected for materialization test (Select a LoRA in dropdown to test weight delta & timing).")
 
@@ -236,5 +306,28 @@ class RegionalLoRALabScript(scripts.Script):
             traceback.print_exc()
 
     def postprocess(self, p, processed, is_enabled, mode, selected_lora, debug_log, *args, **kwargs):
-        if is_enabled and debug_log:
-            print("[RLL][Probe] Completed (read-only probe).")
+        if not is_enabled:
+            return
+
+        # Restore original wrapper in model_options
+        try:
+            if hasattr(p, "sd_model") and hasattr(p.sd_model, "forge_objects"):
+                unet = getattr(p.sd_model.forge_objects, "unet", None)
+                if unet is not None and hasattr(unet, "model_options"):
+                    if self.original_wrapper is not None:
+                        unet.model_options["model_function_wrapper"] = self.original_wrapper
+                    else:
+                        unet.model_options.pop("model_function_wrapper", None)
+                    if debug_log and self.wrapper_installed:
+                        print(f"[RLL][Wrapper Probe] Cleanup: Restored model_function_wrapper. Total RLL wrapper calls = {self.wrapper_call_count}, Prev wrapper calls = {self.previous_wrapper_call_count}")
+        except Exception as e:
+            print(f"[RLL][Probe][ERROR] Error restoring wrapper: {e}")
+
+        if debug_log:
+            if "Phase 0:" in str(mode):
+                print("[RLL][Probe] Completed (read-only probe).")
+            elif "Phase 0.5:" in str(mode):
+                if self.restore_success:
+                    print("[RLL][Probe] Completed Phase 0.5. Temporary model patching was restored before exit.")
+                else:
+                    print("[RLL][ERROR] Restore verification failed.")

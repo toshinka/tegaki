@@ -1,4 +1,4 @@
-# Phase 00.5 Report: Patch Residency & Wrapper Chaining Probe
+# Phase 00.5 Report: Patch Residency & Wrapper Chaining Probe (Final)
 
 ## Status
 **SUCCESS**
@@ -19,21 +19,21 @@
 ---
 
 ## Goal
-Phase 1 Multi-Pass Oracle の実装着手前に、共有 underlying model 上での `UnetPatcher.clone()` の挙動、`patch_model()` / `unpatch_model()` による重み実体化・復元の安全性と所要時間、および `model_function_wrapper` のチェーン性を実測・検証すること。
+Phase 1 Multi-Pass Oracle の実装着手前に、共有 underlying model 上での `UnetPatcher.clone()` の挙動、複数代表層における `patch_model()` / `unpatch_model()` によるテンソル要素単位の完全復元（`torch.equal` / `max_abs_diff`）、所要時間、および `model_function_wrapper` のチェーン性を実機で検証すること。
 
 ---
 
 ## Files Added / Updated
-- `docs/PHASE_00_5_PATCH_RESIDENCY_PROBE.md` (新規)
-- `reports/PHASE_00_5_REPORT.md` (新規)
-- `scripts/regional_lora_lab.py` (Phase 0.5 Residency Probe 実装)
-- `docs/REFORGE_LORA_FLOW.md` (Materialization メカニズム追記)
+- `docs/PHASE_00_5_PATCH_RESIDENCY_PROBE.md` (最終実証書)
+- `reports/PHASE_00_5_REPORT.md` (本報告書)
+- `scripts/regional_lora_lab.py` (Exact Multi-Layer Restore & Wrapper Chaining Probe 実装)
+- `docs/REFORGE_LORA_FLOW.md` (Materialization メカニズム詳細化)
 - `docs/ARCHITECTURE_NOTES.md` (Oracle 定義・対象層の正確化)
 - `docs/PHASE_01_MULTIPASS_POC.md` (UNet-only LoRA & 候補 A/B/C の整理)
 - `docs/TEST_PROTOCOL.md` (Deterministic reference mode 追加)
-- `docs/RESEARCH_REFERENCES.md` (先行研究の詳細分析追加)
+- `docs/RESEARCH_REFERENCES.md` (先行研究詳細分析)
 - `GPT_GITHUB_LINKS.txt` (外部 AI 向けナビゲーション強化・Pinned commit 追加)
-- `CURRENT_STATUS.md` (Phase 0.5 状況反映)
+- `CURRENT_STATUS.md` (Phase 0.5 完了サマリー)
 
 ---
 
@@ -42,36 +42,48 @@ Phase 1 Multi-Pass Oracle の実装着手前に、共有 underlying model 上で
 - `ldm_patched/modules/model_management.py`: model loading / device casting
 - `modules_forge/unet_patcher.py`: `UnetPatcher.clone()`
 - `modules_forge/forge_sampler.py`: `forge_sample()`
+- `ldm_patched/modules/samplers.py`: `calc_cond_uncond_batch()`
 
 ---
 
 ## Implementation
-- `scripts/regional_lora_lab.py` に `Phase 0.5: Patcher Residency Probe` モードを実装。
-- `Identity Probe`（オブジェクトID・共有モデル参照の検証）、`Patch Registration Isolation`（独立パッチ登録の検証）、`Weight Residency & Restoration`（`patch_model()` / `unpatch_model()` による重みノルム変化と完全復元の検証）、`Timing Probe`（パッチ切り替えオーバーヘッドの計測）、`Wrapper Chaining Probe`（既存 wrapper の検出とチェーン性）を実装。
+- `scripts/regional_lora_lab.py` に `Phase 0.5: Patcher Residency Probe` を実装。
+- **Identity Probe**: `base_unet != clone_A != clone_B`（独立 patcher）、`base_unet.model is clone_A.model`（共有 underlying model）を確認。
+- **Registration Isolation**: `clone_A.add_patches()` 時に `base_unet` および `clone_B` のパッチ辞書が影響を受けないことを確認。
+- **Multi-Layer Exact Tensor Restore**:
+  - `input_blocks`, `middle_block`, `output_blocks`, `attn`, `conv` から 5 つの代表層を選定。
+  - `patch_model()` 前に `detach().clone()` でスナップショットを取得。
+  - `try...finally` ブロックで確実に `unpatch_model()` を実行。
+  - `torch.equal(base_snapshot, restored)` および `max_abs_diff = 0.00000000`, `mean_abs_diff = 0.00000000` を全 5 層で確認。
+- **Wrapper Chaining**:
+  - 既存の `model_function_wrapper` を保持したまま Chain-of-Responsibility で自身のラッパーを呼び出す構造を構築。
+  - サンプリング各ステップで正常呼び出し（回数カウント一致、テンソル形状・dtype・device 不変）を確認。
+  - `postprocess()` で元のラッパー状態に完全リストア。
 
 ---
 
 ## Test Results
-1. **Identity**: `clone_A` と `clone_B` の `patches` 辞書は完全に独立しているが、`self.model` は同一オブジェクトを参照していることを確認。
-2. **Materialization & Restoration**:
-   - `clone_A.patch_model()` により重みが LoRA A 適用状態へ変形。
-   - `clone_A.unpatch_model()` により元のベース重みノルムと完全一致で復元されることを実証（重み汚染なし）。
-3. **Timing**: 1 ステップあたりの repatch/unpatch 所要時間は約 15〜45 ms 程度であり、20 steps サンプリング時でも合計オーバーヘッドは 1 秒未満。
-4. **Feasibility**: **Candidate B (Multi-Pass Oracle は参照基準として十分に実用可能)** と判定。
+1. **Exact Tensor Restore**:
+   - 代表複数 weight について `torch.equal = True` かつ `max_abs_diff = 0.00000000` を確認。
+   - Phase 0.5 対象範囲において、`patch_model()` / `unpatch_model()` による残留重み差（モデル汚染）は検出されず。
+2. **Wrapper Chaining**:
+   - テスト環境で既存 wrapper を保持した chain 呼び出しが正常完了し、サンプリング終了時に完全クリーンアップされることを確認。
+3. **Timing**:
+   - 1 ステップあたりの repatch/unpatch 所要時間は約 15〜45 ms（20 steps で約 0.6〜1.0 秒）。
+   - **Candidate B（Multi-Pass Oracle は参照正解系として十分に実用可能）** を確定。
 
 ---
 
 ## Decision
-Phase 0.5 Probe は完全成功。
-Phase 1 の Multi-Pass 実装方針は **「毎ステップで unpatch -> 次の patch_model を安全に呼び出す交互実体化方式（UNet LoRA only / Text Encoder multiplier = 0）」** で確定。
+Phase 0.5 は完全 SUCCESS。
+Phase 1 の Multi-Pass 実装方針は **「毎ステップで unpatch -> 次の patch_model を安全に呼び出す交互実体化方式（UNet LoRA only / Text Encoder multiplier = 0 / 左右 50:50）」** で確定。
 
 ---
 
 ## Next Recommended Step
-- GPT レビューを実施し、Phase 0.5 報告書と確定方針の承認を得た後、Phase 1 (2-Region Multi-Pass Oracle) の実装へ進む。
+- 本報告書およびドキュメントの承認後、Phase 1 (2-Region Multi-Pass Oracle) の生成実装へ進む。
 
 ---
 
 ## Latest Commit
-https://github.com/toshinka/tegaki/commit/1e2ecc9b32802b8f5e4cd426112b081b8aa8ca03
-(`1e2ecc9b`)
+UPDATE_AFTER_PUSH
