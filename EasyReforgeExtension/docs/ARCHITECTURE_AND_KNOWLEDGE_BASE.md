@@ -21,10 +21,11 @@ Stable Diffusion（特に SDXL / Illustrious 系モデル）において、1ペ�
 | **左右2分割** | 車の上にりんごが乗る（1つの構図に吸収） | モデルの左右方向への semantic isolation の弱さ。 |
 | **v3.7.5: 物理領域 ＆ 論理コマ番号の分離** | **ドラッグ＆ドロップでコマ番号・適用先を即座に再割当** | 矩形形状を崩すことなく、任意の物理領域に対して任意のコマ番号（プロンプト・色）を自由に割り当て可能。 |
 | **v3.7.6: 内部整合性 ＆ LoRAスコープ診断** | **空スロット位置保持 ＆ LoRAタグ記載位置の保存・診断** | Extra Networks適用前のRaw Promptを保存し、Region内LoRAがグローバル適用であることを診断。 |
+| **v3.7.7: 最終整合性 ＆ 生成コア凍結** | **スロット位置唯一のSource of Truth ＆ テンプレ挿入空保持** | 全パーサ経路で空スロットを保持。ラベル不一致時の警告と厳格なスロット準拠mappingを確立。 |
 
 ---
 
-## 3. v3.7.6 確定アーキテクチャ（Internal Consistency & LoRA Scope Diagnostics）
+## 3. v3.7.7 確定アーキテクチャ（Slot Authority & Core Freeze）
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -34,15 +35,20 @@ Stable Diffusion（特に SDXL / Illustrious 系モデル）において、1ペ�
 │    ・Derived Metadata: refreshPanelDerivedMetadata() で同期 │
 │    ・ドラッグ＆ドロップでコマ番号を自在にスワップ再割当可能 │
 ├─────────────────────────────────────────────────────────────┤
-│ 2. 位置保持型 BREAK スロットパーサ (N+2 slots)               │
+│ 2. 位置保持型 BREAK スロットパーサ (N+2 slots = Source of Truth)│
 │    Slot 0: GLOBAL STYLE (画風・品質)                        │
 │    BREAK                                                    │
 │    Slot 1: PAGE STRUCTURE (ページ構造)                      │
 │    BREAK                                                    │
-│    Slot 2..: REGION 1..N (各コマ内容)                       │
+│    Slot 2..: REGION 1..N (各コマ内容, スロット位置が絶対権威)│
+│    ※ koma N: ラベルは診断・アノテーション用                 │
 ├─────────────────────────────────────────────────────────────┤
 │ 3. LoRA スコープ診断 (before_process_batch)                 │
 │    ・Extra Networks適用前の Raw Prompt から LoRA タグを抽出 │
 │    ・Region 内 LoRA の検出時にログ ＆ UI 警告表示           │
+├─────────────────────────────────────────────────────────────┤
+│ 4. 生成コアの凍結 (Core Freeze)                             │
+│    ・Attention Hook (manga_attention.py): 凍結               │
+│    ・Spatial Engine (manga_spatial_engine.py): 凍結         │
 └─────────────────────────────────────────────────────────────┘
 ```

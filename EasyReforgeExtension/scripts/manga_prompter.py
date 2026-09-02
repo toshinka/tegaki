@@ -1,7 +1,7 @@
 """
 EasyReforge Manga Prompter - Main Script & Gradio UI
-Version: v3.7.6 Internal Consistency & LoRA Scope Diagnostics
-Golden Reference: sd-forge-couple v4.0.2 / v3.7.6 Specification
+Version: v3.7.7 Final Consistency, Strict Slot Authority & Preflight Diagnostics
+Golden Reference: sd-forge-couple v4.0.2 / v3.7.7 Specification
 """
 
 import os
@@ -173,7 +173,7 @@ class MangaPrompterScript(scripts.Script):
         }
 
     def after_extra_networks_activate(self, p, is_enabled, global_effect_weight, json_bridge, *args, **kwargs):
-        """v3.7.6: STYLE(画風) -> PAGE(構造) -> REGIONS のスロット位置保持パースとLoRAスコープ診断"""
+        """v3.7.7: STYLE(画風) -> PAGE(構造) -> REGIONS の厳格なスロット位置準拠パースとラベル診断"""
         self.valid = False
         self.resolved_prompts = []
         self.sorted_panels = []
@@ -188,13 +188,13 @@ class MangaPrompterScript(scripts.Script):
         if not panels or len(panels) <= 1:
             return
 
-        # 論理コマ番号 (logical_koma_number / index) 順にソート
+        # 論理コマ番号 (logical_koma_number / index) 順にソート (Source of Truth)
         self.sorted_panels = sorted(panels, key=lambda x: x.get('index', 0))
         num_panels = len(self.sorted_panels)
 
         prompts = kwargs.get("prompts")
         if not isinstance(prompts, list) or len(prompts) != 1:
-            print("[MangaPrompter][ERROR] Batch Size 1 required for v3.7.6 diagnostic.")
+            print("[MangaPrompter][ERROR] Batch Size 1 required for v3.7.7 diagnostic.")
             return
 
         resolved_full_prompt = prompts[0]
@@ -221,7 +221,7 @@ class MangaPrompterScript(scripts.Script):
 
         tag_regex = re.compile(r'^(\[?(コマ|koma|panel|p)\s*(\d+)\]?|(\d+)\s*(コマ|koma|panel|p))\s*:?\s*', re.IGNORECASE)
 
-        print("[MangaPrompter][v3.7.6 GLOBAL EFFECT]")
+        print("[MangaPrompter][v3.7.7 GLOBAL EFFECT]")
         print(f"  GLOBAL STYLE      = {style_text!r}")
         print(f"  PAGE STRUCTURE    = {page_text!r}")
         print(f"  MAIN CONDITIONING = {main_conditioning_prompt!r}")
@@ -237,6 +237,23 @@ class MangaPrompterScript(scripts.Script):
 
         for i, panel in enumerate(self.sorted_panels):
             raw_region = region_chunks[i]
+            expected_koma = i + 1
+            declared_koma = None
+
+            # ラベル診断: 人間向けラベルと実際のスロット位置の不一致をチェック
+            match = tag_regex.match(raw_region)
+            if match:
+                num_str = match.group(3) or match.group(4)
+                if num_str:
+                    declared_koma = int(num_str)
+
+            if declared_koma is not None and declared_koma != expected_koma:
+                print(
+                    f"[MangaPrompter][WARN] Region label mismatch: "
+                    f"slot expects koma {expected_koma}, declared koma {declared_koma}. "
+                    f"Slot position is authoritative (applied to koma {expected_koma})."
+                )
+
             clean_region = tag_regex.sub("", raw_region).strip()
 
             # STYLE + 各コマ本文 (PAGEは入れない！)
