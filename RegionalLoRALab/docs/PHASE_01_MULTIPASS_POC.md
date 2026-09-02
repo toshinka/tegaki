@@ -1,38 +1,42 @@
-# Phase 01: 2-Region Multi-Pass Oracle Detailed Design
+# Phase 01: 2-Region Multi-Pass Oracle Design (Draft / Pending Phase 0.5)
+
+> **Status**: DRAFT (Phase 0.5 実測結果を受けて確定予定)  
+> **Scope**: UNet LoRA Only (Text Encoder multiplier = 0)
 
 ---
 
 ## 1. 目的
 
-遅くてもよいので、左右に別々の LoRA（例: 左=LoRA A, 右=LoRA B）を**原理的に完全分離して適用できる基準正解実装（Oracle）** を確立する。
+遅くてもよいので、左右に別々の LoRA（左=LoRA A, 右=LoRA B）を独立した重み状態で計算する**基準正解実装（Oracle Reference Baseline）** を確立する。
 
 ---
 
-## 2. アーキテクチャ設計
+## 2. 最小仕様と制約
 
-### 2.1 2領域固定マスク
-- 左右 50:50 分割:
-  - `mask_A`: 左半分 = 1.0, 右半分 = 0.0
-  - `mask_B`: 左半分 = 0.0, 右半分 = 1.0
-  - `mask_A + mask_B = 1.0` を常に保証
+### 2.1 対象範囲
+- **UNet LoRA のみ**（Text Encoder は multiplier = 0 として除外）
+- **左右 50:50 固定マスク**（自由矩形やソフトマスクは Phase 5 以降）
+- **プロンプト内の通常 `<lora:...>` タグ禁止**（Regional LoRA Lab 側でロードを完全管理）
 
-### 2.2 Multi-Pass UNet Forward Wrapper
-`model_function_wrapper` を使用して各デノイズステップで実行：
-```python
-def multipass_wrapper(apply_model_fn, params):
-    # params: {"input": input_x, "timestep": timestep_, "c": c, "cond_or_uncond": cond_or_uncond}
-    
-    # 1. LoRA A が適用された unet_A で forward
-    out_A = apply_model_A(params["input"], params["timestep"], **params["c"])
-    
-    # 2. LoRA B が適用された unet_B で forward
-    out_B = apply_model_B(params["input"], params["timestep"], **params["c"])
-    
-    # 3. 空間マスクによる出力テンソル合成
-    out_combined = mask_A * out_A + mask_B * out_B
-    return out_combined
-```
+### 2.2 実装候補の検討 (Phase 0.5 の実測結果に基づく判定)
 
-### 2.3 ライフサイクルとクリーンアップ
-- サンプリング終了時に `try...finally` で元の UNet を確実にリストア。
-- patch state のメモリ残留や次生成への汚染を完全に防止。
+- **Candidate A (高速交互実体化可能)**:
+  `patch_model()` / `unpatch_model()` のコストが極めて低く（数ms以下）、毎ステップ交互に実行可能である場合。
+  ```python
+  # 毎ステップの forward 内で:
+  clone_A.patch_model()
+  out_A = apply_model(params["input"], params["timestep"], **params["c"])
+  clone_A.unpatch_model()
+
+  clone_B.patch_model()
+  out_B = apply_model(params["input"], params["timestep"], **params["c"])
+  clone_B.unpatch_model()
+
+  out_combined = mask_A * out_A + mask_B * out_B
+  ```
+
+- **Candidate B (交互実体化が高コストだが Oracle 用途としては許容)**:
+  毎ステップの repatch に数十〜数百msかかるが、数秒の遅延で済むため参照正解画像としては採択可能。
+
+- **Candidate C (共有モデル構造上、交互実体化が不適切)**:
+  Multi-Pass 方式を再検討し、Phase 3-4 (Masked Delta / Custom forward) を前倒しで開発。

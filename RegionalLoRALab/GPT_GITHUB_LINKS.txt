@@ -1,4 +1,23 @@
-Regional LoRA Lab - GPT Review Links
+Regional LoRA Lab — GPT Review Navigation
+
+Updated:
+2026-09-02 23:10 JST
+
+Purpose:
+This file is the entry point for an external AI technical review (Second Opinion).
+
+Read in this order:
+1. CURRENT_STATUS.md
+2. latest PHASE report (PHASE_00_5_REPORT.md)
+3. REFORGE_LORA_FLOW.md
+4. ARCHITECTURE_NOTES.md
+5. PHASE_00_5_PATCH_RESIDENCY_PROBE.md
+6. current implementation script (scripts/regional_lora_lab.py)
+7. MASTER_PLAN.md only when long-term context is needed
+
+---
+
+## 1. Repository & Navigation Links
 
 Repository:
 https://github.com/toshinka/tegaki
@@ -9,31 +28,81 @@ https://github.com/toshinka/tegaki/tree/main/RegionalLoRALab
 RegionalLoRALab commit history:
 https://github.com/toshinka/tegaki/commits/main/RegionalLoRALab
 
+Navigation file (This File):
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/GPT_GITHUB_LINKS.txt
+
+---
+
+## 2. Latest Main Branch Raw URLs (Cache-busting: add ?v=YYYYMMDD-HHMMSS)
+
+CURRENT STATUS:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/CURRENT_STATUS.md
+
+LATEST PHASE REPORT (Phase 0.5):
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/reports/PHASE_00_5_REPORT.md
+
+PHASE 0 REPORT:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/reports/PHASE_00_REPORT.md
+
+REFORGE LORA FLOW:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/docs/REFORGE_LORA_FLOW.md
+
+ARCHITECTURE NOTES:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/docs/ARCHITECTURE_NOTES.md
+
+PHASE 0.5 PROBE DOC:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/docs/PHASE_00_5_PATCH_RESIDENCY_PROBE.md
+
+PHASE 1 DRAFT SPEC:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/docs/PHASE_01_MULTIPASS_POC.md
+
+TEST PROTOCOL:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/docs/TEST_PROTOCOL.md
+
+RESEARCH REFERENCES:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/docs/RESEARCH_REFERENCES.md
+
+MAIN SCRIPT:
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/scripts/regional_lora_lab.py
+
 README:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/README.md
 
 MASTER PLAN:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/MASTER_PLAN.md
 
-CURRENT STATUS:
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/CURRENT_STATUS.md
+---
 
-ARCHITECTURE NOTES:
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/docs/ARCHITECTURE_NOTES.md
+## 3. Commit-Pinned Review Snapshot
 
-REFORGE LORA FLOW:
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/docs/REFORGE_LORA_FLOW.md
+Pinned review commit:
+UPDATE_AFTER_PUSH
 
-LATEST PHASE REPORT (Phase 0):
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/reports/PHASE_00_REPORT.md
+Pinned CURRENT STATUS:
+https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/CURRENT_STATUS.md
 
-MAIN SCRIPT:
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/scripts/regional_lora_lab.py
+Pinned PHASE REPORT (Phase 0.5):
+https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/reports/PHASE_00_5_REPORT.md
 
-Latest verified commit:
-https://github.com/toshinka/tegaki/commit/b55b0ec2a0e563735d6e804bc209b3c094f8cc99
+Pinned REFORGE LORA FLOW:
+https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/docs/REFORGE_LORA_FLOW.md
 
-Cache-busting example:
-Append ?v=YYYYMMDD-HHMMSS to a raw URL when checking the newest pushed content.
-Example:
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/RegionalLoRALab/CURRENT_STATUS.md?v=20260902-223000
+Pinned MAIN SCRIPT:
+https://raw.githubusercontent.com/toshinka/tegaki/UPDATE_AFTER_PUSH/RegionalLoRALab/scripts/regional_lora_lab.py
+
+---
+
+## 4. External AI Review Prompt (コピペ用プロンプト)
+
+```text
+以下の CURRENT_STATUS、最新Phase報告書、REFORGE_LORA_FLOW、
+ARCHITECTURE_NOTES、実装コードを読み、
+1. 文書とコードの矛盾
+2. 未検証なのに成功扱いしている箇所
+3. reForge model patch state の安全性
+4. 次Phaseへ進む前に必要なprobe
+をレビューしてください。
+
+MASTER_PLAN の方針を尊重し、
+MRP本体は変更しないでください。
+```

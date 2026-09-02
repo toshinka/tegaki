@@ -1,13 +1,13 @@
 # Regional LoRA Lab Current Status
 
-Current Phase: 0
-Status: SUCCESS
+Current Phase: 0.5 (In Progress)
+Previous Phase (Phase 0): SUCCESS (Revised)
 
 ## Working:
 - Extension folder structure established
 - reForge environment investigated (commit `19395bf`, PyTorch 2.7.1+cu128, CUDA 12.8, RTX 4070 12GB)
 - reForge LoRA loading path and ModelPatcher/UnetPatcher mechanics completely documented (`docs/REFORGE_LORA_FLOW.md`)
-- Non-invasive Probe-only extension script implemented (`scripts/regional_lora_lab.py`)
+- Non-invasive Probe extension script implemented (`scripts/regional_lora_lab.py`)
 - Clean no-op execution verified without interfering with base generation or existing LoRA activation
 
 ## Not Working / Not Implemented Yet (By Design):
@@ -16,9 +16,9 @@ Status: SUCCESS
 - Spatial masked delta (Phase 3-4)
 
 ## Next:
-- GPT review of Phase 0 findings & architecture notes
-- User / GPT approval for Phase 1 (2-Region Multi-Pass Oracle) design
+- GPT review completed for Phase 0
+- Phase 0.5: Patch Residency / Wrapper Chaining Probe (In Progress)
+- Determine Phase 1 Multi-Pass Oracle strategy based on Phase 0.5 results
 
 ## Latest Commit:
-https://github.com/toshinka/tegaki/commit/b55b0ec2a0e563735d6e804bc209b3c094f8cc99
-(`b55b0ec2`)
+b55b0ec2a0e563735d6e804bc209b3c094f8cc99
