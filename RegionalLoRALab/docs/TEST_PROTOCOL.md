@@ -2,9 +2,24 @@
 
 ---
 
-## 1. 対照実験プロトコル (Controlled Experiment Protocol)
+## 1. 決定論的リファレンスモード (Deterministic Reference Mode)
 
-同一条件（同 Seed, 同 Checkpoint, 同 Sampler, 同 Resolution, 同 Prompt）において、以下の5パターンを比較生成する：
+モデル汚染や再現性を検証する前提として、以下の固定条件を設定する：
+
+- **同一 Seed /同一 Sampler / 同一 Scheduler**
+- **同一 Checkpoint / 同一 Resolution (832×1216 等)**
+- **Batch Size = 1**
+- **他 Extension OFF**
+
+### ベース再現性の測定
+1. RLL を使用しない状態で、同一 Seed で 2 回生成を行う。
+2. その環境における通常 run-to-run 差（bit-exact か、微小な非決定性差分があるか）を事前に測定・記録する。
+
+---
+
+## 2. 対照実験プロトコル (Controlled Experiment Protocol)
+
+同一条件において、以下の 5 パターンを比較生成する：
 
 1. **Control 0**: LoRA なし (Baseline)
 2. **Control 1**: LoRA A 全体適用 (Global A)
@@ -14,9 +29,11 @@
 
 ---
 
-## 2. 評価基準 (Success Criteria)
+## 3. 評価基準 (Success Criteria)
 
 - **左領域**: LoRA A の特徴が発現し、LoRA B の特徴が混入していないこと。
 - **右領域**: LoRA B の特徴が発現し、LoRA A の特徴が混入していないこと。
-- **対照比較**: Control 3 (Global A+B) に比べて、左右それぞれの領域への反対側 LoRA の漏洩（Style / Character leakage）が明確に低減していること。
-- **非汚染性**: Regional LoRA Lab を OFF にした後の生成が、Control 0 と完全に一致すること（Patch state の非残留）。
+- **対照比較**: Control 3 (Global A+B) に比べて、反対側領域への LoRA 漏洩が明確に低減していること。
+- **非汚染性 (Contamination Test)**:
+  - RLL を ON にして生成した後、RLL を OFF にして同 Seed で再生成。
+  - 生成された画像と Control 0（または WebUI 再起動後 reference）の差が、事前測定した通常の run-to-run 差の範囲内に収まること。

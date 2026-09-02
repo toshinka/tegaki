@@ -1,4 +1,4 @@
-# Phase 00 Report: Environment & Hook Probe
+# Phase 00 Report: Environment & Hook Probe (Revised)
 
 ## Status
 **SUCCESS**
@@ -50,7 +50,7 @@ reForge 本体のソースコードを直接調査し、モデル重みや通常
 
 ## reForge Source Inspected
 1. `extensions-builtin/Lora/networks.py`:
-   - `load_networks()`: LoRA のロードと `load_lora_for_models()` の呼び出しポイント。
+   - `load_networks()`: Extra Networks から渡された LoRA 情報の集約と `load_lora_for_models()` の呼び出しポイント。
 2. `ldm_patched/modules/sd.py`:
    - `load_lora_for_models()`: `model.clone()` と `add_patches(loaded, strength_model)` の実処理。
 3. `ldm_patched/modules/lora.py`:
@@ -58,6 +58,7 @@ reForge 本体のソースコードを直接調査し、モデル重みや通常
 4. `ldm_patched/modules/model_patcher.py`:
    - `ModelPatcher.set_model_unet_function_wrapper()`: UNet forward ラッパーのフック。
    - `ModelPatcher.add_patches()`: パッチタプル `(strength_patch, patch_tuple, strength_model)` の管理。
+   - `ModelPatcher.patch_model()` / `unpatch_model()`: 実 model weight への反映（materialization）と復元。
 5. `modules_forge/unet_patcher.py`:
    - `UnetPatcher.clone()`: ベースモデルを共有しながら `patches` 辞書を独立複製するクローン機構。
 6. `ldm_patched/modules/samplers.py`:
@@ -83,31 +84,34 @@ reForge 本体のソースコードを直接調査し、モデル重みや通常
 
 ## Test Results
 - WebUI 起動、Gradio Accordion の描画、およびプローブログの出力を確認。
-- `UnetPatcher` の参照および `clone()` の安全性を実機確認。
+- `UnetPatcher.clone()` の実装と patch list の複製方式をソースコード上で確認。
+  （※実際の patch materialization / concurrent branch safety は Phase 0.5 で実測検証予定）
 - 既存の通常生成および LoRA 適用への副作用ゼロを確認。
 
 ---
 
 ## Important Observations
-- reForge では `ModelPatcher.set_model_unet_function_wrapper()` が `calc_cond_uncond_batch()` の直前でネイティブに評価されるため、Phase 1 の Multi-Pass 合成（ステップごとの2回 forward と空間マスク合成）を安全に挟み込める確実な構造が存在する。
+- `model_function_wrapper` により UNet forward 呼び出しを interception できることを確認した。
+- ただし、共有 underlying model 上で異なる LoRA patch state を1 sampling step 内に切り替えられるかは未検証であり、Phase 1 実装前に Patch Residency Probe (Phase 0.5) が必要である。
 
 ---
 
 ## Known Problems
-- なし (Phase 0 の目標はすべて達成)。
+- `UnetPatcher.clone()` は underlying model を共有するため、clone A / B の patch state を同時に独立 materialize できるか未確認。
+- `model_function_wrapper` が既存 extension の wrapper と競合する可能性を未確認。
+- `controlnet_linked_list` の probe 表示が「プロパティの存在」と「実際にactive」を区別していない。
 
 ---
 
 ## Decision
-Phase 0 は完全成功。次フェーズ（Phase 1: 2-Region Multi-Pass Oracle）の着手準備完了。
+Phase 0 の初期調査・非侵襲プローブ構築は成功。次フェーズとして、実際のパッチ実体化とクローン挙動を実測する **Phase 0.5 (Patch Residency / Wrapper Chaining Probe)** を追加実施する。
 
 ---
 
 ## Next Recommended Step
-- GPT レビューを実施し、Phase 1（2-Region Multi-Pass Oracle）の実装方針について承認・フィードバックを得る。
+- Phase 0.5 の Patch Residency Probe を実装し、共有 model 上でのパッチ実体化（`patch_model()` / `unpatch_model()`）と所要時間、wrapper chain の挙動を実測する。
 
 ---
 
 ## Latest Commit
-https://github.com/toshinka/tegaki/commit/b55b0ec2a0e563735d6e804bc209b3c094f8cc99
-(`b55b0ec2`)
+b55b0ec2a0e563735d6e804bc209b3c094f8cc99
