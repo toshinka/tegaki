@@ -87,3 +87,10 @@ Phase 1 の仕様（Candidate B: Alternating Patch Materialization / UNet LoRA o
 ## Latest Commit
 https://github.com/toshinka/tegaki/commit/a061d65f56e07bba034adf80fef10b10e825e060
 (`a061d65f`)
+
+---
+
+## Post-Freeze Implementation Errata
+- `restore_success` failure latch preserved (`self.restore_success = self.restore_success and all_exact`).
+- Stale wrapper now stores previous wrapper metadata on wrapper object (`_rll_previous_wrapper`) for safe recovery without instance reference loss.
+- `unpatch_model()` condition simplified to unconditional try/finally block.

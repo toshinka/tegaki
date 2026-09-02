@@ -1,11 +1,12 @@
 """
 Regional LoRA Lab - Main Script
-Version: Phase 0.5 Safety Gate & Spec Freeze
+Version: Phase 1 Multi-Pass Oracle PoC (Candidate B: Alternating Patch Materialization)
 Project: Regional LoRA Engine for Stable Diffusion WebUI reForge
 """
 
 import os
 import sys
+import re
 import time
 import math
 import torch
@@ -31,6 +32,8 @@ def get_available_lora_names():
     return sorted(names)
 
 def find_lora_file_by_name(name):
+    if not name or name == "(None)":
+        return None
     lora_dir = getattr(shared.cmd_opts, "lora_dir", None)
     if not lora_dir or not os.path.exists(lora_dir):
         return None
@@ -53,6 +56,15 @@ class RegionalLoRALabScript(scripts.Script):
         self.wrapper_installed = False
         self.active_mode = None
         self.restore_success = True
+        
+        # Phase 1 runtime state
+        self.phase1_blocked = False
+        self.phase1_block_reason = ""
+        self.phase1_fatal_error = False
+        self.clone_A = None
+        self.clone_B = None
+        self.step_timings = []
+        self.mask_logged = False
 
     def title(self):
         return "Regional LoRA Lab (Research)"
@@ -69,48 +81,89 @@ class RegionalLoRALabScript(scripts.Script):
                 mode = gr.Dropdown(
                     label="動作モード (Mode)", 
                     choices=[
-                        "Phase 0: Read-only Probe (モデル情報診断)",
-                        "Phase 0.5: Patcher Residency Probe (パッチ実体化・クローン挙動診断)"
+                        "Phase 1: 2-Region Multi-Pass Oracle (左右2分割・基準正解系生成)",
+                        "Phase 0.5: Patcher Residency Probe (パッチ実体化・クローン挙動診断)",
+                        "Phase 0: Read-only Probe (モデル情報診断)"
                     ], 
-                    value="Phase 0.5: Patcher Residency Probe (パッチ実体化・クローン挙動診断)"
+                    value="Phase 1: 2-Region Multi-Pass Oracle (左右2分割・基準正解系生成)"
                 )
                 debug_log = gr.Checkbox(label="詳細ログ出力 (Debug Log)", value=True, elem_id="rll-debug-log")
 
-            with gr.Row():
-                selected_lora = gr.Dropdown(
+            # Phase 1 Settings
+            with gr.Group(visible=True) as phase1_group:
+                with gr.Row():
+                    lora_A = gr.Dropdown(
+                        label="左領域 (Left 50%) LoRA A", 
+                        choices=lora_list, 
+                        value="(None)",
+                        info="左半分に適用するUNet LoRA"
+                    )
+                    weight_A = gr.Slider(
+                        label="LoRA A 強度 (UNet Weight)", 
+                        minimum=0.0, 
+                        maximum=2.0, 
+                        step=0.05, 
+                        value=1.0
+                    )
+
+                with gr.Row():
+                    lora_B = gr.Dropdown(
+                        label="右領域 (Right 50%) LoRA B", 
+                        choices=lora_list, 
+                        value="(None)",
+                        info="右半分に適用するUNet LoRA"
+                    )
+                    weight_B = gr.Slider(
+                        label="LoRA B 強度 (UNet Weight)", 
+                        minimum=0.0, 
+                        maximum=2.0, 
+                        step=0.05, 
+                        value=1.0
+                    )
+
+            # Phase 0.5 Probe Settings
+            with gr.Group(visible=False) as probe_group:
+                selected_lora_probe = gr.Dropdown(
                     label="テスト用LoRA (Phase 0.5 実体化プローブ用)", 
                     choices=lora_list, 
                     value="(None)",
                     info="未選択の場合はクローンとモデル構造・Wrapper Chainの検証のみ実行します"
                 )
 
+            # UI Mode visibility switcher
+            def update_mode_visibility(selected_mode):
+                is_p1 = "Phase 1:" in selected_mode
+                return gr.update(visible=is_p1), gr.update(visible=not is_p1)
+
+            mode.change(
+                fn=update_mode_visibility,
+                inputs=[mode],
+                outputs=[phase1_group, probe_group]
+            )
+
             with gr.Row():
                 gr.Markdown("""
-                > **【Regional LoRA Lab - Phase 0.5 Safety Gate & Spec Freeze】**  
-                > ※ 生成結果へRegional処理は適用しません。  
-                > Probe中はLoRA weightの一時materialize / restoreおよびWrapper Chainingの検証を行います。  
-                > 終了時にbase weightおよびwrapper状態へ完全に復元します（fail-safe recovery対応）。
+                > **【Phase 1: 2-Region Multi-Pass Oracle (Frozen Spec)】**  
+                > - **分割構造**: 左右 50:50 固定 (Hard Binary Mask: `mask_A + mask_B = 1.0`)  
+                > - **LoRA 適用**: UNet LoRA Only (Text Encoder multiplier = 0)  
+                > - **プロンプト制約**: 通常のトリガー単語は許可、`<lora:...>` タグは禁止 (Lab側で直接管理)  
+                > - **前提条件**: Batch Size 1, ControlNet OFF, 他の Model Wrapper / Patch OFF
                 """)
 
-        return [is_enabled, mode, selected_lora, debug_log]
+        return [is_enabled, mode, lora_A, weight_A, lora_B, weight_B, selected_lora_probe, debug_log]
 
-    def before_process_batch(self, p, is_enabled, mode, selected_lora, debug_log, *args, **kwargs):
+    def before_process_batch(self, p, is_enabled, mode, lora_A, weight_A, lora_B, weight_B, selected_lora_probe, debug_log, *args, **kwargs):
         # --- Safety Gate: Stale RLL Wrapper Recovery ---
         try:
             if hasattr(p, "sd_model") and hasattr(p.sd_model, "forge_objects"):
                 unet = getattr(p.sd_model.forge_objects, "unet", None)
                 if unet is not None and hasattr(unet, "model_options"):
                     current_wrapper = unet.model_options.get("model_function_wrapper", None)
-                    is_rll_stale = (
-                        current_wrapper is not None and (
-                            current_wrapper is self.installed_wrapper or
-                            getattr(current_wrapper, "_rll_wrapper", False)
-                        )
-                    )
-                    if is_rll_stale:
-                        if self.original_wrapper is not None:
-                            unet.model_options["model_function_wrapper"] = self.original_wrapper
-                            print(f"[RLL][Recovery] Stale RLL wrapper recovered. Restored previous wrapper: {self.original_wrapper}")
+                    if getattr(current_wrapper, "_rll_wrapper", False):
+                        previous = getattr(current_wrapper, "_rll_previous_wrapper", None)
+                        if previous is not None:
+                            unet.model_options["model_function_wrapper"] = previous
+                            print(f"[RLL][Recovery] Stale RLL wrapper recovered. Restored previous wrapper: {previous}")
                         else:
                             unet.model_options.pop("model_function_wrapper", None)
                             print("[RLL][Recovery] Stale RLL wrapper recovered. Cleared model_function_wrapper.")
@@ -125,18 +178,54 @@ class RegionalLoRALabScript(scripts.Script):
         self.original_wrapper = None
         self.installed_wrapper = None
         self.wrapper_installed = False
+        
+        self.phase1_blocked = False
+        self.phase1_block_reason = ""
+        self.phase1_fatal_error = False
+        self.clone_A = None
+        self.clone_B = None
+        self.step_timings = []
+        self.mask_logged = False
 
         if not is_enabled:
             return
 
         self.active_mode = mode
+
+        # --- Phase 1 Preflight: Check for <lora:...> tags in prompt ---
+        if "Phase 1:" in mode:
+            prompts = kwargs.get("prompts", [getattr(p, 'prompt', '')])
+            raw_prompt = prompts[0] if isinstance(prompts, list) and prompts else str(prompts)
+            
+            lora_tag_regex = re.compile(r"<lora:[^>]+>", re.IGNORECASE)
+            detected_tags = lora_tag_regex.findall(raw_prompt)
+            
+            if detected_tags:
+                self.phase1_blocked = True
+                self.phase1_block_reason = f"Ordinary <lora:...> tag(s) detected: {detected_tags}. Regional LoRA Lab manages LoRA loading itself."
+                print(f"[RLL][Phase1][BLOCKED] {self.phase1_block_reason}")
+                print("[RLL][Phase1][BLOCKED] Stripping <lora:...> tags to prevent global model corruption.")
+                
+                # Strip tags to prevent A1111/reForge global extra-network activation
+                clean_prompt = lora_tag_regex.sub("", raw_prompt).strip()
+                if isinstance(prompts, list) and len(prompts) > 0:
+                    prompts[0] = clean_prompt
+                if hasattr(p, 'prompt') and isinstance(p.prompt, str):
+                    p.prompt = lora_tag_regex.sub("", p.prompt).strip()
+
+            # Check LoRA selections
+            if not lora_A or lora_A == "(None)" or not lora_B or lora_B == "(None)":
+                self.phase1_blocked = True
+                self.phase1_block_reason = f"Both LoRA A and LoRA B must be selected (Current: A='{lora_A}', B='{lora_B}')."
+                print(f"[RLL][Phase1][BLOCKED] {self.phase1_block_reason}")
+
         if debug_log:
             prompts = kwargs.get("prompts", [getattr(p, 'prompt', '')])
             raw_prompt = prompts[0] if isinstance(prompts, list) and prompts else str(prompts)
             print("[RLL][Probe] before_process_batch triggered")
             print(f"[RLL][Probe] Raw prompt preview: {raw_prompt[:80]!r}...")
 
-    def process_before_every_sampling(self, p, is_enabled, mode, selected_lora, debug_log, *args, **kwargs):
+    def process_before_every_sampling(self, p, is_enabled, mode, lora_A, weight_A, lora_B, weight_B, selected_lora_probe, debug_log, *args, **kwargs):
         if not is_enabled:
             return
 
@@ -172,10 +261,10 @@ class RegionalLoRALabScript(scripts.Script):
                     print("[RLL][Probe] ========================================")
                 return
 
-            # --- Phase 0.5: Patcher Residency, Multi-Layer Exact Restore & Wrapper Chaining Probe ---
+            # --- Phase 0.5: Patcher Residency & Multi-Layer Exact Restore Probe ---
             if "Phase 0.5:" in mode:
                 print("[RLL][Phase 0.5 Probe] ========================================")
-                print(f"[RLL][Phase 0.5 Probe] Starting Patcher Residency, Multi-Layer Exact Restore & Wrapper Chaining Probe")
+                print(f"[RLL][Phase 0.5 Probe] Starting Patcher Residency & Multi-Layer Exact Restore Probe")
 
                 # 1. Identity Probe
                 clone_A = unet.clone()
@@ -209,17 +298,13 @@ class RegionalLoRALabScript(scripts.Script):
                     return out
 
                 rll_chain_test_wrapper._rll_wrapper = True
+                rll_chain_test_wrapper._rll_previous_wrapper = prev_wrapper
                 self.installed_wrapper = rll_chain_test_wrapper
                 unet.model_options["model_function_wrapper"] = rll_chain_test_wrapper
                 self.wrapper_installed = True
 
-                if prev_wrapper is not None:
-                    print(f"[RLL][Wrapper Probe] Existing wrapper detected ({prev_wrapper}). Chained successfully.")
-                else:
-                    print(f"[RLL][Wrapper Probe] No existing wrapper. Clean RLL test wrapper installed.")
-
                 # 3. Patch Registration & Multi-Layer Exact Tensor Restore Probe
-                lora_file = find_lora_file_by_name(selected_lora) if selected_lora and selected_lora != "(None)" else None
+                lora_file = find_lora_file_by_name(selected_lora_probe) if selected_lora_probe and selected_lora_probe != "(None)" else None
 
                 if lora_file and os.path.exists(lora_file):
                     print(f"[RLL][Residency Probe] Probing with LoRA file: {os.path.basename(lora_file)}")
@@ -230,22 +315,8 @@ class RegionalLoRALabScript(scripts.Script):
                     key_map = ldm_patched.modules.lora.model_lora_keys_unet(clone_A.model, {})
                     loaded = ldm_patched.modules.lora.load_lora(lora_sd, key_map)
 
-                    len_base_before = len(unet.patches)
-                    len_B_before = len(clone_B.patches)
-
-                    # clone_A にのみ登録
                     clone_A.add_patches(loaded, strength_model=1.0)
 
-                    len_A_after = len(clone_A.patches)
-                    len_base_after = len(unet.patches)
-                    len_B_after = len(clone_B.patches)
-
-                    print(f"[RLL][Registration Probe] State dict load time: {t_load:.2f} ms")
-                    print(f"[RLL][Registration Probe] Active patches count: Base={len_base_after} (was {len_base_before}), Clone_A={len_A_after}, Clone_B={len_B_after} (was {len_B_before})")
-                    assert len_base_before == len_base_after, "Base patches modified unexpectedly!"
-                    assert len_B_before == len_B_after, "Clone B patches modified unexpectedly!"
-
-                    # 複数層 (3〜5層: Input, Middle, Output, Attention, Conv) の選定
                     candidate_keys = list(clone_A.patches.keys())
                     selected_sample_keys = []
 
@@ -260,11 +331,6 @@ class RegionalLoRALabScript(scripts.Script):
                     if not selected_sample_keys and candidate_keys:
                         selected_sample_keys = candidate_keys[:min(5, len(candidate_keys))]
 
-                    print(f"[RLL][Restore Probe] Selecting {len(selected_sample_keys)} representative layers across blocks for Exact Restore test:")
-                    for idx, sk in enumerate(selected_sample_keys):
-                        print(f"  [{idx + 1}] {sk}")
-
-                    # Step 1: Base snapshots の保存 (detach().clone())
                     base_snapshots = {}
                     for sk in selected_sample_keys:
                         raw_w = ldm_patched.modules.utils.get_attr(clone_A.model, sk)
@@ -274,35 +340,18 @@ class RegionalLoRALabScript(scripts.Script):
                     t_unpatch = 0.0
 
                     try:
-                        # Step 2: Materialization (patch_model)
                         t_p0 = time.perf_counter()
                         clone_A.patch_model()
                         t_patch = (time.perf_counter() - t_p0) * 1000.0
-
-                        # Materialized 状態の検証 (変化していることの確認)
-                        any_changed = False
-                        for sk in selected_sample_keys:
-                            mat_w = ldm_patched.modules.utils.get_attr(clone_A.model, sk)
-                            if not torch.equal(base_snapshots[sk], mat_w):
-                                any_changed = True
-
-                        print(f"[RLL][Materialization Probe] patch_model() executed in {t_patch:.2f} ms (Weight delta verified: {any_changed})")
-
                     finally:
-                        # Step 3: Emergency & Normal Restoration (unpatch_model)
-                        # patch_model() が途中で例外を出した場合でも backup が存在すれば必ず復元を試みる
                         try:
-                            if getattr(clone_A, "backup", None) or hasattr(clone_A, "unpatch_model"):
-                                t_u0 = time.perf_counter()
-                                clone_A.unpatch_model()
-                                t_unpatch = (time.perf_counter() - t_u0) * 1000.0
-                                print(f"[RLL][Materialization Probe] unpatch_model() executed in {t_unpatch:.2f} ms")
-                                print(f"[RLL][Timing Probe] Roundtrip repatch cost: {t_patch + t_unpatch:.2f} ms per step")
+                            t_u0 = time.perf_counter()
+                            clone_A.unpatch_model()
+                            t_unpatch = (time.perf_counter() - t_u0) * 1000.0
                         except Exception as cleanup_error:
                             print(f"[RLL][ERROR] Emergency unpatch failed: {cleanup_error}")
                             self.restore_success = False
 
-                    # Step 4: Exact Tensor Comparison
                     all_exact = True
                     for idx, sk in enumerate(selected_sample_keys):
                         restored_w = ldm_patched.modules.utils.get_attr(clone_A.model, sk).detach()
@@ -311,33 +360,173 @@ class RegionalLoRALabScript(scripts.Script):
                         exact_equal = torch.equal(base_snap, restored_w)
                         diff = (base_snap.float() - restored_w.float()).abs()
                         max_abs_diff = diff.max().item()
-                        mean_abs_diff = diff.mean().item()
-
-                        print(f"[RLL][Restore Probe] Layer [{idx + 1}] {sk[:55]}...")
-                        print(f"  torch.equal   = {exact_equal}")
-                        print(f"  max_abs_diff  = {max_abs_diff:.8f}")
-                        print(f"  mean_abs_diff = {mean_abs_diff:.8f}")
 
                         if not exact_equal or max_abs_diff > 0.0:
                             all_exact = False
 
-                    self.restore_success = all_exact
-                    if all_exact:
-                        print(f"[RLL][Restore Probe][SUCCESS] All {len(selected_sample_keys)} layers bit-exact restored (max_abs_diff = 0.0). No residual contamination detected.")
+                    # Errata 1.1: Preserve error latch
+                    self.restore_success = self.restore_success and all_exact
+                    if self.restore_success:
+                        print(f"[RLL][Restore Probe][SUCCESS] All {len(selected_sample_keys)} layers bit-exact restored.")
                     else:
-                        print(f"[RLL][Restore Probe][WARN] Some layers showed numerical differences after unpatch.")
-
-                else:
-                    print(f"[RLL][Residency Probe] No LoRA selected for materialization test (Select a LoRA in dropdown to test weight delta & timing).")
+                        print(f"[RLL][Restore Probe][WARN] Exact restore verification failed.")
 
                 print("[RLL][Phase 0.5 Probe] ========================================")
+                return
+
+            # --- Phase 1: 2-Region Multi-Pass Oracle Generation ---
+            if "Phase 1:" in mode:
+                if self.phase1_blocked:
+                    print(f"[RLL][Phase1][BLOCKED] Generation continuing without RLL Oracle. Reason: {self.phase1_block_reason}")
+                    return
+
+                # Check 1: Base UNet must not contain existing model patches
+                base_patches = getattr(unet, "patches", {})
+                if base_patches and len(base_patches) > 0:
+                    self.phase1_blocked = True
+                    self.phase1_block_reason = f"Base UNet already contains {len(base_patches)} patches. Clean base state required."
+                    print(f"[RLL][Phase1][BLOCKED] {self.phase1_block_reason}")
+                    return
+
+                # Check 2: Existing model_function_wrapper must be None (fail-closed for Phase 1)
+                existing_wrapper = unet.model_options.get("model_function_wrapper", None)
+                if existing_wrapper is not None:
+                    self.phase1_blocked = True
+                    self.phase1_block_reason = f"Existing model_function_wrapper detected ({existing_wrapper}). Fail-closed policy for Phase 1."
+                    print(f"[RLL][Phase1][BLOCKED] {self.phase1_block_reason}")
+                    return
+
+                # Load LoRA A and LoRA B files
+                file_A = find_lora_file_by_name(lora_A)
+                file_B = find_lora_file_by_name(lora_B)
+
+                if not file_A or not os.path.exists(file_A):
+                    self.phase1_blocked = True
+                    self.phase1_block_reason = f"LoRA A file not found: {lora_A}"
+                    print(f"[RLL][Phase1][BLOCKED] {self.phase1_block_reason}")
+                    return
+
+                if not file_B or not os.path.exists(file_B):
+                    self.phase1_blocked = True
+                    self.phase1_block_reason = f"LoRA B file not found: {lora_B}"
+                    print(f"[RLL][Phase1][BLOCKED] {self.phase1_block_reason}")
+                    return
+
+                print("[RLL][Phase1] ========================================")
+                print(f"[RLL][Phase1] Building Multi-Pass Oracle Branches:")
+                print(f"  Branch A (Left 50%) : {os.path.basename(file_A)} (UNet Weight = {weight_A:.2f})")
+                print(f"  Branch B (Right 50%): {os.path.basename(file_B)} (UNet Weight = {weight_B:.2f})")
+                print(f"  Text Encoder LoRA  : DISABLED (Multiplier = 0.0)")
+
+                # Load State Dicts & Build UNet Patches (1回のみロード)
+                t0 = time.perf_counter()
+                sd_A = ldm_patched.modules.utils.load_torch_file(file_A, safe_load=True)
+                sd_B = ldm_patched.modules.utils.load_torch_file(file_B, safe_load=True)
+
+                self.clone_A = unet.clone()
+                self.clone_B = unet.clone()
+
+                key_map_A = ldm_patched.modules.lora.model_lora_keys_unet(self.clone_A.model, {})
+                loaded_A = ldm_patched.modules.lora.load_lora(sd_A, key_map_A)
+                self.clone_A.add_patches(loaded_A, strength_model=float(weight_A))
+
+                key_map_B = ldm_patched.modules.lora.model_lora_keys_unet(self.clone_B.model, {})
+                loaded_B = ldm_patched.modules.lora.load_lora(sd_B, key_map_B)
+                self.clone_B.add_patches(loaded_B, strength_model=float(weight_B))
+
+                t_setup = (time.perf_counter() - t0) * 1000.0
+                print(f"[RLL][Phase1] Branch setup completed in {t_setup:.2f} ms (Patches: A={len(self.clone_A.patches)}, B={len(self.clone_B.patches)})")
+
+                # Helper to run branch with strict try/finally
+                def run_branch(branch_patcher, model_function, params, label):
+                    t_p0 = time.perf_counter()
+                    branch_patcher.patch_model()
+                    t_p = (time.perf_counter() - t_p0) * 1000.0
+
+                    t_f0 = time.perf_counter()
+                    out = None
+                    try:
+                        out = model_function(params["input"], params["timestep"], **params["c"])
+                    finally:
+                        t_f = (time.perf_counter() - t_f0) * 1000.0
+                        t_u0 = time.perf_counter()
+                        try:
+                            branch_patcher.unpatch_model()
+                        except Exception as unpatch_err:
+                            self.phase1_fatal_error = True
+                            print(f"[RLL][Phase1][FATAL] Branch {label} unpatch failed: {unpatch_err}")
+                            raise
+                        t_u = (time.perf_counter() - t_u0) * 1000.0
+
+                    return out, t_p, t_f, t_u
+
+                # Install Multi-Pass Oracle Wrapper
+                def phase1_multipass_wrapper(model_function, params):
+                    self.wrapper_call_count += 1
+
+                    if self.phase1_fatal_error:
+                        raise RuntimeError("[RLL][Phase1] Aborting step due to previous unpatch failure.")
+
+                    # Run Branch A
+                    out_A, t_pA, t_fA, t_uA = run_branch(self.clone_A, model_function, params, "A")
+                    if out_A is None:
+                        raise RuntimeError("[RLL][Phase1] Branch A forward returned None.")
+
+                    # Run Branch B
+                    out_B, t_pB, t_fB, t_uB = run_branch(self.clone_B, model_function, params, "B")
+                    if out_B is None:
+                        raise RuntimeError("[RLL][Phase1] Branch B forward returned None.")
+
+                    # Compatibility Checks
+                    if out_A.shape != out_B.shape or out_A.dtype != out_B.dtype or out_A.device != out_B.device:
+                        raise RuntimeError(f"[RLL][Phase1] Tensor mismatch: A({out_A.shape}, {out_A.dtype}, {out_A.device}) vs B({out_B.shape}, {out_B.dtype}, {out_B.device})")
+
+                    if out_A.ndim != 4:
+                        raise RuntimeError(f"[RLL][Phase1] Expected 4D tensor [B, C, H, W], got ndim={out_A.ndim} ({out_A.shape})")
+
+                    # Hard Left/Right Mask Blend
+                    t_b0 = time.perf_counter()
+                    b, c, h, w = out_A.shape
+                    mid = w // 2
+
+                    mask_A = torch.zeros((1, 1, h, w), device=out_A.device, dtype=out_A.dtype)
+                    mask_A[..., :mid] = 1.0
+                    mask_B = 1.0 - mask_A
+
+                    combined_out = out_A * mask_A + out_B * mask_B
+                    t_b = (time.perf_counter() - t_b0) * 1000.0
+
+                    # Diagnostics on first call
+                    if not self.mask_logged:
+                        self.mask_logged = True
+                        sum_exact = torch.all((mask_A + mask_B) == 1.0).item()
+                        print(f"[RLL][Phase1][Mask Invariant] Shape={mask_A.shape}, Midpoint={mid}/{w}, Sum==1.0: {sum_exact}")
+                        print(f"[RLL][Phase1][Step 1 Timing] A(patch={t_pA:.1f}ms, fwd={t_fA:.1f}ms, unpatch={t_uA:.1f}ms) | B(patch={t_pB:.1f}ms, fwd={t_fB:.1f}ms, unpatch={t_uB:.1f}ms) | Blend={t_b:.2f}ms")
+
+                    self.step_timings.append({
+                        "patch_A": t_pA, "fwd_A": t_fA, "unpatch_A": t_uA,
+                        "patch_B": t_pB, "fwd_B": t_fB, "unpatch_B": t_uB,
+                        "blend": t_b
+                    })
+
+                    return combined_out
+
+                phase1_multipass_wrapper._rll_wrapper = True
+                phase1_multipass_wrapper._rll_kind = "phase1_multipass"
+                phase1_multipass_wrapper._rll_previous_wrapper = None
+                self.installed_wrapper = phase1_multipass_wrapper
+                unet.model_options["model_function_wrapper"] = phase1_multipass_wrapper
+                self.wrapper_installed = True
+
+                print(f"[RLL][Phase1] Multi-Pass Oracle Wrapper successfully registered.")
+                print("[RLL][Phase1] ========================================")
 
         except Exception as e:
-            print(f"[RLL][Probe][ERROR] Error during Phase 0.5 probe: {e}")
+            print(f"[RLL][ERROR] Error during process_before_every_sampling: {e}")
             import traceback
             traceback.print_exc()
 
-    def postprocess(self, p, processed, is_enabled, mode, selected_lora, debug_log, *args, **kwargs):
+    def postprocess(self, p, processed, is_enabled, mode, lora_A, weight_A, lora_B, weight_B, selected_lora_probe, debug_log, *args, **kwargs):
         if not is_enabled:
             return
 
@@ -348,18 +537,21 @@ class RegionalLoRALabScript(scripts.Script):
                 unet = getattr(p.sd_model.forge_objects, "unet", None)
                 if unet is not None and hasattr(unet, "model_options"):
                     current_wrapper = unet.model_options.get("model_function_wrapper", None)
-                    if current_wrapper is self.installed_wrapper or getattr(current_wrapper, "_rll_wrapper", False):
-                        if self.original_wrapper is not None:
-                            unet.model_options["model_function_wrapper"] = self.original_wrapper
+                    if getattr(current_wrapper, "_rll_wrapper", False):
+                        previous = getattr(current_wrapper, "_rll_previous_wrapper", None)
+                        if previous is not None:
+                            unet.model_options["model_function_wrapper"] = previous
                         else:
                             unet.model_options.pop("model_function_wrapper", None)
                         if debug_log and self.wrapper_installed:
-                            print(f"[RLL][Wrapper Probe] Cleanup: Restored model_function_wrapper. Total RLL wrapper calls = {self.wrapper_call_count}, Prev wrapper inner calls = {self.previous_wrapper_inner_model_call_count}")
+                            print(f"[RLL][Cleanup] Restored model_function_wrapper safely. Total wrapper calls: {self.wrapper_call_count}")
         except Exception as e:
             print(f"[RLL][ERROR] Error restoring wrapper during postprocess: {e}")
             wrapper_cleanup_ok = False
         finally:
             self.wrapper_installed = False
+            self.clone_A = None
+            self.clone_B = None
 
         if debug_log:
             if "Phase 0:" in str(mode):
@@ -369,3 +561,28 @@ class RegionalLoRALabScript(scripts.Script):
                     print("[RLL][Probe] Completed Phase 0.5. Temporary model patching and wrapper were safely restored before exit.")
                 else:
                     print("[RLL][ERROR] Restore verification or wrapper cleanup failed.")
+            elif "Phase 1:" in str(mode):
+                if self.phase1_blocked:
+                    print(f"[RLL][Phase1] Finished (BLOCKED: {self.phase1_block_reason}).")
+                elif self.step_timings:
+                    n_steps = len(self.step_timings)
+                    avg_pA = sum(s["patch_A"] for s in self.step_timings) / n_steps
+                    avg_fA = sum(s["fwd_A"] for s in self.step_timings) / n_steps
+                    avg_uA = sum(s["unpatch_A"] for s in self.step_timings) / n_steps
+                    avg_pB = sum(s["patch_B"] for s in self.step_timings) / n_steps
+                    avg_fB = sum(s["fwd_B"] for s in self.step_timings) / n_steps
+                    avg_uB = sum(s["unpatch_B"] for s in self.step_timings) / n_steps
+                    avg_b = sum(s["blend"] for s in self.step_timings) / n_steps
+                    
+                    total_step_ms = avg_pA + avg_fA + avg_uA + avg_pB + avg_fB + avg_uB + avg_b
+                    repatch_overhead_ms = avg_pA + avg_uA + avg_pB + avg_uB
+
+                    print("[RLL][Phase1][TIMING SUMMARY] ========================================")
+                    print(f"  Total Steps Evaluated      : {n_steps}")
+                    print(f"  Avg Forward Time (A + B)   : {avg_fA + avg_fB:.2f} ms/step (A: {avg_fA:.1f}ms, B: {avg_fB:.1f}ms)")
+                    print(f"  Avg Repatch Overhead (A+B) : {repatch_overhead_ms:.2f} ms/step (pA:{avg_pA:.1f}, uA:{avg_uA:.1f}, pB:{avg_pB:.1f}, uB:{avg_uB:.1f})")
+                    print(f"  Avg Mask Blend Time        : {avg_b:.2f} ms/step")
+                    print(f"  Avg Total Wrapper Time     : {total_step_ms:.2f} ms/step")
+                    print(f"  Total Repatch Overhead     : {(repatch_overhead_ms * n_steps) / 1000.0:.2f} seconds over {n_steps} steps")
+                    print("[RLL][Phase1][TIMING SUMMARY] ========================================")
+                    print("[RLL][Phase1] Completed sampling with Multi-Pass Oracle. Model state clean.")

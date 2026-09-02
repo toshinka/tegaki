@@ -1,32 +1,33 @@
 # Regional LoRA Lab Current Status
 
-Current Phase: Phase 1 Ready
-Previous Phase: Phase 0.5 SUCCESS
-Safety Gate: PASS
+Current Phase: Phase 1 — Implemented / Validation Pending
+Previous Phase: Phase 0.5 SUCCESS (Safety Gate PASSED)
+Architecture: Candidate B — Alternating Patch Materialization
 
-## Selected Phase 1 Architecture:
-Candidate B — Alternating Patch Materialization
-
-## Working:
+## Working & Implemented:
 - Extension folder structure established
 - reForge environment investigated (commit `19395bf`, PyTorch 2.7.1+cu128, CUDA 12.8, RTX 4070 12GB)
 - reForge LoRA loading path and ModelPatcher/UnetPatcher mechanics completely documented (`docs/REFORGE_LORA_FLOW.md`)
-- Non-invasive Probe extension script implemented (`scripts/regional_lora_lab.py`)
-- Identity Probe & Patch Registration Isolation verified
-- Multi-Layer Exact Tensor Restore verified (`torch.equal=True`, `max_abs_diff=0.00000000` across 5 representative layers)
-- Robust try-finally restore on patch_model exception implemented
-- Stale RLL wrapper recovery mechanism implemented without deleting other extensions' wrappers
-- Wrapper inner call counter metrics accurately recorded
-- Patch residency timing measured (~15-45 ms/step roundtrip repatch)
-- Phase 1 specification frozen (`docs/PHASE_01_MULTIPASS_POC.md`)
+- Safety Gate Errata fixed (restore failure latch, stale wrapper metadata recovery, unconditional unpatch)
+- Phase 1 UI implemented (Region A / B LoRA dropdowns, UNet weight sliders)
+- Phase 1 Direct UNet-only LoRA loader implemented (Text Encoder multiplier = 0)
+- Alternating Patch Materialization multi-pass wrapper implemented
+- Hard binary left/right spatial blending implemented (`mask_A + mask_B == 1.0`)
+- Preflight guards implemented (prompt `<lora:...>` tag stripping, clean base patch check, fail-closed wrapper check)
+- Runtime timing aggregation and clean state recovery verified
 
-## Next:
-- Implement Phase 1 2-Region Multi-Pass Oracle
-- UNet LoRA only
-- Text Encoder multiplier = 0
-- Left / Right 50:50
-- Ordinary prompt `<lora:...>` tags disabled for test
+## Pending User Visual Validation:
+- Control 0: No LoRA (Baseline)
+- Control A: Global LoRA A
+- Control B: Global LoRA B
+- Control AB: Global LoRA A + B
+- Regional A/B: Left=LoRA A, Right=LoRA B
+- Swap Test: Left=LoRA B, Right=LoRA A
+- Same Test: Left=LoRA A, Right=LoRA A
+- Visual leakage review and GPT final confirmation
+
+> **[IMPORTANT] Do Not Proceed To Phase 2 Yet**  
+> Wait for user visual validation results and external AI review.
 
 ## Latest Commit:
-https://github.com/toshinka/tegaki/commit/a061d65f56e07bba034adf80fef10b10e825e060
-(`a061d65f`)
+UPDATE_AFTER_PUSH
