@@ -1,6 +1,6 @@
 """
 Regional LoRA Lab - Main Script
-Version: Phase 0.5 Final (Exact Tensor Restore & Wrapper Chaining Probe)
+Version: Phase 0.5 Safety Gate & Spec Freeze
 Project: Regional LoRA Engine for Stable Diffusion WebUI reForge
 """
 
@@ -47,8 +47,9 @@ class RegionalLoRALabScript(scripts.Script):
     def __init__(self):
         super().__init__()
         self.original_wrapper = None
+        self.installed_wrapper = None
         self.wrapper_call_count = 0
-        self.previous_wrapper_call_count = 0
+        self.previous_wrapper_inner_model_call_count = 0
         self.wrapper_installed = False
         self.active_mode = None
         self.restore_success = True
@@ -85,20 +86,44 @@ class RegionalLoRALabScript(scripts.Script):
 
             with gr.Row():
                 gr.Markdown("""
-                > **【Regional LoRA Lab - Phase 0.5 稼働中】**  
+                > **【Regional LoRA Lab - Phase 0.5 Safety Gate & Spec Freeze】**  
                 > ※ 生成結果へRegional処理は適用しません。  
                 > Probe中はLoRA weightの一時materialize / restoreおよびWrapper Chainingの検証を行います。  
-                > 終了時にbase weightおよびwrapper状態へ完全に復元します。
+                > 終了時にbase weightおよびwrapper状態へ完全に復元します（fail-safe recovery対応）。
                 """)
 
         return [is_enabled, mode, selected_lora, debug_log]
 
     def before_process_batch(self, p, is_enabled, mode, selected_lora, debug_log, *args, **kwargs):
+        # --- Safety Gate: Stale RLL Wrapper Recovery ---
+        try:
+            if hasattr(p, "sd_model") and hasattr(p.sd_model, "forge_objects"):
+                unet = getattr(p.sd_model.forge_objects, "unet", None)
+                if unet is not None and hasattr(unet, "model_options"):
+                    current_wrapper = unet.model_options.get("model_function_wrapper", None)
+                    is_rll_stale = (
+                        current_wrapper is not None and (
+                            current_wrapper is self.installed_wrapper or
+                            getattr(current_wrapper, "_rll_wrapper", False)
+                        )
+                    )
+                    if is_rll_stale:
+                        if self.original_wrapper is not None:
+                            unet.model_options["model_function_wrapper"] = self.original_wrapper
+                            print(f"[RLL][Recovery] Stale RLL wrapper recovered. Restored previous wrapper: {self.original_wrapper}")
+                        else:
+                            unet.model_options.pop("model_function_wrapper", None)
+                            print("[RLL][Recovery] Stale RLL wrapper recovered. Cleared model_function_wrapper.")
+        except Exception as e:
+            print(f"[RLL][ERROR] Recovery check failed: {e}")
+
+        # Current run 用 state の初期化
         self.active_mode = None
         self.restore_success = True
         self.wrapper_call_count = 0
-        self.previous_wrapper_call_count = 0
+        self.previous_wrapper_inner_model_call_count = 0
         self.original_wrapper = None
+        self.installed_wrapper = None
         self.wrapper_installed = False
 
         if not is_enabled:
@@ -147,7 +172,7 @@ class RegionalLoRALabScript(scripts.Script):
                     print("[RLL][Probe] ========================================")
                 return
 
-            # --- Phase 0.5: Patcher Residency & Multi-Layer Restore & Wrapper Chaining Probe ---
+            # --- Phase 0.5: Patcher Residency, Multi-Layer Exact Restore & Wrapper Chaining Probe ---
             if "Phase 0.5:" in mode:
                 print("[RLL][Phase 0.5 Probe] ========================================")
                 print(f"[RLL][Phase 0.5 Probe] Starting Patcher Residency, Multi-Layer Exact Restore & Wrapper Chaining Probe")
@@ -176,13 +201,15 @@ class RegionalLoRALabScript(scripts.Script):
                     self.wrapper_call_count += 1
                     if prev_wrapper is not None:
                         def inner_model_fn(input_x, timestep, **c):
-                            self.previous_wrapper_call_count += 1
+                            self.previous_wrapper_inner_model_call_count += 1
                             return model_function(input_x, timestep, **c)
                         out = prev_wrapper(inner_model_fn, params)
                     else:
                         out = model_function(params["input"], params["timestep"], **params["c"])
                     return out
 
+                rll_chain_test_wrapper._rll_wrapper = True
+                self.installed_wrapper = rll_chain_test_wrapper
                 unet.model_options["model_function_wrapper"] = rll_chain_test_wrapper
                 self.wrapper_installed = True
 
@@ -222,7 +249,6 @@ class RegionalLoRALabScript(scripts.Script):
                     candidate_keys = list(clone_A.patches.keys())
                     selected_sample_keys = []
 
-                    # 異なるブロックから代表キーを抽出
                     for filter_tag in ["input_blocks", "middle_block", "output_blocks", "attn", "conv"]:
                         for k in candidate_keys:
                             if filter_tag in k and k not in selected_sample_keys:
@@ -244,12 +270,13 @@ class RegionalLoRALabScript(scripts.Script):
                         raw_w = ldm_patched.modules.utils.get_attr(clone_A.model, sk)
                         base_snapshots[sk] = raw_w.detach().clone()
 
-                    patched = False
+                    t_patch = 0.0
+                    t_unpatch = 0.0
+
                     try:
                         # Step 2: Materialization (patch_model)
                         t_p0 = time.perf_counter()
                         clone_A.patch_model()
-                        patched = True
                         t_patch = (time.perf_counter() - t_p0) * 1000.0
 
                         # Materialized 状態の検証 (変化していることの確認)
@@ -262,15 +289,20 @@ class RegionalLoRALabScript(scripts.Script):
                         print(f"[RLL][Materialization Probe] patch_model() executed in {t_patch:.2f} ms (Weight delta verified: {any_changed})")
 
                     finally:
-                        # Step 3: Restoration (unpatch_model) - 厳格な try/finally 保証
-                        if patched:
-                            t_u0 = time.perf_counter()
-                            clone_A.unpatch_model()
-                            t_unpatch = (time.perf_counter() - t_u0) * 1000.0
-                            print(f"[RLL][Materialization Probe] unpatch_model() executed in {t_unpatch:.2f} ms")
-                            print(f"[RLL][Timing Probe] Roundtrip repatch cost: {t_patch + t_unpatch:.2f} ms per step")
+                        # Step 3: Emergency & Normal Restoration (unpatch_model)
+                        # patch_model() が途中で例外を出した場合でも backup が存在すれば必ず復元を試みる
+                        try:
+                            if getattr(clone_A, "backup", None) or hasattr(clone_A, "unpatch_model"):
+                                t_u0 = time.perf_counter()
+                                clone_A.unpatch_model()
+                                t_unpatch = (time.perf_counter() - t_u0) * 1000.0
+                                print(f"[RLL][Materialization Probe] unpatch_model() executed in {t_unpatch:.2f} ms")
+                                print(f"[RLL][Timing Probe] Roundtrip repatch cost: {t_patch + t_unpatch:.2f} ms per step")
+                        except Exception as cleanup_error:
+                            print(f"[RLL][ERROR] Emergency unpatch failed: {cleanup_error}")
+                            self.restore_success = False
 
-                    # Step 4: Exact Tensor Comparison (全要素完全一致・最大絶対誤差・平均絶対誤差)
+                    # Step 4: Exact Tensor Comparison
                     all_exact = True
                     for idx, sk in enumerate(selected_sample_keys):
                         restored_w = ldm_patched.modules.utils.get_attr(clone_A.model, sk).detach()
@@ -309,25 +341,31 @@ class RegionalLoRALabScript(scripts.Script):
         if not is_enabled:
             return
 
-        # Restore original wrapper in model_options
+        # Fail-safe restoration of original wrapper in model_options
+        wrapper_cleanup_ok = True
         try:
             if hasattr(p, "sd_model") and hasattr(p.sd_model, "forge_objects"):
                 unet = getattr(p.sd_model.forge_objects, "unet", None)
                 if unet is not None and hasattr(unet, "model_options"):
-                    if self.original_wrapper is not None:
-                        unet.model_options["model_function_wrapper"] = self.original_wrapper
-                    else:
-                        unet.model_options.pop("model_function_wrapper", None)
-                    if debug_log and self.wrapper_installed:
-                        print(f"[RLL][Wrapper Probe] Cleanup: Restored model_function_wrapper. Total RLL wrapper calls = {self.wrapper_call_count}, Prev wrapper calls = {self.previous_wrapper_call_count}")
+                    current_wrapper = unet.model_options.get("model_function_wrapper", None)
+                    if current_wrapper is self.installed_wrapper or getattr(current_wrapper, "_rll_wrapper", False):
+                        if self.original_wrapper is not None:
+                            unet.model_options["model_function_wrapper"] = self.original_wrapper
+                        else:
+                            unet.model_options.pop("model_function_wrapper", None)
+                        if debug_log and self.wrapper_installed:
+                            print(f"[RLL][Wrapper Probe] Cleanup: Restored model_function_wrapper. Total RLL wrapper calls = {self.wrapper_call_count}, Prev wrapper inner calls = {self.previous_wrapper_inner_model_call_count}")
         except Exception as e:
-            print(f"[RLL][Probe][ERROR] Error restoring wrapper: {e}")
+            print(f"[RLL][ERROR] Error restoring wrapper during postprocess: {e}")
+            wrapper_cleanup_ok = False
+        finally:
+            self.wrapper_installed = False
 
         if debug_log:
             if "Phase 0:" in str(mode):
                 print("[RLL][Probe] Completed (read-only probe).")
             elif "Phase 0.5:" in str(mode):
-                if self.restore_success:
-                    print("[RLL][Probe] Completed Phase 0.5. Temporary model patching was restored before exit.")
+                if self.restore_success and wrapper_cleanup_ok:
+                    print("[RLL][Probe] Completed Phase 0.5. Temporary model patching and wrapper were safely restored before exit.")
                 else:
-                    print("[RLL][ERROR] Restore verification failed.")
+                    print("[RLL][ERROR] Restore verification or wrapper cleanup failed.")

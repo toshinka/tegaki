@@ -1,7 +1,8 @@
-# Phase 01: 2-Region Multi-Pass Oracle Design (Draft / Pending Phase 0.5)
+# Phase 01: 2-Region Multi-Pass Oracle Specification
 
-> **Status**: DRAFT (Phase 0.5 実測結果を受けて確定予定)  
-> **Scope**: UNet LoRA Only (Text Encoder multiplier = 0)
+> **Status**: APPROVED FOR IMPLEMENTATION (Spec Frozen)  
+> **Selected Architecture**: Candidate B — Alternating Patch Materialization  
+> **Target Platform**: reForge (`stable-diffusion-webui-reForge`)
 
 ---
 
@@ -9,34 +10,74 @@
 
 遅くてもよいので、左右に別々の LoRA（左=LoRA A, 右=LoRA B）を独立した重み状態で計算する**基準正解実装（Oracle Reference Baseline）** を確立する。
 
+> **【Oracle の定義】**  
+> 本プロジェクトにおける `Oracle` とは、数学的に完全な無漏洩真理値（exact ground truth）ではなく、**「速度を犠牲にしてでも、確実に独立した LoRA 重み状態で計算した参照基準（intentionally slow reference baseline）」** を意味する。  
+> A/B branch は画像全体 latent を見るため、receptive field や attention による意味的影響は残り得る。成功判定は **「Global A+B より明確に style/character leakage が減ること」** とする。
+
 ---
 
-## 2. 最小仕様と制約
+## 2. 確定仕様と凍結制約 (Frozen Constraints)
 
-### 2.1 対象範囲
-- **UNet LoRA のみ**（Text Encoder は multiplier = 0 として除外）
-- **左右 50:50 固定マスク**（自由矩形やソフトマスクは Phase 5 以降）
-- **プロンプト内の通常 `<lora:...>` タグ禁止**（Regional LoRA Lab 側でロードを完全管理）
+Phase 1 実装では以下の仕様を固定し、機能追加や拡張を行わない：
 
-### 2.2 実装候補の検討 (Phase 0.5 の実測結果に基づく判定)
+| 項目 | 確定仕様 (Phase 1 Frozen) |
+| :--- | :--- |
+| **対象モデル** | SDXL / Illustrious 系 Checkpoint |
+| **領域数 / 幾何構造** | **2領域固定: 左右 50:50 分割** (Left 50% / Right 50%) |
+| **マスク種別** | **Hard Binary Mask** (`mask_A + mask_B = 1.0`, soft edge なし) |
+| **LoRA 種別** | **Standard UNet LoRA のみ** (LoHa/LoKr/DoRA 等は後段) |
+| **Text Encoder** | **Multiplier = 0 / Disabled** (UNet LoRA のみ空間分離) |
+| **プロンプト構文** | 通常の trigger words は許可。**`<lora:...>` タグは禁止 (検出時は警告/停止)** |
+| **Batch Size** | **1 固定** |
+| **ControlNet** | **初期検証時は OFF** |
+| **MRP 連携** | **連携なし (独立拡張として単独動作)** |
 
-- **Candidate A (高速交互実体化可能)**:
-  `patch_model()` / `unpatch_model()` のコストが極めて低く（数ms以下）、毎ステップ交互に実行可能である場合。
-  ```python
-  # 毎ステップの forward 内で:
-  clone_A.patch_model()
-  out_A = apply_model(params["input"], params["timestep"], **params["c"])
-  clone_A.unpatch_model()
+---
 
-  clone_B.patch_model()
-  out_B = apply_model(params["input"], params["timestep"], **params["c"])
-  clone_B.unpatch_model()
+## 3. 計算順序と不変条件 (Execution Flow & Safety Invariant)
 
-  out_combined = mask_A * out_A + mask_B * out_B
-  ```
+### 3.1 毎ステップの計算順序
+```text
+base state
+    ↓
+materialize LoRA A (clone_A.patch_model())
+    ↓
+forward A (apply_model())
+    ↓
+restore base (clone_A.unpatch_model())
+    ↓
+materialize LoRA B (clone_B.patch_model())
+    ↓
+forward B (apply_model())
+    ↓
+restore base (clone_B.unpatch_model())
+    ↓
+mask blend A/B (out_A * mask_A + out_B * mask_B)
+    ↓
+return combined output
+```
 
-- **Candidate B (交互実体化が高コストだが Oracle 用途としては許容)**:
-  毎ステップの repatch に数十〜数百msかかるが、数秒の遅延で済むため参照正解画像としては採択可能。
+### 3.2 Safety Invariant (最重要不変条件)
+- **各 branch forward 後に必ず base weight へ戻ること**。
+- `try...finally` で囲み、A が失敗した場合は B へ進まず、B が失敗した場合は combined output を返さず安全に停止する（fail-closed）。
+- A/B weight state を次ステップへ持ち越さない。
 
-- **Candidate C (共有モデル構造上、交互実体化が不適切)**:
-  Multi-Pass 方式を再検討し、Phase 3-4 (Masked Delta / Custom forward) を前倒しで開発。
+---
+
+## 4. Wrapper 競合ポリシー (Wrapper Conflict Policy)
+
+- 既存の `model_function_wrapper` が存在しない場合: 正常実行。
+- 既存の `model_function_wrapper` が存在する場合: **原則 fail-closed（開始中止＆警告表示）**。
+- 他 extension や MRP との同時動作は、Phase 1 単独成立後の後段フェーズで対応する。
+
+---
+
+## 5. 対照実験マトリクス (Phase 1 Test Matrix)
+
+同一条件（同 Seed, 同 Checkpoint, 同 Sampler, 同 Scheduler, 同 Steps, 同 CFG, 同 Resolution, 同 Prompt）において以下を比較する：
+
+1. **Control 0**: RLL OFF, LoRA なし (Baseline)
+2. **Control A**: RLL OFF, LoRA A global
+3. **Control B**: RLL OFF, LoRA B global
+4. **Control AB**: RLL OFF, LoRA A+B global
+5. **Experimental**: RLL ON (Left=LoRA A, Right=LoRA B)

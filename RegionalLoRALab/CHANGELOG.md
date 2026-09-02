@@ -1,5 +1,14 @@
 # Regional LoRA Lab - Changelog
 
+## [Phase 1 Ready / Safety Gate PASS] - 2026-09-03
+
+### Added
+- Implemented robust `try...finally` emergency unpatch mechanism inside `scripts/regional_lora_lab.py` handling partial `patch_model()` exceptions.
+- Implemented stale RLL wrapper recovery during `before_process_batch()` preserving other extensions' wrappers.
+- Corrected wrapper call measurement metric names (`previous_wrapper_inner_model_call_count`).
+- Formally froze `docs/PHASE_01_MULTIPASS_POC.md` as APPROVED FOR IMPLEMENTATION (Candidate B: Alternating Patch Materialization, UNet LoRA only, TE mult=0, Left/Right 50:50).
+- Updated `reports/PHASE_00_5_REPORT.md`, `CURRENT_STATUS.md`, and `GPT_GITHUB_LINKS.txt`.
+
 ## [Phase 0.5 Final] - 2026-09-03
 
 ### Added

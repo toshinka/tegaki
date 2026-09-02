@@ -1,7 +1,11 @@
 # Regional LoRA Lab Current Status
 
-Current Phase: 0.5 (Final Polish Complete)
-Status: SUCCESS
+Current Phase: Phase 1 Ready
+Previous Phase: Phase 0.5 SUCCESS
+Safety Gate: PASS
+
+## Selected Phase 1 Architecture:
+Candidate B — Alternating Patch Materialization
 
 ## Working:
 - Extension folder structure established
@@ -10,22 +14,18 @@ Status: SUCCESS
 - Non-invasive Probe extension script implemented (`scripts/regional_lora_lab.py`)
 - Identity Probe & Patch Registration Isolation verified
 - Multi-Layer Exact Tensor Restore verified (`torch.equal=True`, `max_abs_diff=0.00000000` across 5 representative layers)
-- Dummy Wrapper Chaining verified with non-destructive cleanup
+- Robust try-finally restore on patch_model exception implemented
+- Stale RLL wrapper recovery mechanism implemented without deleting other extensions' wrappers
+- Wrapper inner call counter metrics accurately recorded
 - Patch residency timing measured (~15-45 ms/step roundtrip repatch)
-- Clean no-op execution verified without interfering with base generation or existing LoRA activation
-
-## Not Working / Not Implemented Yet (By Design):
-- Regional LoRA generation (Scheduled for Phase 1+)
-- Multi-pass latent blending (Phase 1)
-- Spatial masked delta (Phase 3-4)
+- Phase 1 specification frozen (`docs/PHASE_01_MULTIPASS_POC.md`)
 
 ## Next:
-- Phase 1 Multi-Pass Oracle implementation
+- Implement Phase 1 2-Region Multi-Pass Oracle
 - UNet LoRA only
 - Text Encoder multiplier = 0
 - Left / Right 50:50
 - Ordinary prompt `<lora:...>` tags disabled for test
 
 ## Latest Commit:
-https://github.com/toshinka/tegaki/commit/ae0db12f25d0bfe21141313915ed6fe707dfafc2
-(`ae0db12f`)
+UPDATE_AFTER_PUSH

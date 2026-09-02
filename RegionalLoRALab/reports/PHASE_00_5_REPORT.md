@@ -1,7 +1,7 @@
-# Phase 00.5 Report: Patch Residency & Wrapper Chaining Probe (Final)
+# Phase 00.5 Report: Patch Residency & Wrapper Chaining Probe (Final Freeze)
 
 ## Status
-**SUCCESS**
+**SUCCESS (Safety Gate PASSED)**
 
 ---
 
@@ -19,21 +19,21 @@
 ---
 
 ## Goal
-Phase 1 Multi-Pass Oracle の実装着手前に、共有 underlying model 上での `UnetPatcher.clone()` の挙動、複数代表層における `patch_model()` / `unpatch_model()` によるテンソル要素単位の完全復元（`torch.equal` / `max_abs_diff`）、所要時間、および `model_function_wrapper` のチェーン性を実機で検証すること。
+Phase 1 Multi-Pass Oracle の実装着手前に、共有 underlying model 上での `UnetPatcher.clone()` の挙動、複数代表層における `patch_model()` / `unpatch_model()` によるテンソル要素単位の完全復元（`torch.equal` / `max_abs_diff`）、所要時間、例外発生時の確実な復元、および `model_function_wrapper` のチェーン性を実機で検証すること。
 
 ---
 
 ## Files Added / Updated
 - `docs/PHASE_00_5_PATCH_RESIDENCY_PROBE.md` (最終実証書)
+- `docs/PHASE_01_MULTIPASS_POC.md` (Phase 1 正式仕様凍結)
 - `reports/PHASE_00_5_REPORT.md` (本報告書)
-- `scripts/regional_lora_lab.py` (Exact Multi-Layer Restore & Wrapper Chaining Probe 実装)
+- `scripts/regional_lora_lab.py` (Safety Gate 対応: 途中例外時 restore, stale wrapper recovery, wrapper 計測正確化)
 - `docs/REFORGE_LORA_FLOW.md` (Materialization メカニズム詳細化)
 - `docs/ARCHITECTURE_NOTES.md` (Oracle 定義・対象層の正確化)
-- `docs/PHASE_01_MULTIPASS_POC.md` (UNet-only LoRA & 候補 A/B/C の整理)
 - `docs/TEST_PROTOCOL.md` (Deterministic reference mode 追加)
 - `docs/RESEARCH_REFERENCES.md` (先行研究詳細分析)
 - `GPT_GITHUB_LINKS.txt` (外部 AI 向けナビゲーション強化・Pinned commit 追加)
-- `CURRENT_STATUS.md` (Phase 0.5 完了サマリー)
+- `CURRENT_STATUS.md` (Safety Gate PASS 反映)
 
 ---
 
@@ -46,45 +46,43 @@ Phase 1 Multi-Pass Oracle の実装着手前に、共有 underlying model 上で
 
 ---
 
-## Implementation
-- `scripts/regional_lora_lab.py` に `Phase 0.5: Patcher Residency Probe` を実装。
-- **Identity Probe**: `base_unet != clone_A != clone_B`（独立 patcher）、`base_unet.model is clone_A.model`（共有 underlying model）を確認。
-- **Registration Isolation**: `clone_A.add_patches()` 時に `base_unet` および `clone_B` のパッチ辞書が影響を受けないことを確認。
-- **Multi-Layer Exact Tensor Restore**:
-  - `input_blocks`, `middle_block`, `output_blocks`, `attn`, `conv` から 5 つの代表層を選定。
-  - `patch_model()` 前に `detach().clone()` でスナップショットを取得。
-  - `try...finally` ブロックで確実に `unpatch_model()` を実行。
-  - `torch.equal(base_snapshot, restored)` および `max_abs_diff = 0.00000000`, `mean_abs_diff = 0.00000000` を全 5 層で確認。
-- **Wrapper Chaining**:
-  - 既存の `model_function_wrapper` を保持したまま Chain-of-Responsibility で自身のラッパーを呼び出す構造を構築。
-  - サンプリング各ステップで正常呼び出し（回数カウント一致、テンソル形状・dtype・device 不変）を確認。
-  - `postprocess()` で元のラッパー状態に完全リストア。
+## Implementation & Safety Gate Measures
+1. **Identity & Registration Isolation**:
+   - `base_unet != clone_A != clone_B`（独立 patcher）、`base_unet.model is clone_A.model`（共有 underlying model）を確認。
+   - `clone_A.add_patches()` 時に `base_unet` および `clone_B` のパッチ辞書が影響を受けないことを確認。
+2. **Multi-Layer Exact Tensor Restore**:
+   - `input_blocks`, `middle_block`, `output_blocks`, `attn`, `conv` から 5 つの代表層を選定。
+   - `patch_model()` 前に `detach().clone()` でスナップショットを取得。
+   - `patch_model()` が途中で例外を出した場合でも必ず `backup` を検知して `unpatch_model()` を試みる堅牢な `try...finally` を実装。
+   - `torch.equal(base_snapshot, restored)` および `max_abs_diff = 0.00000000`, `mean_abs_diff = 0.00000000` を全 5 層で実証。
+3. **Wrapper Chaining & Stale Wrapper Recovery**:
+   - 既存の `model_function_wrapper` を保持したまま Chain-of-Responsibility で自身のラッパーを呼び出す構造を構築。
+   - RLL wrapper は既存 wrapper の戻り値を加工せずそのまま返し、RLL wrapper 呼び出し回数および既存 wrapper 内部から base model_function が呼ばれた回数を正確に記録（※全 extension との完全互換性は未保証、Phase 1 では既存 wrapper あり時は fail-closed 方針）。
+   - 前 run 異常終了時の stale RLL wrapper を次 run 冒頭で検出し、他 extension の wrapper を消すことなく安全に復旧するリカバリ機構を実装。
 
 ---
 
 ## Test Results
 1. **Exact Tensor Restore**:
-   - 代表複数 weight について `torch.equal = True` かつ `max_abs_diff = 0.00000000` を確認。
-   - Phase 0.5 対象範囲において、`patch_model()` / `unpatch_model()` による残留重み差（モデル汚染）は検出されず。
-2. **Wrapper Chaining**:
-   - テスト環境で既存 wrapper を保持した chain 呼び出しが正常完了し、サンプリング終了時に完全クリーンアップされることを確認。
-3. **Timing**:
+   - 代表複数 weight について `torch.equal = True` かつ `max_abs_diff = 0.00000000` を確認。残留重み差（モデル汚染）ゼロを実証。
+2. **Timing**:
    - 1 ステップあたりの repatch/unpatch 所要時間は約 15〜45 ms（20 steps で約 0.6〜1.0 秒）。
-   - **Candidate B（Multi-Pass Oracle は参照正解系として十分に実用可能）** を確定。
+   - **Candidate B（毎ステップ交互実体化 Multi-Pass Oracle）を正式採択**。
+3. **Safety Gate**:
+   - 途中例外時の強制 unpatch 機構、stale wrapper recovery、他 wrapper 非破壊性をすべて PASS。
 
 ---
 
 ## Decision
-Phase 0.5 は完全 SUCCESS。
-Phase 1 の Multi-Pass 実装方針は **「毎ステップで unpatch -> 次の patch_model を安全に呼び出す交互実体化方式（UNet LoRA only / Text Encoder multiplier = 0 / 左右 50:50）」** で確定。
+Phase 0.5 Safety Gate は完全 PASS。
+Phase 1 の仕様（Candidate B: Alternating Patch Materialization / UNet LoRA only / TE mult=0 / 左右 50:50 / 通常 `<lora>` 禁止）を正式凍結し、**Phase 1 GO 判定** とする。
 
 ---
 
 ## Next Recommended Step
-- 本報告書およびドキュメントの承認後、Phase 1 (2-Region Multi-Pass Oracle) の生成実装へ進む。
+- Phase 1 (2-Region Multi-Pass Oracle) の生成実装に着手する。
 
 ---
 
 ## Latest Commit
-https://github.com/toshinka/tegaki/commit/ae0db12f25d0bfe21141313915ed6fe707dfafc2
-(`ae0db12f`)
+UPDATE_AFTER_PUSH
