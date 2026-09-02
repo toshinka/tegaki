@@ -1,5 +1,15 @@
 # Regional LoRA Lab - Changelog
 
+## [Phase 1 Pre-Validation Stabilization] - 2026-09-03
+
+### Fixed
+- **CRITICAL**: Fixed `add_patches()` invocation in `scripts/regional_lora_lab.py` to map UI slider to `strength_patch` instead of `strength_model` (`strength_model=1.0` fixed to prevent baseline weight scaling).
+- **CRITICAL**: Fixed `run_branch()` in `scripts/regional_lora_lab.py` by moving `patch_model()` inside the `try...finally` block, ensuring fail-safe `unpatch_model()` execution even if `patch_model()` throws midway.
+- Added strict preflight guards in `before_process_batch()`: txt2img only (`is_img2img` blocked), `batch_size == 1` only, `enable_hr == False` only, `controlnet_linked_list is None` only.
+- Added verification of accepted UNet patch key count (`> 0`) from `add_patches()`.
+- Added automated Same A/A numerical Oracle difference tracking (`max_abs_diff` per step).
+- Updated `reports/PHASE_01_REPORT.md` (Status: `IMPLEMENTED / PRE-VALIDATION READY`), `CURRENT_STATUS.md`, and `GPT_GITHUB_LINKS.txt`.
+
 ## [Phase 1 Implementation] - 2026-09-03
 
 ### Added
@@ -10,7 +20,7 @@
 - Fixed Safety Gate Errata: `restore_success` failure latch preservation, stale wrapper previous-wrapper object metadata recovery, unconditional try/finally unpatch.
 - Added Phase 1 preflight and fail-closed guards: prompt `<lora:...>` tag stripping, clean base patch state check, existing wrapper fail-closed check.
 - Added runtime step-by-step timing aggregation and mask invariant diagnostics.
-- Created `reports/PHASE_01_REPORT.md` (Status: IMPLEMENTED / AWAITING VISUAL VALIDATION).
+- Created `reports/PHASE_01_REPORT.md`.
 - Updated `CURRENT_STATUS.md` and `GPT_GITHUB_LINKS.txt`.
 
 ## [Phase 1 Ready / Safety Gate PASS] - 2026-09-03

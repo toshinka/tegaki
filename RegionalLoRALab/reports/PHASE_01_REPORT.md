@@ -1,13 +1,12 @@
-# Phase 01 Report — 2-Region Multi-Pass Oracle
+# Phase 01 Report — 2-Region Multi-Pass Oracle (Pre-Validation Stabilized)
 
 ## Status
-**IMPLEMENTED / AWAITING VISUAL VALIDATION**
+**IMPLEMENTED / PRE-VALIDATION READY**
 
 ---
 
 ## Implementation Commit
-https://github.com/toshinka/tegaki/commit/e830ef9df25e5d36d8ac40e405a4edc7bbfed4f3
-(`e830ef9d`)
+UPDATE_AFTER_PUSH
 
 ---
 
@@ -24,38 +23,37 @@ https://github.com/toshinka/tegaki/commit/e830ef9df25e5d36d8ac40e405a4edc7bbfed4
 
 ---
 
-## Frozen Scope (Phase 1 仕様凍結項目)
+## Frozen Scope & Preflight Enforcement
 - **Architecture**: Candidate B — Alternating Patch Materialization
 - **Regions / Geometry**: 2 領域固定 (Left 50% / Right 50%)
-- **Mask Type**: Hard Binary Mask (`mask_A + mask_B = 1.0`)
-- **LoRA Type**: Standard UNet LoRA only
-- **Text Encoder**: Disabled / Multiplier = 0.0
-- **Prompt Constraints**: 通常のトリガー単語は許可、`<lora:...>` タグは禁止 (Lab側で直接管理)
-- **Batch Size**: 1 固定
-- **External Dependencies**: ControlNet OFF, MRP 非連携, 他の Model Wrapper / Patch OFF
+- **Mask Type**: Hard Binary Mask (`mask_A + mask_B = 1.0`, broadcastable to `[B, 1, H, W]`)
+- **LoRA Weight Mapping**: UI slider maps to `strength_patch` (never `strength_model`), `strength_model = 1.0` fixed.
+- **LoRA Type Target**: Standard UNet LoRA only (Text Encoder multiplier = 0.0). *Other patch types (LoCon, LoHa, etc.) may be parsed by reForge but are unvalidated in Phase 1.*
+- **Preflight Guards Enforced**:
+  - `txt2img` only (`img2img` blocked)
+  - `batch_size == 1` only (batch > 1 blocked)
+  - `enable_hr == False` only (Hires fix blocked)
+  - `controlnet_linked_list is None` only (ControlNet blocked)
+  - Base UNet patch count == 0 (Clean base state required)
+  - Existing `model_function_wrapper` is None (Fail-closed)
+  - Ordinary `<lora:...>` tags in prompt stripped with warning (RLL manages loading directly)
+  - LoRA accepted patch keys > 0 check
 
 ---
 
-## Implementation Details
-1. **Safety Gate Errata 修正**:
-   - `self.restore_success` のエラーラッチ保持（`restore_success = restore_success and all_exact`）。
-   - Stale wrapper recovery 時に `_rll_previous_wrapper` を保持し、他 extension のラッパーを誤削除しない安全機構を構築。
-   - `run_branch()` 内での `try...finally: branch.unpatch_model()` 統一。
-2. **LoRA A/B UNet-only Loader**:
-   - WebUI のプロンプトパースを経由せず、UI で選択された LoRA A/B の `.safetensors` をサンプリング前に 1 度だけ直接ロード。
-   - `model_lora_keys_unet()` により UNet 側のみパッチ登録し、CLIP key map は作成しない（Text Encoder 汚染ゼロ）。
-3. **Preflight Guards & Fail-Closed Policies**:
-   - プロンプト内の `<lora:...>` タグ検出時に自動除去して global activation を防止し、Phase 1 を安全に block。
-   - Base UNet に既存パッチ（`len(patches) > 0`）または既存 `model_function_wrapper` が存在する場合は fail-closed で実行を停止。
-4. **Alternating Patch Materialization & Mask Blending**:
-   - 各サンプリングステップで同一の `params`（input, timestep, c）に対し：
-     1. `clone_A.patch_model()` → `forward` → `clone_A.unpatch_model()`
-     2. `clone_B.patch_model()` → `forward` → `clone_B.unpatch_model()`
-     3. `out_A * mask_A + out_B * mask_B` による空間合成。
-   - テンソルの `ndim == 4`, shape, dtype, device の完全一致を検証。
-5. **Runtime Diagnostics & Cleanup**:
-   - 各ステップの patch/forward/unpatch/blend 所要時間を集計し、サンプリング終了時にサマリーを出力。
-   - `postprocess()` で `model_function_wrapper` および一時参照を完全クリーンアップ。
+## Implementation & Stabilization Measures
+1. **LoRA Slider Mapping Correction**:
+   - `add_patches(loaded, strength_patch=float(weight), strength_model=1.0)` により、Base weight スケーリングを防ぎ、純粋な LoRA \(\Delta W\) 強度として適用。
+   - `accepted_A` / `accepted_B` の戻り値キー数を確認し、0 件の場合は安全にブロック。
+2. **`run_branch()` Strict Try/Finally**:
+   - `patch_model()` 自身を `try...finally` の内側に配置し、部分パッチ適用中の例外でも確実に `unpatch_model()` が実行される安全性を確立。
+3. **Stale Wrapper Metadata Recovery**:
+   - ラッパーオブジェクト自身に `_rll_wrapper = True` および `_rll_previous_wrapper` を持たせ、前 run 異常終了時でも他 extension のラッパーを誤削除せず安全に復旧。
+4. **Numerical Oracle Check (Same A/A)**:
+   - `LoRA A == LoRA B` かつ `Weight A == Weight B` の場合、毎ステップで `(out_A - out_B).abs().max()` を自動集計・ログ出力する数値検証機構を導入。
+5. **Runtime Diagnostics & Base State Audit**:
+   - 初回 wrapper 呼び出し時に input/output shape, dtype, device, mask invariant をログ出力。
+   - `postprocess()` 時に Base UNet の patch count が 0（run 前と同一）であることを監査。
 
 ---
 
@@ -66,45 +64,47 @@ https://github.com/toshinka/tegaki/commit/e830ef9df25e5d36d8ac40e405a4edc7bbfed4
 
 ---
 
-## Performance (Estimated / Live Metric Target)
-- 1 ステップあたりの repatch オーバーヘッド: 約 30〜60 ms (Branch A + Branch B)
-- 20 steps サンプリング時追加時間: 約 0.6〜1.2 秒（Oracle 参照基準として極めて高速に動作可能）。
+## Performance & Overhead Model
+- **Repatch Overhead Estimate**: 約 0.6〜1.2 秒 / 20 steps (Branch A + Branch B 合計)
+- **Total Generation Overhead**: 2 回の UNet forward 実行が主コスト（ユーザー実測ログにより集計予定）。
 
 ---
 
-## Automated / Smoke Tests
-- [x] Base patch / existing wrapper guard
-- [x] `<lora:...>` prompt tag stripping guard
-- [x] LoRA state dict load & UNet patch registration
-- [x] Multi-layer exact tensor restore verification
-- [x] Stale wrapper recovery verification
+## Smoke & Validation Checklist
+### Code Path Verification
+- [x] LoRA UI weight mapped to `strength_patch` (`strength_model = 1.0`)
+- [x] `patch_model()` placed inside `try...finally` in `run_branch()`
+- [x] Stale wrapper metadata recovery logic implemented
+- [x] Strict preflight guards enforced (Batch size 1, txt2img, Hires fix OFF, ControlNet OFF, Clean base, `<lora:...>` stripping)
+- [x] LoRA accepted keys verification (> 0 keys)
+- [x] Same A/A numerical difference measurement implemented
+
+### Actual WebUI Sampling & Visual Validation
+- [ ] Smoke 1: Enable OFF baseline generation
+- [ ] Smoke 2: Preflight block test (Blocked state verification)
+- [ ] Smoke 3: Same A/A numerical check (`max_abs_diff ≈ 0`)
+- [ ] Smoke 4: Zero strength check (`Weight=0.0 ≈ No LoRA baseline`)
+- [ ] Smoke 5: Regional A/B sampling & timing summary
+- [ ] User Visual Validation Test Matrix (7 or 8 conditions)
 
 ---
 
-## User Visual Validation
-**STATUS: PENDING USER TEST**
-
-以下の対照実験マトリクスによる視覚確認を依頼：
+## User Visual Validation Matrix
+ユーザー様による以下の 7〜8 条件の比較テストを実施：
 1. **Control 0**: No LoRA (Baseline)
 2. **Control A**: Global LoRA A
 3. **Control B**: Global LoRA B
 4. **Control AB**: Global LoRA A + B
-5. **Experimental**: RLL Left=A / Right=B
-6. **Swap Test**: RLL Left=B / Right=A
-7. **Same Test**: RLL Left=A / Right=A
-
----
-
-## Known Problems & Limitations
-- **Multi-Pass Overhead**: UNet forward を 1 ステップあたり 2 回実行するため、純粋な forward 時間は約 2 倍となります（※Oracle 基準正解系としての意図的トレードオフ）。
-- **Receptive Field / Attention Influence**: A/B branch は画像全体の latent を参照するため、重みは分離されていても大域的な構図・文脈による意味的相互作用は残り得ます（※完全無漏洩ではなく、Global A+B に対する明確な漏洩低減を目標とします）。
-- **Text Encoder UNet Mismatch**: TE LoRA を無効化（0.0）しているため、Text Encoder 依存の強いトリガー単語では発火が弱まる可能性があります（Phase 2 で調査予定）。
+5. **Regional AB**: RLL ON (Left=LoRA A / Right=LoRA B)
+6. **Swap BA**: RLL ON (Left=LoRA B / Right=LoRA A)
+7. **Same AA**: RLL ON (Left=LoRA A / Right=LoRA A)
+8. *(Optional)* **Zero AA**: RLL ON (Left=LoRA A 0.0 / Right=LoRA A 0.0)
 
 ---
 
 ## Decision
-**WAITING FOR USER / GPT REVIEW**  
-コード実装・安全機構・Preflight は完了。ユーザーによる視覚テスト結果およびコンソールログの確認後、Phase 1 の最終判定を行う。
+**IMPLEMENTED / PRE-VALIDATION READY**  
+CRITICAL な修正（`strength_patch` 引数修正、`run_branch` try/finally 強化、Preflight ガード追加、Same A/A 数値検証）を完了。ユーザー視覚検証テストの準備が整った状態。
 
 ---
 
