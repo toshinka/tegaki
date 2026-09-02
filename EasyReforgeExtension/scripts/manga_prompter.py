@@ -1,7 +1,7 @@
 """
 EasyReforge Manga Prompter - Main Script & Gradio UI
-Version: v3.7.3 Global Effect / Base Branch 復活・段階Oracle版
-Golden Reference: sd-forge-couple v4.0.2 / v3.7.3 Global Effect Specification
+Version: v3.7.4 Regional Core + CSP-Style Panel Editor
+Golden Reference: sd-forge-couple v4.0.2 / v3.7.4 Specification
 """
 
 import os
@@ -74,14 +74,34 @@ class MangaPrompterScript(scripts.Script):
                     </div>
                 </div>
 
-                <!-- ツール＆操作バー -->
+                <!-- ツール＆操作バー (CSP風 分類整理) -->
                 <div class="manga-toolbar-main">
-                    <button type="button" class="manga-btn manga-btn-primary" onclick="window.mangaPrompterSplit('h')" title="選択中のコマを横に2分割">＋ 横スラッシュ</button>
-                    <button type="button" class="manga-btn manga-btn-primary" onclick="window.mangaPrompterSplit('v')" title="選択中のコマを縦に2分割">＋ 縦スラッシュ</button>
-                    <button type="button" class="manga-btn" id="manga-btn-draw-rect" onclick="window.mangaPrompterToggleDrawRect()" title="キャンバス上をドラッグして自由な四角形コマを作成">＋ 矩形ドラッグ作成</button>
-                    <button type="button" class="manga-btn" onclick="window.mangaPrompterAddInset()" title="選択中のコマ内にカットイン小ゴマを配置">🔲 カットイン(入れ子)</button>
-                    <button type="button" class="manga-btn" id="manga-btn-merge" onclick="window.mangaPrompterMerge()" title="選択中の複数コマまたは隣接コマを合体">🔗 コマを結合</button>
-                    <button type="button" class="manga-btn manga-btn-highlight" onclick="window.mangaPrompterInsertTemplateToMainPrompt()" title="メインプロンプト欄に現在のコマ割りに合わせた5chunk(PAGE+STYLE+各コマ)テンプレートを挿入">📝 メインプロンプト欄にテンプレ枠を挿入</button>
+                    <!-- ツール切替 -->
+                    <div class="manga-tool-group">
+                        <span class="manga-group-label">ツール:</span>
+                        <button type="button" class="manga-btn active" id="manga-btn-tool-select" onclick="window.mangaPrompterSetTool('select')" title="選択・コマ移動・境界ドラッグ・8方向リサイズ">🖱 選択・編集</button>
+                        <button type="button" class="manga-btn" id="manga-btn-tool-slice" onclick="window.mangaPrompterSetTool('slice')" title="クリスタ風 枠線分割スライス (交差線でコマを正確に切断)">✂ スライス</button>
+                        <button type="button" class="manga-btn" id="manga-btn-tool-drawrect" onclick="window.mangaPrompterSetTool('drawRect')" title="ドラッグして自由な矩形コマを作成">▭ 矩形コマ</button>
+                    </div>
+
+                    <!-- クイック分割・結合 -->
+                    <div class="manga-tool-group">
+                        <span class="manga-group-label">クイック:</span>
+                        <button type="button" class="manga-btn manga-btn-primary" onclick="window.mangaPrompterSplit('h')" title="選択中のコマを横に均等2分割">＋ 横分割</button>
+                        <button type="button" class="manga-btn manga-btn-primary" onclick="window.mangaPrompterSplit('v')" title="選択中のコマを縦に均等2分割">＋ 縦分割</button>
+                        <button type="button" class="manga-btn" id="manga-btn-merge" onclick="window.mangaPrompterMerge()" title="選択中の複数コマまたは隣接コマを合体">🔗 コマ結合</button>
+                    </div>
+
+                    <!-- 領域関係モード -->
+                    <div class="manga-tool-group">
+                        <span class="manga-group-label">領域関係:</span>
+                        <button type="button" class="manga-btn" id="manga-btn-interaction-mode" onclick="window.mangaPrompterToggleInteractionMode()" title="コマ連結（別コマ・くり抜き）と 重なり許可（同一シーン・共存）の切替">🔗 コマ連結 (Exclusive)</button>
+                    </div>
+
+                    <!-- テンプレート挿入 -->
+                    <div class="manga-tool-group">
+                        <button type="button" class="manga-btn manga-btn-highlight" onclick="window.mangaPrompterInsertTemplateToMainPrompt()" title="メインプロンプト欄に現在のコマ割りに合わせたN+2テンプレートを挿入">📝 テンプレ枠を挿入</button>
+                    </div>
                 </div>
 
                 <!-- プリセットバー -->
@@ -90,7 +110,6 @@ class MangaPrompterScript(scripts.Script):
                     <button type="button" class="manga-preset-btn" onclick="window.mangaPrompterApplyPreset('4koma')">4コマ (均等)</button>
                     <button type="button" class="manga-preset-btn" onclick="window.mangaPrompterApplyPreset('3panel')">3コマ (大1小2)</button>
                     <button type="button" class="manga-preset-btn" onclick="window.mangaPrompterApplyPreset('5panel')">5コマ (標準)</button>
-                    <button type="button" class="manga-preset-btn" onclick="window.mangaPrompterApplyPreset('inset')">カットイン (入れ子)</button>
                     <button type="button" class="manga-preset-btn" onclick="window.mangaPrompterApplyPreset('6panel')">6コマ (2列3段)</button>
                 </div>
 
@@ -100,8 +119,8 @@ class MangaPrompterScript(scripts.Script):
                         <div class="manga-canvas-wrapper" id="manga-canvas-wrapper-el">
                             <svg id="manga-canvas-svg"></svg>
                         </div>
-                        <div class="manga-canvas-hint">
-                            💡 <span>ドラッグでスライス切断 / 境界線をドラッグで伸縮 / DELキーでコマ削除 / Shift+クリックで複数選択</span>
+                        <div class="manga-canvas-hint" id="manga-canvas-hint-text">
+                            💡 <span>[選択モード] コマ選択 / 共通境界ドラッグ / ハンドルで伸縮 / DELキーで削除</span>
                         </div>
                     </div>
 
@@ -124,7 +143,7 @@ class MangaPrompterScript(scripts.Script):
         return [is_enabled, global_effect_weight, json_bridge]
 
     def after_extra_networks_activate(self, p, is_enabled, global_effect_weight, json_bridge, *args, **kwargs):
-        """v3.7.3: PAGEとSTYLEを分離し、main conditioningからRegion本文を除去"""
+        """v3.7.4: PAGEとSTYLEを分離し、main conditioningからRegion本文を除去"""
         self.valid = False
         self.resolved_prompts = []
         self.sorted_panels = []
@@ -144,7 +163,7 @@ class MangaPrompterScript(scripts.Script):
 
         prompts = kwargs.get("prompts")
         if not isinstance(prompts, list) or len(prompts) != 1:
-            print("[MangaPrompter][ERROR] Batch Size 1 required for v3.7.3 diagnostic.")
+            print("[MangaPrompter][ERROR] Batch Size 1 required for v3.7.4 diagnostic.")
             return
 
         resolved_full_prompt = prompts[0]
@@ -170,7 +189,7 @@ class MangaPrompterScript(scripts.Script):
 
         tag_regex = re.compile(r'^(\[?(コマ|koma|panel|p)\s*(\d+)\]?|(\d+)\s*(コマ|koma|panel|p))\s*:?\s*', re.IGNORECASE)
 
-        print("[MangaPrompter][v3.7.3 GLOBAL EFFECT]")
+        print("[MangaPrompter][v3.7.4 GLOBAL EFFECT]")
         print(f"  PAGE STRUCTURE    = {page_text!r}")
         print(f"  GLOBAL STYLE      = {style_text!r}")
         print(f"  MAIN CONDITIONING = {main_conditioning_prompt!r}")
@@ -209,11 +228,13 @@ class MangaPrompterScript(scripts.Script):
             unet = p.sd_model.forge_objects.unet.clone()
             is_sdxl = getattr(p.sd_model, "is_sdxl", True)
 
-            # MangaSpatialEngine でマスクを一元生成
+            # MangaSpatialEngine でマスクを一元生成 (interactionMode対応)
             device = 'cpu'
             spatial_regions = MangaSpatialEngine.generate_spatial_masks(
                 self.sorted_panels, height=p.height, width=p.width, device=device
             )
+
+            interaction_mode = self.sorted_panels[0].get('interactionMode', 'exclusive') if self.sorted_panels else 'exclusive'
 
             fc_args = {}
 
@@ -244,11 +265,13 @@ class MangaPrompterScript(scripts.Script):
 
             # ログ: Branch Mapping
             print("[MangaPrompter][BRANCH MAP]")
+            print(f"  MODE:     {interaction_mode.upper()} (Exclusive=くり抜き / Overlap=共存)")
             print(f"  BASE:     mask_weight=0, content=k_target (unused positive base)")
             print(f"  GLOBAL:   cond_1, mask_1=fullscreen * {global_effect_weight:.2f}, prompt={global_effect_text!r}")
             for i, r_info in enumerate(self.resolved_prompts):
                 cond_index = i + 2
-                print(f"  REGION {i + 1}: cond_{cond_index}, mask_{cond_index}, panel_index={i+1}, weight={r_info['weight']:.2f}, prompt={r_info['resolved_text']!r}")
+                panel_rect = self.sorted_panels[i].get('rect', {})
+                print(f"  REGION {i + 1}: cond_{cond_index}, mask_{cond_index}, panel_index={i+1}, rect={panel_rect}, weight={r_info['weight']:.2f}, prompt={r_info['resolved_text']!r}")
 
             # base_mask は強制 ZERO
             base_mask = empty_tensor(p.height, p.width)

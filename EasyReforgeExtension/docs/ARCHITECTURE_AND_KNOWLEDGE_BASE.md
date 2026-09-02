@@ -17,33 +17,29 @@ Stable Diffusion（特に SDXL / Illustrious 系モデル）において、1ペ�
 ### ① プロンプト構文とモデルの解釈特性
 | プロンプト構造 | モデルの挙動 (SDXL/Illustrious) | 分析・知見 |
 | :--- | :--- | :--- |
-| `3koma...` を全コマに自動結合（Common Prepend） | **1枚絵に崩壊（女の子1人のみ）** | 各コマの狭い空間マスクの中で「3コマ漫画全体を描け」という矛盾命令になり破綻。 |
-| **v3.7.2: base_mask = 0 のみ** | **コマ割りが消え、1枚絵の足元に崩壊** | 全画面の全体構造（`PAGE`）の寄与がゼロになり、第1コマのプロンプトが画面全体を支配した。 |
-| **v3.7.3: Global Effect (cond_1, mask_1) 独立注入** | **全体構造（約20%）とコマ別被写体（約80%）が協調** | 全画面マスクで `PAGE + STYLE` を弱く下敷きにし、各コママスクで被写体を独立注入。 |
+| **上下2分割 (v3.7.3)** | **上：車、下：りんごが完璧に分離して生成** | 上下方向のアテンションマスク制御と重み付けが極めて強力に機能することを確認。 |
+| **左右2分割 (v3.7.3)** | 車の上にりんごが乗る（1つの構図に吸収） | モデルの左右方向への semantic isolation の弱さ。左右分離の強化が必要。 |
+| **v3.7.4: Exclusive vs Overlap モード** | **別コマ（くり抜き）と同一シーン（ブレンド）の共存** | Z-Indexくり抜き有無を制御可能にし、漫画の別コマ分離と人物近接の両方に対応。 |
 
 ---
 
-## 3. v3.7.3 確定アーキテクチャ（Global Effect Branch 方式）
+## 3. v3.7.4 確定アーキテクチャ（Exclusive ⇄ Overlap ＆ CSP Panel Editor）
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. ユーザー入力（N + 2 chunk 構造）                        │
-│    chunk 0: PAGE STRUCTURE (例: multiple scene composition)  │
-│    BREAK                                                    │
-│    chunk 1: GLOBAL STYLE (例: clean illustration...)         │
-│    BREAK                                                    │
-│    chunk 2: REGION 1 (例: koma 1: red sports car)           │
-│    BREAK                                                    │
-│    chunk 3: REGION 2 (例: koma 2: blue ocean)               │
+│ 1. ツールモード (CLIP STUDIO PAINT 思想)                    │
+│    ・🖱 選択・編集 (Select): 選択、共通境界ドラッグ、8方向リサイズ│
+│    ・✂ スライス (Slice): Liang-Barsky 交差判定による直線切断  │
+│    ・▭ 矩形コマ (DrawRect): ドラッグによる自由四角形作成     │
 ├─────────────────────────────────────────────────────────────┤
-│ 2. Attention Couple Branch 構成                             │
+│ 2. 領域関係モード (Interaction Mode)                        │
+│    ・🔗 コマ連結 (Exclusive): Z-Indexくり抜きあり・別コマ用  │
+│    ・◫ 重なり許可 (Overlap): Z-Indexくり抜きなし・共存ブレンド用 │
+├─────────────────────────────────────────────────────────────┤
+│ 3. Attention Couple Branch 構成                             │
 │    ・BASE (k_target): mask_weight = 0 (未使用)               │
 │    ・GLOBAL EFFECT (cond_1): PAGE+STYLE, mask=全画面*0.25    │
 │    ・REGION 1 (cond_2): STYLE+R1, mask=Region1マスク*1.0     │
 │    ・REGION 2 (cond_3): STYLE+R2, mask=Region2マスク*1.0     │
-├─────────────────────────────────────────────────────────────┤
-│ 3. 正規化後の効き具合                                       │
-│    ・全体構造/画風: 約 20%                                   │
-│    ・各コマ固有内容: 約 80%                                 │
 └─────────────────────────────────────────────────────────────┘
 ```
