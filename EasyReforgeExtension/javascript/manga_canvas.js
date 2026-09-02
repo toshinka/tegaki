@@ -1,4 +1,4 @@
-/* EasyReforge Manga Prompter - Main Prompt Live Sync & Visual Info Panel (v3.1 Plan A) */
+/* EasyReforge Manga Prompter - Main Prompt Live Sync & CSP-Style Panel Editor (v3.7.4) */
 
 (function () {
     'use strict';
@@ -18,11 +18,14 @@
         panels: [],
         selectedIds: new Set(),
         primarySelectedId: null,
-        mode: 'select',
+        toolMode: 'select', // 'select' | 'slice' | 'drawRect'
+        interactionMode: 'exclusive', // 'exclusive' (コマ連結/くり抜き) | 'overlap' (重なり許可/共存)
         viewMode: 'color', // 'color' または 'lineart'
         sliceLine: null,
+        sliceCandidate: null,
         drawRectBox: null,
         isDragging: false,
+        activeHandle: null, // Overlap mode resize handle
         history: [],
         historyIndex: -1,
         aspectRatio: 1216 / 832,
@@ -45,7 +48,10 @@
         if (state.historyIndex < state.history.length - 1) {
             state.history = state.history.slice(0, state.historyIndex + 1);
         }
-        state.history.push(JSON.stringify(state.panels));
+        state.history.push(JSON.stringify({
+            panels: state.panels,
+            interactionMode: state.interactionMode
+        }));
         state.historyIndex++;
         if (state.history.length > 50) {
             state.history.shift();
@@ -57,8 +63,11 @@
     window.mangaPrompterUndo = function () {
         if (state.historyIndex > 0) {
             state.historyIndex--;
-            state.panels = JSON.parse(state.history[state.historyIndex]);
+            const snap = JSON.parse(state.history[state.historyIndex]);
+            state.panels = snap.panels;
+            if (snap.interactionMode) state.interactionMode = snap.interactionMode;
             sortAndAssignPanels();
+            updateInteractionModeUI();
             render();
             syncToGradio();
             updateHistoryButtons();
@@ -68,8 +77,11 @@
     window.mangaPrompterRedo = function () {
         if (state.historyIndex < state.history.length - 1) {
             state.historyIndex++;
-            state.panels = JSON.parse(state.history[state.historyIndex]);
+            const snap = JSON.parse(state.history[state.historyIndex]);
+            state.panels = snap.panels;
+            if (snap.interactionMode) state.interactionMode = snap.interactionMode;
             sortAndAssignPanels();
+            updateInteractionModeUI();
             render();
             syncToGradio();
             updateHistoryButtons();
@@ -81,6 +93,60 @@
         const redoBtn = document.getElementById('manga-btn-redo');
         if (undoBtn) undoBtn.disabled = (state.historyIndex <= 0);
         if (redoBtn) redoBtn.disabled = (state.historyIndex >= state.history.length - 1);
+    }
+
+    // ツールモード切替 (Select / Slice / DrawRect)
+    window.mangaPrompterSetTool = function (tool) {
+        state.toolMode = tool;
+        const btnSelect = document.getElementById('manga-btn-tool-select');
+        const btnSlice = document.getElementById('manga-btn-tool-slice');
+        const btnDrawRect = document.getElementById('manga-btn-tool-drawrect');
+        const hintEl = document.getElementById('manga-canvas-hint-text');
+
+        if (btnSelect) btnSelect.classList.toggle('active', tool === 'select');
+        if (btnSlice) btnSlice.classList.toggle('active', tool === 'slice');
+        if (btnDrawRect) btnDrawRect.classList.toggle('active', tool === 'drawRect');
+
+        if (hintEl) {
+            if (tool === 'select') {
+                hintEl.innerHTML = '💡 <span>[選択モード] コマ選択 / 共通境界ドラッグ / ハンドルで伸縮 / DELキーで削除</span>';
+            } else if (tool === 'slice') {
+                hintEl.innerHTML = '💡 <span>[スライスモード] コマ上を直線ドラッグで切断 (クリスタ風 枠線分割)</span>';
+            } else if (tool === 'drawRect') {
+                hintEl.innerHTML = '💡 <span>[矩形モード] キャンバス上をドラッグして新しい自由四角形コマを作成</span>';
+            }
+        }
+
+        const svg = document.getElementById('manga-canvas-svg');
+        if (svg) {
+            svg.style.cursor = (tool === 'select') ? 'default' : 'crosshair';
+        }
+        render();
+    };
+
+    // 領域関係モード切替 (Exclusive ⇄ Overlap)
+    window.mangaPrompterToggleInteractionMode = function () {
+        state.interactionMode = (state.interactionMode === 'exclusive') ? 'overlap' : 'exclusive';
+        updateInteractionModeUI();
+        state.panels.forEach(p => p.interactionMode = state.interactionMode);
+        pushHistory();
+        render();
+        syncToGradio();
+    };
+
+    function updateInteractionModeUI() {
+        const btn = document.getElementById('manga-btn-interaction-mode');
+        if (btn) {
+            if (state.interactionMode === 'overlap') {
+                btn.textContent = '◫ 重なり許可 (Overlap)';
+                btn.classList.add('manga-btn-overlap', 'active');
+                btn.title = '重なり許可: 同一シーン・人物近接・共存ブレンド';
+            } else {
+                btn.textContent = '🔗 コマ連結 (Exclusive)';
+                btn.classList.remove('manga-btn-overlap', 'active');
+                btn.title = 'コマ連結: 別コマ・くり抜き・干渉防止';
+            }
+        }
     }
 
     // 表示モード切り替え（カラー ⇄ 白黒線画）
@@ -147,14 +213,15 @@
             const original = state.panels.find(item => item.id === p.id);
             if (original) {
                 original.index = idx + 1;
-                original.name = `コマ ${idx + 1}` + (original.zIndex > 0 ? ' (カットイン)' : '');
+                original.name = `コマ ${idx + 1}` + (original.zIndex > 0 ? ' (重なり)' : '');
                 original.color = PANEL_COLORS[idx % PANEL_COLORS.length];
                 if (original.weight === undefined) original.weight = 1.0;
+                original.interactionMode = state.interactionMode;
             }
         });
     }
 
-    // メインプロンプト欄のリアルタイム解析 (v3.7.2: PAGE + STYLE + REGIONS)
+    // メインプロンプト欄のリアルタイム解析 (v3.7.4: PAGE + STYLE + REGIONS)
     function parseMainPrompt() {
         const mainPromptEl = document.querySelector('#txt2img_prompt textarea') || 
                              document.querySelector('#img2img_prompt textarea') ||
@@ -193,7 +260,7 @@
         renderSummaryList();
     }
 
-    // メインプロンプト欄へのテンプレート挿入 (v3.7.3: Diagnostic N+2構造)
+    // メインプロンプト欄へのテンプレート挿入 (v3.7.4: Diagnostic N+2構造)
     window.mangaPrompterInsertTemplateToMainPrompt = function () {
         const mainPromptEl = document.querySelector('#txt2img_prompt textarea') || 
                              document.querySelector('#img2img_prompt textarea') ||
@@ -225,7 +292,7 @@
         parseMainPrompt();
     };
 
-    // スラッシュ分割
+    // クイックスプリット（横分割 / 縦分割）
     window.mangaPrompterSplit = function (direction) {
         let target = state.panels.find(p => p.id === state.primarySelectedId) || state.panels[0];
         if (!target) return;
@@ -248,7 +315,8 @@
             zIndex: target.zIndex || 0,
             color: '#888888',
             name: '新規コマ',
-            weight: 1.0,
+            weight: target.weight || 1.0,
+            interactionMode: state.interactionMode
         };
 
         state.panels.push(newPanel);
@@ -260,21 +328,6 @@
         pushHistory();
         render();
         syncToGradio();
-    };
-
-    // 矩形ドラッグ作成モード
-    window.mangaPrompterToggleDrawRect = function () {
-        state.mode = (state.mode === 'drawRect') ? 'select' : 'drawRect';
-        const btn = document.getElementById('manga-btn-draw-rect');
-        if (btn) {
-            if (state.mode === 'drawRect') {
-                btn.classList.add('active');
-                btn.textContent = '✏️ 矩形ドラッグ中 (解除)';
-            } else {
-                btn.classList.remove('active');
-                btn.textContent = '＋ 矩形ドラッグ作成';
-            }
-        }
     };
 
     // コマ結合
@@ -353,37 +406,6 @@
         }
     };
 
-    // 入れ子コマ追加
-    window.mangaPrompterAddInset = function () {
-        let parent = state.panels.find(p => p.id === state.primarySelectedId) || state.panels[0];
-        if (!parent) return;
-
-        const pr = parent.rect;
-        const inset = {
-            id: generateId(),
-            rect: {
-                x: pr.x + pr.w * 0.25,
-                y: pr.y + pr.h * 0.25,
-                w: pr.w * 0.5,
-                h: pr.h * 0.5,
-            },
-            zIndex: (parent.zIndex || 0) + 1,
-            color: '#FDD835',
-            name: 'カットイン',
-            weight: 1.2,
-        };
-
-        state.panels.push(inset);
-        state.selectedIds.clear();
-        state.selectedIds.add(inset.id);
-        state.primarySelectedId = inset.id;
-
-        sortAndAssignPanels();
-        pushHistory();
-        render();
-        syncToGradio();
-    };
-
     // コマ削除
     window.mangaPrompterDelete = function (id) {
         if (state.panels.length <= 1) return;
@@ -412,6 +434,7 @@
                 name: 'コマ 1 (全体)',
                 index: 1,
                 weight: 1.0,
+                interactionMode: state.interactionMode
             }
         ];
         state.selectedIds.clear();
@@ -445,12 +468,6 @@
                 { rect: { x: 0.5, y: 0.7, w: 0.5, h: 0.3 }, zIndex: 0 },
                 { rect: { x: 0, y: 0.7, w: 0.5, h: 0.3 }, zIndex: 0 },
             ],
-            'inset': [
-                { rect: { x: 0, y: 0, w: 1, h: 0.6 }, zIndex: 0 },
-                { rect: { x: 0.55, y: 0.05, w: 0.4, h: 0.35 }, zIndex: 1 },
-                { rect: { x: 0.5, y: 0.6, w: 0.5, h: 0.4 }, zIndex: 0 },
-                { rect: { x: 0, y: 0.6, w: 0.5, h: 0.4 }, zIndex: 0 },
-            ],
             '6panel': [
                 { rect: { x: 0.5, y: 0, w: 0.5, h: 0.333 }, zIndex: 0 },
                 { rect: { x: 0, y: 0, w: 0.5, h: 0.333 }, zIndex: 0 },
@@ -471,6 +488,7 @@
             color: '#888888',
             name: '',
             weight: 1.0,
+            interactionMode: state.interactionMode
         }));
 
         state.selectedIds.clear();
@@ -487,19 +505,135 @@
         if (jsonInput) {
             jsonInput.value = JSON.stringify(state.panels);
             jsonInput.dispatchEvent(new Event('input', { bubbles: true }));
-            jsonInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
         renderSummaryList();
     }
 
+    // --- クリスタ風 スライス交差判定 (Liang-Barsky Line Clipping) ---
+    function computeLineRectIntersection(p1, p2, rect) {
+        let t0 = 0.0, t1 = 1.0;
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+
+        const p = [-dx, dx, -dy, dy];
+        const q = [
+            p1.x - rect.x,
+            rect.x + rect.w - p1.x,
+            p1.y - rect.y,
+            rect.y + rect.h - p1.y
+        ];
+
+        for (let i = 0; i < 4; i++) {
+            if (p[i] === 0) {
+                if (q[i] < 0) return null; // 平行で外側
+            } else {
+                const r = q[i] / p[i];
+                if (p[i] < 0) {
+                    if (r > t1) return null;
+                    if (r > t0) t0 = r;
+                } else {
+                    if (r < t0) return null;
+                    if (r < t1) t1 = r;
+                }
+            }
+        }
+
+        const enterPt = { x: p1.x + t0 * dx, y: p1.y + t0 * dy };
+        const exitPt = { x: p1.x + t1 * dx, y: p1.y + t1 * dy };
+        return { enter: enterPt, exit: exitPt, t0, t1 };
+    }
+
+    function findSliceCandidate(line) {
+        const dx = line.end.x - line.start.x;
+        const dy = line.end.y - line.start.y;
+        const isHorizontal = Math.abs(dx) >= Math.abs(dy);
+
+        let bestCandidate = null;
+        let maxCoverage = 0;
+
+        for (let p of state.panels) {
+            const hit = computeLineRectIntersection(line.start, line.end, p.rect);
+            if (!hit) continue;
+
+            let coverage = 0;
+            if (isHorizontal) {
+                coverage = Math.abs(hit.exit.x - hit.enter.x) / p.rect.w;
+            } else {
+                coverage = Math.abs(hit.exit.y - hit.enter.y) / p.rect.h;
+            }
+
+            const isSelected = (p.id === state.primarySelectedId);
+            const effectiveThreshold = isSelected ? 0.40 : 0.80;
+
+            if (coverage >= effectiveThreshold && coverage > maxCoverage) {
+                maxCoverage = coverage;
+                const midX = (hit.enter.x + hit.exit.x) / 2;
+                const midY = (hit.enter.y + hit.exit.y) / 2;
+                bestCandidate = {
+                    panel: p,
+                    coverage,
+                    isHorizontal,
+                    cutPos: isHorizontal ? midY : midX
+                };
+            }
+        }
+
+        return bestCandidate;
+    }
+
+    function applySlice(candidate) {
+        if (!candidate || !candidate.panel) return;
+
+        const target = candidate.panel;
+        const r = target.rect;
+        let newRect1, newRect2;
+
+        if (candidate.isHorizontal) {
+            const cutY = Math.max(r.y + 0.05, Math.min(r.y + r.h - 0.05, candidate.cutPos));
+            const h1 = cutY - r.y;
+            const h2 = r.h - h1;
+            newRect1 = { x: r.x, y: r.y, w: r.w, h: h1 };
+            newRect2 = { x: r.x, y: cutY, w: r.w, h: h2 };
+        } else {
+            const cutX = Math.max(r.x + 0.05, Math.min(r.x + r.w - 0.05, candidate.cutPos));
+            const w1 = cutX - r.x;
+            const w2 = r.w - w1;
+            newRect1 = { x: r.x, y: r.y, w: w1, h: r.h };
+            newRect2 = { x: cutX, y: r.y, w: w2, h: r.h };
+        }
+
+        target.rect = newRect1;
+        const newPanel = {
+            id: generateId(),
+            rect: newRect2,
+            zIndex: target.zIndex || 0,
+            color: '#888888',
+            name: '新規コマ',
+            weight: target.weight || 1.0,
+            interactionMode: state.interactionMode
+        };
+
+        state.panels.push(newPanel);
+        state.selectedIds.clear();
+        state.selectedIds.add(newPanel.id);
+        state.primarySelectedId = newPanel.id;
+
+        sortAndAssignPanels();
+        pushHistory();
+        render();
+        syncToGradio();
+    }
+
+    // --- メイン SVG レンダリング ---
     function render() {
         const svg = document.getElementById('manga-canvas-svg');
         if (!svg) return;
 
+        svg.innerHTML = '';
+
         const vW = 1000;
         const vH = 1000 * state.aspectRatio;
         svg.setAttribute('viewBox', `0 0 ${vW} ${vH}`);
-        svg.innerHTML = '';
 
         const isLineart = (state.viewMode === 'lineart');
 
@@ -511,8 +645,8 @@
         bg.setAttribute('stroke', isLineart ? '#000000' : '#d1d5db');
         bg.setAttribute('stroke-width', '4');
 
-        bg.addEventListener('pointerdown', () => {
-            if (state.mode !== 'drawRect') {
+        bg.addEventListener('pointerdown', (e) => {
+            if (state.toolMode === 'select') {
                 state.selectedIds.clear();
                 state.primarySelectedId = null;
                 render();
@@ -525,6 +659,7 @@
 
         sortedForDraw.forEach(p => {
             const isSelected = state.selectedIds.has(p.id);
+            const isSliceCandidate = (state.sliceCandidate && state.sliceCandidate.panel.id === p.id);
             const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
             g.setAttribute('class', `manga-panel-group ${isSelected ? 'selected' : ''}`);
             g.setAttribute('data-id', p.id);
@@ -546,14 +681,22 @@
                 rect.setAttribute('stroke-width', isSelected ? '6' : '4');
             } else {
                 rect.setAttribute('fill', p.color + (isSelected ? '33' : '18'));
-                rect.setAttribute('stroke', isSelected ? '#2563eb' : p.color);
-                rect.setAttribute('stroke-width', isSelected ? '3.5' : '2');
+                if (isSliceCandidate) {
+                    rect.setAttribute('stroke', '#ea580c');
+                    rect.setAttribute('stroke-width', '4');
+                    rect.setAttribute('stroke-dasharray', '6 3');
+                } else {
+                    rect.setAttribute('stroke', isSelected ? '#2563eb' : p.color);
+                    rect.setAttribute('stroke-width', isSelected ? '3.5' : '2');
+                }
             }
             rect.setAttribute('rx', '4');
 
+            // Selectモードでのコマ選択・ドラッグ移動
             rect.addEventListener('pointerdown', (e) => {
-                if (state.mode === 'drawRect') return;
+                if (state.toolMode !== 'select') return;
                 e.stopPropagation();
+
                 if (e.shiftKey) {
                     if (state.selectedIds.has(p.id)) {
                         state.selectedIds.delete(p.id);
@@ -569,6 +712,12 @@
                     state.selectedIds.add(p.id);
                     state.primarySelectedId = p.id;
                 }
+
+                // Overlapモード時はパネル移動ドラッグを開始
+                if (state.interactionMode === 'overlap') {
+                    startPanelMove(e, p, vW, vH);
+                }
+
                 render();
                 renderSummaryList();
             });
@@ -594,142 +743,336 @@
             text.textContent = `[コマ${p.index}]`;
             g.appendChild(text);
 
+            // Overlapモード時: 選択中コマに 8 方向リサイズハンドルを描画
+            if (state.interactionMode === 'overlap' && isSelected && !isLineart) {
+                renderOverlapHandles(g, p, px, py, pw, ph, vW, vH);
+            }
+
             svg.appendChild(g);
         });
 
-        if (state.mode === 'select' && !isLineart) {
-            renderGutters(svg, vW, vH);
+        // Exclusiveモード時: コマ連結境界 (Group Gutters) を描画
+        if (state.interactionMode === 'exclusive' && state.toolMode === 'select' && !isLineart) {
+            renderGroupGutters(svg, vW, vH);
         }
 
+        // スライス線・プレビュー描画
         if (state.sliceLine) {
             const sLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
             sLine.setAttribute('x1', state.sliceLine.start.x * vW);
             sLine.setAttribute('y1', state.sliceLine.start.y * vH);
             sLine.setAttribute('x2', state.sliceLine.end.x * vW);
             sLine.setAttribute('y2', state.sliceLine.end.y * vH);
-            sLine.setAttribute('stroke', '#ef4444');
-            sLine.setAttribute('stroke-width', '3.5');
-            sLine.setAttribute('stroke-dasharray', '6 3');
+            sLine.setAttribute('stroke', state.sliceCandidate ? '#ea580c' : '#9ca3af');
+            sLine.setAttribute('stroke-width', '3');
+            sLine.setAttribute('stroke-dasharray', '5 3');
             svg.appendChild(sLine);
         }
 
+        // 矩形作成プレビュー描画
         if (state.drawRectBox) {
             const bx = Math.min(state.drawRectBox.start.x, state.drawRectBox.end.x) * vW;
             const by = Math.min(state.drawRectBox.start.y, state.drawRectBox.end.y) * vH;
             const bw = Math.abs(state.drawRectBox.end.x - state.drawRectBox.start.x) * vW;
             const bh = Math.abs(state.drawRectBox.end.y - state.drawRectBox.start.y) * vH;
 
-            const dRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            dRect.setAttribute('x', bx);
-            dRect.setAttribute('y', by);
-            dRect.setAttribute('width', bw);
-            dRect.setAttribute('height', bh);
-            dRect.setAttribute('fill', 'rgba(59, 130, 246, 0.2)');
-            dRect.setAttribute('stroke', '#3b82f6');
-            dRect.setAttribute('stroke-width', '2.5');
-            dRect.setAttribute('stroke-dasharray', '5 3');
-            svg.appendChild(dRect);
+            const rBox = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rBox.setAttribute('x', bx);
+            rBox.setAttribute('y', by);
+            rBox.setAttribute('width', bw);
+            rBox.setAttribute('height', bh);
+            rBox.setAttribute('fill', 'rgba(59, 130, 246, 0.2)');
+            rBox.setAttribute('stroke', '#3b82f6');
+            rBox.setAttribute('stroke-width', '2');
+            rBox.setAttribute('stroke-dasharray', '4 4');
+            svg.appendChild(rBox);
         }
     }
 
-    function renderGutters(svg, vW, vH) {
-        const gutters = [];
-        const threshold = 0.015;
+    // --- Overlap モード: パネルドラッグ移動 ---
+    function startPanelMove(e, panel, vW, vH) {
+        const svg = document.getElementById('manga-canvas-svg');
+        const svgRect = svg.getBoundingClientRect();
+        const startX = (e.clientX - svgRect.left) / svgRect.width;
+        const startY = (e.clientY - svgRect.top) / svgRect.height;
+        const origX = panel.rect.x;
+        const origY = panel.rect.y;
 
+        const onMove = (moveEv) => {
+            const curX = (moveEv.clientX - svgRect.left) / svgRect.width;
+            const curY = (moveEv.clientY - svgRect.top) / svgRect.height;
+            const dx = curX - startX;
+            const dy = curY - startY;
+
+            panel.rect.x = Math.max(0, Math.min(1 - panel.rect.w, origX + dx));
+            panel.rect.y = Math.max(0, Math.min(1 - panel.rect.h, origY + dy));
+            render();
+        };
+
+        const onUp = () => {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            sortAndAssignPanels();
+            pushHistory();
+            syncToGradio();
+        };
+
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+    }
+
+    // --- Overlap モード: 8方向リサイズハンドル ---
+    function renderOverlapHandles(g, panel, px, py, pw, ph, vW, vH) {
+        const handles = [
+            { id: 'nw', x: px, y: py, cursor: 'nwse-resize' },
+            { id: 'n', x: px + pw / 2, y: py, cursor: 'ns-resize' },
+            { id: 'ne', x: px + pw, y: py, cursor: 'nesw-resize' },
+            { id: 'e', x: px + pw, y: py + ph / 2, cursor: 'ew-resize' },
+            { id: 'se', x: px + pw, y: py + ph, cursor: 'nwse-resize' },
+            { id: 's', x: px + pw / 2, y: py + ph, cursor: 'ns-resize' },
+            { id: 'sw', x: px, y: py + ph, cursor: 'nesw-resize' },
+            { id: 'w', x: px, y: py + ph / 2, cursor: 'ew-resize' },
+        ];
+
+        handles.forEach(h => {
+            const circ = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circ.setAttribute('cx', h.x);
+            circ.setAttribute('cy', h.y);
+            circ.setAttribute('r', '5.5');
+            circ.setAttribute('fill', '#ffffff');
+            circ.setAttribute('stroke', '#2563eb');
+            circ.setAttribute('stroke-width', '2');
+            circ.style.cursor = h.cursor;
+
+            circ.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+                startHandleResize(e, panel, h.id, vW, vH);
+            });
+
+            g.appendChild(circ);
+        });
+    }
+
+    function startHandleResize(e, panel, handleId, vW, vH) {
+        const svg = document.getElementById('manga-canvas-svg');
+        const svgRect = svg.getBoundingClientRect();
+        const startX = (e.clientX - svgRect.left) / svgRect.width;
+        const startY = (e.clientY - svgRect.top) / svgRect.height;
+        const orig = { ...panel.rect };
+
+        const onMove = (moveEv) => {
+            const curX = (moveEv.clientX - svgRect.left) / svgRect.width;
+            const curY = (moveEv.clientY - svgRect.top) / svgRect.height;
+            const dx = curX - startX;
+            const dy = curY - startY;
+
+            let nx = orig.x, ny = orig.y, nw = orig.w, nh = orig.h;
+
+            if (handleId.includes('w')) {
+                const maxW = orig.x + orig.w - 0.05;
+                nx = Math.max(0, Math.min(maxW, orig.x + dx));
+                nw = orig.w - (nx - orig.x);
+            }
+            if (handleId.includes('e')) {
+                nw = Math.max(0.05, Math.min(1 - orig.x, orig.w + dx));
+            }
+            if (handleId.includes('n')) {
+                const maxH = orig.y + orig.h - 0.05;
+                ny = Math.max(0, Math.min(maxH, orig.y + dy));
+                nh = orig.h - (ny - orig.y);
+            }
+            if (handleId.includes('s')) {
+                nh = Math.max(0.05, Math.min(1 - orig.y, orig.h + dy));
+            }
+
+            panel.rect = { x: nx, y: ny, w: nw, h: nh };
+            render();
+        };
+
+        const onUp = () => {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            sortAndAssignPanels();
+            pushHistory();
+            syncToGradio();
+        };
+
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+    }
+
+    // --- Exclusive モード: 境界グループ連動ドラッグ (Group Gutters) ---
+    function renderGroupGutters(svg, vW, vH) {
+        const tol = 0.015;
+        const gutters = [];
+
+        // 垂直境界の抽出
         for (let i = 0; i < state.panels.length; i++) {
             for (let j = i + 1; j < state.panels.length; j++) {
-                const a = state.panels[i];
-                const b = state.panels[j];
-                if ((a.zIndex || 0) !== (b.zIndex || 0)) continue;
+                const pA = state.panels[i];
+                const pB = state.panels[j];
 
-                if (Math.abs(a.rect.x + a.rect.w - b.rect.x) < threshold) {
-                    const yStart = Math.max(a.rect.y, b.rect.y);
-                    const yEnd = Math.min(a.rect.y + a.rect.h, b.rect.y + b.rect.h);
-                    if (yEnd - yStart > 0.05) {
+                // pA の右端 ≒ pB の左端
+                if (Math.abs((pA.rect.x + pA.rect.w) - pB.rect.x) < tol) {
+                    const yStart = Math.max(pA.rect.y, pB.rect.y);
+                    const yEnd = Math.min(pA.rect.y + pA.rect.h, pB.rect.y + pB.rect.h);
+                    if (yEnd - yStart > 0.02) {
                         gutters.push({
-                            type: 'v', pos: a.rect.x + a.rect.w, start: yStart, end: yEnd, panelA: a, panelB: b
+                            type: 'v',
+                            pos: (pA.rect.x + pA.rect.w + pB.rect.x) / 2,
+                            yStart,
+                            yEnd,
+                            leftPanels: [pA],
+                            rightPanels: [pB]
                         });
                     }
-                } else if (Math.abs(b.rect.x + b.rect.w - a.rect.x) < threshold) {
-                    const yStart = Math.max(a.rect.y, b.rect.y);
-                    const yEnd = Math.min(a.rect.y + a.rect.h, b.rect.y + b.rect.h);
-                    if (yEnd - yStart > 0.05) {
+                }
+                // pB の右端 ≒ pA の左端
+                else if (Math.abs((pB.rect.x + pB.rect.w) - pA.rect.x) < tol) {
+                    const yStart = Math.max(pA.rect.y, pB.rect.y);
+                    const yEnd = Math.min(pA.rect.y + pA.rect.h, pB.rect.y + pB.rect.h);
+                    if (yEnd - yStart > 0.02) {
                         gutters.push({
-                            type: 'v', pos: b.rect.x + b.rect.w, start: yStart, end: yEnd, panelA: b, panelB: a
+                            type: 'v',
+                            pos: (pB.rect.x + pB.rect.w + pA.rect.x) / 2,
+                            yStart,
+                            yEnd,
+                            leftPanels: [pB],
+                            rightPanels: [pA]
                         });
                     }
                 }
 
-                if (Math.abs(a.rect.y + a.rect.h - b.rect.y) < threshold) {
-                    const xStart = Math.max(a.rect.x, b.rect.x);
-                    const xEnd = Math.min(a.rect.x + a.rect.w, b.rect.x + b.rect.w);
-                    if (xEnd - xStart > 0.05) {
+                // 水平境界: pA の下端 ≒ pB の上端
+                if (Math.abs((pA.rect.y + pA.rect.h) - pB.rect.y) < tol) {
+                    const xStart = Math.max(pA.rect.x, pB.rect.x);
+                    const xEnd = Math.min(pA.rect.x + pA.rect.w, pB.rect.x + pB.rect.w);
+                    if (xEnd - xStart > 0.02) {
                         gutters.push({
-                            type: 'h', pos: a.rect.y + a.rect.h, start: xStart, end: xEnd, panelA: a, panelB: b
+                            type: 'h',
+                            pos: (pA.rect.y + pA.rect.h + pB.rect.y) / 2,
+                            xStart,
+                            xEnd,
+                            topPanels: [pA],
+                            bottomPanels: [pB]
                         });
                     }
-                } else if (Math.abs(b.rect.y + b.rect.h - a.rect.y) < threshold) {
-                    const xStart = Math.max(a.rect.x, b.rect.x);
-                    const xEnd = Math.min(a.rect.x + a.rect.w, b.rect.x + b.rect.w);
-                    if (xEnd - xStart > 0.05) {
+                }
+                // pB の下端 ≒ pA の上端
+                else if (Math.abs((pB.rect.y + pB.rect.h) - pA.rect.y) < tol) {
+                    const xStart = Math.max(pA.rect.x, pB.rect.x);
+                    const xEnd = Math.min(pA.rect.x + pA.rect.w, pB.rect.x + pB.rect.w);
+                    if (xEnd - xStart > 0.02) {
                         gutters.push({
-                            type: 'h', pos: b.rect.y + b.rect.h, start: xStart, end: xEnd, panelA: b, panelB: a
+                            type: 'h',
+                            pos: (pB.rect.y + pB.rect.h + pA.rect.y) / 2,
+                            xStart,
+                            xEnd,
+                            topPanels: [pB],
+                            bottomPanels: [pA]
                         });
                     }
                 }
             }
         }
 
+        // 同一線上の境界をグループ化
+        const grouped = [];
         gutters.forEach(g => {
+            const existing = grouped.find(grp => grp.type === g.type && Math.abs(grp.pos - g.pos) < tol);
+            if (existing) {
+                if (g.type === 'v') {
+                    existing.yStart = Math.min(existing.yStart, g.yStart);
+                    existing.yEnd = Math.max(existing.yEnd, g.yEnd);
+                    g.leftPanels.forEach(lp => { if (!existing.leftPanels.includes(lp)) existing.leftPanels.push(lp); });
+                    g.rightPanels.forEach(rp => { if (!existing.rightPanels.includes(rp)) existing.rightPanels.push(rp); });
+                } else {
+                    existing.xStart = Math.min(existing.xStart, g.xStart);
+                    existing.xEnd = Math.max(existing.xEnd, g.xEnd);
+                    g.topPanels.forEach(tp => { if (!existing.topPanels.includes(tp)) existing.topPanels.push(tp); });
+                    g.bottomPanels.forEach(bp => { if (!existing.bottomPanels.includes(bp)) existing.bottomPanels.push(bp); });
+                }
+            } else {
+                grouped.push(g);
+            }
+        });
+
+        // グループ境界線の描画
+        grouped.forEach(g => {
             const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
             if (g.type === 'v') {
                 line.setAttribute('x1', g.pos * vW);
-                line.setAttribute('y1', g.start * vH);
+                line.setAttribute('y1', g.yStart * vH);
                 line.setAttribute('x2', g.pos * vW);
-                line.setAttribute('y2', g.end * vH);
+                line.setAttribute('y2', g.yEnd * vH);
+                line.style.cursor = 'col-resize';
             } else {
-                line.setAttribute('x1', g.start * vW);
+                line.setAttribute('x1', g.xStart * vW);
                 line.setAttribute('y1', g.pos * vH);
-                line.setAttribute('x2', g.end * vW);
+                line.setAttribute('x2', g.xEnd * vW);
                 line.setAttribute('y2', g.pos * vH);
+                line.style.cursor = 'row-resize';
             }
+
             line.setAttribute('stroke', '#3b82f6');
-            line.setAttribute('stroke-width', '7');
-            line.setAttribute('stroke-opacity', '0.4');
-            line.setAttribute('stroke-linecap', 'round');
-            line.style.cursor = g.type === 'v' ? 'ew-resize' : 'ns-resize';
+            line.setAttribute('stroke-width', '10');
+            line.setAttribute('stroke-opacity', '0.01'); // 透明当たり判定
+            line.setAttribute('class', 'manga-gutter-line');
+
+            line.addEventListener('pointerenter', () => line.setAttribute('stroke-opacity', '0.6'));
+            line.addEventListener('pointerleave', () => line.setAttribute('stroke-opacity', '0.01'));
 
             line.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
                 e.stopPropagation();
-                startGutterDrag(e, g, vW, vH);
+                startGroupGutterDrag(e, g, vW, vH);
             });
 
             svg.appendChild(line);
         });
     }
 
-    function startGutterDrag(e, gutter, vW, vH) {
+    function startGroupGutterDrag(e, group, vW, vH) {
         const svg = document.getElementById('manga-canvas-svg');
         const svgRect = svg.getBoundingClientRect();
+        const startX = (e.clientX - svgRect.left) / svgRect.width;
+        const startY = (e.clientY - svgRect.top) / svgRect.height;
+
+        const origLefts = (group.type === 'v') ? group.leftPanels.map(p => ({ p, r: { ...p.rect } })) : [];
+        const origRights = (group.type === 'v') ? group.rightPanels.map(p => ({ p, r: { ...p.rect } })) : [];
+        const origTops = (group.type === 'h') ? group.topPanels.map(p => ({ p, r: { ...p.rect } })) : [];
+        const origBottoms = (group.type === 'h') ? group.bottomPanels.map(p => ({ p, r: { ...p.rect } })) : [];
 
         const onMove = (moveEv) => {
-            if (gutter.type === 'v') {
-                const normX = (moveEv.clientX - svgRect.left) / svgRect.width;
-                const clampedX = Math.max(gutter.panelA.rect.x + 0.05, Math.min(gutter.panelB.rect.x + gutter.panelB.rect.w - 0.05, normX));
-                const delta = clampedX - (gutter.panelA.rect.x + gutter.panelA.rect.w);
+            const curX = (moveEv.clientX - svgRect.left) / svgRect.width;
+            const curY = (moveEv.clientY - svgRect.top) / svgRect.height;
+            const deltaX = curX - startX;
+            const deltaY = curY - startY;
 
-                gutter.panelA.rect.w += delta;
-                gutter.panelB.rect.x += delta;
-                gutter.panelB.rect.w -= delta;
+            if (group.type === 'v') {
+                // 安全クランプ判定 (5% 最小幅)
+                let valid = true;
+                origLefts.forEach(item => { if (item.r.w + deltaX < 0.05) valid = false; });
+                origRights.forEach(item => { if (item.r.w - deltaX < 0.05) valid = false; });
+
+                if (valid) {
+                    origLefts.forEach(item => { item.p.rect.w = item.r.w + deltaX; });
+                    origRights.forEach(item => {
+                        item.p.rect.x = item.r.x + deltaX;
+                        item.p.rect.w = item.r.w - deltaX;
+                    });
+                }
             } else {
-                const normY = (moveEv.clientY - svgRect.top) / svgRect.height;
-                const clampedY = Math.max(gutter.panelA.rect.y + 0.05, Math.min(gutter.panelB.rect.y + gutter.panelB.rect.h - 0.05, normY));
-                const delta = clampedY - (gutter.panelA.rect.y + gutter.panelA.rect.h);
+                let valid = true;
+                origTops.forEach(item => { if (item.r.h + deltaY < 0.05) valid = false; });
+                origBottoms.forEach(item => { if (item.r.h - deltaY < 0.05) valid = false; });
 
-                gutter.panelA.rect.h += delta;
-                gutter.panelB.rect.y += delta;
-                gutter.panelB.rect.h -= delta;
+                if (valid) {
+                    origTops.forEach(item => { item.p.rect.h = item.r.h + deltaY; });
+                    origBottoms.forEach(item => {
+                        item.p.rect.y = item.r.y + deltaY;
+                        item.p.rect.h = item.r.h - deltaY;
+                    });
+                }
             }
             render();
         };
@@ -745,12 +1088,14 @@
         window.addEventListener('pointerup', onUp);
     }
 
+    // --- キャンバスドラッグインタラクション (Slice / DrawRect) ---
     function setupCanvasDragInteraction() {
         const wrapper = document.getElementById('manga-canvas-wrapper-el');
         if (!wrapper) return;
 
         wrapper.addEventListener('pointerdown', (e) => {
-            if (e.target.tagName === 'line' || e.target.classList.contains('manga-btn')) return;
+            if (e.target.tagName === 'line' || e.target.tagName === 'circle' || e.target.classList.contains('manga-btn')) return;
+            if (state.toolMode === 'select') return;
 
             const svg = document.getElementById('manga-canvas-svg');
             const svgRect = svg.getBoundingClientRect();
@@ -759,16 +1104,17 @@
 
             state.isDragging = true;
 
-            if (state.mode === 'drawRect') {
+            if (state.toolMode === 'drawRect') {
                 state.drawRectBox = {
                     start: { x: startX, y: startY },
                     end: { x: startX, y: startY }
                 };
-            } else {
+            } else if (state.toolMode === 'slice') {
                 state.sliceLine = {
                     start: { x: startX, y: startY },
                     end: { x: startX, y: startY }
                 };
+                state.sliceCandidate = null;
             }
 
             const onMove = (moveEv) => {
@@ -776,10 +1122,11 @@
                 const curX = Math.max(0, Math.min(1, (moveEv.clientX - svgRect.left) / svgRect.width));
                 const curY = Math.max(0, Math.min(1, (moveEv.clientY - svgRect.top) / svgRect.height));
 
-                if (state.mode === 'drawRect' && state.drawRectBox) {
+                if (state.toolMode === 'drawRect' && state.drawRectBox) {
                     state.drawRectBox.end = { x: curX, y: curY };
-                } else if (state.sliceLine) {
+                } else if (state.toolMode === 'slice' && state.sliceLine) {
                     state.sliceLine.end = { x: curX, y: curY };
+                    state.sliceCandidate = findSliceCandidate(state.sliceLine);
                 }
                 render();
             };
@@ -790,7 +1137,7 @@
                 window.removeEventListener('pointermove', onMove);
                 window.removeEventListener('pointerup', onUp);
 
-                if (state.mode === 'drawRect' && state.drawRectBox) {
+                if (state.toolMode === 'drawRect' && state.drawRectBox) {
                     const bx = Math.min(state.drawRectBox.start.x, state.drawRectBox.end.x);
                     const by = Math.min(state.drawRectBox.start.y, state.drawRectBox.end.y);
                     const bw = Math.abs(state.drawRectBox.end.x - state.drawRectBox.start.x);
@@ -801,17 +1148,16 @@
                         const newPanel = {
                             id: generateId(),
                             rect: { x: bx, y: by, w: bw, h: bh },
-                            zIndex: 0,
+                            zIndex: state.panels.length,
                             color: '#888888',
                             name: '新規コマ',
                             weight: 1.0,
+                            interactionMode: state.interactionMode
                         };
                         state.panels.push(newPanel);
                         state.selectedIds.clear();
                         state.selectedIds.add(newPanel.id);
                         state.primarySelectedId = newPanel.id;
-                        state.mode = 'select';
-                        window.mangaPrompterToggleDrawRect();
                         sortAndAssignPanels();
                         pushHistory();
                         render();
@@ -819,16 +1165,13 @@
                     } else {
                         render();
                     }
-                } else if (state.sliceLine) {
-                    const sl = state.sliceLine;
+                } else if (state.toolMode === 'slice' && state.sliceLine) {
+                    const cand = state.sliceCandidate;
                     state.sliceLine = null;
-                    const dx = sl.end.x - sl.start.x;
-                    const dy = sl.end.y - sl.start.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    state.sliceCandidate = null;
 
-                    if (dist > 0.06) {
-                        const isHorizontalCut = Math.abs(dx) > Math.abs(dy);
-                        applyFreehandSlice(sl, isHorizontalCut);
+                    if (cand) {
+                        applySlice(cand);
                     } else {
                         render();
                     }
@@ -840,59 +1183,7 @@
         });
     }
 
-    function applyFreehandSlice(line, isHorizontalCut) {
-        const midX = (line.start.x + line.end.x) / 2;
-        const midY = (line.start.y + line.end.y) / 2;
-
-        const hitPanel = state.panels.find(p => {
-            const r = p.rect;
-            return midX >= r.x && midX <= r.x + r.w && midY >= r.y && midY <= r.y + r.h;
-        }) || (state.primarySelectedId ? state.panels.find(p => p.id === state.primarySelectedId) : null);
-
-        if (!hitPanel) {
-            render();
-            return;
-        }
-
-        const r = hitPanel.rect;
-        let newRect1, newRect2;
-
-        if (isHorizontalCut) {
-            const cutY = Math.max(r.y + 0.05, Math.min(r.y + r.h - 0.05, midY));
-            const h1 = cutY - r.y;
-            const h2 = r.h - h1;
-            newRect1 = { x: r.x, y: r.y, w: r.w, h: h1 };
-            newRect2 = { x: r.x, y: cutY, w: r.w, h: h2 };
-        } else {
-            const cutX = Math.max(r.x + 0.05, Math.min(r.x + r.w - 0.05, midX));
-            const w1 = cutX - r.x;
-            const w2 = r.w - w1;
-            newRect1 = { x: r.x, y: r.y, w: w1, h: r.h };
-            newRect2 = { x: cutX, y: r.y, w: w2, h: r.h };
-        }
-
-        hitPanel.rect = newRect1;
-        const newPanel = {
-            id: generateId(),
-            rect: newRect2,
-            zIndex: hitPanel.zIndex || 0,
-            color: '#888888',
-            name: '新規コマ',
-            weight: 1.0,
-        };
-
-        state.panels.push(newPanel);
-        state.selectedIds.clear();
-        state.selectedIds.add(newPanel.id);
-        state.primarySelectedId = newPanel.id;
-
-        sortAndAssignPanels();
-        pushHistory();
-        render();
-        syncToGradio();
-    }
-
-    // 右サイドバーのコマ一覧サマリー表示（メインプロンプトリアルタイム連動）
+    // --- 右サイドバーのコマ一覧サマリー表示 ---
     function renderSummaryList() {
         const container = document.getElementById('manga-panels-summary-container');
         if (!container) return;
@@ -952,11 +1243,7 @@
                 const val = parseFloat(e.target.value);
                 p.weight = val;
                 badge.textContent = val.toFixed(2);
-                const jsonInput = document.querySelector('#manga-prompter-json-bridge textarea');
-                if (jsonInput) {
-                    jsonInput.value = JSON.stringify(state.panels);
-                    jsonInput.dispatchEvent(new Event('input', { bubbles: true }));
-                }
+                syncToGradio();
             });
 
             item.addEventListener('click', (e) => {
