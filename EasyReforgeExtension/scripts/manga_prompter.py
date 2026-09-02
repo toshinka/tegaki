@@ -1,7 +1,7 @@
 """
 EasyReforge Manga Prompter - Main Script & Gradio UI
-Version: v3.7.5 Regional Core & CSP-Style Panel Editor (Logical Koma Reassignment & Style-First Ordering)
-Golden Reference: sd-forge-couple v4.0.2 / v3.7.5 Specification
+Version: v3.7.6 Internal Consistency & LoRA Scope Diagnostics
+Golden Reference: sd-forge-couple v4.0.2 / v3.7.6 Specification
 """
 
 import os
@@ -36,6 +36,8 @@ class MangaPrompterScript(scripts.Script):
         self.valid = False
         self.sorted_panels = []
         self.original_resolved_prompt = None
+        self.raw_prompt_before_extra_networks = ""
+        self.raw_extra_network_scopes = {"style": [], "page": [], "regions": {}}
         self.style_text = ""
         self.page_text = ""
 
@@ -120,12 +122,15 @@ class MangaPrompterScript(scripts.Script):
                             <svg id="manga-canvas-svg"></svg>
                         </div>
                         <div class="manga-canvas-hint" id="manga-canvas-hint-text">
-                            💡 <span>[選択モード] コマ選択 / 共通境界ドラッグ / ハンドルで伸縮 / DELキーで削除</span>
+                            💡 <span>[選択モード] コマ選択 / 共通境界ドラッグ / ハンドル伸縮 / 右側☷でコマ番号入替</span>
                         </div>
                     </div>
 
                     <div class="manga-sidebar-pane">
-                        <div class="manga-sidebar-header">📋 メインプロンプト連動プレビュー＆番号再割当</div>
+                        <div class="manga-sidebar-header">
+                            <span>📋 メインプロンプト連動プレビュー</span>
+                            <span id="manga-preflight-status-badge" class="manga-preflight-badge ok">検証中</span>
+                        </div>
                         <div class="manga-panels-summary" id="manga-panels-summary-container">
                             <!-- JSでリアルタイムパース＆プレビューを表示 -->
                         </div>
@@ -142,8 +147,33 @@ class MangaPrompterScript(scripts.Script):
 
         return [is_enabled, global_effect_weight, json_bridge]
 
+    def before_process_batch(self, p, is_enabled, global_effect_weight, json_bridge, *args, **kwargs):
+        """LoRA等のExtra Networks適用前のRaw Promptを記録し、LoRAの記載位置を診断"""
+        if not is_enabled:
+            return
+
+        prompts = kwargs.get("prompts")
+        raw_prompt = ""
+        if isinstance(prompts, list) and len(prompts) > 0:
+            raw_prompt = prompts[0]
+        elif hasattr(p, 'prompt'):
+            raw_prompt = p.prompt if isinstance(p.prompt, str) else p.prompt[0]
+
+        self.raw_prompt_before_extra_networks = raw_prompt
+        raw_slots = [c.strip() for c in re.split(r'\bBREAK\b', raw_prompt, flags=re.IGNORECASE)]
+        lora_regex = re.compile(r'<lora:[^>]+>', re.IGNORECASE)
+
+        self.raw_extra_network_scopes = {
+            "style": lora_regex.findall(raw_slots[0]) if len(raw_slots) > 0 else [],
+            "page": lora_regex.findall(raw_slots[1]) if len(raw_slots) > 1 else [],
+            "regions": {
+                i + 1: lora_regex.findall(raw_slots[i + 2]) if len(raw_slots) > i + 2 else []
+                for i in range(max(0, len(raw_slots) - 2))
+            }
+        }
+
     def after_extra_networks_activate(self, p, is_enabled, global_effect_weight, json_bridge, *args, **kwargs):
-        """v3.7.5: STYLE(画風) -> PAGE(構造) -> REGIONS の順序でパースし、main conditioningを縮小"""
+        """v3.7.6: STYLE(画風) -> PAGE(構造) -> REGIONS のスロット位置保持パースとLoRAスコープ診断"""
         self.valid = False
         self.resolved_prompts = []
         self.sorted_panels = []
@@ -164,11 +194,12 @@ class MangaPrompterScript(scripts.Script):
 
         prompts = kwargs.get("prompts")
         if not isinstance(prompts, list) or len(prompts) != 1:
-            print("[MangaPrompter][ERROR] Batch Size 1 required for v3.7.5 diagnostic.")
+            print("[MangaPrompter][ERROR] Batch Size 1 required for v3.7.6 diagnostic.")
             return
 
         resolved_full_prompt = prompts[0]
-        raw_chunks = [c.strip() for c in re.split(r'\bBREAK\b', resolved_full_prompt, flags=re.IGNORECASE) if c.strip()]
+        # 位置保持型スプリット（空slotも保持してインデックスのズレを防ぐ）
+        raw_chunks = [c.strip() for c in re.split(r'\bBREAK\b', resolved_full_prompt, flags=re.IGNORECASE)]
 
         expected_chunks = num_panels + 2
         if len(raw_chunks) != expected_chunks:
@@ -190,10 +221,19 @@ class MangaPrompterScript(scripts.Script):
 
         tag_regex = re.compile(r'^(\[?(コマ|koma|panel|p)\s*(\d+)\]?|(\d+)\s*(コマ|koma|panel|p))\s*:?\s*', re.IGNORECASE)
 
-        print("[MangaPrompter][v3.7.5 GLOBAL EFFECT]")
+        print("[MangaPrompter][v3.7.6 GLOBAL EFFECT]")
         print(f"  GLOBAL STYLE      = {style_text!r}")
         print(f"  PAGE STRUCTURE    = {page_text!r}")
         print(f"  MAIN CONDITIONING = {main_conditioning_prompt!r}")
+
+        # LoRA スコープ診断のログ出力
+        region_loras = self.raw_extra_network_scopes.get("regions", {})
+        for r_idx, loras in region_loras.items():
+            if loras:
+                print(f"[MangaPrompter][LoRA Scope] Region {r_idx} requested: {loras}")
+                print(f"  Current engine: GLOBAL extra-network activation")
+                print(f"  Regional prompt: localized")
+                print(f"  Regional UNet LoRA isolation: NOT ENABLED")
 
         for i, panel in enumerate(self.sorted_panels):
             raw_region = region_chunks[i]

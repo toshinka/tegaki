@@ -20,30 +20,29 @@ Stable Diffusion（特に SDXL / Illustrious 系モデル）において、1ペ�
 | **上下2分割 (v3.7.3/v3.7.4)** | **上：車、下：りんごが完璧に分離して生成** | 上下方向のアテンションマスク制御と重み付けが極めて強力に機能することを確認。 |
 | **左右2分割** | 車の上にりんごが乗る（1つの構図に吸収） | モデルの左右方向への semantic isolation の弱さ。 |
 | **v3.7.5: 物理領域 ＆ 論理コマ番号の分離** | **ドラッグ＆ドロップでコマ番号・適用先を即座に再割当** | 矩形形状を崩すことなく、任意の物理領域に対して任意のコマ番号（プロンプト・色）を自由に割り当て可能。 |
+| **v3.7.6: 内部整合性 ＆ LoRAスコープ診断** | **空スロット位置保持 ＆ LoRAタグ記載位置の保存・診断** | Extra Networks適用前のRaw Promptを保存し、Region内LoRAがグローバル適用であることを診断。 |
 
 ---
 
-## 3. v3.7.5 確定アーキテクチャ（Logical Koma Reassignment ＆ Style-First Ordering）
+## 3. v3.7.6 確定アーキテクチャ（Internal Consistency & LoRA Scope Diagnostics）
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │ 1. 物理領域（Region Geometry）と論理コマ番号（Logical Koma）│
 │    ・Region: stable_id (不変ID), x, y, w, h                 │
 │    ・Assignment: stable_id ↔ logical_koma_number (1..N)     │
-│    ・Color: PANEL_COLORS[(logical_koma_number - 1) % 8]     │
+│    ・Derived Metadata: refreshPanelDerivedMetadata() で同期 │
 │    ・ドラッグ＆ドロップでコマ番号を自在にスワップ再割当可能 │
 ├─────────────────────────────────────────────────────────────┤
-│ 2. プロンプト順序（STYLE 先頭・固定ラベル廃止）             │
-│    chunk 0: GLOBAL STYLE (例: clean illustration...)        │
+│ 2. 位置保持型 BREAK スロットパーサ (N+2 slots)               │
+│    Slot 0: GLOBAL STYLE (画風・品質)                        │
 │    BREAK                                                    │
-│    chunk 1: PAGE STRUCTURE (例: 4koma manga)                │
+│    Slot 1: PAGE STRUCTURE (ページ構造)                      │
 │    BREAK                                                    │
-│    chunk 2: REGION 1 (例: koma 1: red sports car...)        │
-│    BREAK                                                    │
-│    chunk 3: REGION 2 (例: koma 2: green apple...)           │
+│    Slot 2..: REGION 1..N (各コマ内容)                       │
 ├─────────────────────────────────────────────────────────────┤
-│ 3. 領域関係モード (Interaction Mode)                        │
-│    ・🔗 コマ連結 (Exclusive): Z-Indexくり抜きあり・別コマ用  │
-│    ・◫ 重なり許可 (Overlap): Z-Indexくり抜きなし・共存ブレンド用 │
+│ 3. LoRA スコープ診断 (before_process_batch)                 │
+│    ・Extra Networks適用前の Raw Prompt から LoRA タグを抽出 │
+│    ・Region 内 LoRA の検出時にログ ＆ UI 警告表示           │
 └─────────────────────────────────────────────────────────────┘
 ```

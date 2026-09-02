@@ -12,12 +12,14 @@
 ## 1. 最優先必読ドキュメント (Core Specifications, Reports & Diagnostics)
 
 ### ① 改修完了報告書（最新）
+- **v3.7.6 内部整合性＆LoRAスコープ診断 改修完了報告書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/MRP_v3.7.6_%E6%94%B9%E4%BF%AE%E5%AE%8C%E4%BA%86%E5%A0%B1%E5%91%8A%E6%9B%B8.md
 - **v3.7.5 コマ番号再割当版 改修完了報告書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/MRP_%E6%94%B9%E4%BF%AE%E5%AE%8C%E4%BA%86%E5%A0%B1%E5%91%8A%E6%9B%B8_%E5%86%85%E9%83%A8%E6%A7%8B%E9%80%A0%E3%83%96%E3%83%A9%E3%83%83%E3%82%B7%E3%83%A5%E3%82%A2%E3%83%83%E3%83%97_%E3%82%B3%E3%83%9E%E7%95%AA%E5%8F%B7%E5%86%8D%E5%89%B2%E5%BD%93%E7%89%88.md
 - **v3.7.4 改修完了報告書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.4_Implementation_Report.md
 - **v3.7.3 改修完了報告書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.3_Implementation_Report.md
 - **v3.7.2 改修完了報告書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.2_Implementation_Report.md
 
 ### ② 指示書・仕様書（正本）
+- **v3.7.6 内部整合性＆LoRAスコープ診断 改修指示書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/MRP_v3.7.6_%E5%86%85%E9%83%A8%E6%95%B4%E5%90%88%E6%80%A7_LoRA%E3%82%B9%E3%82%B3%E3%83%BC%E3%83%97%E8%A8%BA%E6%96%AD_%E6%94%B9%E4%BF%AE%E6%8C%87%E7%A4%BA%E6%9B%B8.md
 - **v3.7.5 コマ番号再割当 改修指示書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/MRP_%E6%94%B9%E4%BF%AE%E6%8C%87%E7%A4%BA%E6%9B%B8_%E5%86%85%E9%83%A8%E6%A7%8B%E9%80%A0%E3%83%96%E3%83%A9%E3%83%83%E3%82%B7%E3%83%A5%E3%82%A2%E3%83%83%E3%83%97_%E3%82%B3%E3%83%9E%E7%95%AA%E5%8F%B7%E5%86%8D%E5%89%B2%E5%BD%93%E7%89%88.md
 - **v3.7.4 Core ＆ CSP Panel Editor 改修指示書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.4_Core_and_CSP_Panel_Editor.md
 - **v3.7.3 Global Effect 改修指示書**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/EasyReforge_Manga_Prompter_v3.7.3_Global_Effect_Oracle.md
@@ -33,12 +35,12 @@
 ## 2. 主要ソースコード (Source Code)
 
 ### ① バックエンド・アテンションフック実装
-- **Attention Hook エンジン (v3.7.5)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_attention.py
-- **メインスクリプト (Gradio & Pipeline v3.7.5)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_prompter.py
-- **空間マスク生成エンジン (v3.7.5 Exclusive vs Overlap)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_spatial_engine.py
+- **Attention Hook エンジン (v3.7.6)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_attention.py
+- **メインスクリプト (Gradio & Pipeline v3.7.6)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_prompter.py
+- **空間マスク生成エンジン (v3.7.6 Exclusive vs Overlap)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_spatial_engine.py
 
 ### ② フロントエンド UI / Canvas
-- **フロントエンド Canvas JS (v3.7.5 Logical Koma Reassignment)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/javascript/manga_canvas.js
+- **フロントエンド Canvas JS (v3.7.6)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/javascript/manga_canvas.js
 - **UI スタイルシート (CSS)**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/style.css
 
 ---
@@ -46,12 +48,12 @@
 ## 3. 外部AIへのレビュープロンプト例（コピペ用）
 
 ```text
-以下のGitHub Raw URLにある「EasyReforge Manga Prompter (v3.7.5 Logical Koma Reassignment & Style-First Ordering)」のコード・指示書・改修完了報告書を読み、技術的な診断とセカンドオピニオンをお願いします。
+以下のGitHub Raw URLにある「EasyReforge Manga Prompter (v3.7.6 Internal Consistency & LoRA Scope Diagnostics)」のコード・指示書・改修完了報告書を読み、技術的な診断とセカンドオピニオンをお願いします。
 
 1. ナビゲーション＆報告書:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/GitHubURL_ERE.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/MRP_%E6%94%B9%E4%BF%AE%E5%AE%8C%E4%BA%86%E5%A0%B1%E5%91%8A%E6%9B%B8_%E5%86%85%E9%83%A8%E6%A7%8B%E9%80%A0%E3%83%96%E3%83%A9%E3%83%83%E3%82%B7%E3%83%A5%E3%82%A2%E3%83%83%E3%83%97_%E3%82%B3%E3%83%9E%E7%95%AA%E5%8F%B7%E5%86%8D%E5%89%B2%E5%BD%93%E7%89%88.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/MRP_%E6%94%B9%E4%BF%AE%E6%8C%87%E7%A4%BA%E6%9B%B8_%E5%86%85%E9%83%A8%E6%A7%8B%E9%80%A0%E3%83%96%E3%83%A9%E3%83%83%E3%82%B7%E3%83%A5%E3%82%A2%E3%83%83%E3%83%97_%E3%82%B3%E3%83%9E%E7%95%AA%E5%8F%B7%E5%86%8D%E5%89%B2%E5%BD%93%E7%89%88.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/MRP_v3.7.6_%E6%94%B9%E4%BF%AE%E5%AE%8C%E4%BA%86%E5%A0%B1%E5%91%8A%E6%9B%B8.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/%E8%A8%88%E7%94%BB%E6%9B%B8/MRP_v3.7.6_%E5%86%85%E9%83%A8%E6%95%B4%E5%90%88%E6%80%A7_LoRA%E3%82%B9%E3%82%B3%E3%83%BC%E3%83%97%E8%A8%BA%E6%96%AD_%E6%94%B9%E4%BF%AE%E6%8C%87%E7%A4%BA%E6%9B%B8.md
 
 2. 主要コード:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/EasyReforgeExtension/scripts/manga_attention.py
