@@ -85,4 +85,5 @@ Phase 1 の仕様（Candidate B: Alternating Patch Materialization / UNet LoRA o
 ---
 
 ## Latest Commit
-UPDATE_AFTER_PUSH
+https://github.com/toshinka/tegaki/commit/a061d65f56e07bba034adf80fef10b10e825e060
+(`a061d65f`)

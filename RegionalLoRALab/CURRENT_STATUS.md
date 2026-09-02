@@ -28,4 +28,5 @@ Candidate B — Alternating Patch Materialization
 - Ordinary prompt `<lora:...>` tags disabled for test
 
 ## Latest Commit:
-UPDATE_AFTER_PUSH
+https://github.com/toshinka/tegaki/commit/a061d65f56e07bba034adf80fef10b10e825e060
+(`a061d65f`)
