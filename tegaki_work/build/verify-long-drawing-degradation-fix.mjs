@@ -264,5 +264,152 @@ console.log('--- verify-long-drawing-degradation-fix: starting tests ---');
     assert.equal(targetLayerData2.paths.length, 1, 'Missing paths in snapshot must not clear layer paths');
 }
 
+// 8. Cross-layer Undo/Redo and deleted layer safety (Cases 1, 2, 3, 4)
+{
+    const W = 40;
+    const H = 40;
+    const TOTAL_BYTES = W * H * 4;
+
+    // Layer A setup
+    const layerA = {
+        id: 'layer-A',
+        layerData: { id: 'layer-A', rasterBounds: { x: 0, y: 0, width: W, height: H } },
+        pixels: new Uint8ClampedArray(TOTAL_BYTES).fill(100)
+    };
+    // Layer B setup
+    const layerB = {
+        id: 'layer-B',
+        layerData: { id: 'layer-B', rasterBounds: { x: 0, y: 0, width: W, height: H } },
+        pixels: new Uint8ClampedArray(TOTAL_BYTES).fill(200)
+    };
+
+    const initialA = new Uint8ClampedArray(layerA.pixels);
+    const initialB = new Uint8ClampedArray(layerB.pixels);
+
+    let activeLayer = layerB; // Layer B is active!
+
+    const layerManagerMock = {
+        getActiveLayer() {
+            return activeLayer;
+        },
+        getLayerById(id) {
+            if (id === 'layer-A') return layerA;
+            if (id === 'layer-B') return layerB;
+            return null;
+        },
+        createLayerRasterSnapshot(layer, options = {}) {
+            if (!layer) return null;
+            return {
+                layerId: layer.id,
+                width: W,
+                height: H,
+                pixels: new Uint8ClampedArray(layer.pixels)
+            };
+        },
+        restoreLayerRasterSnapshot(snapshot, options = {}) {
+            if (!snapshot) return false;
+            const target = this.getLayerById(snapshot.layerId);
+            if (!target) return false;
+            target.pixels.set(snapshot.pixels);
+            return true;
+        }
+    };
+
+    function createRestorePatch(layerId) {
+        return function restorePatch(targetPatch) {
+            if (!layerId || !layerManagerMock) return;
+            const targetLayer = typeof layerManagerMock.getLayerById === 'function'
+                ? layerManagerMock.getLayerById(layerId)
+                : layerManagerMock.getLayers?.().find(l => l.layerData?.id === layerId || l.id === layerId);
+            if (!targetLayer) return;
+
+            const currentSnap = layerManagerMock.createLayerRasterSnapshot(targetLayer, { includePathCollections: false });
+            if (!currentSnap) return;
+            applyPixelPatch(
+                currentSnap.pixels,
+                currentSnap.width,
+                currentSnap.height,
+                targetPatch.pixels,
+                targetPatch.rect
+            );
+            layerManagerMock.restoreLayerRasterSnapshot(currentSnap, { restorePathCollections: false });
+        };
+    }
+
+    const dirtyRect = { x: 5, y: 5, width: 10, height: 10 };
+
+    // --- Case 1: Layer A Pen stroke, Layer B active -> Undo ---
+    const afterAPen = new Uint8ClampedArray(initialA);
+    for (let r = 0; r < 10; r++) {
+        for (let c = 0; c < 10; c++) {
+            const idx = ((5 + r) * W + (5 + c)) * 4;
+            afterAPen[idx] = 255;
+            afterAPen[idx + 1] = 0;
+            afterAPen[idx + 2] = 0;
+            afterAPen[idx + 3] = 255;
+        }
+    }
+    const penBeforePatch = { rect: dirtyRect, pixels: cropPixelPatch(initialA, W, H, dirtyRect) };
+    const penAfterPatch = { rect: dirtyRect, pixels: cropPixelPatch(afterAPen, W, H, dirtyRect) };
+
+    // Set layerA to stroke result
+    layerA.pixels.set(afterAPen);
+    // Active is layerB
+    activeLayer = layerB;
+
+    const restorePatchA = createRestorePatch('layer-A');
+
+    // Execute Undo for Layer A
+    restorePatchA(penBeforePatch);
+
+    // Assert: A returns to before, B is untouched byte-for-byte
+    assert.deepEqual(layerA.pixels, initialA, 'Case 1: Layer A must be restored to initial');
+    assert.deepEqual(layerB.pixels, initialB, 'Case 1: Layer B must remain completely untouched');
+    assert.equal(activeLayer, layerB, 'Case 1: Active layer must remain layer B');
+
+    // --- Case 2: Redo -> Layer A returns to after, B untouched ---
+    restorePatchA(penAfterPatch);
+    assert.deepEqual(layerA.pixels, afterAPen, 'Case 2: Layer A must be redone to after');
+    assert.deepEqual(layerB.pixels, initialB, 'Case 2: Layer B must remain completely untouched');
+    assert.equal(activeLayer, layerB, 'Case 2: Active layer must remain layer B');
+
+    // --- Case 3: Eraser stroke on Layer A, Layer B active ---
+    const afterAEraser = new Uint8ClampedArray(afterAPen);
+    for (let r = 0; r < 10; r++) {
+        for (let c = 0; c < 10; c++) {
+            const idx = ((5 + r) * W + (5 + c)) * 4;
+            afterAEraser[idx] = 0;
+            afterAEraser[idx + 1] = 0;
+            afterAEraser[idx + 2] = 0;
+            afterAEraser[idx + 3] = 0; // erased
+        }
+    }
+    const eraserBeforePatch = { rect: dirtyRect, pixels: cropPixelPatch(afterAPen, W, H, dirtyRect) };
+    const eraserAfterPatch = { rect: dirtyRect, pixels: cropPixelPatch(afterAEraser, W, H, dirtyRect) };
+
+    // Apply eraser to layer A
+    layerA.pixels.set(afterAEraser);
+
+    // Undo Eraser
+    restorePatchA(eraserBeforePatch);
+    assert.deepEqual(layerA.pixels, afterAPen, 'Case 3: Eraser undo must restore Layer A');
+    assert.deepEqual(layerB.pixels, initialB, 'Case 3: Layer B must remain completely untouched');
+
+    // Redo Eraser
+    restorePatchA(eraserAfterPatch);
+    assert.deepEqual(layerA.pixels, afterAEraser, 'Case 3: Eraser redo must restore Layer A erased state');
+    assert.deepEqual(layerB.pixels, initialB, 'Case 3: Layer B must remain completely untouched');
+
+    // --- Case 4: Target layer deleted / does not exist ---
+    const restorePatchDeleted = createRestorePatch('layer-deleted-999');
+    // Calling restorePatch on non-existent layer must not throw, must not mutate active layer
+    assert.doesNotThrow(() => {
+        restorePatchDeleted(penBeforePatch);
+    }, 'Case 4: Must not throw when target layer does not exist');
+    assert.deepEqual(layerB.pixels, initialB, 'Case 4: Active layer B must not be mutated');
+    assert.equal(activeLayer, layerB, 'Case 4: Active layer must remain layer B');
+}
+
 console.log('verify-long-drawing-degradation-fix: ALL CHECKS PASSED');
+
 
