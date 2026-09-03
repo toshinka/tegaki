@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 8v QTP Position Preset Gate</title>
+  <style>
+    :root { --canvas:#fffdf0; --panel:#fff9e8; --border:#d4a8a0; --strong:#a8443d; --text:#800000; --muted:#a35d57; --active:#ff8c42; --blue:#2f64a3; --blue-soft:#e7f0fb; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:720px; color:var(--text); background:var(--canvas); font:600 13px/1.35 system-ui,sans-serif; }
+    button { color:inherit; font:inherit; }
+    .fixture { width:min(1240px,calc(100vw - 28px)); margin:20px auto; }
+    header { display:flex; justify-content:space-between; gap:16px; align-items:end; padding:0 4px 14px; border-bottom:2px solid var(--border); }
+    h1 { margin:0; font-size:21px; }
+    header p { max-width:700px; margin:3px 0 0; color:var(--muted); font-weight:500; }
+    .modes { display:flex; gap:6px; }
+    .modes button { min-height:34px; padding:0 11px; border:1px solid var(--border); border-radius:8px; background:var(--panel); }
+    .modes .active { border-color:var(--active); background:#fff0d9; }
+    .variants { display:grid; grid-template-columns:repeat(3,minmax(270px,1fr)); gap:16px; padding-top:18px; }
+    .variant { min-height:540px; padding:12px; border:1px solid var(--border); border-radius:14px; background:rgb(255 249 232 / 78%); }
+    .variant.recommended { border:2px solid var(--active); }
+    h2 { margin:0; font-size:15px; }
+    .verdict { min-height:54px; margin:3px 0 10px; color:var(--muted); font-size:11px; font-weight:500; }
+    .screen { position:relative; height:370px; overflow:hidden; border:1px solid var(--border); border-radius:10px; background:linear-gradient(155deg,#f5dfd2 0 48%,#fffdf0 48%); }
+    .art { position:absolute; inset:76px 68px; border:12px solid rgb(128 0 0 / 50%); border-radius:50% 48% 42% 56%; transform:rotate(-9deg); }
+    .table { position:absolute; left:8px; right:8px; bottom:8px; height:92px; border:1px solid var(--border); border-radius:9px; background:rgb(255 249 232 / 92%); }
+    .timeline { height:24px; border-bottom:1px solid var(--border); background:repeating-linear-gradient(90deg,transparent 0 23px,rgb(168 68 61 / 18%) 23px 24px); }
+    .clip { width:44%; height:22px; margin:7px 0 0 18%; border:2px solid var(--strong); border-radius:6px; background:var(--active); }
+    .qtp { position:absolute; width:136px; padding:6px; border:1px solid var(--border); border-radius:12px; background:rgb(255 253 240 / 94%); box-shadow:0 7px 17px rgb(96 40 32 / 16%); }
+    .variant-a .qtp { left:12px; top:12px; }
+    .variant-b .qtp { right:12px; top:12px; }
+    .variant-c .qtp { left:96px; top:104px; }
+    .qtp-head { position:relative; min-height:20px; display:flex; align-items:center; gap:5px; padding:0 19px 4px 2px; border-bottom:1px solid rgb(128 0 0 / 14%); }
+    .title { display:flex; flex-direction:column; margin-right:auto; font-size:9px; }
+    .title small { color:var(--muted); font-size:7px; font-weight:500; }
+    .position { width:18px; height:18px; padding:2px; border:1px solid transparent; border-radius:5px; background:transparent; }
+    .position svg { width:12px; height:12px; }
+    .close { position:absolute; top:0; right:0; width:17px; height:17px; padding:0; border:0; border-radius:5px; color:var(--panel); background:#b8706b; }
+    .deck { position:absolute; z-index:2; top:24px; right:17px; width:84px; padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--panel); box-shadow:0 7px 18px rgb(96 40 32 / 20%); }
+    .deck b { display:block; margin-bottom:4px; color:var(--blue); font-size:8px; }
+    .corners { display:grid; grid-template-columns:repeat(2,1fr); gap:4px; }
+    .corner { height:29px; padding:4px; border:1px solid #87a9cf; border-radius:6px; background:var(--blue-soft); }
+    .corner i { display:block; width:12px; height:9px; border:1px solid currentColor; border-radius:2px; }
+    .corner:nth-child(2) i,.corner:nth-child(4) i { margin-left:auto; }
+    .corner:nth-child(3) i,.corner:nth-child(4) i { margin-top:10px; }
+    .tools { display:grid; grid-template-columns:repeat(6,1fr); gap:2px; margin-top:5px; }
+    .tools i { height:17px; border:1px solid rgb(128 0 0 / 18%); border-radius:4px; background:rgb(255 255 255 / 25%); }
+    .slots { display:grid; grid-template-columns:repeat(6,1fr); gap:2px; margin-top:5px; }
+    .slots i { height:30px; border:1px solid rgb(128 0 0 / 18%); border-radius:4px; }
+    .slider { height:24px; margin-top:5px; border-radius:6px; background:#f2e2d7; }
+    .snap { position:absolute; inset:6px; border:2px dashed var(--blue); border-radius:8px; opacity:.65; pointer-events:none; }
+    .snap::after { content:'SNAP'; position:absolute; top:77px; left:75px; padding:3px 7px; border-radius:6px; color:var(--blue); background:var(--blue-soft); }
+    .flow { margin:10px 0 0; padding:7px; border-radius:7px; color:var(--muted); background:#f2e2d7; font-size:10px; font-weight:500; }
+    body.narrow .fixture { width:min(700px,calc(100vw - 20px)); }
+    body.narrow .variants { grid-template-columns:1fr; }
+    body.narrow .variant { min-height:0; }
+    @media (max-width:850px) { header { align-items:start; flex-direction:column; } .variants { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <main class="fixture">
+    <header><div><h1>Phase 8v · QTP Position Preset Gate</h1><p>自由dragと保存x / yを固定し、四隅へ大きく移す補助だけを比較する。Animation Table、QTP内容、densityは固定。</p></div><div class="modes"><button class="active" data-mode="wide">1280相当</button><button data-mode="narrow">720相当</button></div></header>
+    <section class="variants">
+      <article class="variant variant-a"><h2>A · Current free drag only</h2><p class="verdict">状態が最も少なく自由度も高い。反対側へ避ける時は長いdragが必要で、pen / touchではCanvas横断が増える。</p><div class="screen"><div class="art"></div><div class="table"><div class="timeline"></div><div class="clip"></div></div><div class="qtp"><div class="qtp-head"><span class="title">Quick<small>tool presets</small></span><button class="close">×</button></div><div class="tools"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="slots"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="slider"></div><div class="slider"></div></div></div><p class="flow">保存: x / y。入口追加なし。大移動だけが弱い。</p></article>
+      <article class="variant variant-b recommended"><h2>B · Header four-corner deck</h2><p class="verdict">第一案。位置に意味があるheaderから四隅を選び、結果だけを既存x / yへ保存する。選択後の自由dragも維持。</p><div class="screen"><div class="art"></div><div class="table"><div class="timeline"></div><div class="clip"></div></div><div class="qtp"><div class="qtp-head"><span class="title">Quick<small>tool presets</small></span><button class="position" aria-label="Palette position"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="7" cy="7" r="1.3"/><circle cx="17" cy="7" r="1.3"/><circle cx="7" cy="17" r="1.3"/><circle cx="17" cy="17" r="1.3"/></svg></button><button class="close">×</button><div class="deck"><b>PALETTE POSITION</b><div class="corners"><button class="corner"><i></i></button><button class="corner"><i></i></button><button class="corner"><i></i></button><button class="corner"><i></i></button></div></div></div><div class="tools"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="slots"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="slider"></div><div class="slider"></div></div></div><p class="flow">保存: x / yのみ。四隅は一時commandで、Preset ID / 利き手flagを持たない。</p></article>
+      <article class="variant variant-c"><h2>C · Drag edge snap</h2><p class="verdict">buttonは増えないが、精密配置とsnap thresholdが競合する。特にpen / touchで「少し端へ寄せる」と「固定」が曖昧。</p><div class="screen"><div class="art"></div><div class="table"><div class="timeline"></div><div class="clip"></div></div><div class="snap"></div><div class="qtp"><div class="qtp-head"><span class="title">Quick<small>tool presets</small></span><button class="close">×</button></div><div class="tools"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="slots"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="slider"></div><div class="slider"></div></div></div><p class="flow">新gesture thresholdが必要。初期Sliceでは採用しない。</p></article>
+    </section>
+  </main>
+  <script>document.querySelectorAll('[data-mode]').forEach((button)=>button.addEventListener('click',()=>{document.body.classList.toggle('narrow',button.dataset.mode==='narrow');document.querySelectorAll('[data-mode]').forEach((item)=>item.classList.toggle('active',item===button));}));</script>
+</body>
+</html>

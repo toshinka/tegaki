@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phase 8p Playback Range Choice comparison</title>
+<style>
+  :root {
+    --bg:#ffffee;
+    --panel:#f5dfd3;
+    --panel-soft:#fff8e9;
+    --line:#dca99d;
+    --maroon:#800000;
+    --orange:#ff6600;
+    --orange-soft:#ffd1aa;
+    --setup:#2f66a6;
+    --setup-soft:#d9e9fb;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--maroon); font:14px/1.45 system-ui,sans-serif; }
+  main { max-width:1280px; margin:auto; padding:22px; }
+  h1 { margin:0 0 4px; font-size:22px; }
+  .lead { margin:0 0 18px; opacity:.78; }
+  .variants { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+  .variant { min-width:0; padding:12px; border:2px solid var(--line); border-radius:14px; background:rgba(245,223,211,.68); }
+  .variant.recommended { border-color:var(--setup); box-shadow:0 0 0 3px var(--setup-soft); }
+  .variant.deferred { opacity:.78; }
+  .variant-title { display:flex; align-items:center; gap:8px; margin-bottom:9px; font-weight:800; }
+  .badge { padding:2px 7px; border-radius:999px; background:var(--panel-soft); border:1px solid var(--line); font-size:11px; }
+  .recommended .badge { color:var(--setup); border-color:var(--setup); background:var(--setup-soft); }
+  .table { position:relative; overflow:hidden; min-height:236px; border:2px solid var(--maroon); border-radius:11px; background:var(--panel-soft); }
+  .row { display:flex; align-items:center; gap:5px; min-height:42px; padding:5px 7px; border-bottom:1px solid var(--line); }
+  button, .chip { display:inline-flex; align-items:center; justify-content:center; min-width:29px; min-height:29px; padding:3px 7px; border:1px solid var(--line); border-radius:7px; background:var(--bg); color:var(--maroon); font:inherit; font-weight:700; }
+  .current { border-color:var(--orange); background:var(--orange-soft); }
+  .range-trigger { gap:5px; border-color:var(--setup); background:var(--setup-soft); color:var(--setup); white-space:nowrap; }
+  .range-trigger .summary { color:var(--maroon); }
+  .spacer { flex:1 1 auto; }
+  .timeline-head { display:grid; grid-template-columns:72px repeat(7,1fr); height:30px; border-bottom:1px solid var(--line); }
+  .timeline-head span { display:grid; place-items:center; border-right:1px solid var(--line); font-size:11px; }
+  .timeline { position:relative; height:106px; background:repeating-linear-gradient(90deg,transparent 0 calc(100%/7 - 1px),rgba(220,169,157,.45) calc(100%/7 - 1px) calc(100%/7)); }
+  .clip { position:absolute; left:5%; top:28px; width:57%; height:39px; border:3px solid var(--maroon); border-radius:9px; background:var(--orange); box-shadow:inset 0 0 0 2px var(--bg); }
+  .marker { position:absolute; top:0; bottom:0; width:2px; background:var(--setup); }
+  .marker::before { content:attr(data-label); position:absolute; top:2px; left:50%; transform:translateX(-50%); min-width:22px; padding:1px 4px; border:1px solid var(--setup); border-radius:5px; background:var(--setup-soft); color:var(--setup); font-weight:800; text-align:center; }
+  .marker.in { left:17%; }
+  .marker.out { left:70%; }
+  .deck { position:absolute; z-index:2; left:8px; right:8px; top:47px; display:grid; gap:6px; padding:9px; border:2px solid var(--setup); border-radius:10px; background:var(--panel); box-shadow:0 8px 18px rgba(128,0,0,.18); }
+  .deck-title { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:800; }
+  .choices { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; }
+  .choice { min-width:0; padding:5px 3px; font-size:11px; }
+  .choice.selected { border-color:var(--orange); background:var(--orange-soft); }
+  .marker-row { display:grid; grid-template-columns:32px 1fr auto; align-items:center; gap:5px; font-size:12px; }
+  .marker-row strong { color:var(--setup); }
+  .handle { position:absolute; top:2px; width:20px; height:27px; border:2px solid var(--setup); border-radius:6px; background:var(--setup-soft); color:var(--setup); font-weight:800; text-align:center; line-height:23px; }
+  .handle.in { left:15%; }
+  .handle.out { left:68%; }
+  .range-fill { position:absolute; left:17%; right:30%; top:0; bottom:0; background:rgba(47,102,166,.10); border-left:1px dashed var(--setup); border-right:1px dashed var(--setup); }
+  .notes { margin:10px 2px 0; padding-left:18px; font-size:12px; }
+  .notes li + li { margin-top:3px; }
+  .decision { margin-top:16px; padding:10px 12px; border-left:5px solid var(--setup); background:var(--setup-soft); }
+  @media (max-width:900px) {
+    main { padding:12px; }
+    .variants { grid-template-columns:1fr; }
+    .table { min-height:224px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Phase 8p — Playback Range Choice</h1>
+  <p class="lead">END / IN / OUTの保存正本とHistoryを変えず、GlanceとChoiceの情報深度だけを比較する静的fixture。</p>
+  <section class="variants">
+    <article class="variant" data-variant="current">
+      <div class="variant-title"><span class="badge">A · CURRENT</span>END cycle＋I / O</div>
+      <div class="table">
+        <div class="row"><span class="chip">ALL⌄</span><button>↻</button><button class="current">END:C</button><button>I</button><button>O</button><span class="spacer"></span><span class="chip">PREVIEW</span></div>
+        <div class="timeline-head"><span>Lane</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span></div>
+        <div class="timeline"><span class="clip"></span><span class="marker in" data-label="I"></span><span class="marker out" data-label="O"></span></div>
+      </div>
+      <ul class="notes"><li>一clickで各markerを設定できる。</li><li>三設定が常時同じ深度へ露出する。</li><li>END循環の次状態をbuttonだけでは読みにくい。</li></ul>
+    </article>
+
+    <article class="variant recommended" data-variant="focus-deck">
+      <div class="variant-title"><span class="badge">B · FIRST</span>RANGE summary＋Focus Deck</div>
+      <div class="table">
+        <div class="row"><span class="chip">ALL⌄</span><button>↻</button><button class="range-trigger">RANGE <span class="summary">C · I3 O12</span>⌄</button><span class="spacer"></span><span class="chip">PREVIEW</span></div>
+        <div class="deck">
+          <span class="deck-title">再生終端 <span class="spacer"></span>現在 F7</span>
+          <div class="choices"><button class="choice">TIMELINE</button><button class="choice selected">LAST CLIP</button><button class="choice">OUT MARKER</button></div>
+          <div class="marker-row"><strong>IN</strong><span>F3</span><button>SET / CLEAR</button></div>
+          <div class="marker-row"><strong>OUT</strong><span>F12</span><button>SET / CLEAR</button></div>
+        </div>
+        <div class="timeline-head"><span>Lane</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span></div>
+        <div class="timeline"><span class="clip"></span></div>
+      </div>
+      <ul class="notes"><li>閉状態で終端sourceとmarker値を要約。</li><li>選択肢を同時比較でき、循環誤操作を減らす。</li><li>既存setter / Historyへのprojectionで成立する。</li></ul>
+    </article>
+
+    <article class="variant deferred" data-variant="timeline-handles">
+      <div class="variant-title"><span class="badge">C · DEFER</span>Timeline直接handle</div>
+      <div class="table">
+        <div class="row"><span class="chip">ALL⌄</span><button>↻</button><span class="chip">RANGE C</span><span class="spacer"></span><span class="chip">PREVIEW</span></div>
+        <div class="timeline-head"><span>Lane</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span></div>
+        <div class="timeline"><span class="range-fill"></span><span class="clip"></span><span class="handle in">I</span><span class="handle out">O</span></div>
+      </div>
+      <ul class="notes"><li>時間との空間関係は最も強い。</li><li>Frame seek / Clip move / retimeとhitが競合する。</li><li>marker drag authorityを要するため別Gateへ送る。</li></ul>
+    </article>
+  </section>
+  <div class="decision"><strong>Stage A仮判定:</strong> Bをproduction第一候補にする。閉状態から現在値を消さず、Cの新gestureや保存stateは追加しない。</div>
+</main>
+</body>
+</html>

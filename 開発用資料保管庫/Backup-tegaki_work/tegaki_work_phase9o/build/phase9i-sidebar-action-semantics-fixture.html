@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Phase 9i Sidebar Action Semantics</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --ink: #800000;
+            --paper: #ffffee;
+            --cream: #f0e0d6;
+            --line: #d9b7ae;
+            --active: #ff8c42;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 24px; color: var(--ink); background: var(--paper); font: 14px/1.5 system-ui, sans-serif; }
+        main { max-width: 840px; margin: 0 auto; }
+        h1 { margin: 0 0 16px; font-size: 20px; }
+        .roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+        section { padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--cream) 35%, var(--paper)); }
+        h2 { margin: 0 0 10px; font-size: 14px; }
+        .sample { display: flex; align-items: center; gap: 10px; }
+        button { min-width: 38px; min-height: 38px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--paper); font: inherit; font-weight: 800; }
+        button[aria-expanded="true"], button[aria-pressed="true"] { border: 2px solid var(--active); box-shadow: 0 0 0 2px color-mix(in srgb, var(--active) 20%, transparent); }
+        code { color: var(--ink); }
+        @media (max-width: 680px) { .roles { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Sidebar role / state projection</h1>
+    <div class="roles">
+        <section data-role="command">
+            <h2>One-shot command</h2>
+            <div class="sample"><button type="button" aria-label="Import">⇩</button><code>state attributeなし</code></div>
+        </section>
+        <section data-role="popup-launcher">
+            <h2>Popup launcher</h2>
+            <div class="sample"><button type="button" aria-label="Animation Table" aria-haspopup="dialog" aria-expanded="true">A</button><code>aria-expanded</code></div>
+        </section>
+        <section data-role="temporary-mode">
+            <h2>Temporary mode</h2>
+            <div class="sample"><button type="button" aria-label="Layer Transform" aria-pressed="true">V</button><code>aria-pressed</code></div>
+        </section>
+    </div>
+</main>
+</body>
+</html>

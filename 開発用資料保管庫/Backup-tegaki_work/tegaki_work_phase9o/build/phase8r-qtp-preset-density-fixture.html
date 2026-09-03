@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 8r QTP Pen Preset Density Gate</title>
+  <style>
+    :root {
+      --canvas: #fffdf0;
+      --panel: #fff9e8;
+      --panel-strong: #f2e2d7;
+      --border: #d4a8a0;
+      --border-strong: #a8443d;
+      --text: #800000;
+      --muted: #a35d57;
+      --active: #ff8c42;
+      --active-soft: #fff0d9;
+      --qtp-width: 136px;
+      --inner-width: 124px;
+      --grid: 19px;
+      --preset-height: 32px;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 720px; color: var(--text); background: var(--canvas); font: 600 13px/1.35 system-ui, sans-serif; }
+    button { color: inherit; font: inherit; }
+    body.coarse { --qtp-width: 170px; --inner-width: 154px; --grid: 24px; --preset-height: 40px; }
+
+    .fixture { width: min(1180px, calc(100vw - 32px)); margin: 22px auto; }
+    header { display: flex; align-items: end; justify-content: space-between; gap: 20px; padding: 0 4px 16px; border-bottom: 2px solid var(--border); }
+    h1 { margin: 0; font-size: 22px; }
+    .lead { max-width: 650px; margin: 3px 0 0; color: var(--muted); font-weight: 500; }
+    .modes { display: flex; gap: 6px; }
+    .modes button { min-height: 34px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+    .modes button.active { border-color: var(--active); background: var(--active-soft); box-shadow: 0 0 0 2px rgb(255 140 66 / 18%); }
+
+    .variants { display: grid; grid-template-columns: repeat(3, minmax(270px, 1fr)); gap: 20px; padding-top: 20px; }
+    .variant { min-height: 570px; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: rgb(255 249 232 / 86%); box-shadow: 0 9px 24px rgb(96 40 32 / 15%); overflow-wrap: anywhere; }
+    .variant.recommended { border: 2px solid var(--active); }
+    .variant h2 { margin: 0; font-size: 16px; }
+    .verdict { min-height: 38px; margin: 4px 0 12px; color: var(--muted); font-size: 12px; font-weight: 500; }
+
+    .qtp { width: var(--qtp-width); margin: 0 auto; padding: 6px; border: 1px solid var(--border); border-radius: 12px; background: rgb(255 253 240 / 92%); transition: width .15s ease; }
+    .qtp-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+    .qtp-head small { display: block; color: var(--muted); font-size: 8px; font-weight: 500; }
+    .close { width: var(--grid); height: var(--grid); padding: 0; border: 0; border-radius: 6px; color: var(--panel); background: #b8706b; }
+    .label { width: var(--inner-width); margin: 5px auto 2px; color: var(--muted); font-size: 8px; }
+    .tools, .presets { width: var(--inner-width); margin: 0 auto; display: grid; grid-template-columns: repeat(6, var(--grid)); gap: 2px; justify-content: center; }
+    .tool { width: var(--grid); height: var(--grid); padding: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; }
+    .tool.active { border-color: var(--active); background: var(--active-soft); }
+
+    .preset { position: relative; width: var(--grid); height: var(--preset-height); padding: 2px 1px; border: 1px solid rgb(128 0 0 / 20%); border-radius: 5px; background: rgb(255 253 240 / 54%); overflow: hidden; }
+    .preset.active { border-color: var(--active); background: var(--active-soft); box-shadow: 0 0 0 2px rgb(255 140 66 / 20%); }
+    .ring { display: grid; width: 14px; height: 14px; margin: 0 auto; place-items: center; border: 1.5px solid rgb(128 0 0 / 44%); border-radius: 50%; }
+    body.coarse .ring { width: 18px; height: 18px; }
+    .dot { width: var(--dot, 4px); height: var(--dot, 4px); max-width: 10px; max-height: 10px; border-radius: 50%; background: var(--border-strong); opacity: var(--opacity, 1); }
+    .values { display: flex; flex-direction: column; align-items: center; font-size: 6px; line-height: 1.05; white-space: nowrap; }
+    .values b { font-size: 7px; }
+
+    .active-summary { width: var(--inner-width); min-height: 14px; display: flex; align-items: center; justify-content: space-between; margin: 5px auto 2px; padding: 1px 4px; border-radius: 5px; color: var(--muted); background: var(--panel-strong); font-size: 7px; }
+    .variant-b .preset { height: calc(var(--grid) + 7px); }
+    .variant-b .preset .values { display: block; margin-top: 1px; font-size: 7px; }
+    .variant-b .preset .opacity { display: none; }
+    .variant-b .slot-number { position: absolute; top: 0; left: 2px; color: var(--muted); font-size: 6px; }
+
+    .variant-c .presets { grid-template-columns: repeat(3, 1fr); gap: 4px; }
+    .variant-c .preset { width: auto; height: calc(var(--preset-height) + 5px); display: grid; grid-template-columns: auto 1fr; align-items: center; padding: 3px; }
+    .variant-c .values { font-size: 7px; }
+    .variant-c .values b { font-size: 8px; }
+
+    .slider { width: var(--inner-width); margin: 5px auto 0; padding: 4px 6px; border-radius: 6px; background: var(--panel-strong); }
+    .slider span { display: flex; justify-content: center; gap: 5px; color: var(--muted); font-size: 8px; }
+    .track { height: 5px; margin-top: 3px; border-radius: 99px; background: linear-gradient(90deg, var(--border-strong) 62%, var(--border) 62%); }
+    .text-utility { width: 62px; min-height: 22px; display: block; margin: 5px 0 0 auto; border: 1px solid transparent; border-radius: 5px; background: transparent; font-size: 8px; }
+    .flow { margin: 14px 0 0; padding: 8px; border-radius: 8px; color: var(--muted); background: var(--panel-strong); font-size: 11px; font-weight: 500; }
+
+    @media (max-width: 900px) {
+      .fixture { width: min(680px, calc(100vw - 20px)); }
+      header { align-items: start; flex-direction: column; }
+      .variants { grid-template-columns: 1fr; gap: 12px; }
+      .variant { min-height: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="fixture">
+    <header>
+      <div><h1>Phase 8r · QTP Pen Preset / Density Gate</h1><p class="lead">同じ6 preset authorityで、直接選択・現在値・非active比較・QTP高さを比較する。Text utilityとSIZE / OPACITYは固定。</p></div>
+      <div class="modes" aria-label="QTP幅"><button class="active" data-mode="compact">136px</button><button data-mode="coarse">170px coarse</button></div>
+    </header>
+    <section class="variants">
+      <article class="variant variant-a">
+        <h2>A · Current 6 values</h2><p class="verdict">全slotのsize / opacityを直接比較できるが、12個の極小数値とcurrent slider値が重複する。</p>
+        <div class="qtp"><div class="qtp-head"><div>Quick<small>tool presets</small></div><button class="close">×</button></div><div class="label">pen</div><div class="tools"><button class="tool active">✎</button><button class="tool">◇</button><button class="tool">⁙</button><button class="tool">⌁</button><button class="tool">◯</button><button class="tool">□</button></div><div class="label">pen slots</div><div class="presets"></div><div class="slider"><span>SIZE <b>20.0px</b></span><div class="track"></div></div><div class="slider"><span>OPACITY <b>53%</b></span><div class="track"></div></div><button class="text-utility">▣ TEXT</button></div>
+        <p class="flow">一tap / 全値比較 / 高さ32px。情報は完全だが、制作中の視線はslotとsliderへ二重に分かれる。</p>
+      </article>
+      <article class="variant variant-b recommended">
+        <h2>B · 6 size rings + active summary</h2><p class="verdict">第一案。6つの直接選択を保ち、sizeは各slot、size＋opacity精値はactive summaryへ集める。</p>
+        <div class="qtp"><div class="qtp-head"><div>Quick<small>tool presets</small></div><button class="close">×</button></div><div class="label">pen</div><div class="tools"><button class="tool active">✎</button><button class="tool">◇</button><button class="tool">⁙</button><button class="tool">⌁</button><button class="tool">◯</button><button class="tool">□</button></div><div class="active-summary"><span>PEN · SLOT 4</span><b>20px · 53%</b></div><div class="presets"></div><div class="slider"><span>SIZE <b>20.0px</b></span><div class="track"></div></div><div class="slider"><span>OPACITY <b>53%</b></span><div class="track"></div></div><button class="text-utility">▣ TEXT</button></div>
+        <p class="flow">一tap / size比較 / current精値。focusした非active slotもsummaryへpreview投影すればhover専用にしない。</p>
+      </article>
+      <article class="variant variant-c">
+        <h2>C · 3×2 larger cards</h2><p class="verdict">各値を読みやすくできるが、Presetだけで二段になりCanvas遮蔽とQTP高が増える。</p>
+        <div class="qtp"><div class="qtp-head"><div>Quick<small>tool presets</small></div><button class="close">×</button></div><div class="label">pen</div><div class="tools"><button class="tool active">✎</button><button class="tool">◇</button><button class="tool">⁙</button><button class="tool">⌁</button><button class="tool">◯</button><button class="tool">□</button></div><div class="label">pen slots</div><div class="presets"></div><div class="slider"><span>SIZE <b>20.0px</b></span><div class="track"></div></div><div class="slider"><span>OPACITY <b>53%</b></span><div class="track"></div></div><button class="text-utility">▣ TEXT</button></div>
+        <p class="flow">一tap / 全値比較 / 大hit。coarse pointerには強いが、通常136pxでも常時二段を要求する。</p>
+      </article>
+    </section>
+  </main>
+  <script>
+    const presets = [{s:'3',o:'100%',d:3},{s:'5',o:'100%',d:4},{s:'9',o:'100%',d:5},{s:'20',o:'53%',d:7},{s:'49.6',o:'100%',d:9},{s:'2',o:'100%',d:2}];
+    document.querySelectorAll('.presets').forEach((grid) => {
+      grid.innerHTML = presets.map((p, index) => `<button class="preset ${index === 3 ? 'active' : ''}" aria-label="スロット${index + 1}: ${p.s}px / ${p.o}"><span class="slot-number">${index + 1}</span><span class="ring"><i class="dot" style="--dot:${p.d}px;--opacity:${Number.parseInt(p.o,10)/100}"></i></span><span class="values"><b>${p.s}</b><span class="opacity">${p.o}</span></span></button>`).join('');
+    });
+    document.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => {
+      document.body.classList.toggle('coarse', button.dataset.mode === 'coarse');
+      document.querySelectorAll('[data-mode]').forEach((item) => item.classList.toggle('active', item === button));
+    }));
+  </script>
+</body>
+</html>

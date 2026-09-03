@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phase 9a Animation Table Playback Priority</title>
+<style>
+  :root { --bg:#ffffee; --cream:#f0e0d6; --line:#d4a8a0; --maroon:#800000; --orange:#ff8c42; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--maroon); font:14px/1.4 system-ui,sans-serif; }
+  main { max-width:920px; margin:auto; padding:24px; }
+  h1 { margin:0 0 4px; font-size:21px; }
+  p { margin:0 0 16px; opacity:.78; }
+  .table { overflow:hidden; border:2px solid var(--maroon); border-radius:12px; background:var(--bg); }
+  .header { display:flex; flex-wrap:wrap; align-items:center; gap:7px; padding:8px 10px; border-bottom:1px solid var(--line); }
+  button { min-height:28px; border:1px solid var(--line); border-radius:6px; background:rgba(240,224,214,.35); color:var(--maroon); font:inherit; font-weight:750; }
+  .scope { padding:3px 11px; }
+  .range { display:flex; align-items:stretch; overflow:hidden; border:1px solid rgba(128,0,0,.2); border-radius:6px; background:rgba(255,255,238,.16); }
+  .range button { border:0; border-radius:0; }
+  .range button + button { border-left:1px solid rgba(128,0,0,.2); }
+  .end { min-width:100px; }
+  .marker { min-width:34px; background:rgba(240,224,214,.52); }
+  .marker.set-in { background:var(--maroon); color:var(--bg); }
+  .marker.set-out { background:var(--orange); color:var(--bg); }
+  .marker .value { margin-left:6px; }
+  .secondary { padding:3px 10px; }
+  .play-slot { flex:1 0 100%; display:flex; justify-content:center; }
+  .play { width:36px; min-height:30px; border:2px solid var(--maroon); background:var(--bg); font-size:16px; font-weight:900; box-shadow:0 2px 5px rgba(128,0,0,.14); }
+  .timeline-head { display:grid; grid-template-columns:90px repeat(8,1fr); height:30px; border-bottom:1px solid var(--line); }
+  .timeline-head span { display:grid; place-items:center; border-right:1px solid var(--line); font-size:11px; }
+  .timeline { height:112px; background:repeating-linear-gradient(90deg,transparent 0 calc(100%/8 - 1px),rgba(212,168,160,.4) calc(100%/8 - 1px) calc(100%/8)); }
+  .notes { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
+  .note { padding:10px; border-left:4px solid var(--orange); background:rgba(240,224,214,.4); }
+  @media(max-width:640px){ main{padding:12px}.notes{grid-template-columns:1fr}.scope,.secondary{font-size:12px}.end{min-width:82px} }
+</style>
+</head>
+<body>
+<main>
+  <h1>Phase 9a — Playback Priority Hierarchy</h1>
+  <p>再生を主actionとして中央へ固定し、RANGEは通常surface、I / Oは未設定でも独立した淡いpanelとして読む。</p>
+  <section class="table" aria-label="Animation Table playback priority fixture">
+    <div class="header">
+      <button class="scope">▣ ALL</button>
+      <button aria-label="Loop">↻</button>
+      <span class="range"><button class="end">LAST CLIP⌄</button><button class="marker">I</button><button class="marker set-out">O<span class="value">F13</span></button></span>
+      <button class="secondary">PREVIEW</button><button class="secondary">ONION 0</button>
+      <span class="play-slot"><button class="play" aria-label="Play">▶</button></span>
+    </div>
+    <div class="timeline-head"><span>Lane</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div>
+    <div class="timeline"></div>
+  </section>
+  <div class="notes"><div class="note"><strong>Unset</strong><br>I / Oは文字だけでも淡いpanelと左右位置を残す。</div><div class="note"><strong>Set</strong><br>設定後だけ状態色を強め、文字とFrame値を離す。</div></div>
+</main>
+</body>
+</html>

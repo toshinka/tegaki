@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phase 9j Layer Panel Theme Surface Gate</title>
+<style>
+* { box-sizing: border-box; }
+:root {
+  --futaba-maroon: #800000;
+  --futaba-light-maroon: #9c3835;
+  --futaba-medium: #b8706b;
+  --futaba-light-medium: #d4a8a0;
+  --futaba-cream: #f0e0d6;
+  --futaba-background: #ffffee;
+  --active-border: #ff8c42;
+  --candidate-umber: #60463f;
+}
+body { margin: 0; padding: 24px; color: var(--futaba-maroon); background: var(--futaba-background); font: 14px/1.45 system-ui, sans-serif; }
+h1 { margin: 0 0 4px; font-size: 20px; }
+.lead { margin: 0 0 20px; color: var(--futaba-light-maroon); }
+.variants { display: grid; grid-template-columns: repeat(3, minmax(240px, 1fr)); gap: 18px; }
+.variant {
+  --surface-rail: rgba(240, 224, 214, .42);
+  --surface-caf: rgba(255, 255, 238, .46);
+  --surface-caf-selected: rgba(255, 255, 238, .68);
+  --surface-card: #ffffee;
+  --surface-folder-open: #e9c2ba;
+  --surface-folder-closed: #cf9c97;
+  --surface-action: rgba(255, 255, 238, .82);
+  --border-rest: #d4a8a0;
+  --text: #800000;
+  --canvas: #ffffee;
+  min-height: 430px;
+  padding: 14px;
+  border: 1px solid var(--futaba-light-medium);
+  border-radius: 12px;
+  background: var(--canvas);
+}
+.variant[data-theme="stronger-shell"] {
+  --surface-rail: color-mix(in srgb, var(--candidate-umber) 84%, transparent);
+  --surface-caf: rgba(240, 224, 214, .92);
+  --surface-caf-selected: rgba(255, 245, 222, .96);
+  --surface-card: #ffffee;
+  --surface-folder-open: #e9c2ba;
+  --surface-folder-closed: #cf9c97;
+  --surface-action: rgba(255, 255, 238, .9);
+  --border-rest: #b8706b;
+  --canvas: #f0e0d6;
+}
+.variant[data-theme="controlled-inverse"] {
+  --surface-rail: rgba(128, 0, 0, .92);
+  --surface-caf: rgba(156, 56, 53, .94);
+  --surface-caf-selected: rgba(184, 112, 107, .96);
+  --surface-card: #9c3835;
+  --surface-folder-open: #b8706b;
+  --surface-folder-closed: #9c3835;
+  --surface-action: rgba(240, 224, 214, .18);
+  --border-rest: #d4a8a0;
+  --text: #ffffee;
+  --canvas: #f0e0d6;
+}
+.variant h2 { margin: 0 0 2px; font-size: 15px; }
+.variant p { min-height: 42px; margin: 0 0 12px; color: var(--futaba-light-maroon); font-size: 12px; }
+.stage { display: flex; justify-content: flex-end; align-items: center; min-height: 320px; padding: 18px; border-radius: 8px; background: var(--canvas); }
+.right-panel { display: grid; grid-template-columns: 150px 38px; gap: 6px; align-items: center; color: var(--text); }
+.cards { display: flex; flex-direction: column; gap: 4px; }
+.caf { padding: 7px; border: 1px solid var(--border-rest); border-radius: 7px; background: var(--surface-caf); }
+.caf.is-selected { border: 2px solid var(--active-border); background: var(--surface-caf-selected); }
+.caf-title { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; font-weight: 700; }
+.folder, .layer { min-height: 34px; display: grid; grid-template-columns: 28px 1fr 18px; align-items: center; gap: 5px; padding: 3px 5px; border: 1px solid var(--border-rest); border-radius: 5px; background: var(--surface-card); color: var(--text); }
+.folder { background: var(--surface-folder-open); }
+.folder.is-collapsed { margin-left: 10px; background: var(--surface-folder-closed); }
+.layer.is-active { border: 2px solid var(--active-border); }
+.thumb { width: 26px; height: 26px; border: 1px solid var(--border-rest); border-radius: 3px; background: var(--surface-action); }
+.meta { display: block; opacity: .72; font-size: 9px; }
+.rail { display: flex; flex-direction: column; gap: 5px; padding: 5px 4px; border-radius: 7px; background: var(--surface-rail); }
+.rail button { width: 30px; height: 30px; border: 1px solid transparent; border-radius: 5px; color: var(--text); background: var(--surface-action); font: inherit; }
+.note { margin-top: 18px; padding: 10px 12px; border-left: 4px solid var(--active-border); background: rgba(240, 224, 214, .45); }
+@media (max-width: 850px) { .variants { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>Phase 9j — Right Layer Panel Theme Surface Gate</h1>
+<p class="lead">同じDOM・同じ状態をCSS tokenだけで比較する。production Stage BはCurrent computed-equivalentを維持する。</p>
+<main class="variants">
+  <section class="variant" data-theme="current-warm">
+    <h2>A — Current warm</h2>
+    <p>現行値。左Sidebarの軽い空気感と右panelの可読性を基準化。</p>
+    <div class="stage"><div class="right-panel">
+      <div class="cards"><div class="caf is-selected"><div class="caf-title">▱ CAF 1</div><div class="folder"><span class="thumb"></span><span>Folder<span class="meta">2 Layers</span></span><span>◉</span></div></div><div class="layer is-active"><span class="thumb"></span><span>レイヤー 1<span class="meta">100% · Normal</span></span><span>◉</span></div><div class="folder is-collapsed"><span class="thumb"></span><span>Folder 2</span><span>◉</span></div></div>
+      <div class="rail"><button>＋</button><button>▱</button><button>☷</button><button>□</button><button>⌫</button></div>
+    </div></div>
+  </section>
+  <section class="variant" data-theme="stronger-shell">
+    <h2>B — Stronger outer shell</h2>
+    <p>低彩度umberでrailとの差を強める候補。card自体は淡色を維持し、統合外周比較は次Gateへ送る。</p>
+    <div class="stage"><div class="right-panel">
+      <div class="cards"><div class="caf is-selected"><div class="caf-title">▱ CAF 1</div><div class="folder"><span class="thumb"></span><span>Folder<span class="meta">2 Layers</span></span><span>◉</span></div></div><div class="layer is-active"><span class="thumb"></span><span>レイヤー 1<span class="meta">100% · Normal</span></span><span>◉</span></div><div class="folder is-collapsed"><span class="thumb"></span><span>Folder 2</span><span>◉</span></div></div>
+      <div class="rail"><button>＋</button><button>▱</button><button>☷</button><button>□</button><button>⌫</button></div>
+    </div></div>
+  </section>
+  <section class="variant" data-theme="controlled-inverse">
+    <h2>C — Controlled inverse</h2>
+    <p>反転候補は比較用だけ。thumbnail / focus / Canvasとの境界確認前はproductionへ入れない。</p>
+    <div class="stage"><div class="right-panel">
+      <div class="cards"><div class="caf is-selected"><div class="caf-title">▱ CAF 1</div><div class="folder"><span class="thumb"></span><span>Folder<span class="meta">2 Layers</span></span><span>◉</span></div></div><div class="layer is-active"><span class="thumb"></span><span>レイヤー 1<span class="meta">100% · Normal</span></span><span>◉</span></div><div class="folder is-collapsed"><span class="thumb"></span><span>Folder 2</span><span>◉</span></div></div>
+      <div class="rail"><button>＋</button><button>▱</button><button>☷</button><button>□</button><button>⌫</button></div>
+    </div></div>
+  </section>
+</main>
+<div class="note"><strong>Gate 1:</strong> Phase 9j productionはAを維持する。Bの低彩度umberは左右rail＋外周背景の統合比較へ送り、CのPanel反転はHOLD。</div>
+</body>
+</html>
