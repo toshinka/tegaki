@@ -17,7 +17,16 @@
  * ============================================================================
  */
 
-import { Graphics, Container, Sprite, RenderTexture } from 'pixi.js';
+import { Graphics, Container, Sprite, RenderTexture, Rectangle } from 'pixi.js';
+import { rasterBoundsEqual } from '../raster-bounds.js';
+import {
+    calculateStrokeDirtyRect,
+    projectRectToRasterLocal,
+    cropPixelPatch,
+    applyPixelPatch,
+    unpremultiplyPixels,
+    estimatePatchHistoryBytes
+} from './raster-patch-history.js';
 import { TegakiEventBus } from '../event-bus.js';
 import { coordinateSystem } from '../../coordinate-system.js';
 import { historyManager } from '../history.js';
@@ -186,7 +195,7 @@ export class BrushCore {
         let airbrushBeginMs = null;
         if (needsHistorySnapshot || needsSelectionSnapshot) {
             const snapshotStart = this._perfNow();
-            beforeSnapshot = this.layerManager.createLayerRasterSnapshot?.(activeLayer) || null;
+            beforeSnapshot = this.layerManager.createLayerRasterSnapshot?.(activeLayer, { includePathCollections: false }) || null;
             beforeSnapshotMs = this._perfNow() - snapshotStart;
             this._warnPerf('brush.startStroke.beforeSnapshot', snapshotStart, {
                 needsHistorySnapshot,
@@ -1442,27 +1451,16 @@ export class BrushCore {
         }
 
         if (layerData) {
-            // 履歴用のデータ保存
-            if (!layerData.pathsData) {
-                layerData.pathsData = [];
-            }
-
-            const pathData = {
-                id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                points: strokeData.points,
-                tool: mode,
-                settings: { ...settings },
-                isBaked: true
-            };
-
-            layerData.pathsData.push(pathData);
+            // Stage A: 通常ラスター描画では layerData.pathsData への永続累積を停止。
+            // 描画はすべてRenderTextureにベイク済みであり、点列は描画・復元・保存・エクスポートに未使用。
+            // 必要に応じてストローク完了イベント通知やメタデータ用にのみ参照する。
         }
 
         window.CoreRuntime?.api?.selection?.constrainLayer?.(
             activeLayer,
             this.strokeSelectionBefore
         );
-        this._recordStrokeHistory(activeLayer, mode);
+        this._recordStrokeHistory(activeLayer, mode, strokeData.points, settings);
 
         const layerIndex = this.layerManager.getLayerIndex(activeLayer);
 
@@ -1480,7 +1478,8 @@ export class BrushCore {
             this.eventBus.emit('thumbnail:layer-updated', {
                 layerIndex: layerIndex,
                 layerId: activeLayer.layerData?.id,
-                immediate: true
+                immediate: false,
+                source: 'brush-stroke'
             });
         }
 
@@ -1595,43 +1594,156 @@ export class BrushCore {
         return Math.max(0.02, Math.min(0.12, 2.5 / size));
     }
 
-    _recordStrokeHistory(layer, mode) {
-        const beforeSnapshot = this.strokeHistoryBefore;
+    _recordStrokeHistory(layer, mode, strokePoints = null, strokeSettings = null) {
+        let beforeSnapshot = this.strokeHistoryBefore;
         if (!beforeSnapshot || !historyManager || historyManager.isApplying) return;
         if (!this.layerManager?.createLayerRasterSnapshot || !this.layerManager?.restoreLayerRasterSnapshot) return;
         if (layer?.layerData?.isAnimationWorkingLayer === true) return;
 
+        const layerId = layer.layerData?.id;
+        const layerIndex = this.layerManager.getLayerIndex(layer);
+        const renderer = this.app?.renderer;
+        const renderTexture = layer.layerData?.renderTexture;
+
+        // Stage B: Pen / Eraser 限定 dirty rect patch History の試行
+        const isPatchEligible = (mode === 'pen' || mode === 'eraser')
+            && Array.isArray(strokePoints)
+            && strokePoints.length > 0
+            && renderer?.extract?.pixels
+            && renderTexture;
+
+        if (isPatchEligible) {
+            const currentBounds = layer.layerData?.rasterBounds;
+            const beforeBounds = beforeSnapshot.rasterBounds;
+
+            // 1. bounds が一致しているか確認（一致しない場合は full fallback）
+            if (rasterBoundsEqual(beforeBounds, currentBounds)) {
+                const settings = strokeSettings || this._getCurrentSettings();
+                const projectDirtyRect = calculateStrokeDirtyRect(strokePoints, settings);
+                const localDirtyRect = projectRectToRasterLocal(projectDirtyRect, currentBounds);
+
+                if (localDirtyRect && localDirtyRect.width > 0 && localDirtyRect.height > 0) {
+                    // 2. beforePatch を CPU crop（beforeSnapshot は straight RGBA 済み）
+                    const beforePatchPixels = cropPixelPatch(
+                        beforeSnapshot.pixels,
+                        beforeSnapshot.width,
+                        beforeSnapshot.height,
+                        localDirtyRect
+                    );
+
+                    if (beforePatchPixels) {
+                        // 3. afterPatch を Pixi renderer.extract.pixels({ frame }) で GPU から部分抽出
+                        let afterResult = null;
+                        const tempSprite = new Sprite(renderTexture);
+                        try {
+                            const frame = new Rectangle(
+                                localDirtyRect.x,
+                                localDirtyRect.y,
+                                localDirtyRect.width,
+                                localDirtyRect.height
+                            );
+                            afterResult = renderer.extract.pixels({
+                                target: tempSprite,
+                                frame,
+                                clearColor: '#00000000'
+                            });
+                        } catch (err) {
+                            afterResult = null;
+                        } finally {
+                            tempSprite.destroy({ texture: false, baseTexture: false });
+                        }
+
+                        const afterSource = afterResult?.pixels
+                            || (afterResult instanceof Uint8ClampedArray
+                                ? afterResult
+                                : (afterResult?.buffer ? new Uint8ClampedArray(afterResult.buffer) : null));
+
+                        const extractedW = Math.round(afterResult?.width || localDirtyRect.width);
+                        const extractedH = Math.round(afterResult?.height || localDirtyRect.height);
+
+                        if (afterSource && extractedW === localDirtyRect.width && extractedH === localDirtyRect.height && afterSource.byteLength >= localDirtyRect.width * localDirtyRect.height * 4) {
+                            const afterPatchPixels = new Uint8ClampedArray(afterSource.subarray(0, localDirtyRect.width * localDirtyRect.height * 4));
+                            // 直ちに unpremultiply を適用して straight RGBA に統一
+                            unpremultiplyPixels(afterPatchPixels);
+
+                            const beforePatch = {
+                                rect: { ...localDirtyRect },
+                                pixels: beforePatchPixels
+                            };
+                            const afterPatch = {
+                                rect: { ...localDirtyRect },
+                                pixels: afterPatchPixels
+                            };
+                            const byteSize = estimatePatchHistoryBytes(beforePatch, afterPatch);
+
+                            // 重要: beforeSnapshot の参照をクロージャに残さないため null 化
+                            beforeSnapshot = null;
+                            this.strokeHistoryBefore = null;
+
+                            const restorePatch = (targetPatch) => {
+                                const active = this.layerManager.getActiveLayer();
+                                const currentSnap = this.layerManager.createLayerRasterSnapshot(active, { includePathCollections: false });
+                                if (!currentSnap) return;
+                                applyPixelPatch(
+                                    currentSnap.pixels,
+                                    currentSnap.width,
+                                    currentSnap.height,
+                                    targetPatch.pixels,
+                                    targetPatch.rect
+                                );
+                                this.layerManager.restoreLayerRasterSnapshot(currentSnap, { restorePathCollections: false });
+                            };
+
+                            const recordStart = this._perfNow();
+                            historyManager.record({
+                                name: `draw-${mode}`,
+                                do: () => restorePatch(afterPatch),
+                                undo: () => restorePatch(beforePatch),
+                                meta: {
+                                    type: 'draw-patch',
+                                    mode,
+                                    layerId,
+                                    layerIndex,
+                                    dirtyRect: localDirtyRect,
+                                    byteSize
+                                },
+                                byteSize
+                            });
+                            const recordMs = this._perfNow() - recordStart;
+                            if (this.strokeInputProfile?.timings) {
+                                this.strokeInputProfile.timings.historyRecordMs = Number(recordMs.toFixed(2));
+                            }
+                            return; // dirty rect patch 成功
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Full snapshot fallback (bounds変更時、例外時、Airbrush/Blur等の非対応ツール時) ---
         const snapshotStart = this._perfNow();
-        const afterSnapshot = this.layerManager.createLayerRasterSnapshot(layer);
+        const afterSnapshot = this.layerManager.createLayerRasterSnapshot(layer, { includePathCollections: false });
         const afterSnapshotMs = this._perfNow() - snapshotStart;
         if (this.strokeInputProfile?.timings) {
             this.strokeInputProfile.timings.afterSnapshotMs = Number(afterSnapshotMs.toFixed(2));
         }
-        this._warnPerf('brush.recordStrokeHistory.afterSnapshot', snapshotStart, {
-            mode
-        });
         if (!afterSnapshot) return;
 
-        const layerId = layer.layerData?.id;
-        const layerIndex = this.layerManager.getLayerIndex(layer);
         const retainedMemory = estimateRasterHistoryPairBytes(beforeSnapshot, afterSnapshot);
-
         const recordStart = this._perfNow();
         historyManager.record({
             name: `draw-${mode}`,
             do: () => {
-                this.layerManager.restoreLayerRasterSnapshot(afterSnapshot);
+                this.layerManager.restoreLayerRasterSnapshot(afterSnapshot, { restorePathCollections: false });
             },
             undo: () => {
-                this.layerManager.restoreLayerRasterSnapshot(beforeSnapshot);
+                this.layerManager.restoreLayerRasterSnapshot(beforeSnapshot, { restorePathCollections: false });
             },
             meta: {
-                type: 'draw',
+                type: 'draw-full',
                 mode,
                 layerId,
                 layerIndex,
-                pathCount: retainedMemory.after.pathsData.pathCount,
-                pointCount: retainedMemory.after.pathsData.pointCount,
                 retainedMemory
             },
             byteSize: retainedMemory.estimatedBytes
@@ -1640,12 +1752,6 @@ export class BrushCore {
         if (this.strokeInputProfile?.timings) {
             this.strokeInputProfile.timings.historyRecordMs = Number(recordMs.toFixed(2));
         }
-        this._warnPerf('brush.recordStrokeHistory.record', recordStart, {
-            mode,
-            byteSize: retainedMemory.estimatedBytes,
-            pixelBytes: retainedMemory.before.pixelBytes + retainedMemory.after.pixelBytes,
-            metadataBytes: retainedMemory.before.metadataBytes + retainedMemory.after.metadataBytes
-        });
     }
 
     _needsSelectionSnapshotForLayer(layer) {
