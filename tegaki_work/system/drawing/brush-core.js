@@ -1681,8 +1681,13 @@ export class BrushCore {
                             this.strokeHistoryBefore = null;
 
                             const restorePatch = (targetPatch) => {
-                                const active = this.layerManager.getActiveLayer();
-                                const currentSnap = this.layerManager.createLayerRasterSnapshot(active, { includePathCollections: false });
+                                if (!layerId || !this.layerManager) return;
+                                const targetLayer = typeof this.layerManager.getLayerById === 'function'
+                                    ? this.layerManager.getLayerById(layerId)
+                                    : this.layerManager.getLayers?.().find(l => l.layerData?.id === layerId || l.id === layerId);
+                                if (!targetLayer) return;
+
+                                const currentSnap = this.layerManager.createLayerRasterSnapshot(targetLayer, { includePathCollections: false });
                                 if (!currentSnap) return;
                                 applyPixelPatch(
                                     currentSnap.pixels,
