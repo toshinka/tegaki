@@ -23,6 +23,8 @@ export const ThumbnailSystem = {
     dirtyLayers: new Set(),
     isProcessing: false,
     isDrawingSuspended: false,
+    _strokeCoalesceTimer: null,
+    _strokeCoalesceDelay: 120,
 
     init(eventBus) {
         this.eventBus = eventBus || TegakiEventBus;
@@ -43,6 +45,10 @@ export const ThumbnailSystem = {
             }
 
             if (data.immediate) {
+                if (this._strokeCoalesceTimer) {
+                    clearTimeout(this._strokeCoalesceTimer);
+                    this._strokeCoalesceTimer = null;
+                }
                 this.generateLayerThumbnail(layer, data.layerIndex);
             } else {
                 this.markLayerDirty(data.layerId);
@@ -51,15 +57,40 @@ export const ThumbnailSystem = {
 
         this.eventBus.on('drawing:stroke-started', () => {
             this.isDrawingSuspended = true;
+            if (this._strokeCoalesceTimer) {
+                clearTimeout(this._strokeCoalesceTimer);
+                this._strokeCoalesceTimer = null;
+            }
         });
+
         const resume = () => {
             this.isDrawingSuspended = false;
             if (this.dirtyLayers.size > 0) {
-                this._requestProcessing();
+                // Stage C: 連続描画中の毎ストローク readback を抑制し、約120ms 静止後に合算更新
+                if (this._strokeCoalesceTimer) {
+                    clearTimeout(this._strokeCoalesceTimer);
+                }
+                this._strokeCoalesceTimer = setTimeout(() => {
+                    this._strokeCoalesceTimer = null;
+                    if (this.dirtyLayers.size > 0 && !this._isDrawingActive()) {
+                        this._requestProcessing();
+                    }
+                }, this._strokeCoalesceDelay);
             }
         };
         this.eventBus.on('drawing:stroke-completed', resume);
         this.eventBus.on('drawing:stroke-cancelled', resume);
+
+        // レイヤー切り替え時は即座にフラッシュして保留中のサムネイルを完了させる
+        this.eventBus.on('layer:selected', () => {
+            if (this._strokeCoalesceTimer) {
+                clearTimeout(this._strokeCoalesceTimer);
+                this._strokeCoalesceTimer = null;
+                if (this.dirtyLayers.size > 0 && !this._isDrawingActive()) {
+                    this._requestProcessing();
+                }
+            }
+        });
     },
 
     markLayerDirty(layerId) {

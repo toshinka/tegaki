@@ -1,9 +1,14 @@
 # Tegaki Progress
 
-更新日: 2026-09-01
+更新日: 2026-09-03
 
 ## 現在地
 
+- 長時間描画性能劣化 改修（第2回改修指示書 Stage A〜C）を完了した。
+  - **Stage A**: 通常Raster Brushの `layerData.pathsData` への不要な点列累積を停止し、スナップショット生成時の `includePathCollections: false` および復元時の `restorePathCollections: false` オプションを導入。これにより400ストローク描画時でも点列ディープコピー時間（旧47ms）が **0ms** に完全解消し、legacy path collections の保護契約（空配列による上書き防止）を維持した。
+  - **Stage B**: Pen / Eraser 限定で dirty rect ピクセルパッチ方式 History（`raster-patch-history.js`）へ移行。安全マージン（`padding = Math.max(8, Math.ceil(settings.size) + 4)`）による包絡、CPU crop、Pixi `frame` 抽出、unpremultiply 契約の完全統一、CPU 上書きによる Undo/Redo Pixel Exact 復元、bounds 不一致・例外時の full fallback を実装。実機 Edge/PixiJS v8.19.0 にて `frame extract == CPU crop of full extract` の byte-for-byte 完全一致を実証。History 1件あたりの消費容量が 11.5MB → 数十KB へ縮小し、1200×1200 キャンバスにおいて 256MB に到達する遥か手前（19.1MB）で目標通り `maxSize=250` 件に到達することを確認した。
+  - **Stage C**: 通常ストローク完了時のサムネイル通知（`source: 'brush-stroke'`）を約120msデバウンスで coalesce する機構を `thumbnail-system.js` へ導入。連続描画中の毎ストローク全画面 GPU readback を抑制し、レイヤー切り替えや既存 `immediate: true`（Import/Transform等）の即時更新を維持した。
+  - 新設の `build/verify-long-drawing-degradation-fix.mjs` および全既存 verifier、production build、生成物清掃を通過した。
 - Phase 5a〜9oを完了した。詳細記録は`開発用資料保管庫/Archive/`へ保存し、Owner制作確認の残りは`OWNER_VERIFICATION_BACKLOG.md`へ分離している。
 - Phase 9bはUI Design Authority / Animation Table Style Boundary Gate。palette / semantic token / component static style / runtime geometry / behavior正本を`UI_DESIGN_AUTHORITY_MAP.md`へ固定し、Phase 9a Playback headerの静的appearanceだけを`styles/components/animation-table-playback.css`へ限定抽出した。DOM / event / ARIA / model / History / save / runtime geometryを維持し、全102 verifier / build / Browser narrow実表示 / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。
 - Phase 9cはCanvas-first Visual Language / Skin Baseline Comparison Gate。Gate 1=`GO — B: Warm Canvas-first`とし、最初のproduction componentをAnimation Table Playbackだけへ限定した。中央playを通常32×28px / coarse 44×38pxへ強め、Playback / Range群の枠競争を抑え、設定済みOUTと再生中Playを橙背景＋Futaba茶へ補正した。DOM / event / ARIA / History / save / wheel / runtime geometryを維持し、全103 verifier / build / Browser 1280×720・480×800 / console 0件 / 生成物清掃、SOL final review=`A`で技術closeした。QTP / Layer Panelのproduction skinは別Phaseへ分離する。

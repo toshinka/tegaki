@@ -2415,7 +2415,7 @@ export class LayerSystem {
         return true;
     }
 
-    createLayerRasterSnapshot(layer) {
+    createLayerRasterSnapshot(layer, options = {}) {
         if (!layer?.layerData?.renderTexture || !this.app?.renderer) return null;
 
         const layerData = layer.layerData;
@@ -2453,14 +2453,18 @@ export class LayerSystem {
             rasterBounds
         });
 
+        const includePathCollections = options?.includePathCollections !== false;
+
         return {
             layerId: layerData.id,
             width,
             height,
             rasterBounds: { ...rasterBounds },
             pixels,
-            pathsData: structuredClone(layerData.pathsData || []),
-            paths: structuredClone(layerData.paths || [])
+            ...(includePathCollections ? {
+                pathsData: structuredClone(layerData.pathsData || []),
+                paths: structuredClone(layerData.paths || [])
+            } : {})
         };
     }
 
@@ -2526,7 +2530,7 @@ export class LayerSystem {
         }
     }
 
-    restoreLayerRasterSnapshot(snapshot) {
+    restoreLayerRasterSnapshot(snapshot, options = {}) {
         if (!snapshot || !this.app?.renderer) return false;
 
         const normalizedSnapshot = normalizeRasterSnapshot(snapshot, {
@@ -2641,8 +2645,15 @@ export class LayerSystem {
             sprite?.destroy({ texture: true, baseTexture: true });
         }
 
-        layerData.pathsData = structuredClone(normalizedSnapshot.pathsData || []);
-        layerData.paths = structuredClone(normalizedSnapshot.paths || []);
+        const restorePathCollections = options?.restorePathCollections !== false;
+        if (restorePathCollections) {
+            if (Array.isArray(normalizedSnapshot.pathsData)) {
+                layerData.pathsData = structuredClone(normalizedSnapshot.pathsData);
+            }
+            if (Array.isArray(normalizedSnapshot.paths)) {
+                layerData.paths = structuredClone(normalizedSnapshot.paths);
+            }
+        }
 
         const layerIndex = this.getLayerIndex(layer);
         if (layerIndex !== -1) {
