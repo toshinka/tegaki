@@ -14,6 +14,7 @@ const keyboard = read('ui/keyboard-handler.js');
 const popup = read('ui/animation-table-popup.js');
 const domBuilder = read('ui/dom-builder.js');
 const css = read('styles/main.css');
+const keyCss = read('styles/components/layer-transform-basic.css');
 
 assert.ok(
     core.indexOf('this.popupManager.initializeAll();')
@@ -36,6 +37,13 @@ assert.match(layerSystem, /this\._transformEditAdapter\?\.preview\?\.\([\s\S]*?l
 assert.match(layerSystem, /if \(isClipKey\) \{[\s\S]*?_restoreTransformTargetState[\s\S]*?this\._transformEditAdapter\?\.finish/);
 assert.match(layerSystem, /\} else \{[\s\S]*?transformConfirmed = this\.confirmLayerTransform\(\) === true;/);
 assert.match(layerSystem, /target: transformTarget/);
+assert.match(layerSystem, /commitLayerTransformTimelineKeyAndContinue\(\)/);
+assert.match(layerSystem, /stepLayerTransformTimelineFrame\(delta\)/);
+assert.match(layerSystem, /session\.previewResult\?\.changed !== true/,
+    '明示KEY確定は実変更のあるpreviewだけを対象にする');
+assert.match(layerSystem, /session\.previewResult\?\.changed === true[\s\S]*?return false/,
+    '未確定preview中のFrame移動は暗黙commit / rollbackせず拒否する');
+assert.match(layerSystem, /_finishLayerTransformTimelineSession[\s\S]*?_resumeLayerTransformTimelineSession/);
 assert.match(keyboard, /layerManager\?\.canStartTransformEditSession\?\.\(\) !== false/);
 assert.match(keyboard, /window\.addEventListener\('blur',[\s\S]*?isTransformTimelineKeyTarget\(layerManager\?\.getActiveTransformEditTarget\?\.\(\)\)[\s\S]*?return;/);
 
@@ -50,6 +58,11 @@ assert.match(bridge, /this\._captureTimelineHistoryState\(\)/);
 assert.match(bridge, /entry\.clip\.transformKeyframes = structuredClone\(plan\.keyframes\)/);
 assert.match(bridge, /entry\.clip\.layerTransformTracks = structuredClone\(plan\.tracks \|\| \[\]\)/);
 assert.match(bridge, /caf-clip-transform-layer-bridge/);
+assert.match(bridge, /_createLayerTransformKeyGuide/);
+assert.match(bridge, /moveFrame: request => this\._moveLayerTransformBridgeFrame\(request\)/);
+assert.match(bridge, /moveTimelineFrameByDelta\(direction, \{ createBlankClip: false \}\)/);
+assert.match(popup, /!this\._layerTransformFrameNavigationInProgress[\s\S]*?exitLayerMoveMode\?\.\(\{ cancelled: true \}\)/,
+    'Layer Transform内の管理されたFrame移動だけは汎用rollback listenerから除外する');
 assert.match(bridge, /_restoreLayerTransformBridgePreview\(session/);
 assert.match(bridge, /transaction\.baselineKeyframes/);
 assert.doesNotMatch(bridge, /_restoreTimelineHistoryState\(session\.beforeState\)/);
@@ -70,6 +83,21 @@ assert.match(layerTransform, /_canEditTransformAnchor\(\)/);
 assert.match(layerTransform, /allowAnchorEdit !== false/);
 assert.match(layerTransform, /if \(!this\._canEditTransformAnchor\(\)\) return false;/);
 assert.match(domBuilder, /textContent: 'SOURCE · 原画'/);
+assert.ok(
+    domBuilder.indexOf("id: 'layer-transform-key-strip'")
+        > domBuilder.indexOf("className: 'layer-transform-mode-strip'")
+);
+assert.ok(
+    domBuilder.indexOf("id: 'layer-transform-key-strip'")
+        < domBuilder.indexOf("className: 'layer-transform-precise'")
+);
+assert.match(domBuilder, /id: 'layer-transform-key-commit-btn'/);
+assert.match(domBuilder, /id: 'layer-transform-key-prev-btn'/);
+assert.match(domBuilder, /id: 'layer-transform-key-next-btn'/);
+assert.match(layerTransform, /keyStrip\?\.addEventListener\('wheel'[\s\S]*?onStepTimelineFrame/);
+assert.match(layerTransform, /pending[\s\S]*?KEY確定[\s\S]*?KEY設定済[\s\S]*?KEY未設定/);
+assert.match(keyCss, /\.layer-transform-key-strip\[hidden\][\s\S]*?display: none/);
+assert.match(keyCss, /data-key-state="pending"[\s\S]*?var\(--futaba-maroon\) 38%/);
 assert.match(css, /\.layer-transform-context-note\[data-context-state="ready"\]/);
 assert.match(css, /\.layer-transform-context-note\[data-context-state="keyed"\]/);
 assert.match(css, /#layer-transform-anchor-btn\.is-context-disabled/);
@@ -79,6 +107,10 @@ assert.match(css, /\.anim-caf-motion-key-projection\.is-provisional\s*\{[\s\S]*?
 assert.match(css, /\.anim-rig-folder-cell-slot\.is-outside-clip[\s\S]*?border-right: 0;[\s\S]*?background: var\(--futaba-background\)/);
 assert.match(css, /\.anim-rig-folder-cell-slot\.is-clip-range[\s\S]*?border-right-color: color-mix/);
 assert.match(css, /\.anim-rig-folder-timeline-row\.is-selected[\s\S]*?\.anim-rig-folder-cell-slot\.is-clip-range[\s\S]*?var\(--futaba-light-medium\) 26%/);
+assert.match(css, /\.anim-rig-folder-timeline-row\.is-selected\s*\{[\s\S]*?background: var\(--futaba-background\)/,
+    '選択行の薄茶はClip範囲外へ漏らさない');
 assert.match(popup, /\.anim-timeline-grid\s*\{[\s\S]*?background-image: none;/);
+assert.match(popup, /\.animation-table-panel\s*\{[\s\S]*?background: var\(--ui-surface-float\)[\s\S]*?backdrop-filter: var\(--ui-backdrop-float\)/,
+    'Animation Table shellはLayer contextと同じ半透明surfaceを使う');
 
 console.log('Phase 9p production Transform bridge verifier passed.');

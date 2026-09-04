@@ -8,7 +8,8 @@ assert.match(source, /rigFocus:\$\{rigFocusKey\}/, 'target / Bone変更をprevie
 assert.match(source, /rigMotionArtFocus:\s*options\.isOnion/);
 assert.match(source, /cel\.id !== this\.selectedCelId/, '選択中Clip以外を減光しない');
 assert.match(source, /skinNode\.alpha = opacity \* focusAlpha/);
-assert.match(source, /sprite\.alpha = opacity \* focusAlpha/);
+assert.match(source, /previewNode\.alpha = opacity \* focusAlpha/,
+    '通常Raster / Layer WARPの最終preview nodeへ同じfocus alphaを一度だけ適用する');
 assert.match(source, /artFocus\.targetConnected\s*&&\s*!!sampled/, '選択中の絵へ未接続のBone Poseを記録させない');
 assert.match(source, /reason: 'raster-bone-unconnected'/, 'Canvas / Timelineからも未接続Bone keyを作らせない');
 assert.match(source, /RIG設定でMeshを作成するとMotionできます/);

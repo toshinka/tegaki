@@ -409,6 +409,47 @@ export const DOMBuilder = (function() {
         }));
         panel.appendChild(modeStrip);
 
+        const keyStrip = createElement('div', {
+            className: 'layer-transform-key-strip',
+            id: 'layer-transform-key-strip',
+            attributes: {
+                role: 'group',
+                'aria-label': '変形KEYの確定とFrame移動',
+                hidden: ''
+            }
+        });
+        keyStrip.appendChild(createElement('button', {
+            className: 'layer-transform-key-step-btn',
+            id: 'layer-transform-key-prev-btn',
+            title: '前のFrameへ移動',
+            innerHTML: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>',
+            attributes: { type: 'button', 'aria-label': '前のFrameへ移動' }
+        }));
+        const keyCommitButton = createElement('button', {
+            className: 'layer-transform-key-commit-btn',
+            id: 'layer-transform-key-commit-btn',
+            title: '変形を現在FrameのKEYとして確定',
+            attributes: { type: 'button' }
+        });
+        keyCommitButton.appendChild(createElement('span', {
+            className: 'layer-transform-key-state-dot',
+            attributes: { 'aria-hidden': 'true' }
+        }));
+        keyCommitButton.appendChild(createElement('span', {
+            className: 'layer-transform-key-state-label',
+            id: 'layer-transform-key-state-label',
+            textContent: 'F1 · KEY未設定'
+        }));
+        keyStrip.appendChild(keyCommitButton);
+        keyStrip.appendChild(createElement('button', {
+            className: 'layer-transform-key-step-btn',
+            id: 'layer-transform-key-next-btn',
+            title: '次のFrameへ移動',
+            innerHTML: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>',
+            attributes: { type: 'button', 'aria-label': '次のFrameへ移動' }
+        }));
+        panel.appendChild(keyStrip);
+
         const preciseDetails = createElement('details', {
             className: 'layer-transform-precise'
         });

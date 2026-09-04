@@ -78,9 +78,18 @@ import {
     sampleClipLayerTransform
 } from '../system/animation/clip-layer-transform.js';
 import {
+    getClipLayerDeformer,
     remapClipLayerDeformers,
-    retimeClipLayerDeformers
+    retimeClipLayerDeformers,
+    setClipLayerDeformerTarget
 } from '../system/animation/clip-layer-deformer.js';
+import {
+    LAYER_WARP_TRANSACTION_ACTION,
+    LAYER_WARP_TRANSACTION_INTENT,
+    planLayerWarpEditTransactionFinish,
+    planLayerWarpEditTransactionPreview,
+    planLayerWarpEditTransactionStart
+} from '../system/animation/layer-warp-edit-transaction.js';
 import {
     createMotionGraphViewModel,
     MOTION_GRAPH_GROUPS,
@@ -624,6 +633,8 @@ export class AnimationTablePopup {
         this._transformPreviewAuthority = null;
         this._layerTransformBridgeSession = null;
         this._layerTransformBridgeRenderFrame = null;
+        this._layerTransformFrameNavigationInProgress = false;
+        this._layerWarpBridgeSession = null;
         this.isDrawingPreviewSuspended = false;
         this._attributePreviewSyncFrame = null;
         this._drawingHistoryBeforeStates = new Map();
@@ -729,6 +740,10 @@ export class AnimationTablePopup {
     hide() {
         if (!this.panel) return;
         const wasVisible = this.isVisible === true;
+        if (this.layerSystem?.getLayerWarpEditSession?.()) {
+            // Table closeはANIMATE Layer WARPのWHEN消失。runtime candidateを保存へ漏らさない。
+            this.layerSystem.finishLayerWarpEditSession?.({ cancelled: true });
+        }
         if (this.isTransformPreviewSuspended
             && (this._transformPreviewAuthority === TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY
                 || this._transformPreviewAuthority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY)) {
@@ -11090,7 +11105,33 @@ export class AnimationTablePopup {
             canStart: request => this._projectLayerTransformBridgeStart(request),
             begin: request => this._beginLayerTransformBridge(request),
             preview: request => this._previewLayerTransformBridge(request),
-            finish: request => this._finishLayerTransformBridge(request)
+            finish: request => this._finishLayerTransformBridge(request),
+            moveFrame: request => this._moveLayerTransformBridgeFrame(request),
+            canStartWarp: request => this._projectLayerWarpBridgeStart(request),
+            beginWarp: request => this._beginLayerWarpBridge(request),
+            previewWarp: request => this._previewLayerWarpBridge(request),
+            finishWarp: request => this._finishLayerWarpBridge(request)
+        };
+    }
+
+    _createLayerTransformKeyGuide({ transaction, hasExplicitKey = false, pending = false } = {}) {
+        const localFrame = transaction?.localFrame;
+        const duration = transaction?.duration;
+        if (!isTransformTimelineKeyTarget(transaction?.target)
+            || !Number.isInteger(transaction?.timelineFrame)
+            || !Number.isInteger(localFrame)
+            || !Number.isInteger(duration)
+            || duration <= 1) {
+            return null;
+        }
+        return {
+            visible: true,
+            timelineFrame: transaction.timelineFrame,
+            localFrame,
+            hasExplicitKey: hasExplicitKey === true,
+            pending: pending === true,
+            canMovePrevious: pending !== true && localFrame > 0,
+            canMoveNext: pending !== true && localFrame < duration - 1
         };
     }
 
@@ -11149,7 +11190,13 @@ export class AnimationTablePopup {
             projection: {
                 state,
                 label,
-                allowAnchorEdit: !animate
+                allowAnchorEdit: !animate,
+                keyGuide: animate
+                    ? this._createLayerTransformKeyGuide({
+                        transaction,
+                        hasExplicitKey: context.hasExplicitKey
+                    })
+                    : null
             }
         };
     }
@@ -11251,7 +11298,12 @@ export class AnimationTablePopup {
             projection: {
                 state: keyed ? 'keyed' : 'ready',
                 label: `ANIMATE · F${transaction.timelineFrame + 1} ${keyed ? 'KEYED' : 'READY'}`,
-                allowAnchorEdit: false
+                allowAnchorEdit: false,
+                keyGuide: this._createLayerTransformKeyGuide({
+                    transaction,
+                    hasExplicitKey: transaction.hadExplicitKey,
+                    pending: plan.changed === true
+                })
             }
         };
     }
@@ -11295,6 +11347,220 @@ export class AnimationTablePopup {
             ...finish,
             commit: finish.ok === true && finish.commit === true,
             target: transaction.target
+        };
+    }
+
+    _moveLayerTransformBridgeFrame({ transaction, delta } = {}) {
+        const direction = delta < 0 ? -1 : (delta > 0 ? 1 : 0);
+        const entry = transaction?.clipId ? this.model.findClipEntry(transaction.clipId) : null;
+        if (!direction
+            || !entry?.clip
+            || this.selectedCelId !== transaction.clipId
+            || !Number.isInteger(transaction.localFrame)
+            || !Number.isInteger(transaction.duration)) {
+            return false;
+        }
+        const nextLocalFrame = transaction.localFrame + direction;
+        if (nextLocalFrame < 0 || nextLocalFrame >= transaction.duration) return false;
+
+        this._layerTransformFrameNavigationInProgress = true;
+        try {
+            return this.moveTimelineFrameByDelta(direction, { createBlankClip: false });
+        } finally {
+            this._layerTransformFrameNavigationInProgress = false;
+        }
+    }
+
+    _projectLayerWarpBridgeStart({ layerId, sourceBounds } = {}) {
+        const context = this.getTransformEditContext(layerId);
+        const state = context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY
+            ? this._getSelectedClipLayerMotionFrame(layerId)
+            : null;
+        if (!state || !this.canEditSelectedWorkingLayer(layerId)) {
+            return { ok: false, blocked: true, reason: 'selected-clip-working-layer-required' };
+        }
+        const existingDeformer = getClipLayerDeformer(
+            state.entry.clip.layerDeformers,
+            state.internalLayerId
+        );
+        const transaction = planLayerWarpEditTransactionStart({
+            context,
+            layerId,
+            internalLayerId: state.internalLayerId,
+            sourceBounds,
+            existingDeformer,
+            duration: state.entry.clip.duration,
+            activeTransaction: this._layerWarpBridgeSession?.transaction || null
+        });
+        if (!transaction.ok) return transaction;
+
+        // Modelを変更せず、candidateを含む仮Clipでproduction RenderPlanの排他条件を先に通す。
+        const candidateLayerDeformers = setClipLayerDeformerTarget(
+            state.entry.clip.layerDeformers,
+            state.internalLayerId,
+            transaction.candidateDeformer
+        );
+        const supportPlan = createFolderEffectRenderPlan(
+            state.asset,
+            { ...state.entry.clip, layerDeformers: candidateLayerDeformers },
+            context.timelineFrame
+        );
+        if (supportPlan.status !== 'ready') {
+            return {
+                ok: false,
+                blocked: true,
+                reason: supportPlan.errors?.[0]?.code || 'layer-warp-target-unsupported',
+                errors: supportPlan.errors || []
+            };
+        }
+
+        const hasExplicitKey = getClipDeformerKeyAtFrame(
+            existingDeformer,
+            context.localFrame,
+            state.entry.clip.duration
+        ) !== null;
+        return {
+            ok: true,
+            blocked: false,
+            transaction,
+            points: transaction.baselinePoints.map(point => ({ ...point })),
+            bindBounds: { ...transaction.bindBounds },
+            projection: {
+                state: hasExplicitKey ? 'keyed' : 'ready',
+                label: `ANIMATE · F${context.timelineFrame + 1} WARP ${hasExplicitKey ? 'KEYED' : 'READY'}`,
+                allowAnchorEdit: false
+            }
+        };
+    }
+
+    _beginLayerWarpBridge(request = {}) {
+        const start = this._projectLayerWarpBridgeStart(request);
+        if (!start.ok) return start;
+        this._layerWarpBridgeSession = {
+            transaction: start.transaction,
+            beforeState: this._captureTimelineHistoryState(),
+            baselineLayerDeformers: structuredClone(
+                this.model.findClipEntry(start.transaction.clipId)?.clip?.layerDeformers || null
+            ),
+            baselineLayerDeformerSourceErrors: structuredClone(
+                this.model.findClipEntry(start.transaction.clipId)?.clip?._layerDeformerSourceErrors || []
+            ),
+            changed: false,
+            previewApplied: false,
+            invalidated: false
+        };
+        return start;
+    }
+
+    _restoreLayerWarpBridgePreview(session = this._layerWarpBridgeSession) {
+        const transaction = session?.transaction;
+        const entry = transaction?.clipId ? this.model.findClipEntry(transaction.clipId) : null;
+        if (!entry?.clip) return false;
+        entry.clip.layerDeformers = structuredClone(session.baselineLayerDeformers || null);
+        entry.clip._layerDeformerSourceErrors = structuredClone(
+            session.baselineLayerDeformerSourceErrors || []
+        );
+        this._animationPreviewKey = null;
+        return true;
+    }
+
+    _previewLayerWarpBridge({ transaction, points } = {}) {
+        const session = this._layerWarpBridgeSession;
+        if (!session || session.transaction !== transaction) {
+            return { ok: false, blocked: true, reason: 'layer-warp-bridge-session-required' };
+        }
+        const plan = planLayerWarpEditTransactionPreview({
+            transaction,
+            context: this.getTransformEditContext(),
+            points
+        });
+        if (!plan.ok) {
+            if (session.previewApplied) this._restoreLayerWarpBridgePreview(session);
+            session.changed = false;
+            session.previewApplied = false;
+            session.invalidated = true;
+            return plan;
+        }
+
+        const entry = this.model.findClipEntry(transaction.clipId);
+        if (!entry?.clip) {
+            session.invalidated = true;
+            return { ok: false, blocked: true, reason: 'clip-target-missing' };
+        }
+        if (plan.action === LAYER_WARP_TRANSACTION_ACTION.PREVIEW) {
+            const result = this.model.setClipLayerDeformer(
+                transaction.clipId,
+                transaction.internalLayerId,
+                plan.deformer
+            );
+            if (!result.ok) {
+                if (session.previewApplied) this._restoreLayerWarpBridgePreview(session);
+                session.changed = false;
+                session.previewApplied = false;
+                session.invalidated = true;
+                return { ...result, blocked: true };
+            }
+            session.changed = true;
+            session.previewApplied = true;
+            this._scheduleLayerTransformBridgeRender();
+        } else if (plan.action === LAYER_WARP_TRANSACTION_ACTION.PREVIEW_NOOP) {
+            session.changed = false;
+            if (session.previewApplied) {
+                this._restoreLayerWarpBridgePreview(session);
+                session.previewApplied = false;
+                this._scheduleLayerTransformBridgeRender();
+            }
+        }
+        const hasExplicitKey = plan.action === LAYER_WARP_TRANSACTION_ACTION.PREVIEW;
+        return {
+            ...plan,
+            projection: {
+                state: hasExplicitKey ? 'keyed' : 'ready',
+                label: `ANIMATE · F${transaction.timelineFrame + 1} WARP ${hasExplicitKey ? 'KEYED' : 'READY'}`,
+                allowAnchorEdit: false
+            }
+        };
+    }
+
+    _finishLayerWarpBridge({ transaction, cancelled = false } = {}) {
+        const session = this._layerWarpBridgeSession;
+        if (!session || session.transaction !== transaction) {
+            return { ok: false, blocked: true, reason: 'layer-warp-bridge-session-required', commit: false };
+        }
+        const finish = planLayerWarpEditTransactionFinish({
+            transaction,
+            context: this.getTransformEditContext(),
+            intent: cancelled
+                ? LAYER_WARP_TRANSACTION_INTENT.CANCEL
+                : LAYER_WARP_TRANSACTION_INTENT.CONFIRM,
+            changed: session.changed,
+            previewApplied: session.previewApplied
+        });
+        const rollback = !finish.ok
+            || finish.action === LAYER_WARP_TRANSACTION_ACTION.ROLLBACK;
+        if (rollback) {
+            this._restoreLayerWarpBridgePreview(session);
+        } else if (finish.commit === true) {
+            this._recordTimelineHistory(
+                session.beforeState,
+                this._captureTimelineHistoryState(),
+                'caf-layer-warp-transform-bridge',
+                {
+                    type: 'caf-layer-warp-transform-bridge',
+                    clipId: transaction.clipId,
+                    internalLayerId: transaction.internalLayerId,
+                    frameIndex: transaction.timelineFrame,
+                    localFrame: transaction.localFrame
+                }
+            );
+        }
+        this._layerWarpBridgeSession = null;
+        this._animationPreviewKey = null;
+        this.render();
+        return {
+            ...finish,
+            commit: finish.ok === true && finish.commit === true,
+            target: 'clip-layer-deformer-key'
         };
     }
 
@@ -21952,16 +22218,18 @@ export class AnimationTablePopup {
                 z-index: 2000;
                 display: flex;
                 flex-direction: column;
-                background: rgba(255, 255, 238, 0.985);
+                background: var(--ui-surface-float);
                 border: 2px solid rgba(128, 0, 0, 0.75);
                 border-radius: 8px;
                 box-shadow: 0 10px 28px rgba(128, 0, 0, 0.14);
+                backdrop-filter: var(--ui-backdrop-float);
+                -webkit-backdrop-filter: var(--ui-backdrop-float);
                 overflow: hidden;
             }
 
             .anim-table-header {
                 padding: 5px 10px;
-                background: rgba(255, 251, 230, 0.96);
+                background: color-mix(in srgb, var(--futaba-background) 68%, transparent);
                 color: var(--futaba-maroon);
                 display: flex;
                 flex-direction: column;
@@ -23764,7 +24032,12 @@ export class AnimationTablePopup {
         
         // アニメーション系
         this.eventBus.on('animation:frame-changed', () => {
-            if (this.isTransformPreviewSuspended
+            if (this.layerSystem?.getLayerWarpEditSession?.()) {
+                // 新Frameへretargetせず、旧Frameの未確定Layer WARPだけをrollbackする。
+                this.layerSystem.finishLayerWarpEditSession?.({ cancelled: true });
+            }
+            if (!this._layerTransformFrameNavigationInProgress
+                && this.isTransformPreviewSuspended
                 && (this._transformPreviewAuthority === TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY
                     || this._transformPreviewAuthority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY)) {
                 // Frame変更は新targetへのretargetではない。現在sessionをrollbackし、

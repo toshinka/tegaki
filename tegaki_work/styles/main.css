@@ -5439,6 +5439,11 @@ button.anim-motion-graph-legend-item.is-primary {
     background: color-mix(in srgb, var(--futaba-background) 72%, var(--futaba-light-medium) 28%);
 }
 
+/* Timeline側の選択面はClip内セルだけが所有する。範囲外へ薄茶を漏らさない。 */
+.animation-table-panel .anim-rig-folder-timeline-row.is-selected {
+    background: var(--futaba-background);
+}
+
 .anim-rig-pivot-indicator {
     flex: 0 0 auto;
     color: var(--futaba-maroon);

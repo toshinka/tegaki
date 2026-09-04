@@ -78,6 +78,7 @@ export class LayerSystem {
         this.checkerPattern = null;
         this._checkerTileScale = null;
         this._layerTransformSession = null;
+        this._layerWarpEditSession = null;
         this._transformEditAdapter = null;
         this._transformInteractionFrame = null;
         this._pendingTransformInteraction = null;
@@ -192,6 +193,96 @@ export class LayerSystem {
     getActiveTransformEditTarget() {
         return this._layerTransformSession?.transaction?.target
             || TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE;
+    }
+
+    /**
+     * 後続Simple 4x4 controller用のLayer WARP transaction入口。
+     * pointer/DOMは持たず、active working RasterとPopup adapterの同期境界だけを所有する。
+     */
+    canStartLayerWarpEditSession() {
+        const activeLayer = this.getActiveLayer?.();
+        if (!activeLayer?.layerData
+            || activeLayer.layerData.isBackground
+            || activeLayer.layerData.isFolder
+            || this._layerTransformSession
+            || this._layerWarpEditSession
+            || !this._transformEditAdapter?.canStartWarp) {
+            return false;
+        }
+        const sourceBounds = this._resolveLayerTransformSourceBounds(activeLayer);
+        const result = this._transformEditAdapter.canStartWarp({
+            layerId: activeLayer.layerData.id,
+            sourceBounds
+        });
+        return result?.ok === true;
+    }
+
+    beginLayerWarpEditSession() {
+        const activeLayer = this.getActiveLayer?.();
+        if (!activeLayer?.layerData
+            || activeLayer.layerData.isBackground
+            || activeLayer.layerData.isFolder
+            || this._layerTransformSession
+            || this._layerWarpEditSession
+            || !this._transformEditAdapter?.beginWarp) {
+            return { ok: false, blocked: true, reason: 'layer-warp-entry-blocked' };
+        }
+        const sourceBounds = this._resolveLayerTransformSourceBounds(activeLayer);
+        const start = this._transformEditAdapter.beginWarp({
+            layerId: activeLayer.layerData.id,
+            sourceBounds
+        });
+        if (start?.ok !== true) return start;
+        this._layerWarpEditSession = {
+            layerId: activeLayer.layerData.id,
+            transaction: start.transaction,
+            sourceBounds,
+            points: (start.points || []).map(point => ({ ...point }))
+        };
+        return {
+            ...start,
+            sourceBounds: sourceBounds ? { ...sourceBounds } : null
+        };
+    }
+
+    previewLayerWarpEditSession(points) {
+        const session = this._layerWarpEditSession;
+        if (!session || !this._transformEditAdapter?.previewWarp) {
+            return { ok: false, blocked: true, reason: 'layer-warp-session-required' };
+        }
+        const result = this._transformEditAdapter.previewWarp({
+            transaction: session.transaction,
+            points
+        });
+        if (result?.ok) session.points = (points || []).map(point => ({ ...point }));
+        return result;
+    }
+
+    finishLayerWarpEditSession(options = {}) {
+        const session = this._layerWarpEditSession;
+        if (!session || !this._transformEditAdapter?.finishWarp) {
+            return { ok: false, blocked: true, reason: 'layer-warp-session-required', commit: false };
+        }
+        let result;
+        try {
+            result = this._transformEditAdapter.finishWarp({
+                transaction: session.transaction,
+                cancelled: options.cancelled === true
+            });
+        } finally {
+            this._layerWarpEditSession = null;
+        }
+        return result;
+    }
+
+    getLayerWarpEditSession() {
+        const session = this._layerWarpEditSession;
+        return session ? {
+            layerId: session.layerId,
+            transaction: session.transaction,
+            sourceBounds: session.sourceBounds ? { ...session.sourceBounds } : null,
+            points: session.points.map(point => ({ ...point }))
+        } : null;
     }
 
     /**
@@ -3048,6 +3139,12 @@ export class LayerSystem {
             const bounds = this._layerTransformSession?.sourceBounds;
             return bounds ? { ...bounds } : null;
         };
+        this.transform.onCommitTimelineKey = () => {
+            return this.commitLayerTransformTimelineKeyAndContinue();
+        };
+        this.transform.onStepTimelineFrame = delta => {
+            return this.stepLayerTransformTimelineFrame(delta);
+        };
         this.transform.onRebuildRequired = (layer, paths) => {
             this.safeRebuildLayer(layer, paths);
         };
@@ -3367,6 +3464,93 @@ export class LayerSystem {
         }
         session.previewResult = preview || null;
         return preview?.ok === true;
+    }
+
+    _finishLayerTransformTimelineSession({ cancelled = false } = {}) {
+        const session = this._layerTransformSession;
+        if (!session || !isTransformTimelineKeyTarget(session.transaction?.target)) {
+            return { ok: false, commit: false, reason: 'timeline-transform-session-required' };
+        }
+        let result = null;
+        try {
+            restoreLayerTransformPreviewSampling(session.previewSampling);
+            this._restoreTransformTargetState(session.targetLayerTransforms);
+            result = this._transformEditAdapter?.finish?.({
+                transaction: session.transaction,
+                cancelled
+            }) || { ok: false, commit: false, reason: 'timeline-transform-finish-unavailable' };
+        } catch (error) {
+            console.error('[LayerSystem] Failed to finish timeline transform session:', error);
+            result = { ok: false, commit: false, reason: 'timeline-transform-finish-failed' };
+        } finally {
+            this._layerTransformSession = null;
+            this.coordAPI?.clearCache?.();
+        }
+        return result;
+    }
+
+    _resumeLayerTransformTimelineSession() {
+        const resumed = this.enterLayerMoveMode() === true;
+        const activeLayer = this.getActiveLayer();
+        if (resumed && activeLayer) {
+            this.transform?.updateTransformPanelValues?.(activeLayer);
+            this.transform?.syncBasicOverlay?.();
+            return true;
+        }
+        this.transform?.exitMoveMode?.(activeLayer);
+        this.cameraSystem?.setVKeyPressed?.(false);
+        this.transform?.setEditContextProjection?.(null);
+        return false;
+    }
+
+    /**
+     * ANIMATE previewをTimeline Historyへ確定し、V panelを閉じず同じFrameへ再入場する。
+     * SOURCE Raster bakeと未変更baselineはこの入口で確定しない。
+     */
+    commitLayerTransformTimelineKeyAndContinue() {
+        const session = this._layerTransformSession;
+        if (!session
+            || !isTransformTimelineKeyTarget(session.transaction?.target)
+            || session.previewResult?.changed !== true) {
+            return false;
+        }
+        const target = session.transaction.target;
+        const layerId = session.layerId;
+        const result = this._finishLayerTransformTimelineSession({ cancelled: false });
+        const resumed = this._resumeLayerTransformTimelineSession();
+        if (result?.commit === true) {
+            this.eventBus?.emit('layer:transform-key-committed', {
+                layerId,
+                target
+            });
+            this._emitPanelUpdateRequest();
+        }
+        return result?.commit === true && resumed;
+    }
+
+    /**
+     * 明示KEY確定後の安定状態だけを隣Frameへ進め、同じLayer Transform sessionへ再入場する。
+     * 未確定previewは暗黙commitもrollbackもせず、UI側と同じく移動を拒否する。
+     */
+    stepLayerTransformTimelineFrame(delta) {
+        const direction = delta < 0 ? -1 : (delta > 0 ? 1 : 0);
+        const session = this._layerTransformSession;
+        if (!direction
+            || !session
+            || !isTransformTimelineKeyTarget(session.transaction?.target)
+            || session.previewResult?.changed === true
+            || typeof this._transformEditAdapter?.moveFrame !== 'function') {
+            return false;
+        }
+        const transaction = session.transaction;
+        const result = this._finishLayerTransformTimelineSession({ cancelled: false });
+        if (result?.ok !== true) {
+            this._resumeLayerTransformTimelineSession();
+            return false;
+        }
+        const moved = this._transformEditAdapter.moveFrame({ transaction, delta: direction }) === true;
+        const resumed = this._resumeLayerTransformTimelineSession();
+        return moved && resumed;
     }
 
     exitLayerMoveMode(options = {}) {

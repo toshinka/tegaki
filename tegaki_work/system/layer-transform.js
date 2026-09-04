@@ -69,6 +69,8 @@ export class LayerTransform {
         this.onCanEnterMoveMode = null;
         this.onGetTransformWorldCorners = null;
         this.onGetTransformSourceBounds = null;
+        this.onCommitTimelineKey = null;
+        this.onStepTimelineFrame = null;
         this._editContextProjection = null;
         this.basicOverlayScaleGesture = null;
         this.basicOverlayAxisScaleGesture = null;
@@ -120,6 +122,48 @@ export class LayerTransform {
             transformAnchorSite.setEditable('layer-transform', false);
             anchorButton?.classList.remove('active');
         }
+        this._syncTimelineKeyStrip(projection?.keyGuide || null);
+    }
+
+    _syncTimelineKeyStrip(keyGuide = null) {
+        const strip = typeof document !== 'undefined'
+            ? document.getElementById('layer-transform-key-strip')
+            : null;
+        if (!strip) return;
+        const visible = this.isVKeyPressed && keyGuide?.visible === true;
+        strip.hidden = !visible;
+        if (!visible) {
+            strip.removeAttribute('data-key-state');
+            return;
+        }
+
+        const pending = keyGuide.pending === true;
+        const keyed = keyGuide.hasExplicitKey === true;
+        const frameLabel = `F${Math.max(0, Number(keyGuide.timelineFrame) || 0) + 1}`;
+        const state = pending ? 'pending' : (keyed ? 'keyed' : 'ready');
+        strip.dataset.keyState = state;
+
+        const label = document.getElementById('layer-transform-key-state-label');
+        if (label) {
+            label.textContent = pending
+                ? `${frameLabel} · KEY確定`
+                : `${frameLabel} · ${keyed ? 'KEY設定済' : 'KEY未設定'}`;
+        }
+
+        const commitButton = document.getElementById('layer-transform-key-commit-btn');
+        if (commitButton) {
+            commitButton.disabled = !pending;
+            commitButton.setAttribute('aria-label', pending
+                ? `${frameLabel}の変形KEYを確定`
+                : `${frameLabel}は${keyed ? 'KEY設定済み' : 'KEY未設定'}`);
+        }
+        const prevButton = document.getElementById('layer-transform-key-prev-btn');
+        const nextButton = document.getElementById('layer-transform-key-next-btn');
+        if (prevButton) prevButton.disabled = pending || keyGuide.canMovePrevious !== true;
+        if (nextButton) nextButton.disabled = pending || keyGuide.canMoveNext !== true;
+        strip.title = pending
+            ? 'KEYを確定するとFrame移動できます'
+            : '左右ボタンまたはホイールでFrame移動';
     }
 
     _canEditTransformAnchor() {
@@ -713,6 +757,37 @@ export class LayerTransform {
                 anchorBtn.classList.add('active');
             }
         });
+
+        const keyStrip = document.getElementById('layer-transform-key-strip');
+        const keyCommitButton = document.getElementById('layer-transform-key-commit-btn');
+        const keyPrevButton = document.getElementById('layer-transform-key-prev-btn');
+        const keyNextButton = document.getElementById('layer-transform-key-next-btn');
+        keyCommitButton?.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (keyCommitButton.disabled) return;
+            this.onCommitTimelineKey?.();
+        });
+        keyPrevButton?.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (keyPrevButton.disabled) return;
+            this.onStepTimelineFrame?.(-1);
+        });
+        keyNextButton?.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (keyNextButton.disabled) return;
+            this.onStepTimelineFrame?.(1);
+        });
+        keyStrip?.addEventListener('wheel', event => {
+            if (keyStrip.hidden || Math.abs(event.deltaY) < 0.01) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const stepButton = event.deltaY < 0 ? keyPrevButton : keyNextButton;
+            if (stepButton?.disabled) return;
+            this.onStepTimelineFrame?.(event.deltaY < 0 ? -1 : 1);
+        }, { passive: false });
         
         this._setupPanelDrag();
     }
