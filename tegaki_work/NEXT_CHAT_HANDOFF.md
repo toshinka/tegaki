@@ -2,7 +2,7 @@
 
 更新日: 2026-09-05
 
-状態: Phase 9pまでclose。現行Phase 9qはDrawing WARP Authority / Layer Transform Integration Gate、Gate 0=`GO — C: Raster Source Bake + CAF Layer Deformer`。Gate 1 Task A〜CとTask D前Owner Timeline follow-up完了、次はTask D。
+状態: Phase 9pまでclose。現行Phase 9qはDrawing WARP Authority / Layer Transform Integration Gate、Gate 0=`GO — C: Raster Source Bake + CAF Layer Deformer`。Gate 1 Task A〜DとTask D前Owner Timeline follow-up完了、次はTask E。
 
 ## 1. 最初に読む順序
 
@@ -19,15 +19,15 @@
 11. `tegaki_work/system/animation/clip-layer-deformer.js`
 12. `tegaki_work/system/animation/transform-edit-context.js`
 13. `tegaki_work/system/animation/transform-edit-transaction.js`
-14. `tegaki_work/system/animation/folder-part-render-plan.js`
-15. `tegaki_work/system/animation/timeline-frame-compositor.js`
-16. `tegaki_work/system/animation/animation-data-model.js`
-17. `tegaki_work/ui/animation-table-popup.js`
-18. `tegaki_work/system/layer-system.js`
-19. `tegaki_work/system/layer-transform.js`
-20. `tegaki_work/build/verify-clip-layer-deformer.mjs`
-21. `tegaki_work/build/verify-clip-layer-deformer-model.mjs`
-22. `tegaki_work/build/verify-clip-layer-transform-render-plan.mjs`
+14. `tegaki_work/system/animation/layer-warp-edit-transaction.js`
+15. `tegaki_work/system/animation/folder-part-render-plan.js`
+16. `tegaki_work/system/animation/timeline-frame-compositor.js`
+17. `tegaki_work/system/animation/animation-data-model.js`
+18. `tegaki_work/ui/animation-table-popup.js`
+19. `tegaki_work/system/layer-system.js`
+20. `tegaki_work/system/layer-transform.js`
+21. `tegaki_work/build/verify-layer-warp-edit-transaction.mjs`
+22. `tegaki_work/build/verify-layer-warp-preview-production.mjs`
 23. 既存WARP rasterizer / compositor / Project save / History実装
 
 ## 2. 作業開始時の確認
@@ -49,18 +49,19 @@ git status --short --untracked-files=all -- tegaki_work task-codex 開発用資�
 - Project serialize / validate、internal Layer削除、Clip copy / paste、structured bake、duration retime、Timeline History capture / restoreへtrackを接続済み。
 - KEYは対象internal Layer行だけへ7pxの単色丸で表示する。外周ring / box-shadowはなく、Part / Bone菱形、WARP key、cell clickは変更していない。
 - V close前のLayer Motion丸KEYだけは既存Transform transactionから淡色previewを投影し、確定後に濃い単色へ戻す。CAF internal Layer行はClip範囲内をcream grid、範囲外をBackground無地面に分け、選択薄茶も範囲内だけに限定した。格子なしblank面clickでもFrame seekでき、通常wheelは移動だけ、`Shift+wheel`だけ空きFrameのCAF生成を許可する。
-- BrowserでLayer 2だけのF1 / F10位置、Layer 1非干渉、Frame往復、Undo / Redo、computed style、console 0件を確認した。
-- 全141 verifier、production build、生成物清掃を通過した。GitHubURLの旧`ClaudeReview` 7件は実在する`Claude_GPT_Review`へ補正済み。
+- Pixi CAF previewは個別RasterでLayer WARPをRenderTexture Mesh bakeしてからLayer Motion matrixを適用する。Folder WARP内でも同じchild planと変形後boundsを使い、CPUと同じ順序を維持する。
+- Simple 4x4 transactionは入場だけでは保存keyを作らず、最初のpoint変更だけをcurrent Frame候補として`layerDeformers`へpreviewする。confirmはTimeline History 1件、cancel / no-op / Frame変更 / Table closeはbaseline rollback・History 0件。非4x4 deformerはAdvancedへ送るため暗黙変換しない。
+- 全147 verifier、production build、BrowserのAnimation Table展開、console 0件を確認した。Task EまでWARP tabは無効のままで、Task DはDOM / pointer UIを追加していない。
 
 ## 4. 次のtask
 
-Phase 9q Gate 1 Task D、Pixi preview proxyとLayer Transform WARP transaction接続。
+Phase 9q Gate 1 Task E、Layer Transform Simple 4x4 UI / solid marker / terminal実操作接続。
 
-1. existing WARP Mesh preview adapterを監査し、CPU planと同じbind points / pose points / triangle順 / boundsを消費するactive Raster一枚のleaf表示proxyを固定する。
-2. Layer Transform `WARP` tabのANIMATE sessionを`ClipInstance.layerDeformers`へ接続し、preview candidateをProject正本にしない。
-3. V closeでTimeline History 1件、Escape / Frame変更 / Table closeでbaseline rollback、no-opでHistory 0を固定する。
-4. SOURCEはnormal Raster / Table閉鎖中CAF Rasterの既存confirm-time bakeへ留め、ANIMATE schemaと混ぜない。
-5. Task Dではtransaction / previewを優先し、Simple 4x4の最終UI skin、solid marker、Browser受入はTask Eへ残す。
+1. Layer Transform `WARP` tabを有効化し、active Raster描画範囲へauto-fitした16点Simple 4x4 overlayをCanvasへ出す。pen hit area、線と点のFutaba palette、BASICとの差を既存overlay grammarへ合わせる。
+2. pointer gestureはTask D transactionへ接続し、pointerupはgestureだけ終了、pointercancel / capture喪失はgesture開始値へ戻してsession継続とする。
+3. V close / Escape / Frame変更 / Table close / save terminalを実操作で確認し、SOURCE Raster bakeとANIMATE `layerDeformers`を混ぜない。変更後のBASIC / WARP暗黙切替は止める。
+4. internal Layer行の同一FrameにLayer MotionまたはLayer WARPがあれば単色丸を一つだけ出す。両方あっても蛇の目や重複markerにしない。未確定WARP markerは既存preview色規則へ合わせる。
+5. Browserで通常Raster SOURCE、Table閉鎖中CAF SOURCE、Table表示中CAF ANIMATE、Undo / Redo、save / reopen、console、生成物清掃まで確認する。
 
 Drawing WARP実装、static RIG、Animation Table / Layer Panel全体再配置は監査と並走しない。
 
@@ -87,9 +88,11 @@ Phase 9pではCAF全体MotionのtransformKeyframesと、active internal Raster�
 
 Gate 0ではnormal Raster / Table閉鎖中CAF Rasterを確定時bake、Table表示中active internal Rasterだけを新規`ClipInstance.layerDeformers`、root / Folderは既存authority維持としました。Layer Transform WARPはSimple 4x4が第一水位、既存WARP WORKSPACEはroot / Folderと将来Advanced用です。initial SliceではRIG / Mesh / Skin / clipping重複を拒否します。
 
-Gate 1 Task A〜Cでは`clip-layer-deformer.js`と3本のverifierを追加し、normalize / validate / target edit / sample / remap / terminal retime / one-Frame bake、ClipInstance / TimelineModel / Project JSON、delete / copy / duplicate、structured bake、duration retime、Timeline History、render plan / CPU compositorを接続しました。順序は`DrawingSnapshot → Layer WARP → Layer Motion → Folder WARP → root WARP → root Motion`です。Folder / Background、RIG Part、Mesh / Skin、internal clippingとの重複はmodel / plan境界で拒否します。全145 verifierとproduction buildを通過し、Pixi previewとpointer UIはまだ変更していません。
+Gate 1 Task A〜Dでは`clip-layer-deformer.js`、`layer-warp-edit-transaction.js`と関連verifierを追加し、normalize / validate / target edit / sample / remap / terminal retime / one-Frame bake、ClipInstance / TimelineModel / Project JSON、delete / copy / duplicate、structured bake、duration retime、Timeline History、CPU / Pixi previewを接続しました。順序は`DrawingSnapshot → Layer WARP → Layer Motion → Folder WARP → root WARP → root Motion`です。Folder / Background、RIG Part、Mesh / Skin、internal clippingとの重複はmodel / plan境界で拒否し、既存非4x4 deformerもSimple UIへ暗黙変換しません。
 
 Task D前Owner follow-upでは、V close前のLayer Motion丸KEYを淡色preview、確定後を濃い単色へ分けました。CAF internal Layer行はClip範囲内だけcream面＋縦grid（選択薄茶は内側だけ）、範囲外はBackground無地面です。Lane下の格子なしblank面clickでもFrameを移動でき、Timeline gridの通常wheelは移動だけ、`Shift+wheel`前進時だけ既存Auto Create設定に従ってCAFを生成します。全145 verifier、build、Browser、console 0件を通過しています。
 
-次作業予告はGate 1 Task DのPixi preview proxy / Layer Transform WARP transaction接続です。作業担当はSOL / MAX。CPUと同じsample / topologyを使うleaf Mesh、V close / Escape / Frame変更 / Table close / no-opのsession terminalを固定し、Simple 4x4の最終UIはTask Eへ残してください。Antigravity2はproduction fixtureまたは実画面後のread-only UI比較に限定し、production writeは並走しないでください。
+Task Dでは個別RasterのPixi leaf Mesh preview、Folder WARP内child plan / bounds、入場時History 0・実変更preview・confirm 1件・rollback 0件のLayer WARP transactionを接続しました。全147 verifier、production build、BrowserのAnimation Table展開、console 0件を通過しています。WARP tabはまだ無効で、DOM / pointerはTask Eです。
+
+次作業予告はGate 1 Task EのLayer Transform Simple 4x4 UI / solid Timeline marker / terminal実操作接続です。作業担当はSOL / MAX。Task DのtransactionとPixi previewを使い、SOURCE / ANIMATEを同じ見た目から正しいauthorityへrouteしてください。Antigravity2はproduction fixtureまたは実画面後のread-only UI比較に限定し、production writeは並走しないでください。
 ```

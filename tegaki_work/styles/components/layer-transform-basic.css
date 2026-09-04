@@ -42,6 +42,97 @@
     cursor: not-allowed;
 }
 
+.layer-transform-key-strip {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 28px;
+    align-items: stretch;
+    gap: 3px;
+    margin: 0 8px 4px;
+    padding: 2px;
+    border-radius: var(--ui-radius-control);
+    background: color-mix(in srgb, var(--futaba-cream) 54%, transparent);
+}
+
+.layer-transform-key-strip[hidden] {
+    display: none;
+}
+
+.layer-transform-key-step-btn,
+.layer-transform-key-commit-btn {
+    min-width: 0;
+    min-height: 24px;
+    border: 0;
+    border-radius: calc(var(--ui-radius-control) - 1px);
+    background: color-mix(in srgb, var(--futaba-background) 58%, transparent);
+    color: var(--futaba-maroon);
+}
+
+.layer-transform-key-step-btn {
+    display: grid;
+    place-items: center;
+    padding: 3px;
+}
+
+.layer-transform-key-step-btn svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.layer-transform-key-commit-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 3px 7px;
+    font-size: 9px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.layer-transform-key-step-btn:hover:not(:disabled),
+.layer-transform-key-step-btn:focus-visible,
+.layer-transform-key-commit-btn:hover:not(:disabled),
+.layer-transform-key-commit-btn:focus-visible {
+    background: color-mix(in srgb, var(--active-border) 18%, var(--futaba-background));
+    outline: 1px solid color-mix(in srgb, var(--active-border) 68%, transparent);
+    outline-offset: -1px;
+}
+
+.layer-transform-key-state-dot {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
+    border: 1px solid var(--futaba-medium);
+    border-radius: 50%;
+    background: transparent;
+}
+
+.layer-transform-key-strip[data-key-state="keyed"] .layer-transform-key-state-dot {
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-maroon);
+}
+
+.layer-transform-key-strip[data-key-state="pending"] .layer-transform-key-state-dot {
+    border-color: color-mix(in srgb, var(--futaba-maroon) 48%, var(--futaba-background));
+    background: color-mix(in srgb, var(--futaba-maroon) 38%, var(--futaba-background));
+}
+
+.layer-transform-key-strip[data-key-state="pending"] .layer-transform-key-commit-btn {
+    background: color-mix(in srgb, var(--active-border) 20%, var(--futaba-background));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--active-border) 52%, transparent);
+}
+
+.layer-transform-key-step-btn:disabled,
+.layer-transform-key-commit-btn:disabled {
+    opacity: var(--ui-opacity-disabled);
+    cursor: not-allowed;
+}
+
 .layer-transform-precise {
     margin: 0 8px 6px;
     border-radius: var(--ui-radius-control);
@@ -190,7 +281,9 @@
 
 @media (pointer: coarse) {
     .layer-transform-mode-btn,
-    .layer-transform-precise > summary {
+    .layer-transform-precise > summary,
+    .layer-transform-key-step-btn,
+    .layer-transform-key-commit-btn {
         min-height: 38px;
         font-size: 10px;
     }

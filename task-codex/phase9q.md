@@ -1,7 +1,7 @@
 # Phase 9q — Drawing WARP Authority / Layer Transform Integration Gate
 
 更新日: 2026-09-05
-状態: ACTIVE — Gate 1 Task C＋Task D前Owner Timeline follow-up 完了、次はTask D
+状態: ACTIVE — Gate 1 Task D＋Owner Timeline follow-up 完了、次はTask E
 担当: SOL / MAX
 
 ## 1. 目的
@@ -81,6 +81,14 @@ Gate 1 Task D前Owner Timeline follow-up完了:
 - Timeline gridの通常wheelはFrame移動だけとし、空きFrameでのCAF作成は`Shift+wheel`の前進時だけ既存Auto Create設定に従って許可する。`Ctrl/Cmd+wheel` zoom、Lane名領域wheelの縦scroll、keyboard / button経路は維持する。
 - 更新verifierを含む全145 verifier、production build、Browserで選択行内側の薄茶＋grid、外側のBackground無地面、blank click F27、通常wheel F26・CAF非生成、console error 0件を確認した。
 
+Gate 1 Task D完了:
+
+- Pixi CAF previewが`createFolderEffectRenderPlan()`の`layerEffectByLayerId`をRaster leafで消費し、同期RenderTexture Mesh bakeでindividual Layer WARPを表示してからLayer Motion matrixを適用するようにした。opacity / blend / RIG focus alphaは最終preview nodeへ一度だけ適用する。
+- Folder WARP subtreeでもindividual Layer WARP / Layer Motionだけをchild planへ引き継ぎ、変形後boundsを`calculateFolderEffectAssetBounds()`でFolder surfaceへ含める。評価順はCPUと同じ`DrawingSnapshot → Layer WARP → Layer Motion → Folder WARP → root WARP → root Motion`。
+- `layer-warp-edit-transaction.js`を追加し、active CAF internal Raster一枚のANIMATE Simple 4x4候補をpureに計画する。入場だけではkey / Historyを作らず、最初のpoint変更だけcurrent Frame key候補を生成する。既存の非4x4 / free Control Meshは暗黙変換せず`advanced-layer-warp-required`で止める。
+- LayerSystem → AnimationTablePopup同期adapterへ`canStart / begin / preview / finish Warp`を接続した。preview authorityは`ClipInstance.layerDeformers`だけ、V相当confirmはTimeline History 1件、cancel / no-opはbaselineへrollbackしてHistory 0件。Frame変更とTable closeも未確定sessionをrollbackする。Simple 4x4 DOM / pointer gestureはTask Eへ残した。
+- 新規2 verifierと既存RIG focus verifier更新を含む全147 verifier、production build、BrowserでAnimation Table展開とconsole error 0件を確認した。
+
 ## 5. NO-GO
 
 - Drawing WARPとRIG Mesh / Skin authoringを同時に実装しない。
@@ -106,4 +114,4 @@ Gate 1 Task D前Owner Timeline follow-up完了:
 
 ## 8. 次作業予告
 
-次taskはGate 1 Task D、Pixi preview proxyとLayer Transform WARP transaction接続です。作業担当はSOL / MAX。CPU planと同じsample / bounds / triangle順を使うleaf Mesh表示proxy、active internal Raster一枚だけのANIMATE preview / rollback / Timeline History境界を先に固定し、Simple 4x4の最終UI装飾とsolid markerはTask Eへ残します。
+次taskはGate 1 Task E、Layer Transform内のSimple 4x4 UIとsolid Timeline marker、V / Escape / pointercancel / Frame変更 / Table close / save terminalの実操作接続です。作業担当はSOL / MAX。Task DのtransactionとPixi previewを使い、通常Layer / Table閉鎖中CAFのSOURCE Raster bakeとTable表示中CAFのANIMATE authorityを同じ見た目から明示的にrouteし、既存Advanced WARPを複製しません。

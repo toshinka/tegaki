@@ -153,8 +153,8 @@ internal Layer行は、同じFrameにLayer MotionまたはLayer WARPのどちら
 1. **完了** — `layerDeformers` pure collection helper、validate / sample / remap / retime / bakeと固定入力verifier。
 2. **完了** — ClipInstance / TimelineModel / Project round-trip、delete / copy / duplicate / structured bake / History captureを接続。
 3. **完了** — individual Layer WARP render planとCPU compositorを接続し、Layer WARP / Layer Motion / Folder WARP / root WARP順と排他をverifier化。
-4. **次作業** — Pixi preview proxyとLayer Transform WARP transactionを接続。
-5. Simple 4x4 UI、solid marker、V / Escape / Frame変更 / save terminalをBrowser確認。
+4. **完了** — Pixi preview proxyとLayer Transform WARP transactionを接続。Layer WARP → Layer MotionとFolder内child plan / boundsをCPU順へ揃え、入場History 0、preview、confirm 1件、rollback 0件を固定した。
+5. **次作業** — Simple 4x4 UI、solid marker、V / Escape / pointercancel / Frame変更 / Table close / save terminalをBrowser確認。
 6. 必要ならshared controller抽出後にAdvanced handoffを接続。
 
 各Sliceは順に行い、同じproduction fileを複数agentで並走編集しない。
