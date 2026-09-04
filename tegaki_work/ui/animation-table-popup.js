@@ -6025,6 +6025,9 @@ export class AnimationTablePopup {
                 const effectIsland = options.folderEffectPlan?.status === 'ready'
                     ? options.folderEffectPlan.islandByFolderId?.get(internalLayer.id) || null
                     : null;
+                const childEffectPlan = effectIsland
+                    ? this._createFolderEffectPreviewChildPlan(options.folderEffectPlan, effectIsland)
+                    : null;
                 const folderContainer = new Container();
                 folderContainer.eventMode = 'none';
                 const hasFolderContent = this._renderInternalLayerPreviewGroup(
@@ -6035,8 +6038,8 @@ export class AnimationTablePopup {
                     effectIsland
                         ? {
                             ...options,
-                            folderEffectPlan: null,
-                            rigRenderPlan: null,
+                            folderEffectPlan: childEffectPlan,
+                            rigRenderPlan: childEffectPlan?.rigRenderPlan || null,
                             sourceBounds: null
                         }
                         : options
@@ -6047,15 +6050,18 @@ export class AnimationTablePopup {
                     continue;
                 }
                 if (effectIsland) {
-                    const effectBounds = unionRasterBounds((internalLayers || []).map(layer => {
-                        if (!layer || layer.type === 'folder'
-                            || !effectIsland.layerIds.has(layer.id)
-                            || !this._isInternalLayerEffectivelyVisible(asset, layer)) {
-                            return null;
-                        }
-                        const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
-                        return snapshot?.pixels ? this._getDrawingSnapshotRasterBounds(snapshot) : null;
-                    }));
+                    const effectBounds = calculateFolderEffectAssetBounds(
+                        asset,
+                        childEffectPlan,
+                        layer => {
+                            const snapshot = this.model.getDrawingSnapshot(layer.drawingSnapshotId);
+                            return snapshot?.pixels
+                                ? this._getDrawingSnapshotRasterBounds(snapshot)
+                                : null;
+                        },
+                        layer => effectIsland.layerIds.has(layer.id)
+                            && this._isInternalLayerEffectivelyVisible(asset, layer)
+                    );
                     const surface = this._validateInternalMergeSurface(effectBounds);
                     const effectNode = surface.ok
                         ? this._createDeformerPreviewNode(
@@ -6161,20 +6167,40 @@ export class AnimationTablePopup {
 
             const sprite = new Sprite(texture);
             this._positionSnapshotSprite(sprite, displaySnapshot);
-            sprite.alpha = opacity * focusAlpha;
-            sprite.blendMode = internalLayer.blendMode || 'normal';
             sprite.eventMode = 'none';
 
             if (options.tint !== undefined) {
                 sprite.tint = options.tint;
             }
 
-            const renderIsland = options.rigRenderPlan?.status === 'ready'
-                ? options.rigRenderPlan.islandByLayerId?.get(internalLayer.id) || null
+            const layerEffect = options.folderEffectPlan?.status === 'ready'
+                ? options.folderEffectPlan.layerEffectByLayerId?.get(internalLayer.id) || null
                 : null;
-            if (renderIsland?.worldMatrix) {
+            let previewNode = sprite;
+            if (layerEffect) {
+                const sourceRoot = new Container();
+                sourceRoot.eventMode = 'none';
+                sourceRoot.addChild(sprite);
+                const sourceBounds = this._getDrawingSnapshotRasterBounds(displaySnapshot);
+                const effectNode = this._createDeformerPreviewNode(
+                    sourceRoot,
+                    asset,
+                    [internalLayer],
+                    layerEffect.sampledDeformer,
+                    { sourceBounds, rigRenderPlan: null }
+                );
+                if (!effectNode) {
+                    if (!sourceRoot.destroyed) {
+                        sourceRoot.destroy({ children: true, texture: false, baseTexture: false });
+                    }
+                    console.warn('[AnimationTable] Layer deformer preview surface could not be created', {
+                        assetId: asset.id,
+                        layerId: internalLayer.id
+                    });
+                    continue;
+                }
                 const transformed = new Container();
-                const matrix = renderIsland.worldMatrix;
+                const matrix = layerEffect.layerMotionMatrix;
                 transformed.eventMode = 'none';
                 transformed.setFromMatrix(new Matrix(
                     matrix.a,
@@ -6184,15 +6210,68 @@ export class AnimationTablePopup {
                     matrix.tx,
                     matrix.ty
                 ));
-                transformed.addChild(sprite);
-                container.addChild(transformed);
+                transformed.addChild(effectNode);
+                transformed._tegakiLayerWarpPreview = true;
+                previewNode = transformed;
             } else {
-                container.addChild(sprite);
+                const renderIsland = options.rigRenderPlan?.status === 'ready'
+                    ? options.rigRenderPlan.islandByLayerId?.get(internalLayer.id) || null
+                    : null;
+                if (renderIsland?.worldMatrix) {
+                    const transformed = new Container();
+                    const matrix = renderIsland.worldMatrix;
+                    transformed.eventMode = 'none';
+                    transformed.setFromMatrix(new Matrix(
+                        matrix.a,
+                        matrix.b,
+                        matrix.c,
+                        matrix.d,
+                        matrix.tx,
+                        matrix.ty
+                    ));
+                    transformed.addChild(sprite);
+                    previewNode = transformed;
+                }
             }
+            previewNode.alpha = opacity * focusAlpha;
+            previewNode.blendMode = internalLayer.blendMode || 'normal';
+            container.addChild(previewNode);
             rendered = true;
         }
 
         return rendered;
+    }
+
+    _createFolderEffectPreviewChildPlan(renderPlan, effectIsland) {
+        const rigPlan = renderPlan?.rigRenderPlan || null;
+        const layerEffects = (renderPlan?.layerEffects || []).filter(effect => (
+            effectIsland?.layerIds?.has(effect?.internalLayerId)
+        ));
+        const layerEffectByLayerId = new Map(layerEffects
+            .map(effect => [effect.internalLayerId, effect]));
+        const layerMotionIslands = (rigPlan?.islands || []).filter(island => (
+            island?.targetKind === 'layer-motion'
+            && effectIsland?.layerIds?.has(island.targetLayerId)
+        ));
+        const islandByLayerId = new Map(layerMotionIslands
+            .map(island => [island.targetLayerId, island]));
+        return {
+            ...renderPlan,
+            status: 'ready',
+            islands: [],
+            layerEffects,
+            islandByFolderId: new Map(),
+            islandByLayerId: new Map(),
+            layerEffectByLayerId,
+            rigRenderPlan: {
+                ...(rigPlan || {}),
+                status: 'ready',
+                islands: layerMotionIslands,
+                islandByPartId: new Map(),
+                islandByFolderId: new Map(),
+                islandByLayerId
+            }
+        };
     }
 
     _createInternalClippedSnapshot(asset, layer, snapshot) {
