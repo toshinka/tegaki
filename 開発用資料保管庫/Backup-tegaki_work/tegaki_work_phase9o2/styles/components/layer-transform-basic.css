@@ -1,0 +1,203 @@
+/* Phase 9o D: BASICを第一水位、precise値を詳細へ下げるLayer Transform shell。 */
+
+.layer-transform-mode-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3px;
+    padding: 3px 8px 5px;
+}
+
+/* Anchorはshortcutのない高頻度操作。反転群から少し離し、左端へ固定する。 */
+.layer-transform-panel .transform-anchor-toggle {
+    margin-right: 4px;
+    border-color: color-mix(in srgb, var(--active-border) 46%, var(--futaba-light-medium));
+    background: color-mix(in srgb, var(--active-border) 12%, var(--futaba-background));
+}
+
+.layer-transform-panel .transform-anchor-toggle:hover:not([disabled]) {
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 22%, var(--futaba-background));
+}
+
+.layer-transform-mode-btn {
+    min-height: 24px;
+    padding: 3px 7px;
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius-control);
+    background: color-mix(in srgb, var(--futaba-cream) 72%, transparent);
+    color: var(--text-secondary);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+
+.layer-transform-mode-btn[aria-selected="true"] {
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 74%, var(--futaba-cream));
+    color: var(--futaba-maroon);
+}
+
+.layer-transform-mode-btn:disabled {
+    opacity: 0.58;
+    cursor: not-allowed;
+}
+
+.layer-transform-precise {
+    margin: 0 8px 6px;
+    border-radius: var(--ui-radius-control);
+    background: color-mix(in srgb, var(--futaba-cream) 62%, transparent);
+}
+
+.layer-transform-precise > summary {
+    min-height: 24px;
+    padding: 5px 7px;
+    color: var(--futaba-maroon);
+    font-size: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    list-style-position: inside;
+}
+
+.layer-transform-precise > summary:hover,
+.layer-transform-precise > summary:focus-visible {
+    background: color-mix(in srgb, var(--active-border) 14%, transparent);
+}
+
+.layer-transform-precise .panel-sections {
+    min-width: calc(var(--ui-transform-panel-width) - 16px);
+    padding: 2px 7px 6px;
+}
+
+.layer-transform-basic-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2687;
+    width: 100vw;
+    height: 100vh;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.layer-transform-basic-overlay[hidden] {
+    display: none;
+}
+
+.layer-transform-basic-overlay__frame {
+    fill: color-mix(in srgb, var(--active-border) 4%, transparent);
+    stroke: var(--active-border);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+}
+
+.layer-transform-basic-overlay__corner,
+.layer-transform-basic-overlay__side,
+.layer-transform-basic-overlay__rotation {
+    fill: var(--futaba-cream);
+    stroke: var(--futaba-maroon);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+}
+
+.layer-transform-basic-overlay__corner,
+.layer-transform-basic-overlay__side {
+    pointer-events: none;
+    transition: fill 90ms ease, stroke 90ms ease;
+}
+
+.layer-transform-basic-overlay__corner.is-hovered,
+.layer-transform-basic-overlay__corner.is-active,
+.layer-transform-basic-overlay__side.is-hovered,
+.layer-transform-basic-overlay__side.is-active {
+    fill: color-mix(in srgb, var(--active-border) 72%, var(--futaba-cream));
+    stroke: var(--futaba-maroon);
+}
+
+.layer-transform-basic-overlay__corner-hit {
+    fill: transparent;
+    stroke: transparent;
+    pointer-events: all;
+    touch-action: none;
+}
+
+.layer-transform-basic-overlay__side-hit {
+    fill: transparent;
+    stroke: transparent;
+    pointer-events: all;
+    touch-action: none;
+}
+
+.layer-transform-basic-overlay__side-hit.is-horizontal-axis {
+    cursor: ew-resize;
+}
+
+.layer-transform-basic-overlay__side-hit.is-vertical-axis {
+    cursor: ns-resize;
+}
+
+.layer-transform-basic-overlay__side-hit.is-diagonal-main {
+    cursor: nwse-resize;
+}
+
+.layer-transform-basic-overlay__side-hit.is-diagonal-cross {
+    cursor: nesw-resize;
+}
+
+.layer-transform-basic-overlay__corner-hit.is-diagonal-main {
+    cursor: nwse-resize;
+}
+
+.layer-transform-basic-overlay__corner-hit.is-diagonal-cross {
+    cursor: nesw-resize;
+}
+
+.layer-transform-basic-overlay__rotation {
+    fill: var(--futaba-cream);
+    stroke: var(--futaba-maroon);
+    pointer-events: none;
+    transition: fill 90ms ease, stroke 90ms ease;
+}
+
+.layer-transform-basic-overlay__rotation.is-hovered,
+.layer-transform-basic-overlay__rotation.is-active {
+    fill: color-mix(in srgb, var(--active-border) 72%, var(--futaba-cream));
+    stroke: var(--futaba-maroon);
+}
+
+.layer-transform-basic-overlay__rotation-hit {
+    fill: transparent;
+    stroke: transparent;
+    pointer-events: all;
+    touch-action: none;
+    cursor: grab;
+}
+
+.layer-transform-basic-overlay.is-rotating .layer-transform-basic-overlay__rotation-hit {
+    cursor: grabbing;
+}
+
+.layer-transform-basic-overlay__rotation-stem {
+    stroke: var(--futaba-maroon);
+    stroke-width: 1.5;
+    opacity: 0.76;
+    vector-effect: non-scaling-stroke;
+    transition: stroke 90ms ease, opacity 90ms ease;
+}
+
+.layer-transform-basic-overlay.is-rotating .layer-transform-basic-overlay__rotation-stem {
+    stroke: var(--active-border);
+    opacity: 1;
+}
+
+@media (pointer: coarse) {
+    .layer-transform-mode-btn,
+    .layer-transform-precise > summary {
+        min-height: 38px;
+        font-size: 10px;
+    }
+
+    .layer-transform-basic-overlay__corner-hit,
+    .layer-transform-basic-overlay__side-hit,
+    .layer-transform-basic-overlay__rotation-hit {
+        r: 18px;
+    }
+}
