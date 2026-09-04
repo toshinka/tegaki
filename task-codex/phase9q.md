@@ -1,7 +1,7 @@
 # Phase 9q — Drawing WARP Authority / Layer Transform Integration Gate
 
-更新日: 2026-09-04  
-状態: ACTIVE — Gate 0 選定開始  
+更新日: 2026-09-05
+状態: ACTIVE — Gate 1 Task C＋Task D前Owner Timeline follow-up 完了、次はTask D
 担当: SOL / MAX
 
 ## 1. 目的
@@ -40,7 +40,46 @@ Layer Transformの`WARP`を、絵を直接変形するFocus Lensとして接続�
 
 ## 4. 最初のtask
 
-既存`clip-deformer.js`、`animation-table-popup.js`、WARP overlay / rasterizer、Timeline compositor、Project serialize / validateをread-only監査し、再利用できるauthorityと不足するauthorityを表にする。その後、Layer Transform `WARP`の入口案を比較fixtureまたは同等の静的資料で選定する。
+既存`clip-deformer.js`、`animation-table-popup.js`、WARP overlay / rasterizer、Timeline compositor、Project serialize / validateのread-only監査を完了した。監査表、採用案、不採用案の再試行条件は`開発用資料保管庫/proposals/Tegaki_Drawing_WARP_Authority_Gate_2026-09-05.md`を正本とする。
+
+Gate 0判断:
+
+- normal RasterとTable閉鎖中CAF internal RasterのSOURCE WARPは、既存Layer Transformと同じ確定時Raster bakeとする。
+- Table表示中CAF internal RasterのFrame-local WARPだけ、active internal Layer ID単位の`ClipInstance.layerDeformers`を新設する。
+- root `deformer`と`folderDeformers`は対象範囲が違うため流用しない。
+- Layer Transform `WARP`はSimple 4x4 direct manipulationを第一水位、既存WARP WORKSPACEはroot / Folderおよび将来のAdvanced handoffとして保持する。
+- initial SliceではRIG Part / Mesh / Skin / internal clippingとの重複を理由付きで拒否する。
+
+Gate 1 Task A完了:
+
+- `system/animation/clip-layer-deformer.js`を追加し、optional `layerDeformers`のnormalize / serialize / validate / get / set / remove / sample / remap / retime / one-Frame bakeをpureに固定した。
+- 既存`warp-grid` / `control-mesh` dispatcherだけを再利用し、DrawingSnapshot、working Layer、Project、History、DOMは変更していない。
+- `build/verify-clip-layer-deformer.mjs`でold Project no-field、Raster target、Folder / Background / missing / duplicate拒否、Frame範囲、target edit、sample、ID remap、terminal retime、bakeを固定した。
+- 新規2 fileの`node --check`、新規verifier、既存Folder deformer / Layer Motion / Clip bake verifier、`git diff --check`を通過した。
+
+Gate 1 Task B完了:
+
+- `ClipInstance` constructor / serializeと`TimelineModel.setClipLayerDeformer()` / `validateLayerDeformers()`へoptional `layerDeformers`を接続した。Project復元はinvalid optional dataを警告し、Raster / CAF本体を失敗させない。
+- active internal Rasterだけを許可し、Folder / Background、RIG Part、Mesh / Skin、internal clippingとの重複はmodel境界で理由付き拒否する。
+- internal Layer削除cascade、Layer複製時target remap、Clip copy / paste、Asset copy、structured one-Frame bake、duration terminal retime、Timeline History capture / restoreへ同じfieldを通した。
+- `build/verify-clip-layer-deformer-model.mjs`を追加し、old Project no-field、TimelineModel / ProjectManager JSON round-trip、invalid source診断、copy / remap、delete、bake、retime、History配線を固定した。
+- 変更JS / mjsの`node --check`、新規2 verifier、既存Folder deformer / Project round-trip / Layer Motion / Clip bake verifier、production build、`git diff --check`、生成物清掃を通過した。Task Bは描画・pointer UIをまだ変更していない。
+
+Gate 1 Task C完了:
+
+- `createFolderEffectRenderPlan()`へindividual Layer WARP effectを追加し、既存Layer Motion RenderIslandと同じtargetで併用可能にした。適用順は正本どおり`DrawingSnapshot → Layer WARP → Layer Motion → Folder composition / WARP → Folder Part / Bone → root WARP → root Motion`。
+- CPU `TimelineFrameCompositor`はRaster surfaceを先にWARPし、その後にLayer Motion affineを適用する。Folder WARP内部ではLayer WARP / Layer Motionだけをchild planへ通し、Folder Part matrixを外側で一度だけ適用する。
+- boundsも同じ順序で評価し、Layer WARP / Motionの拡張領域をFolder surfaceで切り落とさない。root / Folder WARPとLayer WARPは対象範囲が異なるため併用を維持する。
+- RIG Part所属、Mesh / Skin、internal clipping owner / sourceとの重複はmodel / render plan双方で理由付き停止し、Layer WARPを無言で落としてexportしない。
+- `build/verify-clip-layer-deformer-render-plan.mjs`を追加し、Layer WARP → Layer Motionのbounds、Folder / root併用、RIG / Mesh / clipping拒否、CPU compositor配線を固定した。全145 verifier、production build、`git diff --check`、生成物清掃を通過した。Task CはPixi previewとpointer UIをまだ変更していない。
+
+Gate 1 Task D前Owner Timeline follow-up完了:
+
+- Layer Transform ANIMATE session中に生成・更新されたLayer Motion丸KEYは、既存transactionの`previewApplied / changed / target identity`からだけ未確定状態を投影し、Futaba茶38%の淡色へ下げる。V close後は従来の濃い単色丸、Escape rollback後は消失する。保存fieldや別preview stateは追加しない。
+- CAF internal Layer行はClip範囲内をcream 8%の面＋縦grid、範囲外を`--futaba-background`の無地面＋border透明へ分け、active / inactive双方でClip範囲を線の錯視だけに依存せず示す。全内部行を囲う追加枠は面分離で十分なため採用しない。
+- Lane行より下の格子なしblank面clickもX位置からFrameを求めてseekできる。CAF作成は行わない。
+- Timeline gridの通常wheelはFrame移動だけとし、空きFrameでのCAF作成は`Shift+wheel`の前進時だけ既存Auto Create設定に従って許可する。`Ctrl/Cmd+wheel` zoom、Lane名領域wheelの縦scroll、keyboard / button経路は維持する。
+- 更新verifierを含む全145 verifier、production build、Browserで範囲内外computed style、blank click F27、通常wheel F26・CAF非生成、console error 0件を確認した。
 
 ## 5. NO-GO
 
@@ -67,4 +106,4 @@ Layer Transformの`WARP`を、絵を直接変形するFocus Lensとして接続�
 
 ## 8. 次作業予告
 
-次taskはGate 0の既存WARP authority監査です。作業担当はSOL / MAX。監査表が固まった後にだけAntigravity2のread-only比較観点を取り込み、入口案の選定へ進みます。
+次taskはGate 1 Task D、Pixi preview proxyとLayer Transform WARP transaction接続です。作業担当はSOL / MAX。CPU planと同じsample / bounds / triangle順を使うleaf Mesh表示proxy、active internal Raster一枚だけのANIMATE preview / rollback / Timeline History境界を先に固定し、Simple 4x4の最終UI装飾とsolid markerはTask Eへ残します。

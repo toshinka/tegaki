@@ -1,6 +1,6 @@
 # Tegaki Progress
 
-更新日: 2026-09-04
+更新日: 2026-09-05
 
 ## 現在地
 
@@ -31,7 +31,7 @@
 - Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gateとしてcloseした。D3で右RIGをoverview / next action / handoff、既存single floating windowをmode別`RIG WORKSPACE / CLIP MOTION / WARP WORKSPACE`とするhost ownershipを固定した。right RIGからのopen、mode往復、close / reopen、Table closed再入場、History不変、480×800横overflow 0、console 0件、全129 verifier、buildを通過した。schema / solver / History / save authorityは変更していない。現RIG WORKSPACE layoutと上位tab分類は最終UX受入ではない。
 - Phase 9oはLayer Transform Interaction Grammar / Focus Lens Gate。Gate 1=`GO — D: Tegaki hybrid`とし、BASIC Move / corner Uniform Scale / Rotate / quiet 4辺one-axis Scale、content-center Anchor、一本線Scale、last-touched入力、flip後再展開、capture喪失時preview維持、拡大中exact-pixel samplingを固定した。Ownerは2026-09-01に問題解決としてStage B4を受入した。全131 verifier、production build、Browser、console 0件、生成物清掃を通過し、schema / History / source Raster / exportを変更せずcloseして`Archive/phase9o.md`へ移した。A / B / C、side midpointなし、閉じる／決定button、virtual grid / snapは再試行・後続候補として保持する。
 - Phase 9pはTransform-to-Clip Key Bridge / Interaction Context Gateとしてcloseした。Gate 0=`GO — C`、Gate 1=`GO — B: Transform-local indicator`、Gate 2=`GO — B: split owner + synchronous adapter`。Owner実機確認でroot Clip Motionの内部Layer行echo / working Raster一括proxy案を修正し、active internal Rasterだけの`ClipInstance.layerTransformTracks`を追加した。root `transformKeyframes`はCAF全体Motionのまま維持し、兄弟Layer非干渉、RIG / Mesh / clipping排他、Project serialize / delete / copy / bake / retime、Timeline History、単色丸KEYを接続した。全141 verifier、production build、BrowserのF1 / F10、Undo / Redo、console 0件、生成物清掃を通過した。
-- 現行Phase 9qはDrawing WARP Authority / Layer Transform Integration Gate。最初にnormal Raster / CAF internal Raster / root Clip / FolderのWARP authority、History、save、compositor順序、RIG / Mesh / clipping境界を監査し、Layer Transform `WARP`と既存`WARP WORKSPACE`の入口案を選定する。production実装はGate 0後。担当はSOL / MAX、Antigravity2は境界固定後のread-only比較候補とする。
+- 現行Phase 9qはDrawing WARP Authority / Layer Transform Integration Gate。Gate 0=`GO — C: Raster Source Bake + CAF Layer Deformer`。normal RasterとTable閉鎖中CAF internal Rasterは確定時Raster bake、Table表示中のactive internal Rasterだけ新規`ClipInstance.layerDeformers`、root / Folder WARPは既存authorityを維持する。Gate 1 Task A〜Cでhelper、model / Project、delete / copy / bake / retime / History、individual Layer WARP render plan / CPU compositorを接続した。順序は`Layer WARP → Layer Motion → Folder WARP → root WARP → root Motion`、RIG / Mesh / clipping重複は停止する。Task D前Owner follow-upでは未確定Layer Motion丸KEYを淡色化し、CAF internal Layer行をClip内cream grid／範囲外の無地面へ分離、格子なしblank click seek、通常wheelは移動だけ／`Shift+wheel`だけCAF生成許可へ整理した。全145 verifier、build、Browser、console 0件を通過し、次はTask DのPixi preview proxy / Layer Transform WARP transaction。
 - Phase 6gではQTP開閉用`Q`、既存Layer Transform経路の`V`、Plan Aの最小sidebar、tooltip撤去、icon比率、`square-dashed`選択iconを確定した。削除済み描画tool専用の到達不能handlerも残存監査で除去した。
 - Phase 6hではBrowser 100%のまま主要UIを従来80%表示相当へ縮小し、Canvas / pointer座標を変えず、`pointer: coarse`だけ主要hit areaを従来寸法へ戻した。sidebar、Layer Panel、QTP、CAF、Animation Table、status、Resize、Settings、Layer Transformを固定入力で受入れた。
 - QTPの選択tool表示、Animation Table表示中のPixel Selection変形preview、CAF化後にTableを閉じた状態の矩形overlayを、既存PixelSelection状態・selection event・working Layer adapterへ接続して修正した。preview / confirm / Table close後の位置は固定入力で一致し、Historyは1操作1件、console errorなしを確認した。
@@ -157,7 +157,7 @@
 2. `TEGAKI.md`
 3. 本書
 4. `tegaki_work/NEXT_CHAT_HANDOFF.md`
-5. `task-codex/phase9p.md`
+5. `task-codex/phase9q.md`
 6. `tegaki_work/TRANSFORM_SESSION_BOUNDARY.md`
 7. `開発用資料保管庫/proposals/Tegaki_Transform_Centric_Flow_Purification_Addendum_2026-09-01.md`
 8. `開発用資料保管庫/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_REVISED_2026-08-31.md`
@@ -173,7 +173,7 @@
 18. `開発用資料保管庫/proposals/01_短中期ロードマップ.md`
 19. `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`
 
-Phase 7i〜9pはclose済み。Phase 9pではroot `transformKeyframes`とinternal Raster `layerTransformTracks`を対象範囲で分離し、Layer Transformからactive internal RasterだけへF1 / F10 keyを設定できる。現行Phase 9qはDrawing WARP Gate 0で、既存WARP authority / History / save / compositor境界の監査から開始する。
+Phase 7i〜9pはclose済み。Phase 9pではroot `transformKeyframes`とinternal Raster `layerTransformTracks`を対象範囲で分離し、Layer Transformからactive internal RasterだけへF1 / F10 keyを設定できる。現行Phase 9qはDrawing WARP Gate 0を`GO — C`で通過し、Gate 1 Task A〜Cの`layerDeformers` helper、model / Project、copy / delete / bake / retime / History、render plan / CPU compositor接続を完了した。次はTask DのPixi preview proxy / WARP transaction。
 
 ## 資料
 
@@ -275,4 +275,5 @@ Phase 7i〜9pはclose済み。Phase 9pではroot `transformKeyframes`とinternal
 - Transform / RIG Authoring Interaction追補: `開発用資料保管庫/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_2026-08-31.md`
 - 次チャット引き継ぎ: `tegaki_work/NEXT_CHAT_HANDOFF.md`
 - Transform-centric導線純化追補: `開発用資料保管庫/proposals/Tegaki_Transform_Centric_Flow_Purification_Addendum_2026-09-01.md`
-- 現行Phase: `task-codex/phase9q.md`（Drawing WARP Authority / Layer Transform Integration Gate、Gate 0の既存WARP authority監査から開始）
+- Drawing WARP Authority Gate: `開発用資料保管庫/proposals/Tegaki_Drawing_WARP_Authority_Gate_2026-09-05.md`
+- 現行Phase: `task-codex/phase9q.md`（Gate 1 Task A完了、次はModel / Project接続）

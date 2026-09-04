@@ -27,7 +27,13 @@ assert.deepEqual(
 );
 assert.deepEqual(
     resolveTimelineViewportWheelAction({ deltaX: -40, deltaY: 2, shiftKey: true }),
-    { type: 'vertical-scroll', delta: -40 }
+    { type: 'frame-step-create', delta: -40 },
+    'Shift+wheelはCAF生成を許可したFrame移動へ送る'
+);
+assert.deepEqual(
+    resolveTimelineViewportWheelAction({ deltaX: -40, deltaY: 2, shiftKey: true, overTrackList: true }),
+    { type: 'vertical-scroll', delta: -40 },
+    'Lane名領域のwheelはShift中も縦scrollを維持する'
 );
 assert.deepEqual(
     resolveTimelineViewportWheelAction({ deltaX: 0, deltaY: -72, ctrlKey: true }),
@@ -38,4 +44,4 @@ assert.deepEqual(
     { type: 'none', delta: 0 }
 );
 
-console.log('verify-timeline-wheel-routing: header zoom / grid frame-step / lane scroll routing OK');
+console.log('verify-timeline-wheel-routing: header zoom / grid frame-step / Shift create / lane scroll routing OK');

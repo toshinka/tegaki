@@ -30,6 +30,10 @@ import {
     sampleClipLayerTransform,
     validateClipLayerTransformTracks
 } from './clip-layer-transform.js';
+import {
+    sampleClipLayerDeformers,
+    validateClipLayerDeformers
+} from './clip-layer-deformer.js';
 
 function createEmptyPlan(status = 'none', errors = []) {
     return {
@@ -61,8 +65,10 @@ function createEmptyEffectPlan(status = 'none', rigRenderPlan = createEmptyPlan(
         errors,
         rigRenderPlan,
         islands: [],
+        layerEffects: [],
         islandByFolderId: new Map(),
-        islandByLayerId: new Map()
+        islandByLayerId: new Map(),
+        layerEffectByLayerId: new Map()
     };
 }
 
@@ -116,6 +122,17 @@ export function validateRigPartClippingBoundary(asset, islandLayerIds) {
 
 export function validateFolderPartClippingBoundary(asset, islandLayerIds) {
     return validateRigPartClippingBoundary(asset, islandLayerIds);
+}
+
+function hasInternalClippingParticipation(asset, internalLayerId) {
+    return (asset?.internalLayers || []).some(layer => {
+        if (!layer || layer.type === 'folder') return false;
+        const contract = resolveInternalClippingContract(asset, layer);
+        if (!contract) return false;
+        return contract.owner?.id === internalLayerId
+            || contract.source?.id === internalLayerId
+            || contract.sourceLayers?.some(sourceLayer => sourceLayer?.id === internalLayerId);
+    });
 }
 
 /**
@@ -352,22 +369,35 @@ export function createFolderPartRenderPlan(asset, clip, timelineFrame) {
  */
 export function createFolderEffectRenderPlan(asset, clip, timelineFrame) {
     const rigRenderPlan = createRigPartRenderPlan(asset, clip, timelineFrame);
-    const validation = validateClipFolderDeformers(
+    const folderValidation = validateClipFolderDeformers(
         clip?.folderDeformers,
         asset?.internalLayers || null
     );
-    if (!validation.ok) {
-        return createEmptyEffectPlan('invalid', rigRenderPlan, validation.errors);
+    const layerValidation = validateClipLayerDeformers(
+        clip?.layerDeformers,
+        asset?.internalLayers || [],
+        Math.max(1, Number.isInteger(clip?.duration) ? clip.duration : 1)
+    );
+    if (!folderValidation.ok || !layerValidation.ok) {
+        return createEmptyEffectPlan('invalid', rigRenderPlan, [
+            ...folderValidation.errors,
+            ...layerValidation.errors
+        ]);
     }
     const sampledByFolderId = sampleClipFolderDeformers(
-        validation.value,
+        folderValidation.value,
+        timelineFrame - (Number.isInteger(clip?.startFrame) ? clip.startFrame : 0),
+        Math.max(1, Number.isInteger(clip?.duration) ? clip.duration : 1)
+    );
+    const sampledByLayerId = sampleClipLayerDeformers(
+        layerValidation.value,
         timelineFrame - (Number.isInteger(clip?.startFrame) ? clip.startFrame : 0),
         Math.max(1, Number.isInteger(clip?.duration) ? clip.duration : 1)
     );
     if (rigRenderPlan.status === 'invalid' || rigRenderPlan.status === 'unsupported') {
         return createEmptyEffectPlan(rigRenderPlan.status, rigRenderPlan, rigRenderPlan.errors);
     }
-    if (sampledByFolderId.size === 0) {
+    if (sampledByFolderId.size === 0 && sampledByLayerId.size === 0) {
         return createEmptyEffectPlan('none', rigRenderPlan);
     }
 
@@ -379,6 +409,58 @@ export function createFolderEffectRenderPlan(asset, clip, timelineFrame) {
     );
     const errors = [];
     const islands = [];
+    const layerEffects = [];
+    const meshTargets = new Set((asset?.meshDefinitions || [])
+        .map(mesh => mesh?.targetInternalLayerId)
+        .filter(Boolean));
+
+    sampledByLayerId.forEach((sampledDeformer, internalLayerId) => {
+        const targetLayer = layerById.get(internalLayerId) || null;
+        if (!targetLayer || targetLayer.type !== 'raster' || targetLayer.isBackground === true) {
+            errors.push(addPlanError(
+                'layer-deformer-target-invalid',
+                'Layer WARP target must be a drawable internal Raster',
+                { targetLayerId: internalLayerId }
+            ));
+            return;
+        }
+        const rigIsland = rigRenderPlan.status === 'ready'
+            ? rigRenderPlan.islandByLayerId?.get(internalLayerId) || null
+            : null;
+        if (rigIsland && rigIsland.targetKind !== 'layer-motion') {
+            errors.push(addPlanError(
+                'layer-deformer-rig-overlap',
+                'A Raster cannot be transformed by Layer WARP and RIG Part at the same time',
+                { targetLayerId: internalLayerId, partId: rigIsland.partId || null }
+            ));
+            return;
+        }
+        if (meshTargets.has(internalLayerId)) {
+            errors.push(addPlanError(
+                'layer-deformer-mesh-overlap',
+                'A Raster cannot be transformed by Layer WARP and Mesh / Skin at the same time',
+                { targetLayerId: internalLayerId }
+            ));
+            return;
+        }
+        if (hasInternalClippingParticipation(asset, internalLayerId)) {
+            errors.push(addPlanError(
+                'layer-deformer-clipping-overlap',
+                'A Raster cannot be transformed by Layer WARP while it owns or sources internal clipping',
+                { targetLayerId: internalLayerId }
+            ));
+            return;
+        }
+        layerEffects.push({
+            internalLayerId,
+            targetLayer,
+            layerIds: new Set([internalLayerId]),
+            sampledDeformer,
+            layerMotionMatrix: rigIsland?.targetKind === 'layer-motion' && rigIsland.worldMatrix
+                ? { ...rigIsland.worldMatrix }
+                : createIdentityMatrix()
+        });
+    });
 
     sampledByFolderId.forEach((sampledDeformer, folderId) => {
         const targetLayer = layerById.get(folderId) || null;
@@ -437,6 +519,7 @@ export function createFolderEffectRenderPlan(asset, clip, timelineFrame) {
     islands.forEach(island => {
         island.layerIds.forEach(layerId => islandByLayerId.set(layerId, island));
     });
+    const layerEffectByLayerId = new Map(layerEffects.map(effect => [effect.internalLayerId, effect]));
     return {
         kind: 'folder-effect',
         ok: true,
@@ -445,8 +528,10 @@ export function createFolderEffectRenderPlan(asset, clip, timelineFrame) {
         errors: [],
         rigRenderPlan,
         islands,
+        layerEffects,
         islandByFolderId,
-        islandByLayerId
+        islandByLayerId,
+        layerEffectByLayerId
     };
 }
 
@@ -507,10 +592,20 @@ export function calculateFolderEffectAssetBounds(
     const boundsByEffectIsland = new Map(effectPlan.islands.map(island => [island, []]));
     (asset?.internalLayers || []).forEach(layer => {
         if (!layer || layer.type === 'folder' || !isLayerVisible(layer)) return;
-        const bounds = getLayerBounds(layer);
-        if (!bounds) return;
+        const sourceBounds = getLayerBounds(layer);
+        if (!sourceBounds) return;
+        const layerEffect = effectPlan.layerEffectByLayerId?.get(layer.id) || null;
+        let bounds = layerEffect
+            ? calculateFolderDeformerSurfaceBounds(sourceBounds, layerEffect.sampledDeformer)
+            : sourceBounds;
         const effectIsland = effectPlan.islandByLayerId.get(layer.id) || null;
         if (effectIsland) {
+            const layerMotionIsland = rigPlan?.status === 'ready'
+                ? rigPlan.islandByLayerId?.get(layer.id) || null
+                : null;
+            if (layerMotionIsland?.targetKind === 'layer-motion') {
+                bounds = calculateAffineTransformedBounds(bounds, layerMotionIsland.worldMatrix);
+            }
             boundsByEffectIsland.get(effectIsland)?.push(bounds);
             return;
         }

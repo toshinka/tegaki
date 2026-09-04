@@ -5,7 +5,8 @@
  * 依存: system/event-bus.js, system/animation/animation-data-model.js
  * 被依存: core-engine.js, system/popup-manager.js
  * 操作導線: Frame移動は timeline-ui.js（閉Table button）と本file（Table内Arrow）から
- *   moveTimelineFrameByDelta() へ集約する。空き右FrameのCAF作成もこの入口だけで行う。
+ *   moveTimelineFrameByDelta() へ集約する。空き右FrameのCAF作成もこの入口だけで行い、
+ *   Timeline wheelは通常時を移動だけ、Shift時を生成許可付き移動として明示的に渡す。
  * CAF編集境界: animation working Layerは選択中Clipの表示・入力adapterであり、Tableを閉じても
  *   同じClipを編集中なら有効。Popup visibilityをselection可否や座標変換の条件にしない。
  * Folder Part / root Bone編集境界: Canvas overlayとpointer gestureはdisplay/runtime adapterだけを所有し、
@@ -76,6 +77,10 @@ import {
     remapClipLayerTransformTracks,
     sampleClipLayerTransform
 } from '../system/animation/clip-layer-transform.js';
+import {
+    remapClipLayerDeformers,
+    retimeClipLayerDeformers
+} from '../system/animation/clip-layer-deformer.js';
 import {
     createMotionGraphViewModel,
     MOTION_GRAPH_GROUPS,
@@ -1791,6 +1796,7 @@ export class AnimationTablePopup {
                     cel.duration ?? '',
                     JSON.stringify(cel.transform || {}),
                     JSON.stringify(cel.transformKeyframes || []),
+                    JSON.stringify(cel.layerDeformers || null),
                     JSON.stringify(cel.deformer || null),
                     JSON.stringify(cel.folderDeformers || null),
                     JSON.stringify(cel.rigMotion || null),
@@ -2491,6 +2497,8 @@ export class AnimationTablePopup {
         const isSelected = !this.selectedRigBoneId
             && this.selectedInternalLayerId === context.layer.id;
         const selectedClass = isSelected ? ' is-selected' : '';
+        const previewSession = this._layerTransformBridgeSession;
+        const previewTransaction = previewSession?.transaction;
         let html = `<div class="anim-timeline-row anim-rig-folder-timeline-row${selectedClass}"
             data-clip-id="${clip.id}" data-folder-id="${context.layer.id}">`;
         for (let frame = 0; frame < totalFrames; frame++) {
@@ -2499,16 +2507,23 @@ export class AnimationTablePopup {
             const isCurrent = showCurrentFrame && frame === currentFrame ? ' current-col' : '';
             const hasLayerMotionKey = isSelected && isInside
                 && (layerMotionTrack?.keyframes || []).some(key => key?.frame === localFrame);
+            const isProvisionalLayerMotionKey = hasLayerMotionKey
+                && previewSession?.previewApplied === true
+                && previewSession.changed === true
+                && previewTransaction?.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY
+                && previewTransaction.clipId === clip.id
+                && previewTransaction.internalLayerId === context.layer.id
+                && previewTransaction.localFrame === localFrame;
             html += `<div class="anim-cell-slot anim-rig-folder-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}"
                 data-track-id="${context.entry.lane.id}"
                 data-clip-id="${clip.id}"
                 data-folder-id="${context.layer.id}"
                 data-frame-index="${frame}">
-                ${hasLayerMotionKey ? `<span class="anim-caf-motion-key-projection"
+                ${hasLayerMotionKey ? `<span class="anim-caf-motion-key-projection${isProvisionalLayerMotionKey ? ' is-provisional' : ''}"
                     data-layer-motion-key-frame="${localFrame}"
                     role="img"
-                    aria-label="Layer Motion key: Frame ${frame + 1}"
-                    title="Layer Motion key · F${frame + 1}"></span>` : ''}
+                    aria-label="Layer Motion key${isProvisionalLayerMotionKey ? ' preview' : ''}: Frame ${frame + 1}"
+                    title="Layer Motion key${isProvisionalLayerMotionKey ? ' preview · 未確定' : ''} · F${frame + 1}"></span>` : ''}
             </div>`;
         }
         return `${html}</div>`;
@@ -7780,6 +7795,7 @@ export class AnimationTablePopup {
                     transform: this._cloneClipInstanceMetadata(clip.transform),
                     transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
                     layerTransformTracks: this._cloneClipInstanceMetadata(clip.layerTransformTracks, []),
+                    layerDeformers: this._cloneClipInstanceMetadata(clip.layerDeformers, null),
                     deformer: this._cloneClipInstanceMetadata(clip.deformer, null),
                     folderDeformers: this._cloneClipInstanceMetadata(clip.folderDeformers, null),
                     rigMotion: this._cloneClipInstanceMetadata(clip.rigMotion, null),
@@ -7808,6 +7824,7 @@ export class AnimationTablePopup {
                 transform: anchorItem.transform,
                 transformKeyframes: anchorItem.transformKeyframes,
                 layerTransformTracks: anchorItem.layerTransformTracks,
+                layerDeformers: anchorItem.layerDeformers,
                 deformer: anchorItem.deformer,
                 folderDeformers: anchorItem.folderDeformers,
                 rigMotion: anchorItem.rigMotion,
@@ -8568,6 +8585,7 @@ export class AnimationTablePopup {
             transform: this._cloneClipInstanceMetadata(clip.transform, {}),
             transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
             layerTransformTracks: this._cloneClipInstanceMetadata(clip.layerTransformTracks, []),
+            layerDeformers: this._cloneClipInstanceMetadata(clip.layerDeformers, null),
             deformer: this._cloneClipInstanceMetadata(clip.deformer, null),
             folderDeformers: this._cloneClipInstanceMetadata(clip.folderDeformers, null),
             rigMotion: this._cloneClipInstanceMetadata(clip.rigMotion, null),
@@ -8626,6 +8644,7 @@ export class AnimationTablePopup {
                 transform: this._copiedCelRef.transform,
                 transformKeyframes: this._copiedCelRef.transformKeyframes,
                 layerTransformTracks: this._copiedCelRef.layerTransformTracks,
+                layerDeformers: this._copiedCelRef.layerDeformers,
                 deformer: this._copiedCelRef.deformer,
                 folderDeformers: this._copiedCelRef.folderDeformers,
                 rigMotion: this._copiedCelRef.rigMotion,
@@ -8704,6 +8723,9 @@ export class AnimationTablePopup {
                         pastedAssetCopy.internalLayerIdMap
                     )
                     : this._cloneClipInstanceMetadata(item.layerTransformTracks, []),
+                layerDeformers: pastedAssetCopy
+                    ? remapClipLayerDeformers(item.layerDeformers, pastedAssetCopy.internalLayerIdMap)
+                    : this._cloneClipInstanceMetadata(item.layerDeformers, null),
                 deformer: this._cloneClipInstanceMetadata(item.deformer, null),
                 folderDeformers: pastedAssetCopy
                     ? remapClipFolderDeformers(item.folderDeformers, pastedAssetCopy.internalLayerIdMap)
@@ -12726,6 +12748,10 @@ export class AnimationTablePopup {
                         sampled.layerTransformTracks,
                         duplicate.internalLayerIdMap
                     ),
+                    layerDeformers: remapClipLayerDeformers(
+                        sampled.layerDeformers,
+                        duplicate.internalLayerIdMap
+                    ),
                     deformer: sampled.deformer,
                     folderDeformers: remapClipFolderDeformers(
                         sampled.folderDeformers,
@@ -16281,7 +16307,7 @@ export class AnimationTablePopup {
         return clip;
     }
 
-    moveTimelineFrameByDelta(delta) {
+    moveTimelineFrameByDelta(delta, options = {}) {
         const current = this.model.playback.currentFrame;
         const nextFrame = Math.max(0, Math.min(this.model.totalFrames - 1, current + delta));
         if (nextFrame === current) return false;
@@ -16292,7 +16318,8 @@ export class AnimationTablePopup {
         const selectedEntry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
         const lane = this.model.getLaneById(this.activeLaneId) || selectedEntry?.lane || null;
         const autoCreateOnNext = window.TegakiSettingsManager?.get?.('animationAutoCreateOnNext') !== false;
-        if (delta > 0 && autoCreateOnNext && lane && !lane.getCelAtFrame(nextFrame)) {
+        const allowBlankClipCreate = options.createBlankClip !== false;
+        if (delta > 0 && allowBlankClipCreate && autoCreateOnNext && lane && !lane.getCelAtFrame(nextFrame)) {
             this._createBlankClipAtLaneFrame(lane, nextFrame);
         } else {
             this._syncWorkingLayersForCurrentFrame();
@@ -20152,6 +20179,33 @@ export class AnimationTablePopup {
             });
         }
 
+        const timelineGridContainer = this.panel.querySelector('.anim-timeline-grid-container');
+        timelineGridContainer?.addEventListener('click', (e) => {
+            if (e.target.closest(
+                '.anim-cell-slot, .anim-frame-num, .anim-cel-block, button, input, select, textarea, [contenteditable="true"]'
+            )) return;
+            if (this._timelineGestureMoved || this._dragMoved || this._retimingMoved || this._clipMoveMoved) return;
+
+            const grid = this.panel?.querySelector('.anim-timeline-grid');
+            if (!grid) return;
+            const rect = grid.getBoundingClientRect();
+            const cellWidth = this.panel?.querySelector('.anim-frame-num')?.getBoundingClientRect().width
+                || this.timelineCellWidth;
+            if (!Number.isFinite(cellWidth) || cellWidth <= 0) return;
+            const unclampedFrame = Math.floor((e.clientX - rect.left) / cellWidth);
+            const frameIndex = Math.max(0, Math.min(this.model.totalFrames - 1, unclampedFrame));
+            if (!Number.isInteger(frameIndex)) return;
+
+            if (this.isClipEditModeActive) this.exitClipEditMode();
+            this._saveSelectedClipFromWorkingLayers();
+            this.model.setCurrentFrame(frameIndex);
+            this._syncWorkingLayersForCurrentFrame();
+            this.render();
+            this._requestLayerPanelSync();
+            e.preventDefault();
+            e.stopPropagation();
+        });
+
         const scopeControls = this.panel.querySelector('.anim-scope-controls');
         const scopeCurrentBtn = this.panel.querySelector('#anim-scope-current-btn');
         const scopeDeck = this.panel.querySelector('#anim-scope-focus-deck');
@@ -20914,6 +20968,7 @@ export class AnimationTablePopup {
                                 duration: cel.duration,
                                 transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
                                 layerTransformTracks: this._cloneClipInstanceMetadata(cel.layerTransformTracks, []),
+                                layerDeformers: this._cloneClipInstanceMetadata(cel.layerDeformers, null),
                                 deformer: this._cloneClipInstanceMetadata(cel.deformer, null),
                                 folderDeformers: this._cloneClipInstanceMetadata(cel.folderDeformers, null),
                                 rigMotion: this._cloneClipInstanceMetadata(cel.rigMotion, null)
@@ -21342,6 +21397,7 @@ export class AnimationTablePopup {
         } else if (!nextOpen && restoreFocus) {
             this.panel?.querySelector('#anim-scope-current-btn')?.focus({ preventScroll: true });
         }
+
     }
 
     _handleScopeFocusDeckKeyDown(event) {
@@ -21420,6 +21476,7 @@ export class AnimationTablePopup {
                     duration: cel.duration,
                     transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
                     layerTransformTracks: this._cloneClipInstanceMetadata(cel.layerTransformTracks, []),
+                    layerDeformers: this._cloneClipInstanceMetadata(cel.layerDeformers, null),
                     deformer: this._cloneClipInstanceMetadata(cel.deformer, null),
                     folderDeformers: this._cloneClipInstanceMetadata(cel.folderDeformers, null),
                     rigMotion: this._cloneClipInstanceMetadata(cel.rigMotion, null)
@@ -21458,6 +21515,7 @@ export class AnimationTablePopup {
             duration: cel.duration,
             transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
             layerTransformTracks: this._cloneClipInstanceMetadata(cel.layerTransformTracks, []),
+            layerDeformers: this._cloneClipInstanceMetadata(cel.layerDeformers, null),
             deformer: this._cloneClipInstanceMetadata(cel.deformer, null),
             folderDeformers: this._cloneClipInstanceMetadata(cel.folderDeformers, null),
             rigMotion: this._cloneClipInstanceMetadata(cel.rigMotion, null)
@@ -21523,8 +21581,10 @@ export class AnimationTablePopup {
         event.stopPropagation();
         if (action.type === 'vertical-scroll') {
             timelineViewport.scrollTop += action.delta;
-        } else if (action.type === 'frame-step') {
-            this.moveTimelineFrameByDelta(action.delta < 0 ? -1 : 1);
+        } else if (action.type === 'frame-step' || action.type === 'frame-step-create') {
+            this.moveTimelineFrameByDelta(action.delta < 0 ? -1 : 1, {
+                createBlankClip: action.type === 'frame-step-create'
+            });
         }
         return true;
     }
@@ -23357,6 +23417,7 @@ export class AnimationTablePopup {
                 original.layerTransformTracks,
                 []
             );
+            cel.layerDeformers = this._cloneClipInstanceMetadata(original.layerDeformers, null);
             cel.deformer = this._cloneClipInstanceMetadata(original.deformer, null);
             cel.folderDeformers = this._cloneClipInstanceMetadata(original.folderDeformers, null);
             cel.rigMotion = this._cloneClipInstanceMetadata(original.rigMotion, null);
@@ -23458,6 +23519,11 @@ export class AnimationTablePopup {
                 targetDuration
             )
         }));
+        cel.layerDeformers = retimeClipLayerDeformers(
+            cel.layerDeformers,
+            startDuration,
+            targetDuration
+        );
         if (['warp-grid', 'control-mesh'].includes(cel.deformer?.type)) {
             cel.deformer = {
                 ...cel.deformer,

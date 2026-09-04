@@ -6,6 +6,7 @@ import {
 } from './clip-deformer.js';
 import { sampleClipTransform } from './clip-transform-sampler.js';
 import { sampleClipLayerTransformTracksForBake } from './clip-layer-transform.js';
+import { sampleClipLayerDeformersForBake } from './clip-layer-deformer.js';
 import { sampleRigMotionForBake } from './part-rig.js';
 
 function clonePoints(points) {
@@ -52,6 +53,11 @@ export function sampleClipBakeState(clip, timelineFrame) {
         clip,
         Number.isFinite(timelineFrame) ? timelineFrame : startFrame
     );
+    const layerDeformers = sampleClipLayerDeformersForBake(
+        clip.layerDeformers,
+        localFrame,
+        duration
+    );
 
     const deformer = freezeSampledDeformer(sampledDeformer);
     const sampledFolderDeformers = sampleClipFolderDeformers(
@@ -74,6 +80,7 @@ export function sampleClipBakeState(clip, timelineFrame) {
         transform: { ...transform },
         transformKeyframes: [],
         ...(layerTransformTracks.length > 0 ? { layerTransformTracks } : {}),
+        ...(layerDeformers ? { layerDeformers } : {}),
         deformer,
         ...(folderDeformers ? { folderDeformers } : {}),
         ...(rigMotion ? { rigMotion } : {})
