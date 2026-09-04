@@ -7,7 +7,10 @@ const buildDir = path.dirname(fileURLToPath(import.meta.url));
 const workDir = path.resolve(buildDir, '..');
 const repoDir = path.resolve(workDir, '..');
 const fixture = fs.readFileSync(path.join(buildDir, 'phase9p-transform-edit-target-placement-fixture.html'), 'utf8');
-const phase = fs.readFileSync(path.join(repoDir, 'task-codex', 'phase9p.md'), 'utf8');
+const phase = fs.readFileSync(
+    path.join(repoDir, '開発用資料保管庫', 'Archive', 'phase9p.md'),
+    'utf8'
+);
 
 assert.equal((fixture.match(/class="candidate(?: [^"]+)?" data-option=/g) || []).length, 4);
 for (const option of ['topbar', 'panel', 'dual', 'canvas']) {

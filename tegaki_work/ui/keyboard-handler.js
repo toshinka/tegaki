@@ -16,7 +16,7 @@ import { TEGAKI_KEYMAP } from '../config.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { historyManager } from '../system/history.js';
 import { Container } from 'pixi.js';
-import { TRANSFORM_EDIT_TRANSACTION_TARGET } from '../system/animation/transform-edit-transaction.js';
+import { isTransformTimelineKeyTarget } from '../system/animation/transform-edit-transaction.js';
 
 export const KeyboardHandler = (function() {
     'use strict';
@@ -1160,8 +1160,7 @@ export const KeyboardHandler = (function() {
             animationTable?.cancelWarpBrushShortcutControl?.();
             if (vKeyPressed) {
                 const layerManager = window.layerManager || window.drawingApp?.layerManager;
-                if (layerManager?.getActiveTransformEditTarget?.()
-                    === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+                if (isTransformTimelineKeyTarget(layerManager?.getActiveTransformEditTarget?.())) {
                     // Clip key transactionはapp/browser境界のfocus移動で確定しない。
                     // 明示V toggleまたはEscapeだけがsession terminalを所有する。
                     return;

@@ -38,7 +38,8 @@ assert.deepEqual(projectTransformEditContext({
     timelineFrame: 12,
     localFrame: null,
     keyIndex: -1,
-    hasExplicitKey: false
+    hasExplicitKey: false,
+    internalLayerId: null
 });
 
 assert.equal(projectTransformEditContext({ tableVisible: true, timelineFrame: 12 }).reason, 'clip-selection-required');
@@ -93,11 +94,39 @@ assert.equal(keyed.hasExplicitKey, true);
 assert.equal('key' in keyed, false, 'projection must not expose a mutable live key object');
 assert.equal(JSON.stringify(clip), before, 'projection must not mutate ClipInstance input');
 
+const layerClip = {
+    ...clip,
+    layerTransformTracks: [{
+        internalLayerId: 'layer-2',
+        pivotX: 120,
+        pivotY: 160,
+        keyframes: [{ frame: 2, x: 12, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }]
+    }]
+};
+const layerReady = projectTransformEditContext({
+    tableVisible: true,
+    selectedClip: layerClip,
+    timelineFrame: 11,
+    internalLayerId: 'layer-2'
+});
+assert.equal(layerReady.authority, TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY);
+assert.equal(layerReady.mode, TRANSFORM_EDIT_CONTEXT_MODE.ANIMATE_READY);
+assert.equal(layerReady.internalLayerId, 'layer-2');
+const layerKeyed = projectTransformEditContext({
+    tableVisible: true,
+    selectedClip: layerClip,
+    timelineFrame: 12,
+    internalLayerId: 'layer-2'
+});
+assert.equal(layerKeyed.authority, TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY);
+assert.equal(layerKeyed.mode, TRANSFORM_EDIT_CONTEXT_MODE.ANIMATE_KEYED);
+assert.equal(layerKeyed.keyIndex, 0);
+
 const helperSource = read('system/animation/transform-edit-context.js');
 const popupSource = read('ui/animation-table-popup.js');
 assert.doesNotMatch(helperSource, /historyManager|eventBus|localStorage|setClipTransformKeyframes/);
 assert.match(popupSource, /import \{[\s\S]*?projectTransformEditContext,[\s\S]*?\} from '\.\.\/system\/animation\/transform-edit-context\.js';/);
-assert.match(popupSource, /getTransformEditContext\(\) \{/);
+assert.match(popupSource, /getTransformEditContext\(workingLayerId = null\) \{/);
 assert.match(popupSource, /tableVisible: this\.isVisible/);
 assert.match(popupSource, /timelineFrame: this\.model\.playback\?\.currentFrame/);
 

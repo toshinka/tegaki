@@ -10,6 +10,7 @@ import {
     TRANSFORM_EDIT_TRANSACTION_ACTION,
     TRANSFORM_EDIT_TRANSACTION_INTENT,
     TRANSFORM_EDIT_TRANSACTION_OWNER,
+    TRANSFORM_EDIT_TRANSACTION_TARGET,
     planTransformEditTransactionFinish,
     planTransformEditTransactionPreview,
     planTransformEditTransactionStart,
@@ -43,6 +44,11 @@ const keyedContext = {
     mode: TRANSFORM_EDIT_CONTEXT_MODE.ANIMATE_KEYED,
     keyIndex: 0,
     hasExplicitKey: true
+};
+const layerReadyContext = {
+    ...readyContext,
+    authority: TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY,
+    internalLayerId: 'internal-layer-2'
 };
 const blockedContext = {
     mode: TRANSFORM_EDIT_CONTEXT_MODE.BLOCKED,
@@ -208,6 +214,48 @@ const repeatedPreview = planTransformEditTransactionPreview({
 });
 assert.deepEqual(repeatedPreview.keyframes, changedPreview.keyframes,
     'repeated preview must recompute from the fixed baseline instead of accumulating live samples');
+
+const layerTracks = [{
+    internalLayerId: 'internal-layer-1',
+    pivotX: 40,
+    pivotY: 50,
+    keyframes: [{ frame: 2, interpolation: 'linear', x: 4, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }]
+}];
+const layerAnimate = planTransformEditTransactionStart({
+    context: layerReadyContext,
+    layerId: 'working-layer-2',
+    clipSample,
+    layerTransformTracks: layerTracks,
+    internalLayerId: 'internal-layer-2',
+    pivotX: 120,
+    pivotY: 140,
+    duration: 8
+});
+assert.equal(layerAnimate.ok, true);
+assert.equal(layerAnimate.target, TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY);
+const layerPreview = planTransformEditTransactionPreview({
+    transaction: layerAnimate,
+    context: layerReadyContext,
+    layerStart,
+    layerCurrent: { ...layerStart, x: layerStart.x + 18 }
+});
+assert.equal(layerPreview.ok, true);
+assert.equal(layerPreview.tracks.length, 2);
+assert.equal(layerPreview.tracks[0].internalLayerId, 'internal-layer-1');
+assert.equal(layerPreview.tracks[1].internalLayerId, 'internal-layer-2');
+assert.equal(layerPreview.tracks[1].pivotX, 120);
+assert.equal(layerPreview.tracks[1].keyframes[0].frame, 4);
+assert.equal(layerPreview.tracks[1].keyframes[0].x, clipSample.x + 18);
+assert.equal(JSON.stringify(layerTracks), JSON.stringify([{
+    internalLayerId: 'internal-layer-1',
+    pivotX: 40,
+    pivotY: 50,
+    keyframes: [{ frame: 2, interpolation: 'linear', x: 4, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }]
+}]));
+assert.equal(validateTransformEditTransactionContext(layerAnimate, {
+    ...layerReadyContext,
+    internalLayerId: 'internal-layer-1'
+}).reason, 'layer-target-changed');
 
 const anchorBlocked = planTransformEditTransactionPreview({
     transaction: animate,

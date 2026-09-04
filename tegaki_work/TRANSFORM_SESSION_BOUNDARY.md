@@ -1,6 +1,6 @@
 # Transform Session Boundary
 
-更新日: 2026-09-01
+更新日: 2026-09-04
 
 ## 目的
 
@@ -104,7 +104,7 @@ Layer全体とselectionの差は「対象Raster範囲とmask」であり、trans
 ## Phase 9p Transform-to-Clip Key Bridge Gate
 
 - Table / primary Clip / current Frameから`SOURCE / ANIMATE READY / ANIMATE KEYED / BLOCKED`を`system/animation/transform-edit-context.js`でpure projectionする。Contextは保存しない。
-- 時間変形正本は既存`ClipInstance.transformKeyframes`、Historyは既存Timeline History。第二schema / Historyを作らない。
+- CAF全体の時間変形正本は既存`ClipInstance.transformKeyframes`。active internal Raster一枚だけの時間変形正本は`ClipInstance.layerTransformTracks[]`。対象範囲を混同せず、Historyはどちらも既存Timeline Historyを共有する。
 - 現行CLIP MOTIONと将来Bridgeのfull composite key shapeは`system/animation/clip-transform-key-upsert.js`を共有する。
 - samplerの暗黙base start / endを維持し、Stage B0ではbaseline keyを永続化しない。
 - Layer Transform開始→現在のgesture差分は`system/animation/clip-transform-layer-gesture.js`でpureに求め、現在Frameのsampled Clip transformへ合成する。x / y / rotationは加算、scaleは符号付き比率とし、source Layerの絶対transformやRasterをkeyへ転記しない。
@@ -112,11 +112,16 @@ Layer全体とselectionの差は「対象Raster範囲とmask」であり、trans
 - Stage B2 Gate 2=`GO — B: split owner + synchronous adapter`。LayerSystemはinput sessionとSOURCE、AnimationTablePopupはANIMATE preview / Timeline rollback / Historyを所有する。`layer:transform-exit`はRaster Bake後なのでANIMATE分岐に使わない。
 - ANIMATE開始時のsampled Clip transform / keyframes / duration / Clip・Frame identityを固定し、各previewは同じbaselineから再計算する。READY入場だけではkeyを作らず、実変形の最初のpreviewで候補を作る。
 - V confirmは変更ありならTimeline History 1、Escape / context変化 /開始位置復帰はrollbackしてHistory 0。handle pointercancelはhandle gestureだけを戻しsessionを閉じない。
-- Stage B3で`AnimationTablePopup`のoptional同期adapterを`LayerSystem`へ注入した。SOURCEは従来のRaster Bake、ANIMATEはBake前のClip key preview / Timeline Historyへ分岐し、working Raster群は表示proxyに限定する。
-- ANIMATEのMove / Scale / Rotate / flipは固定baselineから既存`transformKeyframes`へ一時投影する。READY入場はkey 0、V再入力の実変更はHistory 1、Escape / no-opはHistory 0。
-- Frame変更とTable closeはClip key sessionを即cancelする。rollbackは対象Clipの`baselineKeyframes`だけを戻し、新Frame選択など無関係なTimeline stateを巻き戻さない。
+- Stage B3で`AnimationTablePopup`のoptional同期adapterを`LayerSystem`へ注入した。SOURCEは従来のRaster Bake、ANIMATEはBake前の時間key preview / Timeline Historyへ分岐する。
+- Stage B4のOwner correctionにより、Layer Transformはactive working Raster一枚だけを表示proxyとし、`layerTransformTracks`へ投影する。root `transformKeyframes`はCLIP MOTIONのCAF全体配置として残し、兄弟working Rasterを一括proxyにしない。
+- Layer Motion trackは`internalLayerId / pivotX / pivotY / keyframes`だけを持つ。DrawingSnapshot、working Layer、RIG / Mesh、evaluated RenderIslandを保存正本にしない。
+- Layer MotionのMove / Scale / Rotate / flipは固定baselineからtrackへ一時投影する。READY入場はkey 0、V再入力の実変更はTimeline History 1、Escape / no-opはHistory 0。
+- compositorは対象Rasterだけを一Raster一RenderIslandとしてsampleする。RIG Part / Mesh / Skin / clipping splitと同一Rasterで重なる場合は二重変形せずunsupportedとする。
+- Project serialize / validate、internal Layer削除、Clip copy / paste、structured bake、duration retime、Timeline History capture / restoreは同じ`layerTransformTracks`を参照する。
+- Frame変更とTable closeは時間key sessionを即cancelする。rollbackはtargetに応じて`baselineKeyframes`または`baselineLayerTransformTracks`だけを戻し、新Frame選択など無関係なTimeline stateを巻き戻さない。
 - Transform-local indicatorはproduction transactionに同期して`ANIMATE · F# READY / KEYED`を表示する。ANIMATE中のAnchorはFrame-local schema外なので編集不可とし、既存static Clip Anchorを維持する。
 - app / browserのfocus移動だけではANIMATE sessionを確定しない。SOURCEの既存blur confirmは維持する。
+- TimelineのLayer Motion KEYは対象internal Layer行だけへ7px単色丸で表示する。親Clip Motionのecho、Part / Bone菱形、WARP key、click actionとは別の読み取り専用表示とする。
 
 ## 制約
 

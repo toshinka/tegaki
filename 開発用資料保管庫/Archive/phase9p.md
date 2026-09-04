@@ -1,12 +1,12 @@
 # Phase 9p — Transform-to-Clip Key Bridge / Interaction Context Gate
 
-更新日: 2026-09-01  
-状態: ACTIVE — Gate 0=`GO — C: explicit runtime projection + existing Clip key authority`、Gate 1=`GO — B: Transform-local indicator`、Gate 2=`GO — B: split owner + synchronous adapter`、Stage B4進行中  
+更新日: 2026-09-04  
+状態: CLOSED — Gate 0=`GO — C: explicit runtime projection`、Gate 1=`GO — B: Transform-local indicator`、Gate 2=`GO — B: split owner + synchronous adapter`、Stage B4 Owner correction受入  
 担当: SOL / MAX
 
 ## 1. 目的
 
-Layer Transformを絵の共通変形語彙として維持しながら、Animation Tableと併用した時だけ既存`ClipInstance.transformKeyframes`へ安全に接続できる導線を設計する。
+Layer Transformを絵の共通変形語彙として維持しながら、Animation Tableと併用した時だけ時間変形へ安全に接続できる導線を設計する。CAF全体の配置は既存`ClipInstance.transformKeyframes`、選択internal Rasterだけの時間変形は`ClipInstance.layerTransformTracks`とし、対象範囲の違う二つのMotion authorityを混同しない。
 
 中心仮説は次の通り。
 
@@ -23,7 +23,8 @@ Layer Transformを絵の共通変形語彙として維持しながら、Animatio
 |---|---|---|---|
 | static Drawing変形 | `LayerTransform` / `LayerSystem`、confirm時Raster Bake | normal / CAF internal Layer History | 既存挙動を維持 |
 | Clip全体の静的配置 | `ClipInstance.transform` | Timeline History | 既存setterを再利用 |
-| 時間変形 | `ClipInstance.transformKeyframes` | Timeline History | 新しいkey正本を作らない |
+| CAF全体の時間変形 | `ClipInstance.transformKeyframes` | Timeline History | CLIP MOTION / root transformを維持 |
+| internal Raster個別の時間変形 | `ClipInstance.layerTransformTracks[]` | Timeline History | active Layer ID単位。RIG / Mesh / source Bakeと分離 |
 | Frame sampling | `system/animation/clip-transform-sampler.js` | なし | Clip-local 0-based、暗黙base start / endを維持 |
 | CAF working Layer | ClipAsset / DrawingSnapshotへの表示・入力adapter | CAF internal History | Clip keyの保存正本にしない |
 | Interaction Context | Table / Clip / Frameからのpure projection | なし | runtimeのみ。Projectへ保存しない |
@@ -140,7 +141,7 @@ Gate 2のsplit ownerをproductionへ限定接続した。
 
 - `CoreEngine`がPopup初期化後に`AnimationTablePopup.createLayerTransformEditAdapter()`を`LayerSystem`へ注入する。LayerSystemはClip / Timeline modelを直接所有しない。
 - SOURCEは従来のLayer preview / Raster Bake / normal・CAF source Historyを維持する。ANIMATEだけがBake前に`clip-transform-key` transactionへ分岐する。
-- ANIMATEでは選択Clipのworking Raster群を一つのroot Clip表示proxyとして扱い、開始時sampled Clip transformを全proxyへ適用する。各previewは固定baselineからStage B1→B0を再計算し、既存`transformKeyframes`へ一時適用する。
+- ANIMATEでは当初、選択Clipのworking Raster群を一つのroot Clip表示proxyとして扱い、開始時sampled Clip transformを全proxyへ適用した。この接続はCAF全体Motionとしては成立したが、Owner実機確認で「選択internal Layerだけを動かす」導線と衝突したため、Stage B4でroot MotionとLayer Motionを分離した。
 - READY入場だけではkeyを作らない。Move / corner・one-axis Scale / Rotate / flipの最初の実変更でREADY→KEYEDとなる。
 - V再入力は変更ありでTimeline Historyを一件だけ記録する。Escape、開始位置復帰、Frame変更、Table closeはpreview keyだけをbaselineへ戻してHistory 0とし、ユーザーが選んだ新Frameなど他のTimeline stateを巻き戻さない。
 - Transform-local indicatorは`SOURCE · 原画` / `ANIMATE · F# READY|KEYED`を表示する。Clip key schemaがFrame-local Anchorを持たないため、ANIMATE中の中心点編集はdisabledとし、既存static Clip Anchorを維持する。
@@ -148,16 +149,24 @@ Gate 2のsplit ownerをproductionへ限定接続した。
 
 ### Stage B4 — production hardening / close Gate
 
-Stage B3のownershipを広げず、既存key更新、no-op、複数選択 / playback BLOCKED、normal Layer / CAF SOURCE退行、Project save / reloadを固定入力で監査する。通過後にPhase close可否と、次PhaseのDrawing WARP入口を選定する。
+Stage B3のownershipを広げず、既存key更新、no-op、複数選択 / playback BLOCKED、normal Layer / CAF SOURCE退行、Project save / reloadを固定入力で監査した。
 
-最初の表示hardeningとして、選択中のCAF内部Layer行へ`ClipInstance.transformKeyframes`の明示keyを小さな丸で読み取り専用投影した。これはLayer固有keyを新設せず、親CAF帯に既存表示しているClip Motion keyを同じFrame位置へechoする。Part / Bone keyの菱形、WARP key、保存schema、Timeline History、cell clickは変更しない。F2へのkey作成、Undoで消失、Redoで復帰、tooltipの`CAF Motion key`明示、console 0件をBrowserで確認した。
+Owner実機確認で、root `transformKeyframes`を内部Layer行へechoするだけでは「アクティブLayerの変形」と表示対象が一致せず、Layer Transform操作がCAF内部Layerを一括変形することが判明した。そこで最初のecho案を不採用とし、次のcorrectionを実装した。
+
+- `system/animation/clip-layer-transform.js`を個別internal Raster Motionのpure authorityとした。trackは`internalLayerId / pivotX / pivotY / keyframes`だけを持ち、DrawingSnapshot、working Layer、RIG、Mesh、root Clip Motionを所有しない。
+- Layer Transform bridgeはactive working Raster一枚だけをtargetとする。兄弟Layerはpreview対象にもRenderIslandにも入れない。全体Motionは従来どおりCLIP MOTIONの`transformKeyframes`に残す。
+- `folder-part-render-plan.js`でLayer Motionを一Raster一Islandとしてsampleする。同一RasterがRIG Part、Mesh / Skin、clipping splitにも属する場合は二重変形せず`unsupported`で停止する。
+- Project serialize / validation、internal Layer削除、Clip copy / paste、structured bake、duration retime、Timeline History capture / restoreへtrackを接続した。
+- Timelineの対象internal Layer行だけへ明示keyを7pxの単色丸で投影した。外周ring / box-shadowを持たず、Part / Boneの菱形、WARP key、cell clickは変更しない。
+- BrowserでLayer 2のF1 / F10 key、Layer 1非干渉、Frame往復、Undoでkeyと位置が戻ること、Redo復帰、単色marker computed style、console 0件を確認した。
+- 全141 verifier、production build、生成物清掃を通過した。
 
 ## 6. NO-GO
 
 - Stage A1でAuto Key、baseline key、key mutationを実装しない。
 - SOURCE側`layer:transform-exit`のCAF source Bake契約を切り替えない。
 - Interaction ContextをProject / localStorage / Historyへ保存しない。
-- Clip Motionとは別のtransform key schema / Historyを作らない。
+- 同じ対象範囲のClip Motionを重複実装しない。`layerTransformTracks`はroot Clip Motionでは表せないinternal Raster個別Motionに限定し、Historyは既存Timeline Historyを共有する。
 - Drawing WARP、static RIG ownership、RIG Mesh、virtual grid / Motion Pathを並走しない。
 - Top Bar全体、Transform popup全体、Animation Table全体の再編を先行しない。
 
@@ -173,9 +182,10 @@ Stage B3のownershipを広げず、既存key更新、no-op、複数選択 / play
 - Stage B1 plannerがsource Layerの絶対値をkey化せず、同一Anchor context内のgesture差分だけをsampled Clip transformへ合成する。
 - Stage B2 plannerがSOURCE / ANIMATEのownerを一意化し、固定baseline、no-op key 0、context変更rollback、1 session = 1 Historyを固定する。
 - Stage B3 production verifierがoptional adapter、Bake隔離、targeted rollback、indicator、Frame / Table close terminalを固定する。
-- Stage B4では選択中のCAF内部Layer行が既存Clip Motion keyを同一Frameへ読み取り専用投影し、第二key authorityを作らない。
-- 全137 verifier、production build、Browser fixture / production、console 0件、生成物清掃を通過する。
+- Stage B4では選択中のCAF内部RasterだけがLayer Motion targetとなり、兄弟Layerを移動しない。root Clip Motionは別導線として維持する。
+- Layer Motion markerは対象Layer行だけへ単色丸で表示し、Undo / Redo、copy / bake / retime、Project serialize、compositorが同じtrackを参照する。
+- 全141 verifier、production build、Browser fixture / production、console 0件、生成物清掃を通過する。
 
 ## 8. 次作業予告
 
-次taskはPhase 9p Stage B4の既存key更新 / no-op / BLOCKED監査です。その後にnormal Layer / CAF SOURCE、Project save / reloadを順に固定し、Phase close可否と次PhaseのDrawing WARP入口を選定します。作業担当はSOL / MAXです。Drawing WARP実装、static RIG、global Auto Key、baseline永続化はこのStageへ並走しません。
+Phase 9pはcloseし、次taskはPhase 9q Gate 0のDrawing WARP authority / interaction選定です。作業担当はSOL / MAX。Antigravity2は比較案・実画面評価観点・外部レビューのread-only候補とし、保存schema / History / Pixi RenderIsland境界をSOLが固定する前の並列writeは行いません。LUNA / MAXは対象fileとAcceptance Criteriaが一つに確定した限定Sliceだけを候補とします。
