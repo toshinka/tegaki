@@ -14,8 +14,11 @@ export function resolveTimelineViewportWheelAction(options = {}) {
     if (options.ctrlKey === true || options.metaKey === true) {
         return { type: 'zoom', delta };
     }
-    if (options.shiftKey === true || options.overTrackList === true) {
+    if (options.overTrackList === true) {
         return { type: 'vertical-scroll', delta };
+    }
+    if (options.shiftKey === true) {
+        return { type: 'frame-step-create', delta };
     }
     return { type: 'frame-step', delta };
 }

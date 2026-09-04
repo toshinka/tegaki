@@ -5458,14 +5458,17 @@ button.anim-motion-graph-legend-item.is-primary {
     opacity: 0.72;
 }
 
-.anim-rig-folder-cell-slot.is-outside-clip {
+.animation-table-panel .anim-rig-folder-cell-slot.is-outside-clip {
     cursor: default !important;
-    opacity: 0.32;
+    opacity: 1;
+    border-right-color: transparent;
+    background: var(--futaba-background);
 }
 
-.anim-rig-folder-cell-slot.is-clip-range {
+.animation-table-panel .anim-rig-folder-cell-slot.is-clip-range {
     cursor: pointer;
-    background: color-mix(in srgb, var(--futaba-light) 8%, transparent);
+    border-right-color: color-mix(in srgb, var(--futaba-light-medium) 34%, transparent);
+    background: color-mix(in srgb, var(--futaba-background) 92%, var(--futaba-cream) 8%);
 }
 
 .anim-caf-motion-key-projection {
@@ -5477,6 +5480,10 @@ button.anim-motion-graph-legend-item.is-primary {
     background: var(--futaba-maroon);
     box-shadow: none;
     pointer-events: none;
+}
+
+.anim-caf-motion-key-projection.is-provisional {
+    background: color-mix(in srgb, var(--futaba-maroon) 38%, var(--futaba-background));
 }
 
 .animation-table-panel .anim-part-track-item.is-selected {

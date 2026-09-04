@@ -66,6 +66,7 @@ import {
     validateRasterBoneSkinning
 } from './raster-bone-skinning.js';
 import { preflightInternalLayerReparent } from './internal-layer-reparent-gate.js';
+import { resolveInternalClippingContract } from './internal-layer-clipping-contract.js';
 import {
     createAlphaFitRasterBoneSetup,
     getAlphaFitRasterMeshStatus,
@@ -77,6 +78,14 @@ import {
     serializeClipLayerTransformTracks,
     validateClipLayerTransformTracks
 } from './clip-layer-transform.js';
+import {
+    normalizeClipLayerDeformers,
+    removeClipLayerDeformerTargets,
+    remapClipLayerDeformers,
+    serializeClipLayerDeformers,
+    setClipLayerDeformerTarget,
+    validateClipLayerDeformers
+} from './clip-layer-deformer.js';
 import {
     AUTO_SHAPE_FILL_GENERATOR,
     createAutoShapeRasterBoneSetup,
@@ -104,6 +113,32 @@ function createId() {
 
 function numberOrDefault(value, fallback) {
     return Number.isFinite(value) ? value : fallback;
+}
+
+function findOwningRigPartId(asset, internalLayerId) {
+    const partIds = new Set((asset?.rigDefinition?.parts || [])
+        .map(part => part?.partId)
+        .filter(Boolean));
+    const layerById = new Map((asset?.internalLayers || []).map(layer => [layer?.id, layer]));
+    let current = layerById.get(internalLayerId) || null;
+    const visited = new Set();
+    while (current?.id && !visited.has(current.id)) {
+        visited.add(current.id);
+        if (partIds.has(current.id)) return current.id;
+        current = current.parentLayerId ? layerById.get(current.parentLayerId) || null : null;
+    }
+    return null;
+}
+
+function hasInternalClippingParticipation(asset, internalLayerId) {
+    return (asset?.internalLayers || []).some(layer => {
+        if (!layer || layer.type === 'folder') return false;
+        const contract = resolveInternalClippingContract(asset, layer);
+        if (!contract) return false;
+        return contract.owner?.id === internalLayerId
+            || contract.source?.id === internalLayerId
+            || contract.sourceLayers?.some(sourceLayer => sourceLayer?.id === internalLayerId);
+    });
 }
 
 function normalizedOpacity(value, fallback = 1) {
@@ -339,6 +374,13 @@ export class ClipInstanceModel {
         // Phase 9p: CAF全体Motionとは別に、選択internal Rasterだけの非破壊Motionを保持する。
         // RIG登録やworking Layerを保存正本にせず、ClipInstance単位でAsset内Layer IDを参照する。
         this.layerTransformTracks = normalizeClipLayerTransformTracks(options.layerTransformTracks);
+        // Phase 9q: Table-open ANIMATE時の個別internal Raster WARP。
+        // raw validationはProject復元時の警告用runtime診断であり、serializeしない。
+        this._layerDeformerSourceErrors = options.layerDeformers == null
+            ? []
+            : validateClipLayerDeformers(options.layerDeformers, [], this.duration).errors
+                .filter(error => error.code !== 'layer-deformer-target-missing');
+        this.layerDeformers = normalizeClipLayerDeformers(options.layerDeformers);
         // Phase 6: ClipAssetのRaster正本を変えない、ClipInstance単位の非破壊deformer。
         this.deformer = normalizeClipDeformer(options.deformer);
         // Phase 6s: Folder単位の非破壊deformer。描画・保存の正本は引き続きClipInstance。
@@ -387,6 +429,9 @@ export class ClipInstanceModel {
             ...(this.layerTransformTracks.length === 0
                 ? {}
                 : { layerTransformTracks: serializeClipLayerTransformTracks(this.layerTransformTracks) }),
+            ...(this.layerDeformers == null
+                ? {}
+                : { layerDeformers: serializeClipLayerDeformers(this.layerDeformers) }),
             deformer: normalizeClipDeformer(this.deformer),
             ...(this.folderDeformers == null
                 ? {}
@@ -839,6 +884,55 @@ export class TimelineModel {
         }
         entry.clip.layerTransformTracks = validation.value;
         return { ok: true, lane: entry.lane, clip: entry.clip };
+    }
+
+    /**
+     * ClipInstance内の個別Rasterを対象にしたWARPを検証済みcollectionとして設定する。
+     * DrawingSnapshotやworking Layerは変更せず、ClipInstance.layerDeformersだけを保存正本にする。
+     */
+    setClipLayerDeformer(clipId, internalLayerId, deformer = null) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+        const asset = entry.clip.assetId ? this.getClipAsset(entry.clip.assetId) : null;
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const layer = asset.internalLayers?.find(candidate => candidate?.id === internalLayerId) || null;
+        if (!layer) return { ok: false, reason: 'layer-not-found' };
+        if (layer.type !== 'raster' || layer.isBackground === true) {
+            return { ok: false, reason: 'drawable-raster-required' };
+        }
+        if (hasInternalClippingParticipation(asset, internalLayerId)) {
+            return { ok: false, reason: 'internal-clipping-unsupported' };
+        }
+        if (findOwningRigPartId(asset, internalLayerId)) {
+            return { ok: false, reason: 'rig-part-layer-unsupported' };
+        }
+        if (getRasterMeshIdsForInternalLayers(asset.meshDefinitions, new Set([internalLayerId])).length > 0) {
+            return { ok: false, reason: 'mesh-layer-unsupported' };
+        }
+        if (deformer !== null && deformer !== undefined && !normalizeClipDeformer(deformer)) {
+            return { ok: false, reason: 'invalid-layer-deformer' };
+        }
+
+        const next = setClipLayerDeformerTarget(
+            entry.clip.layerDeformers,
+            internalLayerId,
+            deformer
+        );
+        const validation = validateClipLayerDeformers(
+            next,
+            asset.internalLayers,
+            entry.clip.duration
+        );
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-layer-deformers', errors: validation.errors };
+        }
+        entry.clip.layerDeformers = validation.value;
+        entry.clip._layerDeformerSourceErrors = [];
+        return { ok: true, lane: entry.lane, clip: entry.clip, asset };
+    }
+
+    removeClipLayerDeformer(clipId, internalLayerId) {
+        return this.setClipLayerDeformer(clipId, internalLayerId, null);
     }
 
     registerClipAssetRigPart(assetId, layerId, options = {}) {
@@ -1816,6 +1910,10 @@ export class TimelineModel {
                     clip.layerTransformTracks,
                     deleteIds
                 );
+                clip.layerDeformers = removeClipLayerDeformerTargets(
+                    clip.layerDeformers,
+                    deleteIds
+                );
             });
         });
         if (rigRemoval.changed) {
@@ -1962,21 +2060,41 @@ export class TimelineModel {
         }
         this.tracks.forEach(track => {
             (track.cels || []).forEach(clip => {
-                if (clip.assetId !== asset.id || !clip.folderDeformers) return;
-                const sourceTargets = normalizeClipFolderDeformers(clip.folderDeformers)?.targets
-                    ?.filter(target => sourceIds.has(target.folderLayerId)) || [];
-                if (sourceTargets.length === 0) return;
-                const remapped = remapClipFolderDeformers(
-                    { version: 1, targets: sourceTargets },
-                    idMap
-                );
-                clip.folderDeformers = normalizeClipFolderDeformers({
-                    version: 1,
-                    targets: [
-                        ...(normalizeClipFolderDeformers(clip.folderDeformers)?.targets || []),
-                        ...(remapped?.targets || [])
-                    ]
-                });
+                if (clip.assetId !== asset.id) return;
+                if (clip.folderDeformers) {
+                    const sourceTargets = normalizeClipFolderDeformers(clip.folderDeformers)?.targets
+                        ?.filter(target => sourceIds.has(target.folderLayerId)) || [];
+                    if (sourceTargets.length > 0) {
+                        const remapped = remapClipFolderDeformers(
+                            { version: 1, targets: sourceTargets },
+                            idMap
+                        );
+                        clip.folderDeformers = normalizeClipFolderDeformers({
+                            version: 1,
+                            targets: [
+                                ...(normalizeClipFolderDeformers(clip.folderDeformers)?.targets || []),
+                                ...(remapped?.targets || [])
+                            ]
+                        });
+                    }
+                }
+                if (clip.layerDeformers) {
+                    const sourceTargets = normalizeClipLayerDeformers(clip.layerDeformers)?.targets
+                        ?.filter(target => sourceIds.has(target.internalLayerId)) || [];
+                    if (sourceTargets.length > 0) {
+                        const remapped = remapClipLayerDeformers(
+                            { version: 1, targets: sourceTargets },
+                            idMap
+                        );
+                        clip.layerDeformers = normalizeClipLayerDeformers({
+                            version: 1,
+                            targets: [
+                                ...(normalizeClipLayerDeformers(clip.layerDeformers)?.targets || []),
+                                ...(remapped?.targets || [])
+                            ]
+                        });
+                    }
+                }
             });
         });
         asset.updatedAt = Date.now();
@@ -2159,6 +2277,9 @@ export class TimelineModel {
                 transform: normalizeClipTransform(clip.transform || {}),
                 transformKeyframes: (clip.transformKeyframes || []).map(keyframe => clonePlainObject(keyframe)),
                 layerTransformTracks: serializeClipLayerTransformTracks(clip.layerTransformTracks),
+                ...(clip.layerDeformers == null
+                    ? {}
+                    : { layerDeformers: serializeClipLayerDeformers(clip.layerDeformers) }),
                 deformer: normalizeClipDeformer(clip.deformer),
                 ...(clip.folderDeformers == null
                     ? {}
@@ -2370,6 +2491,78 @@ export class TimelineModel {
                     ...sourceErrors,
                     ...validation.errors,
                     ...(!asset ? [{ code: 'folder-deformer-asset-missing' }] : [])
+                ];
+                const result = {
+                    ok: resultErrors.length === 0,
+                    value: validation.value,
+                    errors: resultErrors
+                };
+                clipResults.push({
+                    clipId: clip.id,
+                    assetId: clip.assetId || null,
+                    ...result
+                });
+                result.errors.forEach(error => errors.push({
+                    scope: 'clip',
+                    clipId: clip.id,
+                    assetId: clip.assetId || null,
+                    ...error
+                }));
+            });
+        });
+        return { ok: errors.length === 0, clipResults, errors };
+    }
+
+    validateLayerDeformers() {
+        const clipResults = [];
+        const errors = [];
+        this.tracks.forEach(track => {
+            (track.cels || []).forEach(clip => {
+                const sourceErrors = Array.isArray(clip._layerDeformerSourceErrors)
+                    ? clip._layerDeformerSourceErrors
+                    : [];
+                if (clip.layerDeformers == null && sourceErrors.length === 0) return;
+                const asset = clip.assetId ? this.getClipAsset(clip.assetId) : null;
+                const validation = validateClipLayerDeformers(
+                    clip.layerDeformers,
+                    asset?.internalLayers || [],
+                    clip.duration
+                );
+                const boundaryErrors = asset
+                    ? (validation.value?.targets || []).flatMap(target => {
+                        const layer = asset.internalLayers?.find(candidate => (
+                            candidate?.id === target.internalLayerId
+                        )) || null;
+                        if (!layer) return [];
+                        if (hasInternalClippingParticipation(asset, target.internalLayerId)) {
+                            return [{
+                                code: 'layer-deformer-internal-clipping-unsupported',
+                                internalLayerId: target.internalLayerId
+                            }];
+                        }
+                        if (findOwningRigPartId(asset, target.internalLayerId)) {
+                            return [{
+                                code: 'layer-deformer-rig-part-unsupported',
+                                internalLayerId: target.internalLayerId
+                            }];
+                        }
+                        if (getRasterMeshIdsForInternalLayers(
+                            asset.meshDefinitions,
+                            new Set([target.internalLayerId])
+                        ).length > 0) {
+                            return [{
+                                code: 'layer-deformer-mesh-unsupported',
+                                internalLayerId: target.internalLayerId
+                            }];
+                        }
+                        return [];
+                    })
+                    : [];
+                const resultErrors = [
+                    ...sourceErrors,
+                    ...validation.errors,
+                    ...boundaryErrors,
+                    ...(!asset ? [{ code: 'layer-deformer-asset-missing' }] : [])
                 ];
                 const result = {
                     ok: resultErrors.length === 0,

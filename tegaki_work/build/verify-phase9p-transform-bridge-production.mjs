@@ -61,7 +61,10 @@ assert.match(popup, /e\.key === 'Escape' && this\.isVisible[\s\S]*?this\.isTrans
 assert.match(popup, /animation:frame-changed'[\s\S]*?_transformPreviewAuthority === TRANSFORM_EDIT_AUTHORITY\.CLIP_TRANSFORM_KEY[\s\S]*?exitLayerMoveMode\?\.\(\{ cancelled: true \}\)/);
 assert.match(popup, /hide\(\)[\s\S]*?_transformPreviewAuthority === TRANSFORM_EDIT_AUTHORITY\.CLIP_TRANSFORM_KEY[\s\S]*?exitLayerMoveMode\?\.\(\{ cancelled: true \}\)/);
 assert.match(popup, /const hasLayerMotionKey = isSelected && isInside[\s\S]*?layerMotionTrack/);
-assert.match(popup, /class="anim-caf-motion-key-projection"[\s\S]*?data-layer-motion-key-frame/);
+assert.match(popup, /const isProvisionalLayerMotionKey = hasLayerMotionKey[\s\S]*?previewSession\.changed === true/);
+assert.match(popup, /class="anim-caf-motion-key-projection\$\{isProvisionalLayerMotionKey[\s\S]*?data-layer-motion-key-frame/);
+assert.match(popup, /const timelineGridContainer = this\.panel\.querySelector\('\.anim-timeline-grid-container'\)[\s\S]*?this\.model\.setCurrentFrame\(frameIndex\)/);
+assert.match(popup, /createBlankClip: action\.type === 'frame-step-create'/);
 assert.match(keyboard, /e\.key === 'Escape' && vKeyPressed[\s\S]*?cancelled: true/);
 assert.match(layerTransform, /_canEditTransformAnchor\(\)/);
 assert.match(layerTransform, /allowAnchorEdit !== false/);
@@ -72,5 +75,8 @@ assert.match(css, /\.layer-transform-context-note\[data-context-state="keyed"\]/
 assert.match(css, /#layer-transform-anchor-btn\.is-context-disabled/);
 assert.match(css, /\.anim-caf-motion-key-projection\s*\{[\s\S]*?background: var\(--futaba-maroon\)/);
 assert.match(css, /\.anim-caf-motion-key-projection\s*\{[\s\S]*?border: 0;[\s\S]*?box-shadow: none;/);
+assert.match(css, /\.anim-caf-motion-key-projection\.is-provisional\s*\{[\s\S]*?var\(--futaba-maroon\) 38%/);
+assert.match(css, /\.anim-rig-folder-cell-slot\.is-outside-clip[\s\S]*?border-right-color: transparent;[\s\S]*?background: var\(--futaba-background\)/);
+assert.match(css, /\.anim-rig-folder-cell-slot\.is-clip-range[\s\S]*?border-right-color: color-mix/);
 
 console.log('Phase 9p production Transform bridge verifier passed.');

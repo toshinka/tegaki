@@ -860,6 +860,13 @@ export class ProjectManager {
                 folderDeformerValidation.errors
             );
         }
+        const layerDeformerValidation = animationTable.model.validateLayerDeformers?.();
+        if (layerDeformerValidation?.ok === false) {
+            console.warn(
+                '[ProjectManager] Optional Layer WARP data is invalid; Raster / CAF data was loaded and Layer WARP evaluation remains disabled.',
+                layerDeformerValidation.errors
+            );
+        }
         this._restoreAnimationUiState(animationTable, animationState);
         animationTable.initialClipAssetSeeded = animationTable.model.clipAssets.length > 0;
         animationTable._copiedCelRef = null;
