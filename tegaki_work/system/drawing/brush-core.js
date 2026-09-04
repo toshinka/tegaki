@@ -201,6 +201,8 @@ export class BrushCore {
         const needsSelectionSnapshot = this._needsSelectionSnapshotForLayer(activeLayer);
         let beforeSnapshot = null;
         let beforeSnapshotMs = null;
+        let ensureRasterFrameMs = null;
+        let airbrushBeginMs = null;
         let gpuBaselineActive = false;
 
         // Stage A: GPU baseline eligibility check (Pen / Eraser かつ selection なし)
