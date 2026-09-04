@@ -76,7 +76,9 @@ assert.match(css, /#layer-transform-anchor-btn\.is-context-disabled/);
 assert.match(css, /\.anim-caf-motion-key-projection\s*\{[\s\S]*?background: var\(--futaba-maroon\)/);
 assert.match(css, /\.anim-caf-motion-key-projection\s*\{[\s\S]*?border: 0;[\s\S]*?box-shadow: none;/);
 assert.match(css, /\.anim-caf-motion-key-projection\.is-provisional\s*\{[\s\S]*?var\(--futaba-maroon\) 38%/);
-assert.match(css, /\.anim-rig-folder-cell-slot\.is-outside-clip[\s\S]*?border-right-color: transparent;[\s\S]*?background: var\(--futaba-background\)/);
+assert.match(css, /\.anim-rig-folder-cell-slot\.is-outside-clip[\s\S]*?border-right: 0;[\s\S]*?background: var\(--futaba-background\)/);
 assert.match(css, /\.anim-rig-folder-cell-slot\.is-clip-range[\s\S]*?border-right-color: color-mix/);
+assert.match(css, /\.anim-rig-folder-timeline-row\.is-selected[\s\S]*?\.anim-rig-folder-cell-slot\.is-clip-range[\s\S]*?var\(--futaba-light-medium\) 26%/);
+assert.match(popup, /\.anim-timeline-grid\s*\{[\s\S]*?background-image: none;/);
 
 console.log('Phase 9p production Transform bridge verifier passed.');
