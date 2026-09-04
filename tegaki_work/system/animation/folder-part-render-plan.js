@@ -22,8 +22,14 @@ import { resolveRigPartTarget } from './rig-part-target.js';
 import { unionRasterBounds } from '../raster-bounds.js';
 import { resolveWarpPlacementSample } from './warp-placement.js';
 import {
-    calculateAffineTransformedBounds
+    calculateAffineTransformedBounds,
+    createAffineTransformMatrix
 } from '../transform-math.js';
+import {
+    normalizeClipLayerTransformTracks,
+    sampleClipLayerTransform,
+    validateClipLayerTransformTracks
+} from './clip-layer-transform.js';
 
 function createEmptyPlan(status = 'none', errors = []) {
     return {
@@ -117,7 +123,7 @@ export function validateFolderPartClippingBoundary(asset, islandLayerIds) {
  * 排他的に割り当て、Root Raster Partは一枚だけを所有する。
  * Rigなしはstatus=none、invalid/unsupportedはfallbackToRaster=trueとなる。
  */
-export function createRigPartRenderPlan(asset, clip, timelineFrame) {
+function createStaticRigPartRenderPlan(asset, clip, timelineFrame) {
     if (asset?.rigDefinition == null) return createEmptyPlan('none');
 
     const evaluated = evaluateRigidParts(asset, clip, timelineFrame);
@@ -238,6 +244,98 @@ export function createRigPartRenderPlan(asset, clip, timelineFrame) {
         islands,
         islandByPartId,
         islandByFolderId,
+        islandByLayerId
+    };
+}
+
+/**
+ * RIG RenderIslandへ個別internal Raster Motionを排他的に合成する。
+ * Layer MotionはRIG Part登録ではなくClipInstanceの独立targetなので、同じRasterが
+ * Part / Mesh / clipping境界にも属する場合は無言の二重変形をせずunsupportedとする。
+ */
+export function createRigPartRenderPlan(asset, clip, timelineFrame) {
+    const rigPlan = createStaticRigPartRenderPlan(asset, clip, timelineFrame);
+    const tracks = normalizeClipLayerTransformTracks(clip?.layerTransformTracks)
+        .filter(track => Array.isArray(track?.keyframes) && track.keyframes.length > 0);
+    if (tracks.length === 0) return rigPlan;
+    if (rigPlan.status === 'invalid' || rigPlan.status === 'unsupported') return rigPlan;
+
+    const validation = validateClipLayerTransformTracks(
+        tracks,
+        asset?.internalLayers || [],
+        Math.max(1, Number.isInteger(clip?.duration) ? clip.duration : 1)
+    );
+    if (!validation.ok) return createEmptyPlan('invalid', validation.errors);
+
+    const layerById = new Map((asset?.internalLayers || []).map(layer => [layer?.id, layer]));
+    const meshTargets = new Set((asset?.meshDefinitions || [])
+        .map(mesh => mesh?.targetInternalLayerId)
+        .filter(Boolean));
+    const errors = [];
+    const layerIslands = validation.value.map(track => {
+        const targetLayer = layerById.get(track.internalLayerId) || null;
+        if (!targetLayer || targetLayer.type === 'folder' || targetLayer.isBackground === true) {
+            errors.push(addPlanError(
+                'layer-transform-target-invalid',
+                'Layer Motion target must be a drawable internal Raster',
+                { targetLayerId: track.internalLayerId }
+            ));
+            return null;
+        }
+        if (rigPlan.status === 'ready' && rigPlan.islandByLayerId.has(targetLayer.id)) {
+            errors.push(addPlanError(
+                'layer-transform-rig-overlap',
+                'A Raster cannot be transformed by Layer Motion and RIG Part at the same time',
+                { targetLayerId: targetLayer.id }
+            ));
+            return null;
+        }
+        if (meshTargets.has(targetLayer.id)) {
+            errors.push(addPlanError(
+                'layer-transform-mesh-overlap',
+                'A Raster cannot be transformed by Layer Motion and Mesh / Skin at the same time',
+                { targetLayerId: targetLayer.id }
+            ));
+            return null;
+        }
+        const layerIds = new Set([targetLayer.id]);
+        const clipping = validateRigPartClippingBoundary(asset, layerIds);
+        if (!clipping.ok) {
+            errors.push(...clipping.errors.map(error => ({
+                ...error,
+                code: 'layer-transform-clipping-boundary-split'
+            })));
+            return null;
+        }
+        const sampled = sampleClipLayerTransform(clip, targetLayer.id, timelineFrame);
+        if (!sampled) return null;
+        return {
+            partId: null,
+            layerMotionTargetId: targetLayer.id,
+            targetLayerId: targetLayer.id,
+            targetKind: 'layer-motion',
+            folderId: null,
+            parentPartId: null,
+            layerIds,
+            partWorldMatrix: null,
+            boneDeltaMatrix: null,
+            rigidBinding: null,
+            worldMatrix: createAffineTransformMatrix(sampled)
+        };
+    }).filter(Boolean);
+    if (errors.length > 0) return createEmptyPlan('unsupported', errors);
+
+    const islands = [...(rigPlan.islands || []), ...layerIslands];
+    const islandByLayerId = new Map(rigPlan.islandByLayerId || []);
+    layerIslands.forEach(island => islandByLayerId.set(island.targetLayerId, island));
+    return {
+        ok: true,
+        status: 'ready',
+        fallbackToRaster: false,
+        errors: [],
+        islands,
+        islandByPartId: new Map(rigPlan.islandByPartId || []),
+        islandByFolderId: new Map(rigPlan.islandByFolderId || []),
         islandByLayerId
     };
 }

@@ -22,6 +22,7 @@ export const TRANSFORM_EDIT_CONTEXT_MODE = Object.freeze({
 export const TRANSFORM_EDIT_AUTHORITY = Object.freeze({
     LAYER_SOURCE: 'layer-source',
     CLIP_TRANSFORM_KEY: 'clip-transform-key',
+    CLIP_LAYER_TRANSFORM_KEY: 'clip-layer-transform-key',
     NONE: 'none'
 });
 
@@ -36,6 +37,7 @@ function createContext(overrides = {}) {
         localFrame: null,
         keyIndex: -1,
         hasExplicitKey: false,
+        internalLayerId: null,
         ...overrides
     };
 }
@@ -108,19 +110,30 @@ export function projectTransformEditContext(input = {}) {
         });
     }
 
-    const keyframes = Array.isArray(clip.transformKeyframes) ? clip.transformKeyframes : [];
+    const internalLayerId = typeof input.internalLayerId === 'string' && input.internalLayerId.length > 0
+        ? input.internalLayerId
+        : null;
+    const layerTrack = internalLayerId
+        ? (clip.layerTransformTracks || []).find(track => track?.internalLayerId === internalLayerId) || null
+        : null;
+    const keyframes = internalLayerId
+        ? (Array.isArray(layerTrack?.keyframes) ? layerTrack.keyframes : [])
+        : (Array.isArray(clip.transformKeyframes) ? clip.transformKeyframes : []);
     const keyIndex = keyframes.findLastIndex(key => key?.frame === localFrame);
     const hasExplicitKey = keyIndex >= 0;
     return createContext({
         mode: hasExplicitKey
             ? TRANSFORM_EDIT_CONTEXT_MODE.ANIMATE_KEYED
             : TRANSFORM_EDIT_CONTEXT_MODE.ANIMATE_READY,
-        authority: TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY,
+        authority: internalLayerId
+            ? TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY
+            : TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY,
         writable: true,
         clipId: clip.id || null,
         timelineFrame,
         localFrame,
         keyIndex,
-        hasExplicitKey
+        hasExplicitKey,
+        internalLayerId
     });
 }

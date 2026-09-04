@@ -20,6 +20,7 @@ import {
 } from './transform-edit-context.js';
 import { planClipTransformFromLayerGesture } from './clip-transform-layer-gesture.js';
 import { planClipTransformKeyUpsert } from './clip-transform-key-upsert.js';
+import { planClipLayerTransformKeyUpsert } from './clip-layer-transform.js';
 
 export const TRANSFORM_EDIT_TRANSACTION_OWNER = Object.freeze({
     LAYER_SYSTEM: 'layer-system',
@@ -30,8 +31,14 @@ export const TRANSFORM_EDIT_TRANSACTION_OWNER = Object.freeze({
 export const TRANSFORM_EDIT_TRANSACTION_TARGET = Object.freeze({
     LAYER_SOURCE: 'layer-source',
     CLIP_TRANSFORM_KEY: 'clip-transform-key',
+    CLIP_LAYER_TRANSFORM_KEY: 'clip-layer-transform-key',
     NONE: 'none'
 });
+
+export function isTransformTimelineKeyTarget(target) {
+    return target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY
+        || target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY;
+}
 
 export const TRANSFORM_EDIT_TRANSACTION_ACTION = Object.freeze({
     PREVIEW_SOURCE: 'preview-source',
@@ -94,6 +101,10 @@ function cloneKeyframes(keyframes) {
     }));
 }
 
+function cloneLayerTransformTracks(tracks) {
+    return structuredClone(Array.isArray(tracks) ? tracks : []);
+}
+
 function hasLayerTransformChange(start, current) {
     if (!start || !current) return false;
     return EDITABLE_TRANSFORM_FIELDS.some(field => {
@@ -119,6 +130,10 @@ export function planTransformEditTransactionStart({
     activeTransaction = null,
     clipSample = null,
     keyframes = [],
+    layerTransformTracks = [],
+    internalLayerId = null,
+    pivotX = null,
+    pivotY = null,
     duration = null
 } = {}) {
     if (activeTransaction) return blocked('transform-transaction-active');
@@ -144,8 +159,9 @@ export function planTransformEditTransactionStart({
         };
     }
 
+    const isClipLayerTarget = context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY;
     if (ANIMATE_MODES.has(context.mode)
-        && context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY
+        && (context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY || isClipLayerTarget)
         && context.writable === true) {
         if (!context.clipId) return blocked('clip-target-required');
         if (!Number.isInteger(context.timelineFrame) || !Number.isInteger(context.localFrame)) {
@@ -159,11 +175,20 @@ export function planTransformEditTransactionStart({
             || typeof clipSample.blendMode !== 'string') {
             return blocked('clip-transform-baseline-required');
         }
+        if (isClipLayerTarget
+            && (typeof internalLayerId !== 'string'
+                || internalLayerId !== context.internalLayerId
+                || !Number.isFinite(pivotX)
+                || !Number.isFinite(pivotY))) {
+            return blocked('clip-layer-transform-target-required');
+        }
         return {
             ok: true,
             blocked: false,
             owner: TRANSFORM_EDIT_TRANSACTION_OWNER.ANIMATION_TABLE,
-            target: TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY,
+            target: isClipLayerTarget
+                ? TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY
+                : TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY,
             layerId,
             clipId: context.clipId,
             timelineFrame: context.timelineFrame,
@@ -174,7 +199,11 @@ export function planTransformEditTransactionStart({
             historyOwner: 'timeline',
             duration,
             baselineTransform: { ...clipSample },
-            baselineKeyframes: cloneKeyframes(keyframes)
+            baselineKeyframes: cloneKeyframes(keyframes),
+            baselineLayerTransformTracks: cloneLayerTransformTracks(layerTransformTracks),
+            internalLayerId: isClipLayerTarget ? internalLayerId : null,
+            pivotX: isClipLayerTarget ? pivotX : null,
+            pivotY: isClipLayerTarget ? pivotY : null
         };
     }
 
@@ -205,8 +234,11 @@ export function validateTransformEditTransactionContext(transaction, context) {
     if (transaction.owner !== TRANSFORM_EDIT_TRANSACTION_OWNER.ANIMATION_TABLE) {
         return { ok: false, reason: 'transform-owner-invalid' };
     }
+    const expectedAuthority = transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY
+        ? TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY
+        : TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY;
     if (!ANIMATE_MODES.has(context.mode)
-        || context.authority !== TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY
+        || context.authority !== expectedAuthority
         || context.writable !== true) {
         return { ok: false, reason: 'edit-context-changed' };
     }
@@ -216,6 +248,10 @@ export function validateTransformEditTransactionContext(transaction, context) {
     if (context.timelineFrame !== transaction.timelineFrame
         || context.localFrame !== transaction.localFrame) {
         return { ok: false, reason: 'frame-target-changed' };
+    }
+    if (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY
+        && context.internalLayerId !== transaction.internalLayerId) {
+        return { ok: false, reason: 'layer-target-changed' };
     }
     return { ok: true, reason: null };
 }
@@ -261,16 +297,27 @@ export function planTransformEditTransactionPreview({
             owner: transaction.owner,
             changed: false,
             transform: { ...gesturePlan.transform },
-            keyframes: cloneKeyframes(transaction.baselineKeyframes)
+            keyframes: cloneKeyframes(transaction.baselineKeyframes),
+            tracks: cloneLayerTransformTracks(transaction.baselineLayerTransformTracks)
         };
     }
 
-    const upsertPlan = planClipTransformKeyUpsert({
-        keyframes: transaction.baselineKeyframes,
-        frame: transaction.localFrame,
-        duration: transaction.duration,
-        transform: gesturePlan.transform
-    });
+    const upsertPlan = transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY
+        ? planClipLayerTransformKeyUpsert({
+            tracks: transaction.baselineLayerTransformTracks,
+            internalLayerId: transaction.internalLayerId,
+            frame: transaction.localFrame,
+            duration: transaction.duration,
+            pivotX: transaction.pivotX,
+            pivotY: transaction.pivotY,
+            transform: gesturePlan.transform
+        })
+        : planClipTransformKeyUpsert({
+            keyframes: transaction.baselineKeyframes,
+            frame: transaction.localFrame,
+            duration: transaction.duration,
+            transform: gesturePlan.transform
+        });
     if (!upsertPlan.ok) {
         return blocked(upsertPlan.reason, {
             rollback: TRANSFORM_EDIT_TRANSACTION_ACTION.ROLLBACK_ANIMATE
@@ -283,7 +330,8 @@ export function planTransformEditTransactionPreview({
         owner: transaction.owner,
         changed: upsertPlan.changed,
         transform: { ...gesturePlan.transform },
-        keyframes: upsertPlan.keyframes,
+        keyframes: upsertPlan.keyframes || cloneKeyframes(transaction.baselineKeyframes),
+        tracks: upsertPlan.tracks || cloneLayerTransformTracks(transaction.baselineLayerTransformTracks),
         key: upsertPlan.key,
         replaced: upsertPlan.replaced,
         delta: { ...gesturePlan.delta }

@@ -196,14 +196,6 @@ export class BrushCore {
         if (!activeLayer || activeLayer.locked) return;
         this.strokeTargetLayer = activeLayer;
         const settings = this._getCurrentSettings();
-        const ensureRasterStart = window.TEGAKI_CONFIG?.debug ? this._perfNow() : null;
-        const boundsResult = this._ensureLayerRasterFrameForStroke(activeLayer, settings, currentMode);
-        if (Number.isFinite(ensureRasterStart)) {
-            ensureRasterFrameMs = this._perfNow() - ensureRasterStart;
-            this._warnPerf('brush.startStroke.ensureRasterFrame', ensureRasterStart, {
-                mode: currentMode
-            });
-        }
 
         const needsHistorySnapshot = activeLayer.layerData?.isAnimationWorkingLayer !== true;
         const needsSelectionSnapshot = this._needsSelectionSnapshotForLayer(activeLayer);
@@ -211,17 +203,22 @@ export class BrushCore {
         let beforeSnapshotMs = null;
         let gpuBaselineActive = false;
 
-        // Stage A: GPU baseline eligibility check (bounds拡張が発生した場合は従来full snapshotへfallback)
-        const isEligibleGpuBaseline = !boundsResult?.changed
-            && this._isEligibleForGpuBaseline(currentMode, activeLayer, settings);
+        // Stage A: GPU baseline eligibility check (Pen / Eraser かつ selection なし)
+        // 重要: _ensureLayerRasterFrameForStroke() より前に取得し、bounds拡張前の状態（元rasterBounds, width, height）を記録する
+        const isEligibleGpuBaseline = this._isEligibleForGpuBaseline(currentMode, activeLayer, settings);
 
         if (needsHistorySnapshot && !needsSelectionSnapshot && isEligibleGpuBaseline) {
             const gpuStart = this._perfNow();
             gpuBaselineActive = this._captureGpuBaseline(activeLayer);
             if (gpuBaselineActive) {
+                const preBounds = this._getLayerRasterBounds(activeLayer);
+                const preWidth = activeLayer.layerData?.renderTexture?.width || preBounds.width;
+                const preHeight = activeLayer.layerData?.renderTexture?.height || preBounds.height;
                 this.strokeHistoryGpuBaseline = {
                     layerId: activeLayer.layerData?.id || activeLayer.id,
-                    bounds: this._getLayerRasterBounds(activeLayer)
+                    bounds: { ...preBounds },
+                    width: preWidth,
+                    height: preHeight
                 };
             }
             beforeSnapshotMs = this._perfNow() - gpuStart;
@@ -231,6 +228,8 @@ export class BrushCore {
             });
         }
 
+        // GPU baseline取得失敗、Selectionあり等でCPU snapshotが必要な場合も、
+        // CPU before snapshotは _ensureLayerRasterFrameForStroke() より前に取得する
         if (!gpuBaselineActive && (needsHistorySnapshot || needsSelectionSnapshot)) {
             const snapshotStart = this._perfNow();
             beforeSnapshot = this.layerManager.createLayerRasterSnapshot?.(activeLayer, { includePathCollections: false }) || null;
@@ -243,6 +242,16 @@ export class BrushCore {
         }
         this.strokeHistoryBefore = needsHistorySnapshot ? beforeSnapshot : null;
         this.strokeSelectionBefore = beforeSnapshot;
+
+        // 重要: before状態（GPU baseline または CPU snapshot）保存後に bounds ensure を実行する
+        const ensureRasterStart = window.TEGAKI_CONFIG?.debug ? this._perfNow() : null;
+        const boundsResult = this._ensureLayerRasterFrameForStroke(activeLayer, settings, currentMode);
+        if (Number.isFinite(ensureRasterStart)) {
+            ensureRasterFrameMs = this._perfNow() - ensureRasterStart;
+            this._warnPerf('brush.startStroke.ensureRasterFrame', ensureRasterStart, {
+                mode: currentMode
+            });
+        }
         const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
         const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
@@ -1925,17 +1934,34 @@ export class BrushCore {
         if (!beforeSnapshot && gpuBaseline && this.historyBaselineScratchTexture && renderer?.extract?.pixels) {
             try {
                 const sprite = new Sprite(this.historyBaselineScratchTexture);
-                const result = renderer.extract.pixels({ target: sprite });
-                sprite.destroy({ texture: false, baseTexture: false });
-                const px = new Uint8ClampedArray(result?.pixels || result?.buffer || result);
-                unpremultiplyPixels(px);
-                beforeSnapshot = {
-                    layerId,
-                    width: this.historyBaselineScratchTexture.width,
-                    height: this.historyBaselineScratchTexture.height,
-                    rasterBounds: gpuBaseline.bounds,
-                    pixels: px
-                };
+                const baseW = Math.round(gpuBaseline.width || this.historyBaselineScratchTexture.width);
+                const baseH = Math.round(gpuBaseline.height || this.historyBaselineScratchTexture.height);
+                let result = null;
+                try {
+                    result = renderer.extract.pixels({
+                        target: sprite,
+                        clearColor: '#00000000'
+                    });
+                } finally {
+                    sprite.destroy({ texture: false, baseTexture: false });
+                }
+                const sourcePixels = result?.pixels
+                    || (result instanceof Uint8ClampedArray
+                        ? result
+                        : (result?.buffer ? new Uint8ClampedArray(result.buffer) : null));
+                if (sourcePixels) {
+                    const width = Math.round(result?.width || baseW);
+                    const height = Math.round(result?.height || baseH);
+                    const px = new Uint8ClampedArray(sourcePixels);
+                    unpremultiplyPixels(px);
+                    beforeSnapshot = {
+                        layerId: gpuBaseline.layerId || layerId,
+                        width,
+                        height,
+                        rasterBounds: { ...gpuBaseline.bounds, width, height },
+                        pixels: px
+                    };
+                }
             } catch (_) {
                 beforeSnapshot = null;
             }

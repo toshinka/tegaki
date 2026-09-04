@@ -54,7 +54,10 @@ import {
     isLayerPanelDiagnosticsEnabled,
     recordLayerClippingRefresh
 } from './layer-panel-diagnostics.js';
-import { TRANSFORM_EDIT_TRANSACTION_TARGET } from './animation/transform-edit-transaction.js';
+import {
+    isTransformTimelineKeyTarget,
+    TRANSFORM_EDIT_TRANSACTION_TARGET
+} from './animation/transform-edit-transaction.js';
 
 export class LayerSystem {
     constructor() {
@@ -3007,8 +3010,7 @@ export class LayerSystem {
                 this._layerTransformSession?.previewSampling,
                 transform
             );
-            if (this._layerTransformSession?.transaction?.target
-                === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+            if (isTransformTimelineKeyTarget(this._layerTransformSession?.transaction?.target)) {
                 this._applyClipTransformKeyPreview(transform);
                 return;
             }
@@ -3165,8 +3167,7 @@ export class LayerSystem {
         };
         if (adapterStart.ok !== true) return false;
 
-        const isClipKey = adapterStart.transaction?.target
-            === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY;
+        const isClipKey = isTransformTimelineKeyTarget(adapterStart.transaction?.target);
         const targetLayerIds = new Set(adapterStart.targetLayerIds || []);
         const previewLayers = isClipKey
             ? this.getLayers().filter(layer => targetLayerIds.has(layer?.layerData?.id))
@@ -3343,7 +3344,7 @@ export class LayerSystem {
 
     _applyClipTransformKeyPreview(transform) {
         const session = this._layerTransformSession;
-        if (!session || session.transaction?.target !== TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+        if (!session || !isTransformTimelineKeyTarget(session.transaction?.target)) {
             return false;
         }
         const targetIds = new Set(session.previewLayerIds || []);
@@ -3377,7 +3378,7 @@ export class LayerSystem {
         const activeLayer = sessionLayer || this.getActiveLayer();
         const transformTarget = this._layerTransformSession?.transaction?.target
             || TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE;
-        const isClipKey = transformTarget === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY;
+        const isClipKey = isTransformTimelineKeyTarget(transformTarget);
         if (!isClipKey && !cancelled && !options.deferredForBusyIndicator && !this._folderTransformConfirmDeferred && activeLayer?.layerData?.isFolder) {
             const targetCount = this._getFolderRasterLayers(activeLayer).length;
             if (targetCount > 1) {
@@ -3581,8 +3582,9 @@ export class LayerSystem {
         const layerIndex = this.activeLayerIndex;
         const centerX = this.config.canvas.width / 2;
         const centerY = this.config.canvas.height / 2;
-        const isClipKey = this._layerTransformSession?.transaction?.target
-            === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY;
+        const isClipKey = isTransformTimelineKeyTarget(
+            this._layerTransformSession?.transaction?.target
+        );
         const createDefaultTransform = () => ({ x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
         const applyFlipState = (transformState) => {
             const nextState = structuredClone(transformState);
@@ -3656,8 +3658,7 @@ export class LayerSystem {
                 const transform = this.transform.getTransform(activeLayer.layerData.id);
                 this._applyFolderPreviewTransform(activeLayer, transform);
             }
-            if (this._layerTransformSession?.transaction?.target
-                !== TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+            if (!isTransformTimelineKeyTarget(this._layerTransformSession?.transaction?.target)) {
                 this.requestThumbnailUpdate(this.activeLayerIndex);
             }
         }
@@ -3676,8 +3677,7 @@ export class LayerSystem {
             const transform = this.transform.getTransform(activeLayer.layerData.id);
             this._applyFolderPreviewTransform(activeLayer, transform);
         }
-        if (this._layerTransformSession?.transaction?.target
-            !== TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+        if (!isTransformTimelineKeyTarget(this._layerTransformSession?.transaction?.target)) {
             this.requestThumbnailUpdate(this.activeLayerIndex);
         }
     }
@@ -4005,8 +4005,7 @@ export class LayerSystem {
             this._applyFolderPreviewTransform(activeLayer, transform);
         } else {
             this.transform.applyTransform(activeLayer, transform, centerX, centerY);
-            if (this._layerTransformSession?.transaction?.target
-                === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+            if (isTransformTimelineKeyTarget(this._layerTransformSession?.transaction?.target)) {
                 this.transform.updateTransformPanelValues?.(activeLayer);
                 this._applyClipTransformKeyPreview(transform);
             } else {
@@ -4381,8 +4380,7 @@ export class LayerSystem {
 
         window.addEventListener('blur', () => {
             if (this.vKeyPressed) {
-                if (this._layerTransformSession?.transaction?.target
-                    === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_TRANSFORM_KEY) {
+                if (isTransformTimelineKeyTarget(this._layerTransformSession?.transaction?.target)) {
                     // Browser / app focus移動だけでTimeline keyを確定しない。
                     // pointer gesture側のcancel契約を使い、V sessionは明示confirm / Escapeまで維持する。
                     return;

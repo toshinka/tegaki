@@ -6,6 +6,8 @@ import {
     sampleClipLayerTransform,
     validateClipLayerTransformTracks
 } from '../system/animation/clip-layer-transform.js';
+globalThis.window = globalThis.window || {};
+const { ClipInstanceModel } = await import('../system/animation/animation-data-model.js');
 
 const layers = [
     { id: 'layer-a', type: 'raster' },
@@ -71,5 +73,13 @@ assert.equal(validateClipLayerTransformTracks([
 const remapped = remapClipLayerTransformTracks(first.tracks, new Map([['layer-a', 'layer-copy']]));
 assert.equal(remapped[0].internalLayerId, 'layer-copy');
 assert.equal(first.tracks[0].internalLayerId, 'layer-a');
+
+const restoredClip = new ClipInstanceModel({
+    id: 'clip-layer-motion',
+    duration: 4,
+    layerTransformTracks: first.tracks
+});
+assert.deepEqual(restoredClip.serialize().layerTransformTracks, first.tracks,
+    'ClipInstance save/load must preserve the internal Layer Motion authority');
 
 console.log('Clip internal Layer transform track verifier passed.');

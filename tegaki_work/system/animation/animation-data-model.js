@@ -72,6 +72,12 @@ import {
     rebaseAlphaFitRasterMeshSource
 } from './raster-bone-auto-setup.js';
 import {
+    normalizeClipLayerTransformTracks,
+    removeClipLayerTransformTargets,
+    serializeClipLayerTransformTracks,
+    validateClipLayerTransformTracks
+} from './clip-layer-transform.js';
+import {
     AUTO_SHAPE_FILL_GENERATOR,
     createAutoShapeRasterBoneSetup,
     getAutoShapeRasterMeshStatus,
@@ -330,6 +336,9 @@ export class ClipInstanceModel {
         this.transformKeyframes = Array.isArray(options.transformKeyframes)
             ? options.transformKeyframes.map(keyframe => clonePlainObject(keyframe))
             : [];
+        // Phase 9p: CAF全体Motionとは別に、選択internal Rasterだけの非破壊Motionを保持する。
+        // RIG登録やworking Layerを保存正本にせず、ClipInstance単位でAsset内Layer IDを参照する。
+        this.layerTransformTracks = normalizeClipLayerTransformTracks(options.layerTransformTracks);
         // Phase 6: ClipAssetのRaster正本を変えない、ClipInstance単位の非破壊deformer。
         this.deformer = normalizeClipDeformer(options.deformer);
         // Phase 6s: Folder単位の非破壊deformer。描画・保存の正本は引き続きClipInstance。
@@ -375,6 +384,9 @@ export class ClipInstanceModel {
             visible: this.visible,
             transform: normalizeClipTransform(this.transform),
             transformKeyframes: this.transformKeyframes.map(keyframe => clonePlainObject(keyframe)),
+            ...(this.layerTransformTracks.length === 0
+                ? {}
+                : { layerTransformTracks: serializeClipLayerTransformTracks(this.layerTransformTracks) }),
             deformer: normalizeClipDeformer(this.deformer),
             ...(this.folderDeformers == null
                 ? {}
@@ -809,6 +821,23 @@ export class TimelineModel {
         entry.clip.transformKeyframes = Array.isArray(keyframes)
             ? keyframes.map(keyframe => clonePlainObject(keyframe))
             : [];
+        return { ok: true, lane: entry.lane, clip: entry.clip };
+    }
+
+    setClipLayerTransformTracks(clipId, tracks = []) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry) return { ok: false, reason: 'clip-not-found' };
+        const asset = entry.clip.assetId ? this.getClipAsset(entry.clip.assetId) : null;
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const validation = validateClipLayerTransformTracks(
+            tracks,
+            asset.internalLayers,
+            entry.clip.duration
+        );
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-layer-transform-tracks', errors: validation.errors };
+        }
+        entry.clip.layerTransformTracks = validation.value;
         return { ok: true, lane: entry.lane, clip: entry.clip };
     }
 
@@ -1780,6 +1809,15 @@ export class TimelineModel {
         asset.meshDefinitions = removedSkinning.meshDefinitions;
         asset.skinBindings = removedSkinning.skinBindings;
         asset.rigDefinition = rigRemoval.value;
+        this.tracks.forEach(track => {
+            (track.cels || []).forEach(clip => {
+                if (clip.assetId !== asset.id) return;
+                clip.layerTransformTracks = removeClipLayerTransformTargets(
+                    clip.layerTransformTracks,
+                    deleteIds
+                );
+            });
+        });
         if (rigRemoval.changed) {
             this.tracks.forEach(track => {
                 (track.cels || []).forEach(clip => {
@@ -2120,6 +2158,7 @@ export class TimelineModel {
                 duration: clip.duration,
                 transform: normalizeClipTransform(clip.transform || {}),
                 transformKeyframes: (clip.transformKeyframes || []).map(keyframe => clonePlainObject(keyframe)),
+                layerTransformTracks: serializeClipLayerTransformTracks(clip.layerTransformTracks),
                 deformer: normalizeClipDeformer(clip.deformer),
                 ...(clip.folderDeformers == null
                     ? {}

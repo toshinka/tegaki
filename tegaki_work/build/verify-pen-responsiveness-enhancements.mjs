@@ -8,6 +8,15 @@
  */
 
 import assert from 'node:assert/strict';
+import { rasterBoundsEqual } from '../system/raster-bounds.js';
+import {
+    calculateStrokeDirtyRect,
+    projectRectToRasterLocal,
+    cropPixelPatch,
+    applyPixelPatch,
+    unpremultiplyPixels,
+    estimatePatchHistoryBytes
+} from '../system/drawing/raster-patch-history.js';
 import {
     calculateScreenToLocalRatio,
     calculateAdaptiveStep,
@@ -417,6 +426,357 @@ console.log('--- verify-pen-responsiveness-enhancements: starting tests ---');
     const resolved = resolveRenderer(mockBrushCore);
     assert.ok(resolved, 'Renderer must be successfully resolved via layerManager.app.renderer');
     assert.equal(resolved, mockRenderer, 'Resolved renderer must match layerManager renderer');
+}
+
+// ============================================================================
+// 7. Raster Bounds Expansion History Handling Contract (Pen & Eraser)
+// ============================================================================
+{
+    // Helper to simulate the exact BrushCore history recording logic
+    function simulateStrokeHistoryRecording({
+        mode,
+        initialBounds,
+        expandedBounds,
+        initialPixels,
+        drawnPixels,
+        useGpuBaseline = true
+    }) {
+        let currentBounds = { ...initialBounds };
+        let currentWidth = initialBounds.width;
+        let currentHeight = initialBounds.height;
+        let currentPixels = new Uint8ClampedArray(initialPixels);
+
+        // History manager recorder mock
+        let recordedHistory = null;
+        const mockHistoryManager = {
+            isApplying: false,
+            record: (cmd) => {
+                recordedHistory = cmd;
+            }
+        };
+
+        // Layer mock
+        const mockLayer = {
+            id: 'test-layer-1',
+            layerData: {
+                id: 'test-layer-1',
+                rasterBounds: currentBounds,
+                renderTexture: { width: currentWidth, height: currentHeight }
+            }
+        };
+
+        // Layer manager mock
+        const mockLayerManager = {
+            getLayerById: (id) => (id === mockLayer.id ? mockLayer : null),
+            getLayers: () => [mockLayer],
+            getLayerIndex: () => 0,
+            createLayerRasterSnapshot: (layer) => ({
+                layerId: layer.layerData.id,
+                width: layer.layerData.renderTexture.width,
+                height: layer.layerData.renderTexture.height,
+                rasterBounds: { ...layer.layerData.rasterBounds },
+                pixels: new Uint8ClampedArray(currentPixels)
+            }),
+            restoreLayerRasterSnapshot: (snapshot) => {
+                currentWidth = snapshot.width;
+                currentHeight = snapshot.height;
+                currentBounds = { ...snapshot.rasterBounds };
+                mockLayer.layerData.rasterBounds = currentBounds;
+                mockLayer.layerData.renderTexture = { width: currentWidth, height: currentHeight };
+                currentPixels = new Uint8ClampedArray(snapshot.pixels);
+                return true;
+            }
+        };
+
+        // Step 1: startStroke() - capture before state BEFORE bounds expansion
+        let gpuBaseline = null;
+        let beforeSnapshot = null;
+
+        if (useGpuBaseline) {
+            // GPU baseline scratch texture simulates initial layer pixels
+            gpuBaseline = {
+                layerId: mockLayer.layerData.id,
+                bounds: { ...currentBounds },
+                width: currentWidth,
+                height: currentHeight
+            };
+        } else {
+            // CPU snapshot taken before expansion
+            beforeSnapshot = mockLayerManager.createLayerRasterSnapshot(mockLayer);
+        }
+
+        // Step 2: _ensureLayerRasterFrameForStroke() - expands raster bounds
+        if (expandedBounds) {
+            currentBounds = { ...expandedBounds };
+            currentWidth = expandedBounds.width;
+            currentHeight = expandedBounds.height;
+            mockLayer.layerData.rasterBounds = currentBounds;
+            mockLayer.layerData.renderTexture = { width: currentWidth, height: currentHeight };
+            currentPixels = new Uint8ClampedArray(drawnPixels);
+        }
+
+        // Mock renderer for pixel extraction
+        const mockRenderer = {
+            extract: {
+                pixels: ({ target, frame }) => {
+                    // If target is baseline sprite, return initial pixels
+                    if (useGpuBaseline && !frame) {
+                        return {
+                            width: gpuBaseline.width,
+                            height: gpuBaseline.height,
+                            pixels: new Uint8ClampedArray(initialPixels)
+                        };
+                    }
+                    if (frame) {
+                        // Frame extraction for dirty rect
+                        return {
+                            width: frame.width,
+                            height: frame.height,
+                            pixels: new Uint8ClampedArray(frame.width * frame.height * 4).fill(255)
+                        };
+                    }
+                    return null;
+                }
+            }
+        };
+
+        // Step 3: _recordStrokeHistory() execution
+        const strokePoints = [{ x: 55, y: 55 }, { x: 60, y: 60 }];
+        const strokeSettings = { size: 4 };
+
+        const isPatchEligible = (mode === 'pen' || mode === 'eraser')
+            && Array.isArray(strokePoints)
+            && strokePoints.length > 0
+            && mockRenderer?.extract?.pixels
+            && mockLayer.layerData?.renderTexture;
+
+        let recordedAsPatch = false;
+        if (isPatchEligible) {
+            const beforeBounds = gpuBaseline?.bounds || beforeSnapshot?.rasterBounds;
+            if (rasterBoundsEqual(beforeBounds, currentBounds)) {
+                // Dirty rect patch path
+                recordedAsPatch = true;
+                const projectDirtyRect = calculateStrokeDirtyRect(strokePoints, strokeSettings);
+                const localDirtyRect = projectRectToRasterLocal(projectDirtyRect, currentBounds);
+                mockHistoryManager.record({
+                    name: `draw-${mode}`,
+                    meta: {
+                        type: 'draw-patch',
+                        mode,
+                        layerId: mockLayer.layerData.id,
+                        dirtyRect: localDirtyRect
+                    },
+                    undo: () => {},
+                    do: () => {}
+                });
+            }
+        }
+
+        if (!recordedAsPatch) {
+            // Full snapshot fallback
+            if (!beforeSnapshot && gpuBaseline && mockRenderer?.extract?.pixels) {
+                const result = mockRenderer.extract.pixels({ target: 'sprite', clearColor: '#00000000' });
+                const px = new Uint8ClampedArray(result.pixels);
+                unpremultiplyPixels(px);
+                beforeSnapshot = {
+                    layerId: gpuBaseline.layerId,
+                    width: Math.round(result.width || gpuBaseline.width),
+                    height: Math.round(result.height || gpuBaseline.height),
+                    rasterBounds: { ...gpuBaseline.bounds, width: result.width, height: result.height },
+                    pixels: px
+                };
+            }
+            const afterSnapshot = mockLayerManager.createLayerRasterSnapshot(mockLayer);
+            mockHistoryManager.record({
+                name: `draw-${mode}`,
+                meta: {
+                    type: 'draw-full',
+                    mode,
+                    layerId: mockLayer.layerData.id
+                },
+                undo: () => mockLayerManager.restoreLayerRasterSnapshot(beforeSnapshot),
+                do: () => mockLayerManager.restoreLayerRasterSnapshot(afterSnapshot)
+            });
+        }
+
+        return {
+            history: recordedHistory,
+            getCurrentState: () => ({
+                bounds: { ...currentBounds },
+                width: currentWidth,
+                height: currentHeight,
+                pixels: new Uint8ClampedArray(currentPixels)
+            }),
+            undo: () => recordedHistory?.undo?.(),
+            redo: () => recordedHistory?.do?.()
+        };
+    }
+
+    // --- Case 7.1: Pen bounds expansion -> draw-full fallback, Undo restores pre-expansion bounds & size, Redo restores expanded ---
+    {
+        const initialBounds = { x: 50, y: 50, width: 40, height: 40 };
+        const expandedBounds = { x: 0, y: 0, width: 100, height: 100 };
+        const initialPixels = new Uint8ClampedArray(40 * 40 * 4);
+        for (let i = 0; i < initialPixels.length; i += 4) {
+            initialPixels[i] = 110;
+            initialPixels[i + 1] = 120;
+            initialPixels[i + 2] = 130;
+            initialPixels[i + 3] = 255;
+        }
+        const drawnPixels = new Uint8ClampedArray(100 * 100 * 4);
+        for (let i = 0; i < drawnPixels.length; i += 4) {
+            drawnPixels[i] = 220;
+            drawnPixels[i + 1] = 200;
+            drawnPixels[i + 2] = 180;
+            drawnPixels[i + 3] = 255;
+        }
+
+        const sim = simulateStrokeHistoryRecording({
+            mode: 'pen',
+            initialBounds,
+            expandedBounds,
+            initialPixels,
+            drawnPixels,
+            useGpuBaseline: true
+        });
+
+        assert.ok(sim.history, 'History must be recorded');
+        assert.equal(sim.history.meta.type, 'draw-full', 'Bounds expansion must trigger draw-full fallback');
+
+        // Current state is expanded after stroke
+        assert.deepEqual(sim.getCurrentState().bounds, expandedBounds);
+        assert.equal(sim.getCurrentState().width, 100);
+        assert.equal(sim.getCurrentState().height, 100);
+        assert.deepEqual(sim.getCurrentState().pixels, drawnPixels);
+
+        // Undo -> restores pre-expansion bounds, dimensions, and initial pixels
+        sim.undo();
+        assert.deepEqual(sim.getCurrentState().bounds, initialBounds, 'Undo must restore original pre-expansion rasterBounds');
+        assert.equal(sim.getCurrentState().width, 40, 'Undo must restore original width 40');
+        assert.equal(sim.getCurrentState().height, 40, 'Undo must restore original height 40');
+        assert.deepEqual(sim.getCurrentState().pixels, initialPixels, 'Undo must restore initial pixels');
+
+        // Redo -> restores expanded bounds, dimensions, and drawn pixels
+        sim.redo();
+        assert.deepEqual(sim.getCurrentState().bounds, expandedBounds, 'Redo must restore expanded rasterBounds');
+        assert.equal(sim.getCurrentState().width, 100, 'Redo must restore expanded width 100');
+        assert.equal(sim.getCurrentState().height, 100, 'Redo must restore expanded height 100');
+        assert.deepEqual(sim.getCurrentState().pixels, drawnPixels, 'Redo must restore drawn pixels');
+    }
+
+    // --- Case 7.2: Eraser bounds expansion -> draw-full fallback, Undo restores pre-expansion bounds, Redo restores expanded ---
+    {
+        const initialBounds = { x: 30, y: 30, width: 50, height: 50 };
+        const expandedBounds = { x: 0, y: 0, width: 120, height: 120 };
+        const initialPixels = new Uint8ClampedArray(50 * 50 * 4);
+        for (let i = 0; i < initialPixels.length; i += 4) {
+            initialPixels[i] = 150;
+            initialPixels[i + 1] = 160;
+            initialPixels[i + 2] = 170;
+            initialPixels[i + 3] = 255;
+        }
+        const drawnPixels = new Uint8ClampedArray(120 * 120 * 4); // erased to 0
+
+        const sim = simulateStrokeHistoryRecording({
+            mode: 'eraser',
+            initialBounds,
+            expandedBounds,
+            initialPixels,
+            drawnPixels,
+            useGpuBaseline: true
+        });
+
+        assert.ok(sim.history, 'History must be recorded for eraser');
+        assert.equal(sim.history.meta.type, 'draw-full', 'Eraser bounds expansion must trigger draw-full fallback');
+
+        sim.undo();
+        assert.deepEqual(sim.getCurrentState().bounds, initialBounds, 'Eraser Undo must restore pre-expansion bounds');
+        assert.equal(sim.getCurrentState().width, 50);
+        assert.equal(sim.getCurrentState().height, 50);
+        assert.deepEqual(sim.getCurrentState().pixels, initialPixels);
+
+        sim.redo();
+        assert.deepEqual(sim.getCurrentState().bounds, expandedBounds, 'Eraser Redo must restore expanded bounds');
+        assert.equal(sim.getCurrentState().width, 120);
+        assert.equal(sim.getCurrentState().height, 120);
+        assert.deepEqual(sim.getCurrentState().pixels, drawnPixels);
+    }
+
+    // --- Case 7.3: Bounds unchanged -> maintains dirty rect patch History (draw-patch) for both Pen & Eraser ---
+    {
+        const unchangedBounds = { x: 0, y: 0, width: 100, height: 100 };
+        const pixels = new Uint8ClampedArray(100 * 100 * 4);
+        for (let i = 0; i < pixels.length; i += 4) {
+            pixels[i] = 100;
+            pixels[i + 1] = 100;
+            pixels[i + 2] = 100;
+            pixels[i + 3] = 255;
+        }
+
+        // Pen unchanged bounds
+        const penSim = simulateStrokeHistoryRecording({
+            mode: 'pen',
+            initialBounds: unchangedBounds,
+            expandedBounds: null, // no expansion
+            initialPixels: pixels,
+            drawnPixels: pixels,
+            useGpuBaseline: true
+        });
+        assert.equal(penSim.history.meta.type, 'draw-patch', 'Unchanged bounds Pen stroke must record draw-patch');
+
+        // Eraser unchanged bounds
+        const eraserSim = simulateStrokeHistoryRecording({
+            mode: 'eraser',
+            initialBounds: unchangedBounds,
+            expandedBounds: null, // no expansion
+            initialPixels: pixels,
+            drawnPixels: pixels,
+            useGpuBaseline: true
+        });
+        assert.equal(eraserSim.history.meta.type, 'draw-patch', 'Unchanged bounds Eraser stroke must record draw-patch');
+    }
+
+    // --- Case 7.4: CPU snapshot path (e.g. selection active or baseline unavailable) with bounds expansion ---
+    {
+        const initialBounds = { x: 10, y: 10, width: 60, height: 60 };
+        const expandedBounds = { x: 0, y: 0, width: 150, height: 150 };
+        const initialPixels = new Uint8ClampedArray(60 * 60 * 4);
+        for (let i = 0; i < initialPixels.length; i += 4) {
+            initialPixels[i] = 77;
+            initialPixels[i + 1] = 77;
+            initialPixels[i + 2] = 77;
+            initialPixels[i + 3] = 255;
+        }
+        const drawnPixels = new Uint8ClampedArray(150 * 150 * 4);
+        for (let i = 0; i < drawnPixels.length; i += 4) {
+            drawnPixels[i] = 88;
+            drawnPixels[i + 1] = 88;
+            drawnPixels[i + 2] = 88;
+            drawnPixels[i + 3] = 255;
+        }
+
+        const sim = simulateStrokeHistoryRecording({
+            mode: 'pen',
+            initialBounds,
+            expandedBounds,
+            initialPixels,
+            drawnPixels,
+            useGpuBaseline: false // CPU snapshot fallback
+        });
+
+        assert.equal(sim.history.meta.type, 'draw-full', 'CPU snapshot path with bounds expansion must record draw-full');
+        sim.undo();
+        assert.deepEqual(sim.getCurrentState().bounds, initialBounds, 'CPU snapshot Undo must restore pre-expansion bounds');
+        assert.equal(sim.getCurrentState().width, 60);
+        assert.equal(sim.getCurrentState().height, 60);
+        assert.deepEqual(sim.getCurrentState().pixels, initialPixels);
+
+        sim.redo();
+        assert.deepEqual(sim.getCurrentState().bounds, expandedBounds, 'CPU snapshot Redo must restore expanded bounds');
+        assert.equal(sim.getCurrentState().width, 150);
+        assert.equal(sim.getCurrentState().height, 150);
+        assert.deepEqual(sim.getCurrentState().pixels, drawnPixels);
+    }
 }
 
 console.log('verify-pen-responsiveness-enhancements: ALL CHECKS PASSED');

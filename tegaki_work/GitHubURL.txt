@@ -1,13 +1,13 @@
 # GitHubURL — Tegaki プロジェクト読解用 Raw URL ナビゲーション
 
-更新日: 2026-09-01
+更新日: 2026-09-04
 
 > **外部AI (Web版Claude / ChatGPT等) 向けガイド**
 > 本ファイルはローカルファイルシステムにアクセスできない外部AIが、GitHubから主要ファイルを直接読み込んで Tegaki プロジェクトを理解・調査するためのURL集です。
 > トークン消費（コンテキスト長）に配慮し、まずは **「1. 最優先必読ドキュメント」** を読み、実装対象の機能に関連するソースコードのみを後から選択して取得してください。
 > URLは`main` branchのRawを指します。ローカル変更はOwnerがcommit / pushした後にWebから参照可能になります。本書より`PROGRESS.md`と現行`task-codex/phase*.md`が新しい場合は、そちらを正本としてください。
 
-## 0. 現在地（Phase 5a〜9o close、Phase 9p Stage B4進行中）
+## 0. 現在地（Phase 5a〜9p close、Phase 9q Gate 0進行中）
 
 - Phase 7i〜7qは各Gate=`GO`、実装Stage、最終SOL review=`A`、関連Browser確認を通過し、2026-08-12のOwner指示に基づきSOL技術closeした。完了記録は`Archive/phase7i.md`〜`phase7q.md`。
 - Phase 7i LINE / Ribbon、7j Deformer三形状SELECT、7k Text to Raster、7l Table二段header、7m read-only Motion Graph、7n Resize直接framing、7o Motion Easing 12 presetの保存・History境界を維持する。
@@ -43,7 +43,8 @@
 - Phase 9nはRIG / Motion Responsibility / Contextual Right RIG Inspector Gateとしてcloseした。Gate 0=`GO — D: Dedicated Right RIG + Motion handoff`。Layer=対象、右RIG=static overview / next action / handoff、Animation Table=時間、Canvas=直接操作とし、既存single floating windowをmode別`RIG WORKSPACE / CLIP MOTION / WARP WORKSPACE`とする。全129 verifier、build、right RIGからのopen、mode往復、close / reopen、Table closed再入場、History不変、480×800横overflow 0、console 0件を通過した。左RIG / Layer統合 / 現行Table案はproposal 17へ再試行条件付きで保持する。
 - Phase 9nの外部Web AI reviewでは、入口発見性、誤操作、Layer / RIG切替回数、right / left配置、複数Rasterの対象理解、Motion return pathを評価する。current RIG WORKSPACEの横長layout、常設数値欄、button density、`RIG / MOTION / WARP`上位tabは最終UX受入ではないため、host ownershipの採否とlayoutの好みを混同しない。
 - Phase 9oはLayer Transform Interaction Grammar / Focus Lens Gate。Gate 1=`GO — D: Tegaki hybrid`としてMove / corner Scale / Rotate / side Scale / content-center Anchor / flip / last-touched入力 / capture喪失transaction / exact-pixel previewを固定した。Ownerは2026-09-01に問題解決としてStage B4を受入し、全131 verifier / build / Browser / 生成物清掃を通過してcloseした。A / B / C、side midpointなし、閉じる／決定button、virtual grid / snapは`Archive/phase9o.md`へ保持する。
-- 現行Phase 9pはTransform-to-Clip Key Bridge / Interaction Context Gate。Gate 0=`GO — C`、Gate 1=`GO — B: Transform-local indicator`、Gate 2=`GO — B: split owner + synchronous adapter`。Stage B3でANIMATEだけをRaster Bake前に既存`ClipInstance.transformKeyframes` / Timeline Historyへproduction接続した。Stage B4では選択中のCAF内部Layer行へ既存Clip Motion keyを同一Frameの丸として読み取り専用投影し、Layer固有key / 第二schemaを作らず設定済み状態を可視化した。F2作成、Undo / Redo、console 0件をBrowser確認済み。次は既存key / no-op / BLOCKED、SOURCE退行、Project save / reloadを監査してclose可否を判定する。
+- Phase 9pはTransform-to-Clip Key Bridge / Interaction Context Gateとしてcloseした。CAF全体Motionの`transformKeyframes`と、active internal Rasterだけの`layerTransformTracks`を対象範囲で分離した。Layer Transformは選択Raster一枚だけをtargetとし、兄弟Layerを動かさない。Project serialize / validate、delete / copy / bake / retime、Timeline History、RenderIsland、単色丸KEY、F1 / F10、Undo / Redo、全141 verifier、build、Browser console 0件を通過した。
+- 現行Phase 9qはDrawing WARP Authority / Layer Transform Integration Gate。Gate 0でnormal Raster / CAF internal Raster / root Clip / FolderのWARP authority、History、save、compositor順序、RIG / Mesh / clipping境界を監査する。Antigravity2は境界固定後のread-only比較候補で、production writeは並走しない。
 
 このナビゲーション自身:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
@@ -57,7 +58,8 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **技術方針・禁止事項（正本）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TEGAKI.md
 - **最新開発進捗・現在地**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/PROGRESS.md
 - **次チャット引き継ぎ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/NEXT_CHAT_HANDOFF.md
-- **現行Phase 9p（Transform-to-Clip Key Bridge / Interaction Context Gate）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase9p.md
+- **現行Phase 9q（Drawing WARP Authority / Layer Transform Integration Gate）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/task-codex/phase9q.md
+- **Phase 9p完了記録（Transform-to-Clip Key Bridge / internal Layer Motion correction）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase9p.md
 - **Phase 9p read-only Transform Edit Context projection**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/transform-edit-context.js
 - **Phase 9p Transform Edit Context verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-phase9p-transform-edit-context.mjs
 - **Phase 9p Edit Target配置比較fixture（Top Bar / Transform-local / Dual / Canvas）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/phase9p-transform-edit-target-placement-fixture.html
@@ -69,6 +71,10 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **Phase 9p Transform transaction ownership / preview planner**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/transform-edit-transaction.js
 - **Phase 9p Transform transaction verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-phase9p-transform-edit-transaction.mjs
 - **Phase 9p production Transform bridge verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-phase9p-transform-bridge-production.mjs
+- **Phase 9p internal Raster Layer Motion authority**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/clip-layer-transform.js
+- **Phase 9p internal Raster Layer Motion authority verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-clip-layer-transform.mjs
+- **Phase 9p Layer Motion RenderIsland / RIG-Mesh排他**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/folder-part-render-plan.js
+- **Phase 9p Layer Motion RenderIsland verifier**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-clip-layer-transform-render-plan.mjs
 - **Phase 9o完了記録（Layer Transform Interaction Grammar / Focus Lens）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/phase9o.md
 - **Phase 9o Transform / Warp / Animation / RIG Focus Lens提案**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/Tegaki_Transform_Warp_Animation_Rig_FocusLens_Proposal_for_CODEX_2026-08-31.md
 - **Phase 9o Transform / RIG Authoring Interaction追補（Working Addendum）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/Tegaki_Transform_Rig_Authoring_Interaction_Addendum_2026-08-31.md
@@ -279,9 +285,9 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/Gi
 - **UI導線・Text・階層Motion将来設計**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/14_UI%E3%83%84%E3%83%BC%E3%83%AB%E5%B0%8E%E7%B7%9A%E3%83%BBText%E3%83%BB%E9%9A%8E%E5%B1%A4Motion%E5%B0%86%E6%9D%A5%E8%A8%AD%E8%A8%88.md
 - **Rig・Mesh・Perform統合ロードマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/15_%E3%82%AD%E3%83%A3%E3%83%A9%E3%82%AF%E3%82%BF%E3%83%BCRig%E3%83%BBMesh%E3%83%BBPerform%E7%B5%B1%E5%90%88%E3%83%AD%E3%83%BC%E3%83%89%E3%83%9E%E3%83%83%E3%83%97.md
 - **制作Workspace・UI・外部Handoff構造ロードマップ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/proposals/16_%E5%88%B6%E4%BD%9CWorkspace%E3%83%BBUI%E3%83%BB%E5%A4%96%E9%83%A8Handoff%E6%A7%8B%E9%80%A0%E3%83%AD%E3%83%BC%E3%83%89%E3%83%9E%E3%83%83%E3%83%97.md
-- **GUI skin具体化 ClaudeReview（外部原案）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/gui-skin-redesign-concretization-proposal.md
-- **GUI skin改訂レビュー（現行token / authority照合済み）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/gui-skin-redesign-revision-2026-08-25.md
-- **背景・Panel・icon配色哲学レビュー（採否はPhase 9j / proposal 16参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/color-philosophy-background-panel-icon-balance.md
+- **GUI skin具体化 ClaudeReview（外部原案）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Claude_GPT_Review/gui-skin-redesign-concretization-proposal.md
+- **GUI skin改訂レビュー（現行token / authority照合済み）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Claude_GPT_Review/gui-skin-redesign-revision-2026-08-25.md
+- **背景・Panel・icon配色哲学レビュー（採否はPhase 9j / proposal 16参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Claude_GPT_Review/color-philosophy-background-panel-icon-balance.md
 - **Codex文書routing Web GPT提案（現行routingで充足・外部監査Archive）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/TEGAKI_Codex_Document_Routing_Proposal.md
 - **UI操作文法・QTP Painter's Palette・Surface階層（外部原案Archive）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/17_UI%E6%93%8D%E4%BD%9C%E6%96%87%E6%B3%95%E3%83%BBQTP_PainterPalette%E3%83%BBSurface%E9%9A%8E%E5%B1%A4_%E5%A4%96%E9%83%A8%E6%8F%90%E6%A1%88.md
 - **実装したいことメモ**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/%E5%AE%9F%E8%A3%85%E3%81%97%E3%81%9F%E3%81%84%E3%81%93%E3%81%A8%E3%83%A1%E3%83%A2.txt
@@ -409,10 +415,10 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/bu
 
 ### Stage D review / handoff
 
-- **Rig / Mesh Setup UI外部レビュー（提案・未検証）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/rig-mesh-setup-ui-review.md
-- **Rig / Mesh反映評価・follow-up（提案。現行採否はproposal 15参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/rig-mesh-evaluation-and-followup.md
-- **Code redundancy / file organization外部診断（採否はproposal 16参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/tegaki-code-redundancy-file-organization-report.md
-- **WebGPU / PixiJS resource外部診断（未計測仮説。採否はproposal 16参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/ClaudeReview/tegaki-webgpu-pixijs-resource-diagnostic.md
+- **Rig / Mesh Setup UI外部レビュー（提案・未検証）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Claude_GPT_Review/rig-mesh-setup-ui-review.md
+- **Rig / Mesh反映評価・follow-up（提案。現行採否はproposal 15参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Claude_GPT_Review/rig-mesh-evaluation-and-followup.md
+- **Code redundancy / file organization外部診断（採否はproposal 16参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Claude_GPT_Review/tegaki-code-redundancy-file-organization-report.md
+- **WebGPU / PixiJS resource外部診断（未計測仮説。採否はproposal 16参照）**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Claude_GPT_Review/tegaki-webgpu-pixijs-resource-diagnostic.md
 - **次期構造再設計 外部原案**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/Tegaki_%E6%AC%A1%E6%9C%9F%E6%A7%8B%E9%80%A0%E5%86%8D%E8%A8%AD%E8%A8%88%E6%8F%90%E6%A1%88%E6%9B%B8_%E5%A4%96%E9%83%A8%E5%8E%9F%E6%A1%88_2026-08-20.md
 - **UI-UX・アニメーション基盤 外部原案**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/UI-UX%E3%83%BB%E3%82%A2%E3%83%8B%E3%83%A1%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E5%9F%BA%E7%9B%A4_%E5%86%8D%E8%A8%AD%E8%A8%88%E6%8F%90%E6%A1%88%E6%9B%B8_%E5%A4%96%E9%83%A8%E5%8E%9F%E6%A1%88_2026-08-20.md
 - **UI-UX再設計 外部原案**: https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E9%96%8B%E7%99%BA%E7%94%A8%E8%B3%87%E6%96%99%E4%BF%9D%E7%AE%A1%E5%BA%AB/Archive/UI-UX%E5%86%8D%E8%A8%AD%E8%A8%88%E6%8F%90%E6%A1%88%E6%9B%B8_%E5%A4%96%E9%83%A8%E5%8E%9F%E6%A1%88_2026-08-20.md
