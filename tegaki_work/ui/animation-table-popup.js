@@ -22950,9 +22950,7 @@ export class AnimationTablePopup {
                 display: flex;
                 flex-direction: column;
                 min-width: 100%;
-                background-image: 
-                    linear-gradient(to right, rgba(128, 0, 0, 0.05) 1px, transparent 1px);
-                background-size: var(--anim-cell-width) 100%;
+                background-image: none;
             }
 
             .anim-timeline-header {

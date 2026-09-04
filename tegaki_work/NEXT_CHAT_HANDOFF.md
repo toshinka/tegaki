@@ -48,7 +48,7 @@ git status --short --untracked-files=all -- tegaki_work task-codex 開発用資�
 - compositorは対象Raster一枚をRenderIsland化する。同じRasterがRIG Part、Mesh / Skin、clipping splitにも属する場合は二重変形せず`unsupported`で停止する。
 - Project serialize / validate、internal Layer削除、Clip copy / paste、structured bake、duration retime、Timeline History capture / restoreへtrackを接続済み。
 - KEYは対象internal Layer行だけへ7pxの単色丸で表示する。外周ring / box-shadowはなく、Part / Bone菱形、WARP key、cell clickは変更していない。
-- V close前のLayer Motion丸KEYだけは既存Transform transactionから淡色previewを投影し、確定後に濃い単色へ戻す。CAF internal Layer行はClip範囲内をcream grid、範囲外を無地面に分けた。格子なしblank面clickでもFrame seekでき、通常wheelは移動だけ、`Shift+wheel`だけ空きFrameのCAF生成を許可する。
+- V close前のLayer Motion丸KEYだけは既存Transform transactionから淡色previewを投影し、確定後に濃い単色へ戻す。CAF internal Layer行はClip範囲内をcream grid、範囲外をBackground無地面に分け、選択薄茶も範囲内だけに限定した。格子なしblank面clickでもFrame seekでき、通常wheelは移動だけ、`Shift+wheel`だけ空きFrameのCAF生成を許可する。
 - BrowserでLayer 2だけのF1 / F10位置、Layer 1非干渉、Frame往復、Undo / Redo、computed style、console 0件を確認した。
 - 全141 verifier、production build、生成物清掃を通過した。GitHubURLの旧`ClaudeReview` 7件は実在する`Claude_GPT_Review`へ補正済み。
 
@@ -89,7 +89,7 @@ Gate 0ではnormal Raster / Table閉鎖中CAF Rasterを確定時bake、Table表�
 
 Gate 1 Task A〜Cでは`clip-layer-deformer.js`と3本のverifierを追加し、normalize / validate / target edit / sample / remap / terminal retime / one-Frame bake、ClipInstance / TimelineModel / Project JSON、delete / copy / duplicate、structured bake、duration retime、Timeline History、render plan / CPU compositorを接続しました。順序は`DrawingSnapshot → Layer WARP → Layer Motion → Folder WARP → root WARP → root Motion`です。Folder / Background、RIG Part、Mesh / Skin、internal clippingとの重複はmodel / plan境界で拒否します。全145 verifierとproduction buildを通過し、Pixi previewとpointer UIはまだ変更していません。
 
-Task D前Owner follow-upでは、V close前のLayer Motion丸KEYを淡色preview、確定後を濃い単色へ分けました。CAF internal Layer行はClip範囲内だけcream面＋縦grid、範囲外は無地面です。Lane下の格子なしblank面clickでもFrameを移動でき、Timeline gridの通常wheelは移動だけ、`Shift+wheel`前進時だけ既存Auto Create設定に従ってCAFを生成します。全145 verifier、build、Browser、console 0件を通過しています。
+Task D前Owner follow-upでは、V close前のLayer Motion丸KEYを淡色preview、確定後を濃い単色へ分けました。CAF internal Layer行はClip範囲内だけcream面＋縦grid（選択薄茶は内側だけ）、範囲外はBackground無地面です。Lane下の格子なしblank面clickでもFrameを移動でき、Timeline gridの通常wheelは移動だけ、`Shift+wheel`前進時だけ既存Auto Create設定に従ってCAFを生成します。全145 verifier、build、Browser、console 0件を通過しています。
 
 次作業予告はGate 1 Task DのPixi preview proxy / Layer Transform WARP transaction接続です。作業担当はSOL / MAX。CPUと同じsample / topologyを使うleaf Mesh、V close / Escape / Frame変更 / Table close / no-opのsession terminalを固定し、Simple 4x4の最終UIはTask Eへ残してください。Antigravity2はproduction fixtureまたは実画面後のread-only UI比較に限定し、production writeは並走しないでください。
 ```

@@ -76,10 +76,10 @@ Gate 1 Task C完了:
 Gate 1 Task D前Owner Timeline follow-up完了:
 
 - Layer Transform ANIMATE session中に生成・更新されたLayer Motion丸KEYは、既存transactionの`previewApplied / changed / target identity`からだけ未確定状態を投影し、Futaba茶38%の淡色へ下げる。V close後は従来の濃い単色丸、Escape rollback後は消失する。保存fieldや別preview stateは追加しない。
-- CAF internal Layer行はClip範囲内をcream 8%の面＋縦grid、範囲外を`--futaba-background`の無地面＋border透明へ分け、active / inactive双方でClip範囲を線の錯視だけに依存せず示す。全内部行を囲う追加枠は面分離で十分なため採用しない。
+- CAF internal Layer行はClip範囲内をcream 8%の面＋縦grid、範囲外を`--futaba-background`の無地面＋border 0へ分ける。選択行の薄茶26%はClip範囲内だけへ重ね、active / inactive双方でClip範囲を線の錯視だけに依存せず示す。親Timeline grid自体の反復線は除き、全内部行を囲う追加枠は面分離で十分なため採用しない。
 - Lane行より下の格子なしblank面clickもX位置からFrameを求めてseekできる。CAF作成は行わない。
 - Timeline gridの通常wheelはFrame移動だけとし、空きFrameでのCAF作成は`Shift+wheel`の前進時だけ既存Auto Create設定に従って許可する。`Ctrl/Cmd+wheel` zoom、Lane名領域wheelの縦scroll、keyboard / button経路は維持する。
-- 更新verifierを含む全145 verifier、production build、Browserで範囲内外computed style、blank click F27、通常wheel F26・CAF非生成、console error 0件を確認した。
+- 更新verifierを含む全145 verifier、production build、Browserで選択行内側の薄茶＋grid、外側のBackground無地面、blank click F27、通常wheel F26・CAF非生成、console error 0件を確認した。
 
 ## 5. NO-GO
 

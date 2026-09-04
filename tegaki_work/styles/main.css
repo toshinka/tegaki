@@ -5461,7 +5461,7 @@ button.anim-motion-graph-legend-item.is-primary {
 .animation-table-panel .anim-rig-folder-cell-slot.is-outside-clip {
     cursor: default !important;
     opacity: 1;
-    border-right-color: transparent;
+    border-right: 0;
     background: var(--futaba-background);
 }
 
@@ -5469,6 +5469,11 @@ button.anim-motion-graph-legend-item.is-primary {
     cursor: pointer;
     border-right-color: color-mix(in srgb, var(--futaba-light-medium) 34%, transparent);
     background: color-mix(in srgb, var(--futaba-background) 92%, var(--futaba-cream) 8%);
+}
+
+.animation-table-panel .anim-rig-folder-timeline-row.is-selected
+    .anim-rig-folder-cell-slot.is-clip-range {
+    background: color-mix(in srgb, var(--futaba-background) 74%, var(--futaba-light-medium) 26%);
 }
 
 .anim-caf-motion-key-projection {
