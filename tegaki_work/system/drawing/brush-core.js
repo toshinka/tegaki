@@ -35,6 +35,7 @@ import {
     estimateRasterHistoryPairBytes,
     summarizePathCollectionMemory
 } from '../raster-snapshot-memory.js';
+import { generateAdaptiveInterpolationPoints } from './realtime-stroke-sampling.js';
 
 export class BrushCore {
     constructor() {
@@ -42,6 +43,8 @@ export class BrushCore {
         this.currentStrokeId = null;
         this.lastLocalX = 0;
         this.lastLocalY = 0;
+        this.lastClientX = null;
+        this.lastClientY = null;
         this.lastPressure = 0;
         this.lastRenderedLocalX = 0;
         this.lastRenderedLocalY = 0;
@@ -71,7 +74,12 @@ export class BrushCore {
         this.strokeTargetLayer = null;
         this.strokeInputProfiler = this._ensureStrokeInputProfiler();
         this.liveRenderFrameRequest = null;
+        this.realtimeBatchQueue = null;
+        this.realtimeBatchDepth = 0;
+        this.realtimeBatchMode = null;
         this.realtimePenBatchGraphics = null;
+        this.historyBaselineScratchTexture = null;
+        this.strokeHistoryGpuBaseline = null;
     }
     
     init() {
@@ -187,16 +195,47 @@ export class BrushCore {
         const activeLayer = this.layerManager.getActiveLayer();
         if (!activeLayer || activeLayer.locked) return;
         this.strokeTargetLayer = activeLayer;
+        const settings = this._getCurrentSettings();
+        const ensureRasterStart = window.TEGAKI_CONFIG?.debug ? this._perfNow() : null;
+        const boundsResult = this._ensureLayerRasterFrameForStroke(activeLayer, settings, currentMode);
+        if (Number.isFinite(ensureRasterStart)) {
+            ensureRasterFrameMs = this._perfNow() - ensureRasterStart;
+            this._warnPerf('brush.startStroke.ensureRasterFrame', ensureRasterStart, {
+                mode: currentMode
+            });
+        }
+
         const needsHistorySnapshot = activeLayer.layerData?.isAnimationWorkingLayer !== true;
         const needsSelectionSnapshot = this._needsSelectionSnapshotForLayer(activeLayer);
         let beforeSnapshot = null;
         let beforeSnapshotMs = null;
-        let ensureRasterFrameMs = null;
-        let airbrushBeginMs = null;
-        if (needsHistorySnapshot || needsSelectionSnapshot) {
+        let gpuBaselineActive = false;
+
+        // Stage A: GPU baseline eligibility check (bounds拡張が発生した場合は従来full snapshotへfallback)
+        const isEligibleGpuBaseline = !boundsResult?.changed
+            && this._isEligibleForGpuBaseline(currentMode, activeLayer, settings);
+
+        if (needsHistorySnapshot && !needsSelectionSnapshot && isEligibleGpuBaseline) {
+            const gpuStart = this._perfNow();
+            gpuBaselineActive = this._captureGpuBaseline(activeLayer);
+            if (gpuBaselineActive) {
+                this.strokeHistoryGpuBaseline = {
+                    layerId: activeLayer.layerData?.id || activeLayer.id,
+                    bounds: this._getLayerRasterBounds(activeLayer)
+                };
+            }
+            beforeSnapshotMs = this._perfNow() - gpuStart;
+            this._warnPerf('brush.startStroke.gpuBaseline', gpuStart, {
+                mode: currentMode,
+                gpuBaselineActive
+            });
+        }
+
+        if (!gpuBaselineActive && (needsHistorySnapshot || needsSelectionSnapshot)) {
             const snapshotStart = this._perfNow();
             beforeSnapshot = this.layerManager.createLayerRasterSnapshot?.(activeLayer, { includePathCollections: false }) || null;
             beforeSnapshotMs = this._perfNow() - snapshotStart;
+            this.strokeHistoryGpuBaseline = null;
             this._warnPerf('brush.startStroke.beforeSnapshot', snapshotStart, {
                 needsHistorySnapshot,
                 needsSelectionSnapshot
@@ -204,16 +243,6 @@ export class BrushCore {
         }
         this.strokeHistoryBefore = needsHistorySnapshot ? beforeSnapshot : null;
         this.strokeSelectionBefore = beforeSnapshot;
-
-        const settings = this._getCurrentSettings();
-        const ensureRasterStart = window.TEGAKI_CONFIG?.debug ? this._perfNow() : null;
-        this._ensureLayerRasterFrameForStroke(activeLayer, settings, currentMode);
-        if (Number.isFinite(ensureRasterStart)) {
-            ensureRasterFrameMs = this._perfNow() - ensureRasterStart;
-            this._warnPerf('brush.startStroke.ensureRasterFrame', ensureRasterStart, {
-                mode: currentMode
-            });
-        }
         const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
         const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
@@ -296,6 +325,10 @@ export class BrushCore {
                     penRenderCalls: 0,
                     penBatchSegments: 0,
                     penBatchFlushes: 0,
+                    lineBatchSegments: 0,
+                    lineBatchFlushes: 0,
+                    realtimeGraphicsCreated: 0,
+                    rendererRenderCalls: 0,
                     penRenderMissingTarget: 0,
                     penRenderMissingGraphics: 0,
                     airbrushRenderCalls: 0,
@@ -319,8 +352,13 @@ export class BrushCore {
             : null;
 
         this.isDrawing = true;
+        this.realtimeBatchQueue = null;
+        this.realtimeBatchDepth = 0;
+        this.realtimeBatchMode = null;
         this.lastLocalX = localX;
         this.lastLocalY = localY;
+        this.lastClientX = clientX;
+        this.lastClientY = clientY;
         this.lastPressure = processedPressure;
         this.lastRenderedLocalX = localX;
         this.lastRenderedLocalY = localY;
@@ -416,26 +454,47 @@ export class BrushCore {
             ? this._stabilizeMovePressure(pressure, currentMode, pointerType)
             : 1.0;
 
-        // カメラ縮小時は1つの画面移動が大きなlocal距離になるため、記録とライブ表示の両方を細かく補間する。
-        const interpolationStep = currentMode === 'lasso-fill' ? 5 : 1; // 投げ縄は少し粗めで良い
-        const steps = Math.max(1, Math.floor(distance / interpolationStep));
+        // Stage C: 画面ピクセル基準の適応的サンプリング
+        const { steps, stepSize, points: interpPoints } = generateAdaptiveInterpolationPoints({
+            lastLocal: { x: this.lastLocalX, y: this.lastLocalY },
+            currentLocal: { x: localX, y: localY },
+            lastPressure: this.lastPressure,
+            currentPressure: processedPressure,
+            lastClient: (Number.isFinite(this.lastClientX) && Number.isFinite(this.lastClientY))
+                ? { x: this.lastClientX, y: this.lastClientY }
+                : null,
+            currentClient: (Number.isFinite(clientX) && Number.isFinite(clientY))
+                ? { x: clientX, y: clientY }
+                : null,
+            pressureEnabled,
+            currentMode,
+            minStep: currentMode === 'lasso-fill' ? 5 : 1,
+            maxStep: 16
+        });
         const pointsBeforeEvent = this.strokeRecorder.getCurrentPoints().length;
         let generatedPoints = 0;
 
-        for (let i = 1; i <= steps; i++) {
-            const t = i / (steps + 1);
-            const interpX = this.lastLocalX + dx * t;
-            const interpY = this.lastLocalY + dy * t;
-            const interpPressure = this.lastPressure + (processedPressure - this.lastPressure) * t;
-
-            this._renderRealtimeStrokePoint(currentMode, interpX, interpY, interpPressure);
-            this.strokeRecorder.addPoint(interpX, interpY, interpPressure);
-            generatedPoints++;
+        const isBatchableMode = currentMode === 'pen' || currentMode === 'eraser';
+        if (isBatchableMode) {
+            this._beginRealtimeBatch(currentMode);
         }
 
-        this._renderRealtimeStrokePoint(currentMode, localX, localY, processedPressure);
-        this.strokeRecorder.addPoint(localX, localY, processedPressure);
-        generatedPoints++;
+        try {
+            for (let i = 0; i < interpPoints.length; i++) {
+                const pt = interpPoints[i];
+                this._renderRealtimeStrokePoint(currentMode, pt.x, pt.y, pt.pressure);
+                this.strokeRecorder.addPoint(pt.x, pt.y, pt.pressure);
+                generatedPoints++;
+            }
+
+            this._renderRealtimeStrokePoint(currentMode, localX, localY, processedPressure);
+            this.strokeRecorder.addPoint(localX, localY, processedPressure);
+            generatedPoints++;
+        } finally {
+            if (isBatchableMode) {
+                this._flushRealtimeBatch();
+            }
+        }
 
         // [指示書] ライブ焼き込み中は previewGraphics を使用しない（二重描画防止）
         if (this.previewGraphics && currentMode !== 'eraser' && currentMode !== 'pen' && currentMode !== 'airbrush' && currentMode !== 'airbrush-erase' && currentMode !== 'blur') {
@@ -456,6 +515,8 @@ export class BrushCore {
 
         this.lastLocalX = localX;
         this.lastLocalY = localY;
+        this.lastClientX = clientX;
+        this.lastClientY = clientY;
         this.lastPressure = processedPressure;
 
         if (this.strokeInputProfile) {
@@ -477,7 +538,7 @@ export class BrushCore {
             recorder: this.strokeRecorder.getCurrentStats?.() || null,
             interpolation: {
                 distance: Number(distance.toFixed(3)),
-                step: interpolationStep,
+                step: stepSize,
                 loopSteps: steps,
                 generatedPoints,
                 pointCountBefore: pointsBeforeEvent,
@@ -533,9 +594,9 @@ export class BrushCore {
 
         const perfStart = this._perfNow();
         const mode = this.getMode();
-        const shouldBatchPenRender = mode === 'pen' && infos.length > 1;
-        if (shouldBatchPenRender) {
-            this.realtimePenBatchGraphics = [];
+        const isBatchableMode = mode === 'pen' || mode === 'eraser';
+        if (isBatchableMode) {
+            this._beginRealtimeBatch(mode);
         }
         try {
             infos.forEach((info, index) => {
@@ -550,8 +611,8 @@ export class BrushCore {
                 );
             });
         } finally {
-            if (shouldBatchPenRender) {
-                this._flushRealtimePenBatch();
+            if (isBatchableMode) {
+                this._flushRealtimeBatch();
             }
         }
         if (this.strokeInputProfile) {
@@ -667,10 +728,72 @@ export class BrushCore {
         }
     }
 
+    _acquireHistoryBaselineScratch(width, height, resolution = 1) {
+        if (this.historyBaselineScratchTexture) {
+            if (
+                !this.historyBaselineScratchTexture.destroyed &&
+                this.historyBaselineScratchTexture.width === width &&
+                this.historyBaselineScratchTexture.height === height &&
+                (this.historyBaselineScratchTexture.resolution || 1) === resolution
+            ) {
+                return this.historyBaselineScratchTexture;
+            }
+            try {
+                this.historyBaselineScratchTexture.destroy(true);
+            } catch (_) {}
+            this.historyBaselineScratchTexture = null;
+        }
+
+        this.historyBaselineScratchTexture = RenderTexture.create({
+            width,
+            height,
+            resolution,
+            antialias: false
+        });
+        return this.historyBaselineScratchTexture;
+    }
+
+    _isEligibleForGpuBaseline(mode, activeLayer, settings) {
+        if (mode !== 'pen' && mode !== 'eraser') return false;
+        if (activeLayer?.layerData?.isAnimationWorkingLayer === true) return false;
+        if (this._needsSelectionSnapshotForLayer(activeLayer)) return false;
+        if (!activeLayer?.layerData?.renderTexture) return false;
+        if (!this.layerManager?.app?.renderer) return false;
+        return true;
+    }
+
+    _captureGpuBaseline(activeLayer) {
+        const sourceRt = activeLayer?.layerData?.renderTexture;
+        const renderer = this.layerManager?.app?.renderer;
+        if (!sourceRt || !renderer) return false;
+
+        try {
+            const width = sourceRt.width;
+            const height = sourceRt.height;
+            const scratch = this._acquireHistoryBaselineScratch(width, height, sourceRt.resolution || 1);
+            if (!scratch) return false;
+
+            const sprite = new Sprite(sourceRt);
+            renderer.render({
+                container: sprite,
+                target: scratch,
+                clear: true,
+                clearColor: [0, 0, 0, 0]
+            });
+            sprite.destroy({ texture: false, baseTexture: false });
+            return true;
+        } catch (err) {
+            if (window.TEGAKI_CONFIG?.debug) {
+                console.warn('[BrushCore] GPU baseline capture failed, falling back to CPU snapshot', err);
+            }
+            return false;
+        }
+    }
+
     _ensureLayerRasterFrameForStroke(activeLayer, settings, mode) {
-        if (!activeLayer?.layerData?.renderTexture) return;
-        if (!['pen', 'eraser', 'airbrush', 'airbrush-erase', 'blur'].includes(mode)) return;
-        if (typeof this.layerManager?.ensureLayerRasterBoundsForRect !== 'function') return;
+        if (!activeLayer?.layerData?.renderTexture) return null;
+        if (!['pen', 'eraser', 'airbrush', 'airbrush-erase', 'blur'].includes(mode)) return null;
+        if (typeof this.layerManager?.ensureLayerRasterBoundsForRect !== 'function') return null;
 
         const canvasConfig = this.layerManager.config?.canvas || window.TEGAKI_CONFIG?.canvas || {};
         const width = Math.max(
@@ -697,6 +820,7 @@ export class BrushCore {
                 bounds: result.bounds
             });
         }
+        return result;
     }
 
     _getLayerRasterBounds(layer) {
@@ -796,121 +920,152 @@ export class BrushCore {
     }
 
     /**
-     * [指示書] 消しゴムのリアルタイム反映用：短いセグメントを直接 RenderTexture に焼き込む
+     * [指示書] 消しゴムのリアルタイム反映用：短いセグメントをキューまたは直接バッチで RenderTexture に焼き込む
      */
     _renderRealtimeEraserSegment(points) {
-        const activeLayer = this.strokeTargetLayer || this.layerManager.getActiveLayer();
-        if (!activeLayer || !activeLayer.layerData?.renderTexture) return;
-
-        const settings = this._getCurrentSettings();
-        const perfStart = this._perfNow();
-
-        // [指示書] 消しゴム用の実描画 Graphics を作る API を使用
-        const graphics = this.strokeRenderer.renderEraserSegment(points, settings);
-
-        if (graphics && this.layerManager.app?.renderer) {
-            const renderContainer = new Container();
-            renderContainer.addChild(graphics);
-            renderContainer.blendMode = 'erase';
-            this._applyLayerRasterRenderOffset(activeLayer, renderContainer);
-
-            this.layerManager.app.renderer.render({
-                container: renderContainer,
-                target: activeLayer.layerData.renderTexture,
-                clear: false
-            });
-
-            renderContainer.destroy({ children: true, texture: true, baseTexture: true });
-            this._requestLiveCanvasRender('realtime-eraser');
+        if (!points || points.length < 2) return;
+        const p0 = points[0];
+        const p1 = points[points.length - 1];
+        if (this.realtimeBatchQueue && this.realtimeBatchMode === 'eraser') {
+            this._queueRealtimeSegment(p0, p1);
+            return;
         }
-        this._warnPerf('brush.renderRealtimeEraserSegment', perfStart, {
-            points: points?.length || 0
-        });
+        this._beginRealtimeBatch('eraser');
+        this._queueRealtimeSegment(p0, p1);
+        this._flushRealtimeBatch(true);
     }
 
     /**
-     * [指示書] ペンのリアルタイム反映用：短いセグメントを直接 RenderTexture に焼き込む
+     * [指示書] ペンのリアルタイム反映用：短いセグメントをキューまたは直接バッチで RenderTexture に焼き込む
      */
     _renderRealtimePenSegment(points) {
-        const activeLayer = this.penOpacityState?.targetLayer || this.strokeTargetLayer || this.layerManager.getActiveLayer();
-        if (!activeLayer || !activeLayer.layerData?.renderTexture) {
-            this._recordRealtimePenRenderDebug('missing-target');
+        if (!points || points.length < 2) return;
+        const p0 = points[0];
+        const p1 = points[points.length - 1];
+        if (this.realtimeBatchQueue && this.realtimeBatchMode === 'pen') {
+            this._queueRealtimeSegment(p0, p1);
+            return;
+        }
+        this._beginRealtimeBatch('pen');
+        this._queueRealtimeSegment(p0, p1);
+        this._flushRealtimeBatch(true);
+    }
+
+    _beginRealtimeBatch(mode) {
+        if (mode !== 'pen' && mode !== 'eraser') return false;
+        if (this.realtimeBatchMode && this.realtimeBatchMode !== mode) {
+            this._flushRealtimeBatch(true);
+        }
+        this.realtimeBatchDepth++;
+        if (this.realtimeBatchDepth === 1) {
+            this.realtimeBatchQueue = [];
+            this.realtimeBatchMode = mode;
+        }
+        return true;
+    }
+
+    _queueRealtimeSegment(p0, p1) {
+        if (!this.realtimeBatchQueue || !p0 || !p1) return false;
+        this.realtimeBatchQueue.push({ p0, p1 });
+        return true;
+    }
+
+    _flushRealtimeBatch(force = false) {
+        if (this.realtimeBatchDepth <= 0) return;
+        if (!force) {
+            this.realtimeBatchDepth--;
+            if (this.realtimeBatchDepth > 0) return;
+        } else {
+            this.realtimeBatchDepth = 0;
+        }
+
+        const queue = this.realtimeBatchQueue;
+        const mode = this.realtimeBatchMode;
+        this.realtimeBatchQueue = null;
+        this.realtimeBatchMode = null;
+
+        if (!Array.isArray(queue) || queue.length === 0 || !mode) return;
+
+        const activeLayer = (mode === 'pen' && this.penOpacityState?.targetLayer)
+            || this.strokeTargetLayer
+            || this.layerManager?.getActiveLayer();
+        const renderer = this.layerManager?.app?.renderer;
+        const renderTarget = (mode === 'pen' && this.penOpacityState?.texture)
+            || activeLayer?.layerData?.renderTexture;
+
+        if (!activeLayer || !renderer || !renderTarget) {
+            if (mode === 'pen') {
+                this._recordRealtimePenRenderDebug('missing-target');
+            }
             return;
         }
 
         const settings = this._getCurrentSettings();
-        const renderTarget = this.penOpacityState?.texture || activeLayer.layerData.renderTexture;
-        const renderSettings = this.penOpacityState
+        const renderSettings = (mode === 'pen' && this.penOpacityState)
             ? { ...settings, opacity: 1.0 }
             : settings;
+
         const perfStart = this._perfNow();
-
-        // [指示書] ペン用の実描画 Graphics を作る API を使用
-        const graphics = this.strokeRenderer.renderPenSegment(points, renderSettings);
-
-        if (graphics && this.layerManager.app?.renderer) {
-            if (Array.isArray(this.realtimePenBatchGraphics)) {
-                this.realtimePenBatchGraphics.push(graphics);
-                if (this.strokeInputProfile?.realtime) {
-                    this.strokeInputProfile.realtime.penBatchSegments++;
-                }
-                return;
+        const graphics = this.strokeRenderer.renderLineSegmentsBatch(queue, renderSettings, mode);
+        if (!graphics) {
+            if (mode === 'pen') {
+                this._recordRealtimePenRenderDebug('missing-graphics');
             }
-            const renderContainer = new Container();
-            renderContainer.addChild(graphics);
-            this._applyLayerRasterRenderOffset(activeLayer, renderContainer);
-
-            this.layerManager.app.renderer.render({
-                container: renderContainer,
-                target: renderTarget,
-                clear: false
-            });
-
-            renderContainer.destroy({ children: true, texture: true, baseTexture: true });
-            this._recordRealtimePenRenderDebug('rendered');
-            this._requestLiveCanvasRender(this.penOpacityState ? 'realtime-pen-preview' : 'realtime-pen');
-        } else {
-            this._recordRealtimePenRenderDebug('missing-graphics');
-        }
-        this._warnPerf('brush.renderRealtimePenSegment', perfStart, {
-            points: points?.length || 0,
-            penOpacityIsolation: this.penOpacityState !== null
-        });
-    }
-
-    _flushRealtimePenBatch() {
-        const graphicsBatch = this.realtimePenBatchGraphics;
-        this.realtimePenBatchGraphics = null;
-        if (!Array.isArray(graphicsBatch) || graphicsBatch.length === 0) return;
-
-        const activeLayer = this.penOpacityState?.targetLayer
-            || this.strokeTargetLayer
-            || this.layerManager.getActiveLayer();
-        const renderer = this.layerManager.app?.renderer;
-        const renderTarget = this.penOpacityState?.texture || activeLayer?.layerData?.renderTexture;
-        if (!activeLayer || !renderer || !renderTarget) {
-            graphicsBatch.forEach(graphics => graphics?.destroy?.({ children: true, texture: true, baseTexture: true }));
-            this._recordRealtimePenRenderDebug('missing-target');
             return;
         }
 
-        const renderContainer = new Container();
-        graphicsBatch.forEach(graphics => renderContainer.addChild(graphics));
-        this._applyLayerRasterRenderOffset(activeLayer, renderContainer);
+        let renderContainer = null;
         try {
+            renderContainer = new Container();
+            renderContainer.addChild(graphics);
+            if (mode === 'eraser') {
+                renderContainer.blendMode = 'erase';
+            }
+            this._applyLayerRasterRenderOffset(activeLayer, renderContainer);
+
             renderer.render({
                 container: renderContainer,
                 target: renderTarget,
                 clear: false
             });
-            this._recordRealtimePenRenderDebug('rendered');
-            if (this.strokeInputProfile?.realtime) {
-                this.strokeInputProfile.realtime.penBatchFlushes++;
+
+            if (mode === 'eraser') {
+                this._requestLiveCanvasRender('realtime-eraser');
+            } else {
+                this._recordRealtimePenRenderDebug('rendered');
+                this._requestLiveCanvasRender(this.penOpacityState ? 'realtime-pen-preview' : 'realtime-pen');
             }
-            this._requestLiveCanvasRender(this.penOpacityState ? 'realtime-pen-preview-batch' : 'realtime-pen-batch');
+        } catch (err) {
+            console.error(`[BrushCore] _flushRealtimeBatch error (${mode}):`, err);
         } finally {
-            renderContainer.destroy({ children: true, texture: true, baseTexture: true });
+            if (renderContainer) {
+                renderContainer.destroy({ children: true, texture: true, baseTexture: true });
+            } else if (!graphics.destroyed) {
+                graphics.destroy({ children: true, texture: true, baseTexture: true });
+            }
         }
+
+        if (this.strokeInputProfile?.realtime) {
+            const rt = this.strokeInputProfile.realtime;
+            rt.lineBatchSegments = (rt.lineBatchSegments || 0) + queue.length;
+            rt.lineBatchFlushes = (rt.lineBatchFlushes || 0) + 1;
+            rt.realtimeGraphicsCreated = (rt.realtimeGraphicsCreated || 0) + 1;
+            rt.rendererRenderCalls = (rt.rendererRenderCalls || 0) + 1;
+            if (mode === 'pen') {
+                rt.penBatchSegments = (rt.penBatchSegments || 0) + queue.length;
+                rt.penBatchFlushes = (rt.penBatchFlushes || 0) + 1;
+                rt.penRenderCalls = (rt.penRenderCalls || 0) + 1;
+            }
+        }
+        this._warnPerf('brush.flushRealtimeBatch', perfStart, {
+            mode,
+            segments: queue.length,
+            penOpacityIsolation: this.penOpacityState !== null
+        });
+    }
+
+    _flushRealtimePenBatch() {
+        this._flushRealtimeBatch(true);
     }
 
     _shouldUsePenOpacityIsolation(mode, settings) {
@@ -1304,6 +1459,7 @@ export class BrushCore {
         if (!activeLayer) return;
 
         this._appendFinalPointerSample(finalPointer, inputProfile);
+        this._flushRealtimeBatch(true);
 
         let strokeData = this.strokeRecorder.endStroke();
         this._logInputProfile('up', inputProfile, {
@@ -1493,7 +1649,10 @@ export class BrushCore {
         this._cleanupBlurStroke();
         this.strokeHistoryBefore = null;
         this.strokeSelectionBefore = null;
+        this.strokeHistoryGpuBaseline = null;
         this.strokeTargetLayer = null;
+        this.lastClientX = null;
+        this.lastClientY = null;
         this._logStrokeFinalizeProfile({
             mode,
             pointCount: strokeData.points.length,
@@ -1596,13 +1755,14 @@ export class BrushCore {
 
     _recordStrokeHistory(layer, mode, strokePoints = null, strokeSettings = null) {
         let beforeSnapshot = this.strokeHistoryBefore;
-        if (!beforeSnapshot || !historyManager || historyManager.isApplying) return;
+        const gpuBaseline = this.strokeHistoryGpuBaseline;
+        if ((!beforeSnapshot && !gpuBaseline) || !historyManager || historyManager.isApplying) return;
         if (!this.layerManager?.createLayerRasterSnapshot || !this.layerManager?.restoreLayerRasterSnapshot) return;
         if (layer?.layerData?.isAnimationWorkingLayer === true) return;
 
         const layerId = layer.layerData?.id;
         const layerIndex = this.layerManager.getLayerIndex(layer);
-        const renderer = this.app?.renderer;
+        const renderer = this.layerManager?.app?.renderer || window.app?.renderer;
         const renderTexture = layer.layerData?.renderTexture;
 
         // Stage B: Pen / Eraser 限定 dirty rect patch History の試行
@@ -1614,7 +1774,7 @@ export class BrushCore {
 
         if (isPatchEligible) {
             const currentBounds = layer.layerData?.rasterBounds;
-            const beforeBounds = beforeSnapshot.rasterBounds;
+            const beforeBounds = gpuBaseline?.bounds || beforeSnapshot?.rasterBounds;
 
             // 1. bounds が一致しているか確認（一致しない場合は full fallback）
             if (rasterBoundsEqual(beforeBounds, currentBounds)) {
@@ -1623,13 +1783,48 @@ export class BrushCore {
                 const localDirtyRect = projectRectToRasterLocal(projectDirtyRect, currentBounds);
 
                 if (localDirtyRect && localDirtyRect.width > 0 && localDirtyRect.height > 0) {
-                    // 2. beforePatch を CPU crop（beforeSnapshot は straight RGBA 済み）
-                    const beforePatchPixels = cropPixelPatch(
-                        beforeSnapshot.pixels,
-                        beforeSnapshot.width,
-                        beforeSnapshot.height,
-                        localDirtyRect
-                    );
+                    // 2. beforePatch の取得（GPU baseline scratch からの抽出、または CPU snapshot からの crop）
+                    let beforePatchPixels = null;
+                    if (gpuBaseline && this.historyBaselineScratchTexture) {
+                        let baselineResult = null;
+                        const baselineSprite = new Sprite(this.historyBaselineScratchTexture);
+                        try {
+                            const frame = new Rectangle(
+                                localDirtyRect.x,
+                                localDirtyRect.y,
+                                localDirtyRect.width,
+                                localDirtyRect.height
+                            );
+                            baselineResult = renderer.extract.pixels({
+                                target: baselineSprite,
+                                frame,
+                                clearColor: '#00000000'
+                            });
+                        } catch (err) {
+                            baselineResult = null;
+                        } finally {
+                            baselineSprite.destroy({ texture: false, baseTexture: false });
+                        }
+
+                        const baselineSource = baselineResult?.pixels
+                            || (baselineResult instanceof Uint8ClampedArray
+                                ? baselineResult
+                                : (baselineResult?.buffer ? new Uint8ClampedArray(baselineResult.buffer) : null));
+                        const extractedBaseW = Math.round(baselineResult?.width || localDirtyRect.width);
+                        const extractedBaseH = Math.round(baselineResult?.height || localDirtyRect.height);
+
+                        if (baselineSource && extractedBaseW === localDirtyRect.width && extractedBaseH === localDirtyRect.height && baselineSource.byteLength >= localDirtyRect.width * localDirtyRect.height * 4) {
+                            beforePatchPixels = new Uint8ClampedArray(baselineSource.subarray(0, localDirtyRect.width * localDirtyRect.height * 4));
+                            unpremultiplyPixels(beforePatchPixels);
+                        }
+                    } else if (beforeSnapshot?.pixels) {
+                        beforePatchPixels = cropPixelPatch(
+                            beforeSnapshot.pixels,
+                            beforeSnapshot.width,
+                            beforeSnapshot.height,
+                            localDirtyRect
+                        );
+                    }
 
                     if (beforePatchPixels) {
                         // 3. afterPatch を Pixi renderer.extract.pixels({ frame }) で GPU から部分抽出
@@ -1676,9 +1871,10 @@ export class BrushCore {
                             };
                             const byteSize = estimatePatchHistoryBytes(beforePatch, afterPatch);
 
-                            // 重要: beforeSnapshot の参照をクロージャに残さないため null 化
+                            // 重要: beforeSnapshot と GPU baseline の参照をクロージャに残さないため null 化
                             beforeSnapshot = null;
                             this.strokeHistoryBefore = null;
+                            this.strokeHistoryGpuBaseline = null;
 
                             const restorePatch = (targetPatch) => {
                                 if (!layerId || !this.layerManager) return;
@@ -1726,6 +1922,26 @@ export class BrushCore {
         }
 
         // --- Full snapshot fallback (bounds変更時、例外時、Airbrush/Blur等の非対応ツール時) ---
+        if (!beforeSnapshot && gpuBaseline && this.historyBaselineScratchTexture && renderer?.extract?.pixels) {
+            try {
+                const sprite = new Sprite(this.historyBaselineScratchTexture);
+                const result = renderer.extract.pixels({ target: sprite });
+                sprite.destroy({ texture: false, baseTexture: false });
+                const px = new Uint8ClampedArray(result?.pixels || result?.buffer || result);
+                unpremultiplyPixels(px);
+                beforeSnapshot = {
+                    layerId,
+                    width: this.historyBaselineScratchTexture.width,
+                    height: this.historyBaselineScratchTexture.height,
+                    rasterBounds: gpuBaseline.bounds,
+                    pixels: px
+                };
+            } catch (_) {
+                beforeSnapshot = null;
+            }
+        }
+        this.strokeHistoryGpuBaseline = null;
+        if (!beforeSnapshot) return;
         const snapshotStart = this._perfNow();
         const afterSnapshot = this.layerManager.createLayerRasterSnapshot(layer, { includePathCollections: false });
         const afterSnapshotMs = this._perfNow() - snapshotStart;
@@ -1980,6 +2196,10 @@ export class BrushCore {
             penRenderCalls: realtime.penRenderCalls || 0,
             penBatchSegments: realtime.penBatchSegments || 0,
             penBatchFlushes: realtime.penBatchFlushes || 0,
+            lineBatchSegments: realtime.lineBatchSegments || 0,
+            lineBatchFlushes: realtime.lineBatchFlushes || 0,
+            realtimeGraphicsCreated: realtime.realtimeGraphicsCreated || 0,
+            rendererRenderCalls: realtime.rendererRenderCalls || 0,
             penRenderMissingTarget: realtime.penRenderMissingTarget || 0,
             penRenderMissingGraphics: realtime.penRenderMissingGraphics || 0,
             airbrushRenderCalls: realtime.airbrushRenderCalls || 0,
@@ -2269,8 +2489,14 @@ export class BrushCore {
         this._cleanupBlurStroke();
         this.strokeHistoryBefore = null;
         this.strokeSelectionBefore = null;
+        this.strokeHistoryGpuBaseline = null;
         this.strokeTargetLayer = null;
         this.strokeInputProfile = null;
+        this.realtimeBatchQueue = null;
+        this.realtimeBatchDepth = 0;
+        this.realtimeBatchMode = null;
+        this.lastClientX = null;
+        this.lastClientY = null;
         
         if (this.eventBus) {
             this.eventBus.emit('drawing:stroke-cancelled', {

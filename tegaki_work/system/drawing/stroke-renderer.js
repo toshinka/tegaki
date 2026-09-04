@@ -116,6 +116,55 @@ export class StrokeRenderer {
     }
 
     /**
+     * Stage B: Pen / Eraser の複数セグメントを 1 つの Graphics インスタンスにまとめて構築する API。
+     * @param {Array<{p0: {x:number, y:number, pressure?:number}, p1: {x:number, y:number, pressure?:number}}>} segments
+     * @param {Object} settings
+     * @param {string} mode 'pen' | 'eraser'
+     * @returns {Graphics|null}
+     */
+    renderLineSegmentsBatch(segments, settings, mode = 'pen') {
+        if (!Array.isArray(segments) || segments.length === 0) return null;
+
+        const graphics = new Graphics();
+        graphics.blendMode = mode === 'eraser' ? 'erase' : 'normal';
+
+        const color = mode === 'eraser' ? 0xFFFFFF : settings.color;
+        const baseOpacity = Number(settings?.opacity ?? 1.0);
+        const pressureEnabled = mode === 'eraser'
+            ? (settings.eraserPressureEnabled === true)
+            : (settings.pressureEnabled === true);
+
+        for (let i = 0; i < segments.length; i++) {
+            const seg = segments[i];
+            const p0 = seg.p0;
+            const p1 = seg.p1;
+            if (!p0 || !p1) continue;
+
+            const press0 = p0.pressure ?? 1.0;
+            const press1 = p1.pressure ?? press0;
+            const segmentPressure = (press0 + press1) / 2;
+            const width = pressureEnabled
+                ? this.calculateWidth(segmentPressure, settings.size)
+                : settings.size;
+            const alpha = mode === 'eraser'
+                ? 1.0
+                : this.calculateOpacity(segmentPressure, baseOpacity, settings);
+
+            graphics.moveTo(p0.x, p0.y);
+            graphics.lineTo(p1.x, p1.y);
+            graphics.stroke({
+                width,
+                color,
+                alpha,
+                cap: 'round',
+                join: 'round'
+            });
+        }
+
+        return graphics;
+    }
+
+    /**
      * Phase 3a: エアブラシのリアルタイム焼き込み用コンテナを生成する。
      * state は BrushCore 側でストローク中だけ保持し、スタンプ間隔の端数を持ち越す。
      */
