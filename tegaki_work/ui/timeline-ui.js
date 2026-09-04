@@ -784,6 +784,17 @@
         getOnionSkinIconHtml() {
             return window.UI_ICONS?.onionSkin || '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 10h.01"/><path d="M15 10h.01"/><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/></svg>';
         }
+
+        getLaneReferenceIconHtml() {
+            return window.UI_ICONS?.laneReference || '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-rows-3" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M21 9H3"/><path d="M21 15H3"/></svg>';
+        }
+
+        getPlayIconHtml(playing = false) {
+            if (playing) {
+                return window.UI_ICONS?.stop || '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square" aria-hidden="true"><rect width="16" height="16" x="4" y="4" rx="2"/></svg>';
+            }
+            return window.UI_ICONS?.play || '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-play" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
+        }
         
         createLayerPanelFrameIndicator() {
             const layerContainer = document.getElementById('layer-panel-container');
@@ -795,16 +806,18 @@
             const frameIndicator = document.createElement('div');
             frameIndicator.className = 'frame-indicator';
             frameIndicator.innerHTML = `
-                <button class="frame-nav-btn" id="frame-prev-btn" title="前Frame">&lt;</button>
+                <button class="frame-nav-btn" id="frame-prev-btn" type="button" title="前Frame" aria-label="前フレーム">&lt;</button>
                 <span class="frame-display" id="frame-display">F1</span>
-                <button class="frame-nav-btn" id="frame-next-btn" title="次Frame">&gt;</button>
-                <button class="frame-play-toggle-btn" id="frame-play-toggle-btn" title="再生">▶</button>
-                <button class="frame-timeline-onion-btn" id="frame-timeline-onion-btn" title="Timeline onion">
-                    <span class="frame-onion-icon">${this.getOnionSkinIconHtml()}</span>
+                <button class="frame-nav-btn" id="frame-next-btn" type="button" title="次Frame" aria-label="次フレーム">&gt;</button>
+                <button class="frame-play-toggle-btn" id="frame-play-toggle-btn" type="button" title="再生" aria-label="再生">
+                    <span class="frame-control-icon frame-play-icon">${this.getPlayIconHtml(false)}</span>
+                </button>
+                <button class="frame-timeline-onion-btn" id="frame-timeline-onion-btn" type="button" title="オニオンスキン: OFF" aria-label="オニオンスキン" aria-pressed="false">
+                    <span class="frame-control-icon frame-onion-icon">${this.getOnionSkinIconHtml()}</span>
                     <span class="frame-onion-count" aria-hidden="true"></span>
                 </button>
-                <button class="frame-lane-reference-btn" id="frame-lane-reference-btn" title="Lane onion">
-                    ${this.getOnionSkinIconHtml()}
+                <button class="frame-lane-reference-btn" id="frame-lane-reference-btn" type="button" title="他レーン参照: OFF" aria-label="他レーン参照" aria-pressed="false">
+                    <span class="frame-control-icon frame-lane-reference-icon">${this.getLaneReferenceIconHtml()}</span>
                 </button>
             `;
             
@@ -893,21 +906,27 @@
                 const isLaneReferenceActive = animTable?.isLaneReferenceActive?.() === true;
                 laneReferenceBtn.classList.toggle('is-active', isLaneReferenceActive);
                 laneReferenceBtn.setAttribute('aria-pressed', isLaneReferenceActive ? 'true' : 'false');
-                laneReferenceBtn.title = isLaneReferenceActive ? 'Lane onion: on' : 'Lane onion: off';
+                laneReferenceBtn.title = isLaneReferenceActive ? '他レーン参照: ON' : '他レーン参照: OFF';
             }
             if (timelineOnionBtn) {
                 const count = animTable?.isOnionSkinActive ? Math.max(1, Math.min(4, Math.round(animTable.onionSkinFrameCount || 1))) : 0;
                 timelineOnionBtn.classList.toggle('is-active', count > 0);
                 timelineOnionBtn.classList.toggle('has-count', count > 0);
                 timelineOnionBtn.setAttribute('aria-pressed', count > 0 ? 'true' : 'false');
-                timelineOnionBtn.title = count > 0 ? `Timeline onion: 前後${count}フレーム` : 'Timeline onion: off';
+                timelineOnionBtn.title = count > 0 ? `オニオンスキン: 前後${count}フレーム` : 'オニオンスキン: OFF';
                 const countNode = timelineOnionBtn.querySelector('.frame-onion-count');
                 if (countNode) countNode.textContent = count > 0 ? String(count) : '';
             }
             if (playToggleBtn) {
                 const playing = animTable?.isPlaying === true;
-                playToggleBtn.textContent = playing ? '■' : '▶';
+                const iconSpan = playToggleBtn.querySelector('.frame-play-icon');
+                if (iconSpan) {
+                    iconSpan.innerHTML = this.getPlayIconHtml(playing);
+                } else {
+                    playToggleBtn.innerHTML = `<span class="frame-control-icon frame-play-icon">${this.getPlayIconHtml(playing)}</span>`;
+                }
                 playToggleBtn.title = playing ? '停止' : '再生';
+                playToggleBtn.setAttribute('aria-label', playing ? '停止' : '再生');
                 playToggleBtn.classList.toggle('is-playing', playing);
             }
             if (!shouldShowIndicator) return;

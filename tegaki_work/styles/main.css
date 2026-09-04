@@ -358,7 +358,7 @@ canvas {
 
 .layer-panel-container.layer-panel-container--caf {
     grid-template-columns: var(--ui-layer-panel-caf-column) 0 auto;
-    row-gap: 0;
+    row-gap: 3px;
 }
 
 .layer-panel-container.layer-panel-container--scrollable {
@@ -1055,7 +1055,7 @@ canvas {
     justify-content: center;
     background: var(--ui-layer-context-surface);
     border: none; 
-    border-radius: 8px 8px 0 0;
+    border-radius: 6px;
     padding: 2px 4px;
     pointer-events: all; 
     gap: 3px;
@@ -1080,9 +1080,19 @@ canvas {
     outline-offset: 1px;
 }
 
+.frame-control-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+}
+
 .frame-nav-btn { 
     width: var(--ui-frame-control-size);
     height: var(--ui-frame-control-size);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: rgba(255, 255, 238, 0.55); 
     border: none; 
     border-radius: 6px; 
@@ -1090,7 +1100,9 @@ canvas {
     font-size: 13px;
     color: var(--futaba-maroon); 
     font-weight: bold; 
-    transition: all 0.15s; 
+    transition: all 0.15s;
+    padding: 0;
+    line-height: 1;
 }
 
 .frame-nav-btn:hover { 
@@ -1104,19 +1116,35 @@ canvas {
 }
 
 .frame-play-toggle-btn {
-    width: var(--ui-frame-play-size);
-    height: var(--ui-frame-play-size);
+    width: var(--ui-frame-control-size);
+    height: var(--ui-frame-control-size);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border: none;
     border-radius: 6px;
     background: rgba(255, 244, 230, 0.68);
     color: #9a5a26;
     cursor: pointer;
-    font-size: 10px;
-    line-height: 1;
     padding: 0;
+    transition: all 0.15s;
 }
 
-.frame-play-toggle-btn.is-playing { background: rgba(202, 122, 54, 0.28); }
+.frame-play-toggle-btn:hover {
+    background: rgba(207, 156, 151, 0.55);
+    transform: scale(1.08);
+}
+
+.frame-play-toggle-btn.is-playing {
+    background: rgba(202, 122, 54, 0.28);
+    color: var(--futaba-maroon);
+}
+
+.frame-play-toggle-btn svg {
+    width: 10px;
+    height: 10px;
+    display: block;
+}
 
 .frame-lane-reference-btn {
     width: var(--ui-frame-control-size);
@@ -1130,6 +1158,7 @@ canvas {
     color: var(--futaba-maroon);
     cursor: pointer;
     transition: all 0.15s;
+    padding: 0;
 }
 
 .frame-lane-reference-btn:hover {
@@ -1138,13 +1167,14 @@ canvas {
 }
 
 .frame-lane-reference-btn.is-active {
-    background: var(--ui-layer-surface-focus);
-    color: var(--futaba-maroon);
+    background: var(--futaba-maroon);
+    color: var(--futaba-background);
 }
 
 .frame-lane-reference-btn svg {
     width: var(--ui-frame-icon-size);
     height: var(--ui-frame-icon-size);
+    display: block;
 }
 
 .frame-timeline-onion-btn {
@@ -1160,11 +1190,12 @@ canvas {
     cursor: pointer;
     transition: all 0.15s;
     position: relative;
+    padding: 0;
 }
 
 .frame-timeline-onion-btn:hover { background: rgba(231, 177, 111, 0.38); transform: scale(1.08); }
 .frame-timeline-onion-btn.is-active { background: var(--ui-layer-surface-focus); color: var(--futaba-maroon); }
-.frame-timeline-onion-btn svg { width: var(--ui-frame-icon-size); height: var(--ui-frame-icon-size); }
+.frame-timeline-onion-btn svg { width: var(--ui-frame-icon-size); height: var(--ui-frame-icon-size); display: block; }
 .frame-onion-count {
     display: none;
     position: absolute;
@@ -1186,9 +1217,14 @@ canvas {
     color: var(--futaba-maroon); 
     font-weight: bold; 
     min-width: 24px;
+    height: var(--ui-frame-control-size);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     text-align: center; 
     font-size: 10px;
-    padding: 2px 3px;
+    padding: 0 2px;
+    line-height: 1;
 }
 
 .layer-controls-row { 

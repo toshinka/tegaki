@@ -4,6 +4,12 @@
 
 ## 現在地
 
+- レイヤーパネル／アニメコンテキスト UI/UX再構築（C案：Frame Compass + CAF Parent Header採用）を完了した。
+  - **Stage A (Hierarchy)**: `LayerPanelRenderer.render()` のDOM挿入順序を `Frame Compass → CAF Parent Header → 暫定LAYERS|RIG Switch → Content Body` に再構成。CAF identityヘッダー生成（`createCafContextHeader()`）とレイヤー本文（`createCafLayerContent()`）を分離し、RIGビュー切替時でもCAF名・レーン名・可視性等のCAFコンテキストが消失しない構造を確立。将来Switchが廃止されても破綻しない階層関係とした。
+  - **Stage B (Semantics)**: 2つのGhost問題を解消。時間方向オニオンスキン（Timeline Onion）はGhostアイコンを維持し、他レーン参照（Lane Reference）には新設の専用アイコン（`UI_ICONS.laneReference`: Lucide `rows-3` 相当）を導入。両ボタンのラッパー構造（`.frame-control-icon`）を統一し、再生ボタンもSVG化（`UI_ICONS.play` / `stop`）。日本語ツールチップと `aria-pressed`, `aria-label` を更新。
+  - **Stage C (Alignment)**: 再生ボタン（旧18px）を含む全コントロールの寸法を `--ui-frame-control-size` (20px) に統一。flex centeringとSVGブロック化により垂直中心線を厳密に整列。
+  - **Stage D (Surface & Polish)**: Frame Compass（`border-radius: 6px;`）とCAF Content Group（`border-radius: 6px 6px 0 0;`）の間に3pxのsmall gapを設定。Lane Referenceのactive配色を `--futaba-maroon` 背景 + `--futaba-background` 前景とし、Timeline Onion（橙系）と明確に差別化。
+  - 新設の `build/verify-layer-panel-animation-context-ux.mjs` および更新した `build/verify-layer-panel-frosted-focus-followup.mjs` を含む全関連verifier（全18件以上）、production build、headless Edgeブラウザ実機検証（console error 0件、アニメテーブル開閉・RIG切替・レイヤー復帰）、生成物清掃を通過した。
 - 長時間描画性能劣化 改修（第2回改修指示書 Stage A〜C）を完了した。
   - **Stage A**: 通常Raster Brushの `layerData.pathsData` への不要な点列累積を停止し、スナップショット生成時の `includePathCollections: false` および復元時の `restorePathCollections: false` オプションを導入。これにより400ストローク描画時でも点列ディープコピー時間（旧47ms）が **0ms** に完全解消し、legacy path collections の保護契約（空配列による上書き防止）を維持した。
   - **Stage B**: Pen / Eraser 限定で dirty rect ピクセルパッチ方式 History（`raster-patch-history.js`）へ移行。安全マージン（`padding = Math.max(8, Math.ceil(settings.size) + 4)`）による包絡、CPU crop、Pixi `frame` 抽出、unpremultiply 契約の完全統一、CPU 上書きによる Undo/Redo Pixel Exact 復元、bounds 不一致・例外時の full fallback を実装。実機 Edge/PixiJS v8.19.0 にて `frame extract == CPU crop of full extract` の byte-for-byte 完全一致を実証。History 1件あたりの消費容量が 11.5MB → 数十KB へ縮小し、1200×1200 キャンバスにおいて 256MB に到達する遥か手前（19.1MB）で目標通り `maxSize=250` 件に到達することを確認した。

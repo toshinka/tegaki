@@ -27,21 +27,21 @@ for (const token of [
 
 assert.match(mainCss, /\.frame-indicator\s*\{[\s\S]*?background:\s*var\(--ui-layer-context-surface\)[\s\S]*?backdrop-filter:\s*var\(--ui-layer-context-backdrop\)/u,
     'the Frame and reference strip uses the shared frosted surface');
-assert.match(mainCss, /\.frame-indicator\s*\{[\s\S]*?border-radius:\s*8px 8px 0 0[\s\S]*?margin:\s*0 2px/u,
-    'the Frame strip is the top half of the aligned 128px context stack');
+assert.match(mainCss, /\.frame-indicator\s*\{[\s\S]*?border-radius:\s*6px[\s\S]*?margin:\s*0 2px/u,
+    'the Frame strip is an independent navigation surface with symmetric radius');
 assert.match(mainCss, /\.frame-lane-reference-btn\s*\{[\s\S]*?border:\s*none[\s\S]*?color:\s*var\(--futaba-maroon\)/u,
     'vertical Lane onion stays dark brown and borderless even while off');
 assert.match(mainCss, /\.frame-timeline-onion-btn\s*\{[\s\S]*?border:\s*none[\s\S]*?color:\s*var\(--futaba-medium\)/u,
     'horizontal Timeline onion stays pale and borderless while off');
-assert.match(mainCss, /\.frame-lane-reference-btn\.is-active\s*\{[\s\S]*?background:\s*var\(--ui-layer-surface-focus\)[\s\S]*?color:\s*var\(--futaba-maroon\)/u,
-    'vertical Lane onion uses the shared orange panel surface when active');
+assert.match(mainCss, /\.frame-lane-reference-btn\.is-active\s*\{[\s\S]*?background:\s*var\(--futaba-maroon\)[\s\S]*?color:\s*var\(--futaba-background\)/u,
+    'vertical Lane onion uses distinct maroon active surface to avoid collision with timeline onion');
 assert.match(mainCss, /\.frame-timeline-onion-btn\.is-active\s*\{[\s\S]*?background:\s*var\(--ui-layer-surface-focus\)[\s\S]*?color:\s*var\(--futaba-maroon\)/u,
-    'horizontal Timeline onion uses the same orange panel surface when active');
+    'horizontal Timeline onion uses the orange focus panel surface when active');
 
 assert.match(componentCss, /\.caf-simple-group-title--flat\s*\{[\s\S]*?background:\s*var\(--ui-layer-context-surface\)[\s\S]*?backdrop-filter:\s*var\(--ui-layer-context-backdrop\)/u,
     'CAF identity consumes the same frosted surface');
-assert.match(componentCss, /\.caf-simple-group-title--flat\s*\{[\s\S]*?border-radius:\s*0 0 4px 4px/u,
-    'CAF identity closes the bottom half of the shared Frame context stack');
+assert.match(componentCss, /\.caf-simple-group-title--flat\s*\{[\s\S]*?border-radius:\s*6px 6px 0 0/u,
+    'CAF identity has independent top radius as the parent header of layers');
 assert.match(componentCss, /\.caf-simple-header--flat \.clip-layer-mirror-row\s*\{[\s\S]*?background:\s*var\(--ui-layer-context-surface\)[\s\S]*?backdrop-filter:\s*var\(--ui-layer-context-backdrop\)/u,
     'CAF internal rows consume the same frosted surface');
 assert.match(componentCss, /\.caf-simple-header--flat \.clip-layer-mirror-row\.is-selected\s*\{[\s\S]*?background:\s*var\(--ui-layer-surface-focus\)/u,

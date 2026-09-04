@@ -1181,18 +1181,30 @@ export class LayerPanelRenderer {
         this.container.style.overflowY = 'auto';
         this.container.style.overflowX = 'hidden';
 
-        // Phase 4z15: CAF読み取り専用ヘッダーの描画
-        const cafHeader = this.createCafReadonlyHeader();
+        // Phase 9q C案: Frame Compass + CAF Parent Header
+        const cafContextHeader = hasAnimationContext ? this.createCafContextHeader() : null;
         const panelContainer = this.container.closest?.('.layer-panel-container');
-        panelContainer?.classList.toggle('layer-panel-container--caf', !!cafHeader);
+        panelContainer?.classList.toggle('layer-panel-container--caf', !!cafContextHeader);
         panelContainer?.classList.toggle('layer-panel-container--rig-view', isRigViewActive);
+
+        // 1. CAF Parent Header (常に最上部。RIGビュー時も維持)
+        if (cafContextHeader) {
+            this.container.appendChild(cafContextHeader);
+        }
+
+        // 2. 暫定Context View Switch (CAF identityの直下に配置)
         if (rigInspectorContext) {
             this.container.appendChild(this._createContextDockViewSwitch());
         }
+
+        // 3. Content Body
         if (isRigViewActive) {
             this.container.appendChild(this._createCafRigInspectorElement(rigInspectorContext));
-        } else if (cafHeader) {
-            this._appendLayerPanelCardParts(this.container, cafHeader);
+        } else if (hasAnimationContext) {
+            const cafLayerContent = this.createCafLayerContent();
+            if (cafLayerContent) {
+                this._appendLayerPanelCardParts(this.container, cafLayerContent);
+            }
         }
 
         const reversedLayers = [...layers].reverse();
@@ -4237,6 +4249,105 @@ export class LayerPanelRenderer {
             },
             content: this._escapeHtml(assetName || '')
         });
+    }
+
+    /**
+     * CAF親見出し（Identityヘッダー）のみを描画する (Phase 9q C案)
+     * Frame Compassの下、Layer本文の親として配置される。RIGビュー時も維持される。
+     */
+    createCafContextHeader() {
+        const animationTable = window.PopupManager?.get?.('animationTable');
+        if (!animationTable || !animationTable.model) return null;
+
+        const treeOptions = this._getFrameAssetTreeOptionsForAnimationScope(animationTable);
+        const tree = animationTable.model.getFrameAssetTree(undefined, treeOptions);
+        if (!tree || tree.groups.length === 0) return null;
+
+        const focusedGroup = this._resolveFocusedCafProjectionGroup(tree, animationTable);
+        if (!focusedGroup) return null;
+
+        const header = document.createElement('div');
+        header.className = 'caf-simple-header caf-simple-header--flat caf-context-header';
+
+        const selectedCelId = animationTable.selectedCelId;
+        const groupIndex = tree.groups.indexOf(focusedGroup);
+        const folderName = focusedGroup.folderName === 'Uncategorized' ? `CAF${groupIndex + 1}` : focusedGroup.folderName;
+        const firstClip = focusedGroup.clips[0];
+        const selectedClipEntry = focusedGroup.clips.find(clip => clip.clipId === selectedCelId) || null;
+        const primaryClipEntry = selectedClipEntry || firstClip;
+        const groupStateClasses = this._createLayerPanelStateClassNames({
+            'is-selected': true,
+            'is-expanded': true
+        });
+        const laneLabel = primaryClipEntry?.laneName || (Number.isInteger(primaryClipEntry?.laneIndex) ? `Lane ${primaryClipEntry.laneIndex + 1}` : '');
+        const clipEntry = primaryClipEntry?.clipId ? animationTable.model.findClipEntry(primaryClipEntry.clipId) : null;
+        const isClipVisible = clipEntry?.clip?.visible !== false;
+        const visibilityButtonHtml = this._createCafHeaderVisibilityButtonHtml({
+            clipId: primaryClipEntry?.clipId || '',
+            isVisible: isClipVisible
+        });
+        const folderNameHtml = this._createCafHeaderTextHtml('caf-simple-name', folderName, {
+            'data-folder-id': focusedGroup.folderId || ''
+        });
+        const laneNameHtml = this._createCafHeaderTextHtml('caf-simple-lane', laneLabel, {
+            'data-lane-id': primaryClipEntry?.laneId || ''
+        });
+        const contextIconHtml = `<span class="caf-simple-icon caf-simple-context-icon" aria-hidden="true">${UI_ICONS.animation}</span>`;
+        const groupContent = this._createCafHeaderGroupTitleHtml({
+            className: this._createLayerPanelClassName(
+                'caf-simple-group-title caf-simple-group-title--flat',
+                groupStateClasses
+            ),
+            clipId: primaryClipEntry?.clipId || '',
+            assetId: primaryClipEntry?.assetId || '',
+            content: `
+                ${contextIconHtml}
+                ${folderNameHtml}
+                ${laneNameHtml}
+                ${visibilityButtonHtml}
+            `
+        });
+
+        const groupElement = this._createLayerPanelCardPart('div', this._createLayerPanelClassName(
+            'caf-simple-group caf-simple-group--flat',
+            groupStateClasses
+        ));
+        groupElement.innerHTML = groupContent;
+        header.appendChild(groupElement);
+
+        return header;
+    }
+
+    /**
+     * CAF内部レイヤー（Content Body）のみを描画する (Phase 9q C案)
+     */
+    createCafLayerContent() {
+        const animationTable = window.PopupManager?.get?.('animationTable');
+        if (!animationTable || !animationTable.model) return null;
+
+        const treeOptions = this._getFrameAssetTreeOptionsForAnimationScope(animationTable);
+        const tree = animationTable.model.getFrameAssetTree(undefined, treeOptions);
+        if (!tree || tree.groups.length === 0) return null;
+
+        const focusedGroup = this._resolveFocusedCafProjectionGroup(tree, animationTable);
+        if (!focusedGroup) return null;
+
+        const selectedCelId = animationTable.selectedCelId;
+        const firstClip = focusedGroup.clips[0];
+        const selectedClipEntry = focusedGroup.clips.find(clip => clip.clipId === selectedCelId) || null;
+        const primaryClipEntry = selectedClipEntry || firstClip;
+        const mirrorClipEntry = primaryClipEntry;
+        const mirrorAsset = mirrorClipEntry?.assetId
+            ? animationTable.model.getClipAsset(mirrorClipEntry.assetId)
+            : null;
+
+        if (!mirrorAsset) return null;
+
+        return this._createClipAssetLayerMirrorElement(
+            mirrorAsset,
+            animationTable,
+            primaryClipEntry?.clipId || ''
+        );
     }
 
     _getFrameAssetTreeOptionsForAnimationScope(animationTable) {
