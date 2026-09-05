@@ -49,6 +49,10 @@ read-only probe: A/B record → B undo（index=0）→ B.doをthrow → redo後i
 解除も同じsetterを経由し、競合時`removeClipLayerDeformer`が拒否される（934）。
 共有Assetの全Clipへ影響する。[WP-002](work/WP-002-effect-guards.md)。
 
+2026-09-06追記: WP-002の指定登録経路を修正。WARP/Motion→Rig（Folder配下/全参照Clip）、逆順、Mesh生成、clipping参加追加をmutation前に検査し、WARP解除は競合検査を通さない。Owner承認でMotion bridge開始/previewの直接代入迂回にも検査を追加。model/productionメソッド抽出検証は成功、Browser実操作は未実施。全構造変更経路を保証したものではない。
+
+別件F-007（未修正）: `moveClipAssetInternalLayer`等の並べ替えではclipping sourceが順序で変わり、登録/toggleを通さず新しい競合が生じ得る。reparentも合わせて着手時に限定再現する。これは調査で見つけたリスクで、今回全経路再現はしていない。WP-002の登録/解除へ混ぜず、構造変更preflightの独立候補とする。
+
 ### F-003 Layer Motionのunsupported出力
 
 事実: `folder-part-render-plan.js`はRIGとの重複をunsupportedとする。

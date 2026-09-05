@@ -880,6 +880,18 @@ export class TimelineModel {
         return { ok: true, lane: entry.lane, clip: entry.clip };
     }
 
+    preflightClipLayerEffectTarget(clipId, internalLayerId) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+        const asset = this.getClipAsset(entry.clip.assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const layer = asset.internalLayers.find(item => item.id === internalLayerId);
+        if (!layer) return { ok: false, reason: 'layer-not-found' };
+        if (layer.type !== 'raster' || layer.isBackground === true) return { ok: false, reason: 'drawable-raster-required' };
+        const reason = layerEffectConflictReason(asset, internalLayerId);
+        return reason ? { ok: false, reason, internalLayerId } : { ok: true };
+    }
+
     setClipLayerTransformTracks(clipId, tracks = []) {
         const entry = this.findClipEntry(clipId);
         if (!entry) return { ok: false, reason: 'clip-not-found' };
@@ -2203,7 +2215,8 @@ export class TimelineModel {
         if (candidateLayer.clipping === true) {
             const candidateAsset = { ...asset, internalLayers: asset.internalLayers.map(item => item === layer ? candidateLayer : item) };
             const affectedIds = new Set(asset.internalLayers
-                .filter(item => hasInternalClippingParticipation(candidateAsset, item.id))
+                .filter(item => hasInternalClippingParticipation(candidateAsset, item.id)
+                    && !hasInternalClippingParticipation(asset, item.id))
                 .map(item => item.id));
             const conflict = this._preflightClipAssetLayerEffects(assetId, affectedIds);
             if (!conflict.ok) return conflict;

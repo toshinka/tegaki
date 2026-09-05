@@ -10,6 +10,8 @@
 変更可: `animation-data-model.js`、`clip-layer-deformer.js`、`clip-layer-transform.js`（すべて`tegaki_work/system/animation/`）、新規`build/verify-effect-target-conflicts.mjs`、関連model verifier。
 Rig solver、compositor、UI全面変更、保存field追加は禁止。関数追加前に既存target/validation helperを検索する。
 
+2026-09-06 Owner承認追補: `ui/animation-table-popup.js`のMotion編集開始・preview対象検査だけを追加対象とする。model setterを迂回するproduction直接代入経路を既存model検査へ接続する。UI構造・操作・WP-003の継続編集は変更しない。
+
 ## Contract
 
 - Rig SetupはClipAsset、Layer effectはClipInstance。Assetへの登録preflightはそのAssetを参照する全Clipが対象。
@@ -50,3 +52,22 @@ node tegaki_work/build/development-harness.mjs test warp
 ## Completion
 
 operation-order表、実modelの回帰結果、拒否/解除/共有Asset、保存/History境界、diffをleadが監査。UI未確認があれば範囲を明示し全機能受入とはしない。
+
+### 2026-09-06 結果 — DONE（指定経路の技術完了）
+
+- 開始基準`9b6ea3c2`＋既存WP-001差分を保護。途中でOwner commitが進み、終盤HEADは`743ce53a`。未コミットの追補も成果に含むため、再開時にHEAD/statusを確認する。
+- 基準commitの実modelをメモリ上へimportした再現: WARP→Rigがactual ok=true / expected=falseでassert失敗。作業ツリーを巻き戻さず比較した。
+
+| 操作 | 結果 |
+|---|---|
+| WARP/Motion→Rig、Rig→WARP/Motion | direct Raster/Folder孫、同Clip/共有Asset別Clipで拒否、正本deep-equal |
+| WARP/Motion→Mesh生成、Mesh→WARP/Motion | 登録前拒否。Mesh先行試験はtarget fixtureで、生成画素品質試験ではない |
+| WARP/Motion→clipping、clipping→effect | owner/source/Folder継承で拒否。無関係な既存競合は別toggleを妨げない |
+| 既存競合からWARP解除 | 指定targetだけ削除、他WARP/Motion/Rigは保持、反復解除可 |
+| production Motion開始/preview | 共通preflightを実行し直接代入の迂回を封鎖。途中拒否は既存baseline復元へ |
+| 保存/History | 実model serialize/constructor往復。実Rig登録caller抽出＋HistoryManager＋snapshot adapterで拒否時0件、成功/Undo/RedoのID/state一致 |
+
+- 製品変更: `animation-data-model.js`とOwner承認の`animation-table-popup.js`の対象検査のみ。新規`verify-effect-target-conflicts.mjs`。保存field、Rig solver、compositor、UI構造、WP-003は変更なし。
+- 構文確認成功、animation suite32/32、全149 verifier（warpを含む）成功、Vite build成功。buildは専用Temp、dist差分なし。既存util/chunk警告は継続。
+- read-only agentが呼び出し側・最終diffをレビュー、主担当が採否と変更を統合。Browserの実画面/実Pixi・既存History callback全体は未実施。Simple WARP UI未完のためモデルfixtureと隔離caller検証を採用し、全機能受入とはしない。
+- 別件: 並べ替え/reparentによるclipping source変更はAUDIT F-007へ記録。自動解除・自動移行・duplicate semanticsは導入しない。
