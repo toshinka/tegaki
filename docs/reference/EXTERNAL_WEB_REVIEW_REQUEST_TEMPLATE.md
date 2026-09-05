@@ -1,5 +1,7 @@
 # Tegaki External Web Review Request
 
+<!-- Document relocated from tegaki_work/EXTERNAL_WEB_REVIEW_REQUEST_TEMPLATE.md on 2026-09-06. -->
+
 > 状態: REFERENCE TEMPLATE。現行の読む順序/役割/受渡しは`docs/DEVELOPMENT.md`、現在地は`docs/STATUS.md`。下記のPhase欄はWork Package IDへ読み替える。
 
 このtemplateはWeb版GPT / Claude等へsecond opinionを依頼する時に複製して使う。外部AIはlocal未commit差分を閲覧できないため、Ownerが対象commitのpushを確認してから送る。
@@ -11,7 +13,7 @@
 - Target branch: `main` / `<branch>`
 - Target commit SHA:
 - Push state: `PUSHED AND WEB-READABLE` / `NOT PUSHED — DO NOT REVIEW`
-- Current Phase:
+- Current Work Package:
 - Owner decision needed:
 
 `Push state`が`PUSHED AND WEB-READABLE`でない場合は依頼を送らない。
@@ -19,14 +21,14 @@
 ## 2. Read order
 
 1. `AGENTS.md`
-2. `TEGAKI.md`
-3. `tegaki_work/PROGRESS.md`
-4. current `task-codex/phase*.md`
+2. `docs/STATUS.md`
+3. `docs/TECHNICAL.md`
+4. 指定された `docs/work/WP-*.md`
 5. review対象に必要なproposal / source / verifierだけ
 
 URL入口:
 
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/GitHubURL.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Claude_GPT_Review/GITHUB.txt
 
 GitHubURLはnavigationであり、上記正本の優先順位を上書きしない。記載URLはbranch固定ではなくmainを指すため、review対象が別branchの場合は対象commitのGitHub URLを別途列挙する。
 
@@ -47,7 +49,7 @@ GitHubURLはnavigationであり、上記正本の優先順位を上書きしな�
 - 既存差分、保存正本、History、Layer / CAF / Rig / Mesh境界を推測で変更しない。
 - 完了済みArchiveを暗黙に再OPENしない。
 - 実在するfile・event・classと照合できない提案は仮説と明記する。
-- `GitHubURL.txt`に無いlocal変更を読めたと扱わない。
+- `GITHUB.txt`に掲載されても未pushのlocal変更を読めたと扱わない。
 
 ### Out of scope
 

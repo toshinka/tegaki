@@ -1,11 +1,11 @@
 # Tegaki — agent entry map
 
-最初に読む。詳細の技術契約は[TEGAKI.md](TEGAKI.md)、現在地は[docs/STATUS.md](docs/STATUS.md)。
+最初に読む。詳細の技術契約は[docs/TECHNICAL.md](docs/TECHNICAL.md)、現在地は[docs/STATUS.md](docs/STATUS.md)。
 
 ## 読む順序
 
 1. `docs/STATUS.md` — 中断点・進行中の一件・未解決事項。
-2. `TEGAKI.md` — 維持する技術契約。
+2. `docs/TECHNICAL.md` — 維持する技術契約。
 3. 指定された `docs/work/WP-*.md` — Goal、対象file、検証、完了条件。
 4. カードが指定する `docs/ARCHITECTURE.md` の節とlocal file header。
 

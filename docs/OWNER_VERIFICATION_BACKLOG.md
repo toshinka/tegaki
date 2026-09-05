@@ -1,5 +1,7 @@
 # Owner実機確認バックログ
 
+<!-- Document relocated from tegaki_work/OWNER_VERIFICATION_BACKLOG.md on 2026-09-06. -->
+
 > 状態: REFERENCE — 制作受入の証拠台帳。現在地は`docs/STATUS.md`。Phase 9mの旧visual NG/未close記述は2026-08-29のOwner受入（Archive/phase9m.md）で更新済み。残る長時間/pen/旧Project等の未確認と区別する。本文の過去の「次」「closeしない」は現在の作業指示ではない。
 
 更新日: 2026-09-01

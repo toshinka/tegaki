@@ -1,8 +1,10 @@
 # Tegaki — 技術契約
 
+<!-- Document relocated from TEGAKI.md on 2026-09-06. -->
+
 状態: CURRENT。更新日: 2026-09-05。
-製品思想は[PRODUCT](docs/PRODUCT.md)、現行所有/実装経路は[ARCHITECTURE](docs/ARCHITECTURE.md)、作業状態は[STATUS](docs/STATUS.md)。
-この文書は維持する契約。既知の違反や未実装は[AUDIT](docs/AUDIT.md)へ記録し、実装済みと偽らない。
+製品思想は[PRODUCT](PRODUCT.md)、現行所有/実装経路は[ARCHITECTURE](ARCHITECTURE.md)、作業状態は[STATUS](STATUS.md)。
+この文書は維持する契約。既知の違反や未実装は[AUDIT](AUDIT.md)へ記録し、実装済みと偽らない。
 
 ## 基盤
 
@@ -65,7 +67,7 @@ Canvas-firstとFutaba文化を維持する。palette/semantic tokenは`tegaki_wo
 - 既存CSS変数、共通button/form/scrollbarを検索し、近似色や専用scrollbarを重複定義しない。
 - 静的装飾はCSS、動的な座標/寸法/custom propertyはJS。popupはmount先/stacking contextも確認する。
 - Lucide/既存UI_ICONSを優先し、適合iconがなければ同じ線幅・端部・viewBoxのSVGを創作してよい。出典/創作を区別し、意味と全stateのpaletteを確認する。
-- [Style Guide](開発用資料保管庫/proposals/UI_CSSスタイルガイド.md)は現行の運用規約。過去比較案の配置は採用済みと仮定しない。
+- [Style Guide](../開発用資料保管庫/proposals/UI_CSSスタイルガイド.md)は現行の運用規約。過去比較案の配置は採用済みと仮定しない。
 
 ## 安全な変更
 
@@ -76,4 +78,4 @@ Canvas-firstとFutaba文化を維持する。palette/semantic tokenは`tegaki_wo
 - Backup/PastFiles/別projectとOwner差分を保護する。build失敗は最初の原因へ絞る。
 - `dist/`等の生成差分を残さない。既存差分を一括restoreせず、自分の生成物だけ扱う。
 
-技術契約を変える場合は、理由、互換影響、代替、移行/検証を[ROADMAPの重大判断点](docs/ROADMAP.md#human-decisions)へ整理する。
+技術契約を変える場合は、理由、互換影響、代替、移行/検証を[ROADMAPの重大判断点](ROADMAP.md#human-decisions)へ整理する。

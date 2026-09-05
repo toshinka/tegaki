@@ -2,14 +2,17 @@
   "version": 1,
   "checkpoint": "docs/STATUS.md",
   "documents": [
-    "AGENTS.md", "TEGAKI.md", "README.md",
+    "AGENTS.md", "docs/TECHNICAL.md", "README.md",
     "docs/README.md", "docs/STATUS.md", "docs/PRODUCT.md",
     "docs/ARCHITECTURE.md", "docs/VOCABULARY.md", "docs/DEVELOPMENT.md",
     "docs/ROADMAP.md", "docs/AUDIT.md", "docs/DOCUMENT_REGISTER.md",
     "docs/work/README.md",
-    "tegaki_work/PROGRESS.md", "tegaki_work/ARCHITECTURE.md",
-    "tegaki_work/PHASE4Z_BOUNDARY.md", "tegaki_work/NEXT_CHAT_HANDOFF.md",
-    "tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md"
+    "docs/legacy/PROGRESS.md", "docs/legacy/ARCHITECTURE.md",
+    "docs/legacy/PHASE4Z_BOUNDARY.md", "docs/legacy/NEXT_CHAT_HANDOFF.md",
+    "docs/legacy/CODEX_MULTI_MODEL_WORKFLOW.md",
+    "docs/UI_DESIGN_AUTHORITY_MAP.md", "docs/OWNER_VERIFICATION_BACKLOG.md",
+    "docs/reference/TRANSFORM_SESSION_BOUNDARY.md",
+    "docs/reference/EXTERNAL_WEB_REVIEW_REQUEST_TEMPLATE.md"
   ],
   "domains": {
     "history": {
@@ -49,7 +52,7 @@
     },
     "docs": {
       "architecture": "docs/README.md",
-      "entrypoints": ["docs/STATUS.md", "docs/DOCUMENT_REGISTER.md", "tegaki_work/GitHubURL.txt"],
+      "entrypoints": ["docs/STATUS.md", "docs/DOCUMENT_REGISTER.md", "Claude_GPT_Review/GITHUB.txt"],
       "patterns": ["^verify-github-url-index", "^verify-ui-attention-lens-philosophy"]
     }
   },

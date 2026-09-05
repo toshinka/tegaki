@@ -31,7 +31,7 @@ workerへは新しい読む順序と対象カードを明示する。利用不�
 ```text
 WORK PACKAGE: docs/work/WP-xxx.md
 ROLE: implementer / read-only reviewer
-READ: AGENTS.md → TEGAKI.md → docs/STATUS.md → このカード → 指定architecture節
+READ: AGENTS.md → docs/TECHNICAL.md → docs/STATUS.md → このカード → 指定architecture節
 WRITE: exact file list（それ以外はread-only）
 BASELINE: commit + 既存差分の扱い
 RETURN: 変更理由、file、実行した検証、失敗/未確認、既知リスク
@@ -108,7 +108,7 @@ CURRENT OBJECTIVE / COMPLETED / CURRENT STATE / IMPORTANT DECISIONS / OPEN QUEST
 
 ## 外部Web AI
 
-[GitHubURL.txt](../tegaki_work/GitHubURL.txt)は現在のdocs入口と対象fileを案内する。
+[GITHUB.txt](../Claude_GPT_Review/GITHUB.txt)は現在のdocs入口と対象fileを案内する。
 Ownerがcommit/pushして初めてWeb側から最新差分が読める。`main`は可変なのでreview時に対象SHAを併記する。
 質問、必読文書、対象source、非対象、未解決判断を限定する。返却はACCEPT / MODIFIED / HOLD / REJECT / OWNER DECISIONへ分類し、実コード根拠を照合する。
 外部reportをそのまま保存schemaや作業指示へ転記しない。

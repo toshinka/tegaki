@@ -1,97 +1,32 @@
-/** Deterministically verifies GitHubURL.txt HTTPS and local Raw URL coverage. */
+/** Current external index: local route coverage, no archived review material; no network claim. */
 import fs from 'node:fs';
 import path from 'node:path';
-import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
 
-const workRoot = path.resolve(process.cwd());
-const repositoryRoot = path.resolve(workRoot, '..');
-const rawPrefix = 'https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/';
-const assert = (condition, message) => {
-    if (!condition) throw new Error(message);
-};
-
-const normalizeUrl = (url) => url.replace(/[.,;]+$/u, '');
-const source = fs.readFileSync(path.join(workRoot, 'GitHubURL.txt'), 'utf8');
-const urls = [...source.matchAll(/https:\/\/[^\s<>"'`]+/gu)]
-    .map((match) => normalizeUrl(match[0]));
-
-const uniqueUrls = new Set(urls);
-assert(uniqueUrls.size === urls.length, 'GitHubURL.txt contains duplicate HTTPS URLs');
-
-const currentPhaseDirectory = path.join(repositoryRoot, 'task-codex');
-const currentPhaseFiles = fs.readdirSync(currentPhaseDirectory, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && /^phase.*\.md$/u.test(entry.name));
-assert(
-    currentPhaseFiles.length === 1,
-    `expected exactly one current task-codex/phase*.md file, found ${currentPhaseFiles.length}`
-);
-
-const currentPhaseRelativePath = path.relative(
-    repositoryRoot,
-    path.join(currentPhaseDirectory, currentPhaseFiles[0].name)
-).split(path.sep).join('/');
-const currentPhaseUrl = `${rawPrefix}${currentPhaseRelativePath
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/')}`;
-assert(
-    uniqueUrls.has(currentPhaseUrl),
-    `GitHubURL.txt is missing the current phase Raw URL: ${currentPhaseUrl}`
-);
-
-const excludedRelativeRoots = [
-    'Backup',
-    'PastFiles',
-    '開発用資料保管庫/Backup-tegaki_work',
-    '開発用資料保管庫/proposals/過去計画（アイデアのサルベージ時に使う。基本読み込まない）'
-];
-const toRepositoryRelativePath = (absolutePath) => path.relative(
-    repositoryRoot,
-    absolutePath
-).split(path.sep).join('/');
-const isExcludedPath = (relativePath) => excludedRelativeRoots.some(
-    (excludedRoot) => relativePath === excludedRoot || relativePath.startsWith(`${excludedRoot}/`)
-);
-const isWithinRoot = (absolutePath) => {
-    const relativePath = path.relative(repositoryRoot, absolutePath);
-    return relativePath === ''
-        || (!path.isAbsolute(relativePath)
-            && relativePath !== '..'
-            && !relativePath.startsWith(`..${path.sep}`));
-};
-
-const rawUrls = urls.filter((url) => url.startsWith(rawPrefix));
-const missingLocalPaths = [];
-for (const url of rawUrls) {
-    const encodedRelativePath = url.slice(rawPrefix.length);
-    let decodedRelativePath;
-    try {
-        decodedRelativePath = decodeURIComponent(encodedRelativePath);
-    } catch {
-        throw new Error(`Raw URL path is not valid percent-encoding: ${url}`);
-    }
-
-    assert(decodedRelativePath.length > 0, `Raw URL has an empty local path: ${url}`);
-    const localPath = path.resolve(repositoryRoot, decodedRelativePath);
-    assert(isWithinRoot(localPath), `Raw URL escapes the repository root: ${url}`);
-
-    const repositoryRelativePath = toRepositoryRelativePath(localPath);
-    assert(
-        !isExcludedPath(repositoryRelativePath),
-        `Raw URL targets an excluded path: ${url}`
-    );
-
-    if (!fs.existsSync(localPath) || !fs.statSync(localPath).isFile()) {
-        missingLocalPaths.push(repositoryRelativePath);
-    }
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const source = fs.readFileSync(path.join(repositoryRoot, 'Claude_GPT_Review/GITHUB.txt'), 'utf8');
+const prefix = 'https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/';
+const urls = [...source.matchAll(/https:\/\/[^\s<>"'`]+/gu)].map(match => match[0]);
+assert.equal(new Set(urls).size, urls.length, 'duplicate URL');
+assert(urls.length > 0, 'empty index');
+const targets = new Set();
+for (const url of urls) {
+    assert(url.startsWith(prefix), `unexpected URL prefix: ${url}`);
+    const relative = decodeURIComponent(url.slice(prefix.length));
+    const absolute = path.resolve(repositoryRoot, relative);
+    const canonical = path.relative(repositoryRoot, absolute).split(path.sep).join('/');
+    assert(!path.isAbsolute(canonical) && !canonical.startsWith('../'), 'path escapes repository');
+    assert(!/(^|\/)(Archive|Review|Claude_GPT_Review|Backup|PastFiles|Backup-tegaki_work|node_modules|dist)(\/|$)/.test(canonical), `excluded route: ${canonical}`);
+    assert(/^(AGENTS\.md|README\.md|docs\/|tegaki_work\/)/.test(canonical), `out-of-scope route: ${canonical}`);
+    assert(fs.existsSync(absolute) && fs.statSync(absolute).isFile(), `missing local target: ${canonical}`);
+    targets.add(canonical);
 }
-
-assert(
-    missingLocalPaths.length === 0,
-    `GitHubURL.txt has missing local Raw targets: ${missingLocalPaths.join(', ')}`
-);
-
-console.log(
-    `verify-github-url-index: HTTPS total=${urls.length}, Raw total=${rawUrls.length}, `
-    + `duplicates=${urls.length - uniqueUrls.size}, local missing=${missingLocalPaths.length}`
-);
+const manifest = JSON.parse(fs.readFileSync(path.join(repositoryRoot, 'docs/harness.json'), 'utf8'));
+for (const required of ['AGENTS.md', 'docs/README.md', 'docs/STATUS.md', 'docs/PRODUCT.md',
+    'docs/TECHNICAL.md', 'docs/ARCHITECTURE.md', 'docs/VOCABULARY.md', 'docs/ROADMAP.md',
+    'docs/DEVELOPMENT.md', 'docs/harness.json', 'tegaki_work/package.json',
+    ...manifest.packages.map(item => item.document)]) {
+    assert(targets.has(required), `missing current route: ${required}`);
+}
+console.log(`verify-github-url-index: ${urls.length} unique current local targets OK; remote publication not tested`);
