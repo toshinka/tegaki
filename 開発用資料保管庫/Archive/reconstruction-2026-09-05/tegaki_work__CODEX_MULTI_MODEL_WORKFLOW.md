@@ -1,3 +1,5 @@
+> 状態: ARCHIVED — 2026-09-05再構成前の記録。元の場所: `tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md`。本文中の「現行」「次の作業」は当時のもの。現在の入口は `docs/README.md`。
+
 # Codex Multi-Model / External Web Review Workflow
 
 更新日: 2026-08-13

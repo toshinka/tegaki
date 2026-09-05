@@ -1,3 +1,5 @@
+> 状態: ARCHIVED — 2026-09-05再構成前の記録。元の場所: `tegaki_work/PHASE4Z_BOUNDARY.md`。本文中の「現行」「次の作業」は当時のもの。現在の入口は `docs/README.md`。
+
 # PHASE4Z_BOUNDARY — CAF / Lane / Layer Panel Responsibility Lock
 
 作成日: 2026-05-27

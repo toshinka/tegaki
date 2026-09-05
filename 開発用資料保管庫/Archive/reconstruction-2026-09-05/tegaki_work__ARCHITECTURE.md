@@ -1,3 +1,5 @@
+> 状態: ARCHIVED — 2026-09-05再構成前の記録。元の場所: `tegaki_work/ARCHITECTURE.md`。本文中の「現行」「次の作業」は当時のもの。現在の入口は `docs/README.md`。
+
 # TEGAKI ARCHITECTURE MAP
 
 > Phase 1j: AI 向けの構造マップ。現行実装の責務境界とデータ経路を定義する。

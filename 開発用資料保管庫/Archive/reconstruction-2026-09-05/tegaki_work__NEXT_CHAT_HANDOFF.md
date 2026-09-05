@@ -1,3 +1,5 @@
+> 状態: ARCHIVED — 2026-09-05再構成前の記録。元の場所: `tegaki_work/NEXT_CHAT_HANDOFF.md`。本文中の「現行」「次の作業」は当時のもの。現在の入口は `docs/README.md`。
+
 # Tegaki 次チャット引き継ぎ
 
 更新日: 2026-09-05

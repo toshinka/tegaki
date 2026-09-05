@@ -1,3 +1,5 @@
+> 状態: ARCHIVED — 2026-09-05再構成前の記録。元の場所: `tegaki_work/GitHubURL.txt`。本文中の「現行」「次の作業」は当時のもの。現在の入口は `docs/README.md`。
+
 # GitHubURL — Tegaki プロジェクト読解用 Raw URL ナビゲーション
 
 更新日: 2026-09-04
