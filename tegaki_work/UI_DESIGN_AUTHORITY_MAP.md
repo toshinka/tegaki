@@ -1,5 +1,7 @@
 # Tegaki UI Design Authority Map
 
+状態: CURRENT REFERENCE（責務/配置先）。Phase別の寸法・外観記録は当時のcheckpointであり、現在値はcomponent CSS/runtimeで確認する。将来案の採用順は`docs/ROADMAP.md`。
+
 更新日: 2026-08-30
 
 ## 1. 目的
@@ -8,7 +10,7 @@
 
 ### Attention / Intent Lens の正本経路
 
-- 普遍理念は`TEGAKI.md`の「認知・注目・意志の焦点」。水平参照、attention budget、mode lens、Futaba文化、AIが追えるfile責務を定める。
+- 普遍理念は`docs/PRODUCT.md`の「認知・注目・意志の焦点」。技術契約は`TEGAKI.md`、AIが追えるfile責務は`docs/DEVELOPMENT.md`へ分ける。
 - operational ruleは`開発用資料保管庫/proposals/UI_CSSスタイルガイド.md`の`Attention Budget / Intent Lens`と`Timeline`。contrast、dark top / bottom、Lane濃淡、focus entry / exitを定める。
 - Phase 9mの役割別priority watchlist、公式資料の鮮度、調査・比較matrixは`開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md`を一正本とし、本書へ外部tool別の長い説明を複製しない。
 - production authorityは引き続きcomponent CSS＋既存JavaScript / model。研究やfixtureのstateをProject / localStorageへ保存しない。

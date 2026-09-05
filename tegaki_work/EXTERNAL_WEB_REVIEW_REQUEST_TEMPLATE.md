@@ -1,5 +1,7 @@
 # Tegaki External Web Review Request
 
+> 状態: REFERENCE TEMPLATE。現行の読む順序/役割/受渡しは`docs/DEVELOPMENT.md`、現在地は`docs/STATUS.md`。下記のPhase欄はWork Package IDへ読み替える。
+
 このtemplateはWeb版GPT / Claude等へsecond opinionを依頼する時に複製して使う。外部AIはlocal未commit差分を閲覧できないため、Ownerが対象commitのpushを確認してから送る。
 
 ## 1. Review identity

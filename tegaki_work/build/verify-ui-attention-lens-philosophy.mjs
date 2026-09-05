@@ -9,8 +9,9 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [tegaki, styleGuide, proposal, phase, authorityMap] = await Promise.all([
-    readFile(new URL('../../TEGAKI.md', import.meta.url), 'utf8'),
+const [tegaki, development, styleGuide, proposal, phase, authorityMap] = await Promise.all([
+    readFile(new URL('../../docs/PRODUCT.md', import.meta.url), 'utf8'),
+    readFile(new URL('../../docs/DEVELOPMENT.md', import.meta.url), 'utf8'),
     readFile(new URL('../../開発用資料保管庫/proposals/UI_CSSスタイルガイド.md', import.meta.url), 'utf8'),
     readFile(new URL('../../開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md', import.meta.url), 'utf8'),
     readFile(new URL('../../開発用資料保管庫/Archive/phase9m.md', import.meta.url), 'utf8'),
@@ -27,7 +28,7 @@ assert.match(tegaki, /通常selectionと深い編集への進入を暗黙に同�
     'focus lenses require explicit entry, visible context, and a return path');
 assert.match(tegaki, /ふたば☆ちゃんねるpaletteは単なる懐古的skinでなく[\s\S]*?文化・識別・安心感の哲学/,
     'the Futaba palette remains a cultural design authority');
-assert.match(tegaki, /context windowが短いAI[\s\S]*?正本、変更禁止境界、検証入口/,
+assert.match(development, /context windowが短いAI[\s\S]*?正本、変更禁止境界、検証入口/,
     'file headers retain compact current contracts for human and AI maintenance');
 
 assert.match(styleGuide, /Attention Budget \/ Intent Lens/,
@@ -82,7 +83,7 @@ assert.match(phase, /Attention \/ Clip Focus 水平調査境界/,
     'the current Phase records the research checkpoint');
 assert.match(phase, /Ownerが一行headerを実画面受入する前はClip Focus fixture \/ productionへ進まない/,
     'the Phase stop condition remains explicit');
-assert.match(authorityMap, /普遍理念は`TEGAKI\.md`[\s\S]*?operational rule[\s\S]*?調査・比較matrix/,
+assert.match(authorityMap, /普遍理念は`docs\/PRODUCT\.md`[\s\S]*?operational rule[\s\S]*?調査・比較matrix/,
     'authority routing prevents duplicated design-source narratives');
 
 console.log('verify-ui-attention-lens-philosophy: role watchlist, source freshness, attention budget, Futaba philosophy, Clip Focus gate and authority routing OK');

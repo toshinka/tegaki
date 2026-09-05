@@ -1,3 +1,14 @@
-tegaki は、ブラウザ上で動作するお絵かき・アニメ制作支援ツールです。
-現在は、ラスタ描画、レイヤー、タイムライン形式のフレーム管理、ツールプリセット、アニメ制作向けの操作系を中心に開発しています。
+Tegakiは、ブラウザで絵を描き、その絵を同じCanvasで動かすラスター描画・アニメーション制作ツールです。
+
+開発を始める場合は[AGENTS.md](AGENTS.md)と[開発ナビゲーション](docs/README.md)へ。
+現在の状態・中断点は[checkpoint](docs/STATUS.md)、機能と既知残存は[監査結果](docs/AUDIT.md)で確認できます。
+
+```powershell
+cd tegaki_work
+npm.cmd install
+npm.cmd run dev
+```
+
+製品思想は[PRODUCT](docs/PRODUCT.md)、技術契約は[TEGAKI](TEGAKI.md)。
+同じrepositoryのComfyUIPortable / EasyReforgeExtension / RegionalLoRALabは別プロジェクトです。
 

@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:harness": "node build/development-harness.mjs check",
+    "verify": "node build/development-harness.mjs test",
+    "verify:list": "node build/development-harness.mjs list"
   },
   "dependencies": {
     "ag-psd": "^31.0.0",
