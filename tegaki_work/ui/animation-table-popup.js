@@ -11137,6 +11137,10 @@ export class AnimationTablePopup {
 
     _projectLayerTransformBridgeStart({ layerId, isFolder = false } = {}) {
         const context = this.getTransformEditContext(layerId);
+        if (context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY) {
+            const check = this.model.preflightClipLayerEffectTarget(context.clipId, context.internalLayerId);
+            if (!check.ok) return { ...check, blocked: true };
+        }
         const motionState = context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY
             ? this._getSelectedClipLayerMotionFrame(layerId)
             : (context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY
@@ -11250,12 +11254,16 @@ export class AnimationTablePopup {
         if (!session || session.transaction !== transaction) {
             return { ok: false, blocked: true, reason: 'transform-bridge-session-required' };
         }
-        const plan = planTransformEditTransactionPreview({
+        let plan = planTransformEditTransactionPreview({
             transaction,
             context: this.getTransformEditContext(),
             layerStart,
             layerCurrent
         });
+        if (plan.ok && transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY) {
+            const check = this.model.preflightClipLayerEffectTarget(transaction.clipId, transaction.internalLayerId);
+            if (!check.ok) plan = { ...check, blocked: true };
+        }
         if (!plan.ok) {
             if (session.previewApplied) {
                 this._restoreLayerTransformBridgePreview(session);

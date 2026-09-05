@@ -18,6 +18,7 @@
 - `AGENTS.md`: 入口。`docs/TECHNICAL.md`: 技術契約。
 - `docs/README.md / STATUS.md / PRODUCT.md / ARCHITECTURE.md / VOCABULARY.md / DEVELOPMENT.md / ROADMAP.md / AUDIT.md / DOCUMENT_REGISTER.md`: CURRENT。
 - `docs/work/`: Work Package。状態は`docs/harness.json`。
+- `docs/handoffs/2026-09-06-wp002-to-wp003.md`: HANDOFF SNAPSHOT。新チャット用の読み順・最初のSlice・除外範囲。現在地の正本はSTATUSのまま。
 - `docs/legacy/PROGRESS.md / ARCHITECTURE.md / PHASE4Z_BOUNDARY.md / NEXT_CHAT_HANDOFF.md / CODEX_MULTI_MODEL_WORKFLOW.md`: SUPERSEDED ROUTING。
 - `task-codex/phase9q.md`: PAUSED。A〜D証拠と未完Eを残す。
 - `docs/UI_DESIGN_AUTHORITY_MAP.md`: CURRENT REFERENCE。styleの所有先、phase別checkpointを区別。

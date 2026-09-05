@@ -7,6 +7,8 @@ Tegakiは、ブラウザで絵を描き、その絵を同じCanvas上で動か�
 
 ## 最短の読む順序
 
+新チャット移行用: [WP-002終了時の引き継ぎ](handoffs/2026-09-06-wp002-to-wp003.md)。最新状態は常にSTATUSを優先する。
+
 1. [現在地・checkpoint](STATUS.md)で作業停止点を確認する。
 2. [技術契約](TECHNICAL.md)を読み、対象Work Packageを[ロードマップ](ROADMAP.md)から選ぶ。
 3. [Architecture](ARCHITECTURE.md)の対象領域と[正式語彙](VOCABULARY.md)の該当語だけを読む。

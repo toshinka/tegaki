@@ -9,7 +9,7 @@
 |---|---|---|---|
 | 0 | 文書/検証入口の再構成 | 古い正本へ誘導される誤実装を止める | link/route検査、旧文書状態、checkpoint、作業カードが一貫 |
 | 1 完了 | [WP-001 History失敗時index](work/WP-001-history-failure.md) | 例外後のUndo時系列を壊す再現済み不具合 | do失敗でindex/stack不変、再試行/通常経路を検証済み |
-| 2 | [WP-002 effect排他と解除](work/WP-002-effect-guards.md) | 操作順により保存可能な競合stateを作れる | 双方向/共有Assetの全Clip、解除、Undo/Projectを確認 |
+| 2 完了 | [WP-002 effect排他と解除](work/WP-002-effect-guards.md) | 操作順により保存可能な競合stateを作れる | 指定登録経路の双方向/共有Asset、解除、model往復・caller隔離検証済み。Browser未実施 |
 | 3 | [WP-003 KEY継続編集](work/WP-003-key-continuation.md) | 中断したOwner要望、WARPと共有するsession導線 | 確定してpanel維持、次Frame、失敗同期、History 1 |
 | 4 | [WP-004 出力拒否/terminal監査](work/WP-004-output-terminal.md) | 設定したMotionが出力で黙って欠落する危険を先に固定 | unsupported拒否表、save/exportのSOURCE/ANIMATE比較 |
 | 5 | [WP-005 Simple WARP UI](work/WP-005-simple-warp.md) | 旧9q A〜Dの既存資産を完成へ接続 | normal/CAF/SOURCE/ANIMATE、16点、KEY、cancel、実画素比較 |
