@@ -40,6 +40,8 @@ read-only probe: A/B record → B undo（index=0）→ B.doをthrow → redo後i
 主担当も二つのcatch経路を照合。通常成功時と区別し、[WP-001](work/WP-001-history-failure.md)へ。
 別負債: push失敗前にredo枝を切ること、composite byteSizeの未集計。今回同時修正しない。
 
+2026-09-06追記: WP-001で修正完了。基準`9b6ea3c2`に対し実HistoryManagerの修正前失敗（actual=-1 / expected=0）と修正後成功を確認。do成功後だけindexを進めるため、do失敗時は不変、通知失敗時は成功済みindexを維持する。詳細はWP-001 Completion。上記の別負債は未修正。
+
 ### F-002 effect排他が操作順で破れる
 
 事実: `animation-data-model.js:setClipLayerDeformer`はRigを拒否（893〜910）、`registerClipAssetRigPart`は既存Layer effectを調べない（938〜952）。

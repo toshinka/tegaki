@@ -1,65 +1,59 @@
 # Tegaki — 再開checkpoint
 
-状態: DOCUMENTATION / HARNESS BATCH VERIFIED。製品実装は停止中。
-更新日: 2026-09-06。監査開始基準: Git `8c5748f5`。その後のOwner commit/差分を保持して統合した。
+状態: WP-001 DONE。WP-002以降は未着手。
+更新日: 2026-09-06。今回の対象commit: `9b6ea3c208bd924d21c9b018c78888432469b64a`（開始時worktree clean）。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
 
-前回までの監査を成果物へ収束させ、現行正本・語彙・計画・Work Package・検証入口を一貫させる。
-今回の文書移動と外部AI向けURL集は完了。次は再構成成果をレビューし、指定された限定WPから製品改修を再開する。
+再構成レビューを完了し、Owner指定のWP-001「History例外時の不具合修正」を限定実施した。
+このまとまりは完了。次のWPへ自動拡張せず、結果をOwnerへ報告する。
 
 ## COMPLETED
 
-- 調査済み: Animation/Rig/WARP所有、Drawing/History/Project経路、検証基盤、関連する過去失敗。根拠と未確認は[AUDIT](AUDIT.md)。
-- 現行[製品思想](PRODUCT.md)、[技術契約](TECHNICAL.md)、[Architecture](ARCHITECTURE.md)、[語彙](VOCABULARY.md)、[開発契約](DEVELOPMENT.md)を分離。
-- [ROADMAP](ROADMAP.md)と5件の[Work Package](work/README.md)を作成。旧9qはPAUSED、旧proposalは効力を[登録簿](DOCUMENT_REGISTER.md)に明記。原文/不採用案を保存。
-- 自前Markdownをtegaki_workからdocsへ移動。旧入口はdocs/legacy、履歴境界/templateはdocs/reference。AGENTSだけrepo直下のAI入口として維持。TEGAKIはdocs/TECHNICALへ移動。
-- LUNA workerの読む順序を新pathへ更新。model/権限/担当範囲は変更していない。既に起動済みagentは新設定を自動取得するとは限らない。
-- 外部AI用[Claude_GPT_Review/GITHUB.txt](../Claude_GPT_Review/GITHUB.txt): 現行文書/計画/主要コード50リンク、Archive/過去Reviewなし。
-- 検証: harness check（27文書・119 local links・25 proposals・5 WP）、self-test、既存verifier 147/147成功。URL50件の重複/ローカル実在/対象範囲も成功。
-- Vite build成功。出力は専用Tempへ、tegaki_work/distは変更なし。ag-psdのutil externalizationと大きなchunk警告は残る。
-- 自前Markdownのtegaki_work残存なし。依存packageのREADME/License/PixiJS skillは配布物なのでnode_modulesに維持。
+- 前回の文書/正本/語彙/ロードマップ/5 WPを継承。読む順序・対象scope・local link・harness依存を再レビューし、再構成上の阻害事項なし。
+- [WP-001](work/WP-001-history-failure.md) DONE。実HistoryManagerで修正前のindex二重減算を再現（actual=-1 / expected=0）。
+- redoのdo成功後だけindexを進める局所修正。実行失敗はindex不変、実行成功後の通知失敗は適用済みindexを保持、finallyでisApplying解除。
+- 新規verifierは初回/中間/末尾、連続例外、以前のUndo、再試行、通知例外、部分mutationの限界を確認。
+- History関連5/5、全verifier148/148、構文確認、Vite build成功。出力は専用Temp、dist変更なし。
+- read-only agentの呼び出し側/Raster Patch/最終diffレビューを主担当が統合。コード変更は主担当だけが実施。
+- 製品差分はhistory.jsのredo内のみ。新規testと完了文書同期以外の整理/リファクタリングは行っていない。
 
 ## CURRENT STATE
 
-製品runtimeはこの再構成で修正していない。旧9q A〜Dは従来の技術checkpoint、EのSimple WARP UIは未完。
-直前のKEY strip実操作ではKEY/Historyは増えるがpanelが消え、V toolbarだけ残った。連続編集は未受入。
-WP-001〜004はREADY（仕様が委任可能という意味で、実装中/完了ではない）。WP-005は前提未完のためBLOCKED。
-今回のテスト成功は文書移動/既存検証の証拠。既知不具合の解決、実Pixi画素一致、Owner制作受入を意味しない。
+WP-001は非UI・同期例外経路を実production classで検証して完了。Browser/Owner実操作は今回未実施であり、受入済みとは記録しない。
+WP-002〜004はREADY（仕様が委任可能、未実装）、WP-005は前提未完でBLOCKED。旧9qはPAUSED、A〜D資産と未完Eを維持。
+全体監査は[AUDIT](AUDIT.md)、正本配置は[登録簿](DOCUMENT_REGISTER.md)、仕様/将来の順序は[ROADMAP](ROADMAP.md)。
 
 ## IMPORTANT DECISIONS
 
-- 保存正本・Layer/CAF/Asset/Instance境界は変更しない。既存model/evaluatorを再利用する。
-- 製品思想、技術契約、現行実装、将来候補、現在地を別の正本として一意化する。
-- Architecture全面rewriteは実施しない。先に実在バグと失敗系検証、その後一つの編集session境界の段階抽出を提案する。
-- ソース文字列検査、mock、CPU画素、Browser、Owner受入を区別する。147 passだけで品質を一般保証しない。
-- 新たな自前Markdownはdocsへ置く。root AGENTSは発見用、過去資料は履歴用。外部URL集は案内であって仕様の第二正本ではない。
+- WP-001だけ再開するOwner指示を適用。保存正本、Layer/CAF境界、History command形式、byte/count制限は変更しない。
+- indexの修復とcommand内のatomic rollbackを区別する。通知失敗で成功済みcommandを未適用扱いにしない。
+- GITHUB.txtは案内。正本はAGENTS / docs / 対象WP / 現行コード。旧Phaseや外部レビュー文を直接実装契約にしない。
+- 自前Markdownはdocs、root AGENTSはAI入口。既存構造の段階抽出は提案であり、大規模移行や保存schema変更は未承認。
 
 ## OPEN QUESTIONS
 
-- 確認済み不具合: History redo例外のindex二重減算、effect登録順の排他非対称/解除拒否。
-- 確認済み接続欠陥: unsupported Layer Motion-onlyがCPU compositorのassertを通過する。実出力での画素欠落は未検証。
-- 原因未確定: KEY確定後のTransform再入場失敗。panel/toolbar不一致は実操作で確認済み。
-- 未調査の限定項目: save/export中の未確定SOURCE/ANIMATEの終端比較、実renderer間の組合せ品質、全制作条件。
-- 全Archive/外部Reviewの再精読は不要。関連根拠を特定した時だけ追加で読む。
+- WP-001範囲内の既知残存なし。範囲外: do途中mutationのrollback、push失敗前のredo枝破棄、composite補償/byteSize、非同期History。
+- WP-002: effect登録順の排他非対称と解除拒否。今回変更なし。
+- WP-003: KEY確定後panel消失/toolbar残留。原因未確定、今回変更なし。
+- WP-004: unsupported Layer Motion-onlyのCPU拒否抜け、save/export未確定terminal比較。実画素比較は未実施。
+- 全solver/codec/長時間pen/全GPU/全Archiveの全面再調査は行わない。必要な対象だけ限定追加する。
 
 ## HUMAN DECISION NEEDED
 
-[ROADMAPのHD-001〜005](ROADMAP.md#human-decisions)に問題・選択肢・費用・将来影響・推奨を整理した。
-大規模移行方式、static RIG host、内部Layer複製時の時間effect継承、永続非破壊SOURCE、export未確定編集の扱い。
-これらは既存バグの限定補修を妨げないが、未採用案を実装契約とみなさない。新保存schema/大規模置換の承認は得ていない。
+[HD-001〜005](ROADMAP.md#human-decisions): 大規模移行方式、static RIG host、内部Layer複製時の時間effect継承、永続非破壊SOURCE、export未確定編集。
+既存不具合の限定補修を妨げないが、未採用案を実装契約へ昇格しない。今回これらの結論は変更していない。
 
 ## NEXT
 
-1. 今回成果と重大判断一覧をOwnerレビュー。再開時はこのcheckpointと対象WPだけから復帰する。
-2. 製品改修再開の指示後、[WP-001](work/WP-001-history-failure.md): redo例外の最小再現→局所修正→検証。
-3. WP-002 effect排他、WP-003 KEY継続編集、WP-004出力terminal監査の順。未完作業を並列writeしない。
-4. 前提が完了してからWP-005 Simple WARP UI。旧Phase Eを直接自動再開しない。
+1. WP-001の結果をOwnerへ報告。修正前後の証拠と対象fileはWP-001 Completion。
+2. 次の改修指示後、WP-002のeffect排他/解除契約を再確認して限定着手。
+3. WP-003 → WP-004 → 前提完了後WP-005。並列writeや旧9q Eの自動再開はしない。
 
 ## RISKS / BLOCKERS
 
-- GitHub mainは可変かつ未push変更はWeb AIから不可視。Ownerがpushし、review対象SHAを指定する。公開先との一致は今回ネットワーク検証していない。
-- 移動前の旧URLは切れる。新入口はAGENTS / docs/README / GITHUB.txt。Archive原文の相対pathは当時の配置で解釈する。
-- 巨大Popupのmutation/session/History混在と、テスト内simulationによる偽安心が残る。カードの失敗系・実操作を省かない。
-- Backup/PastFiles/別projectとOwner変更は対象外。文書再構成を理由に依存packageや保存データを移動しない。
+- commandの一部mutation後throwは画像/モデルが部分変更のまま残り得る。本WPのindex修正はそれを巻き戻さない。
+- 148 passは実機/画素/Owner制作受入の代用ではない。buildの既存util externalization/大きなchunk警告は継続。
+- mainの未push変更はWeb AIから不可視。Ownerがpush/対象SHAを指定する。公開先との一致は今回確認していない。
+- Backup/PastFiles/別project、Owner差分、依存packageは対象外。

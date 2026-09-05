@@ -66,7 +66,7 @@ import {
     validateRasterBoneSkinning
 } from './raster-bone-skinning.js';
 import { preflightInternalLayerReparent } from './internal-layer-reparent-gate.js';
-import { resolveInternalClippingContract } from './internal-layer-clipping-contract.js';
+import { resolveInternalClippingContract, getInternalFolderRasterDescendants } from './internal-layer-clipping-contract.js';
 import {
     createAlphaFitRasterBoneSetup,
     getAlphaFitRasterMeshStatus,
@@ -136,9 +136,20 @@ function hasInternalClippingParticipation(asset, internalLayerId) {
         const contract = resolveInternalClippingContract(asset, layer);
         if (!contract) return false;
         return contract.owner?.id === internalLayerId
+            || layer.id === internalLayerId
             || contract.source?.id === internalLayerId
             || contract.sourceLayers?.some(sourceLayer => sourceLayer?.id === internalLayerId);
     });
+}
+
+// Shared add/update guard. Explicit removal does not add an effect and bypasses this guard.
+function layerEffectConflictReason(asset, internalLayerId) {
+    if (hasInternalClippingParticipation(asset, internalLayerId)) return 'internal-clipping-unsupported';
+    if (findOwningRigPartId(asset, internalLayerId)) return 'rig-part-layer-unsupported';
+    if (getRasterMeshIdsForInternalLayers(asset.meshDefinitions, new Set([internalLayerId])).length > 0) {
+        return 'mesh-layer-unsupported';
+    }
+    return null;
 }
 
 function normalizedOpacity(value, fallback = 1) {
@@ -882,6 +893,11 @@ export class TimelineModel {
         if (!validation.ok) {
             return { ok: false, reason: 'invalid-layer-transform-tracks', errors: validation.errors };
         }
+        for (const track of validation.value) {
+            if (!track.keyframes.length) continue;
+            const reason = layerEffectConflictReason(asset, track.internalLayerId);
+            if (reason) return { ok: false, reason, internalLayerId: track.internalLayerId };
+        }
         entry.clip.layerTransformTracks = validation.value;
         return { ok: true, lane: entry.lane, clip: entry.clip };
     }
@@ -900,14 +916,9 @@ export class TimelineModel {
         if (layer.type !== 'raster' || layer.isBackground === true) {
             return { ok: false, reason: 'drawable-raster-required' };
         }
-        if (hasInternalClippingParticipation(asset, internalLayerId)) {
-            return { ok: false, reason: 'internal-clipping-unsupported' };
-        }
-        if (findOwningRigPartId(asset, internalLayerId)) {
-            return { ok: false, reason: 'rig-part-layer-unsupported' };
-        }
-        if (getRasterMeshIdsForInternalLayers(asset.meshDefinitions, new Set([internalLayerId])).length > 0) {
-            return { ok: false, reason: 'mesh-layer-unsupported' };
+        if (deformer != null) {
+            const reason = layerEffectConflictReason(asset, internalLayerId);
+            if (reason) return { ok: false, reason };
         }
         if (deformer !== null && deformer !== undefined && !normalizeClipDeformer(deformer)) {
             return { ok: false, reason: 'invalid-layer-deformer' };
@@ -940,6 +951,12 @@ export class TimelineModel {
         if (!asset) return { ok: false, reason: 'asset-not-found' };
         const target = resolveRigPartTarget(asset, layerId);
         if (!target.ok) return target;
+
+        const targetIds = new Set(target.layer.type === 'folder'
+            ? getInternalFolderRasterDescendants(asset, layerId).map(layer => layer.id)
+            : [layerId]);
+        const conflict = this._preflightClipAssetLayerEffects(assetId, targetIds);
+        if (!conflict.ok) return conflict;
 
         const registration = registerRigPartDefinition(asset.rigDefinition, target.layer.id, {
             maxParts: options.maxParts ?? Number.POSITIVE_INFINITY
@@ -1091,6 +1108,8 @@ export class TimelineModel {
         const layer = asset.internalLayers?.find(candidate => candidate?.id === layerId) || null;
         if (!layer) return { ok: false, reason: 'layer-not-found' };
         if (layer.type !== 'raster') return { ok: false, reason: 'raster-required' };
+        const conflict = this._preflightClipAssetLayerEffects(assetId, new Set([layerId]));
+        if (!conflict.ok) return conflict;
         if (asset.rigDefinition?.parts?.some(part => part?.partId === layer.id)) {
             return { ok: false, reason: 'rig-mode-conflict', layer };
         }
@@ -1544,6 +1563,17 @@ export class TimelineModel {
         if (!assetId) return [];
         return this.tracks.flatMap(track => (track.cels || [])
             .filter(clip => clip?.assetId === assetId));
+    }
+
+    // Static Asset edits must inspect every referencing Clip, not only the selected frame.
+    _preflightClipAssetLayerEffects(assetId, targetIds) {
+        for (const clip of this.getClipInstancesForAsset(assetId)) {
+            const warp = clip.layerDeformers?.targets?.find(target => targetIds.has(target.internalLayerId));
+            if (warp) return { ok: false, reason: 'layer-deformer-conflict', clipId: clip.id, internalLayerId: warp.internalLayerId };
+            const motion = clip.layerTransformTracks?.find(track => targetIds.has(track.internalLayerId) && track.keyframes?.length);
+            if (motion) return { ok: false, reason: 'layer-transform-conflict', clipId: clip.id, internalLayerId: motion.internalLayerId };
+        }
+        return { ok: true };
     }
 
     preflightClipAssetInternalLayerReparent(assetId, layerId, targetLayerId, placement = 'after') {
@@ -2167,7 +2197,18 @@ export class TimelineModel {
         const layer = asset.internalLayers.find(l => l.id === layerId);
         if (!layer) return { ok: false, reason: 'layer-not-found' };
 
-        applyClippingMode(layer, cycleClippingMode(layer.clippingMode, layer.clipping === true));
+        const nextMode = cycleClippingMode(layer.clippingMode, layer.clipping === true);
+        const candidateLayer = { ...layer };
+        applyClippingMode(candidateLayer, nextMode);
+        if (candidateLayer.clipping === true) {
+            const candidateAsset = { ...asset, internalLayers: asset.internalLayers.map(item => item === layer ? candidateLayer : item) };
+            const affectedIds = new Set(asset.internalLayers
+                .filter(item => hasInternalClippingParticipation(candidateAsset, item.id))
+                .map(item => item.id));
+            const conflict = this._preflightClipAssetLayerEffects(assetId, affectedIds);
+            if (!conflict.ok) return conflict;
+        }
+        applyClippingMode(layer, nextMode);
         layer.updatedAt = Date.now();
         asset.updatedAt = Date.now();
         return { ok: true, asset, layer };

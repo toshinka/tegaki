@@ -57,7 +57,7 @@
     }
   },
   "packages": [
-    {"id":"WP-001","document":"docs/work/WP-001-history-failure.md","status":"READY","dependsOn":[]},
+    {"id":"WP-001","document":"docs/work/WP-001-history-failure.md","status":"DONE","dependsOn":[]},
     {"id":"WP-002","document":"docs/work/WP-002-effect-guards.md","status":"READY","dependsOn":[]},
     {"id":"WP-003","document":"docs/work/WP-003-key-continuation.md","status":"READY","dependsOn":[]},
     {"id":"WP-004","document":"docs/work/WP-004-output-terminal.md","status":"READY","dependsOn":[]},

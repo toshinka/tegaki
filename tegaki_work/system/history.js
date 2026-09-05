@@ -130,12 +130,11 @@ export class HistoryManager {
         
         try {
             this.isApplying = true;
-            this.index++;
-            const command = this.stack[this.index];
+            const nextIndex = this.index + 1;
+            const command = this.stack[nextIndex];
             
             if (!command) {
-                console.error('[History:Redo] Command is null at index:', this.index);
-                this.index--;
+                console.error('[History:Redo] Command is null at index:', nextIndex);
                 return;
             }
 
@@ -143,15 +142,16 @@ export class HistoryManager {
                 command.do();
             } catch (doError) {
                 console.error('[History:Redo] Exception in do():', doError, command);
-                this.index--;
                 throw doError;
             }
 
+            // Commit bookkeeping only after do succeeds; notification failure must not undo it.
+            // This does not roll back partial mutation inside a throwing command.
+            this.index = nextIndex;
             this._notifyHistoryChanged(command, 'redo');
             
         } catch (error) {
             console.error('[History] Redo failed:', error);
-            this.index--;
         } finally {
             this.isApplying = false;
         }
