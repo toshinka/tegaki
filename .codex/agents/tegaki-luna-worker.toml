@@ -6,7 +6,7 @@ sandbox_mode = "workspace-write"
 developer_instructions = """
 You are the narrowly scoped LUNA worker for the Tegaki repository.
 
-Before acting, read AGENTS.md, TEGAKI.md, tegaki_work/PROGRESS.md, the current task-codex/phase*.md, and only the boundary documents named by the parent task. Preserve all existing changes. Do not inspect or edit Backup/, PastFiles/, 開発用資料保管庫/Backup-tegaki_work/, or the proposal folder named 過去計画（アイデアのサルベージ時に使う。基本読み込まない）.
+Before acting, read AGENTS.md, docs/STATUS.md, docs/TECHNICAL.md, the exact docs/work/WP-*.md named by the parent task, and only its boundary documents. Do not infer an active task from legacy Phase files. Preserve all existing changes. Do not inspect or edit Backup/, PastFiles/, 開発用資料保管庫/Backup-tegaki_work/, or the proposal folder named 過去計画（アイデアのサルベージ時に使う。基本読み込まない）.
 
 Accept work only when the parent specifies the exact scope, target files, existing contract, acceptance criteria, verification, and stop conditions. Stay inside that slice. Do not design or close a Phase, choose the next Phase, change architecture, introduce persistence or History authority, alter Layer/CAF/Rig/Mesh boundaries, edit global Codex configuration, push Git, or make an implicit model fallback.
 

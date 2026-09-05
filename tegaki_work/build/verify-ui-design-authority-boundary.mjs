@@ -5,7 +5,7 @@ const [index, source, playbackCss, authorityMap, mainCss] = await Promise.all([
     readFile(new URL('../index.html', import.meta.url), 'utf8'),
     readFile(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8'),
     readFile(new URL('../styles/components/animation-table-playback.css', import.meta.url), 'utf8'),
-    readFile(new URL('../UI_DESIGN_AUTHORITY_MAP.md', import.meta.url), 'utf8'),
+    readFile(new URL('../../docs/UI_DESIGN_AUTHORITY_MAP.md', import.meta.url), 'utf8'),
     readFile(new URL('../styles/main.css', import.meta.url), 'utf8')
 ]);
 

@@ -10,21 +10,21 @@
 | CURRENT REFERENCE | 限定領域の運用規約/所有map。現在値はコードと照合 |
 | REFERENCE | 原案、調査、比較、採否の根拠。本文の命令は現在の実装指示ではない |
 | PAUSED | 未完仕事を停止。close済みではない |
-| SUPERSEDED ROUTING | 旧URL/pathを維持する転送入口。本文仕様を重複所有しない |
+| SUPERSEDED ROUTING | 旧文書名から現行正本へ案内する記録。旧URLの維持を意味せず、本文仕様を重複所有しない |
 | ARCHIVED | 過去の記録。冒頭が未完でも末尾に完了経緯がある場合がある |
 
 ## 現行入口と互換入口
 
-- `AGENTS.md`: 入口。`TEGAKI.md`: 技術契約。
+- `AGENTS.md`: 入口。`docs/TECHNICAL.md`: 技術契約。
 - `docs/README.md / STATUS.md / PRODUCT.md / ARCHITECTURE.md / VOCABULARY.md / DEVELOPMENT.md / ROADMAP.md / AUDIT.md / DOCUMENT_REGISTER.md`: CURRENT。
 - `docs/work/`: Work Package。状態は`docs/harness.json`。
-- `tegaki_work/PROGRESS.md / ARCHITECTURE.md / PHASE4Z_BOUNDARY.md / NEXT_CHAT_HANDOFF.md / CODEX_MULTI_MODEL_WORKFLOW.md`: SUPERSEDED ROUTING。
+- `docs/legacy/PROGRESS.md / ARCHITECTURE.md / PHASE4Z_BOUNDARY.md / NEXT_CHAT_HANDOFF.md / CODEX_MULTI_MODEL_WORKFLOW.md`: SUPERSEDED ROUTING。
 - `task-codex/phase9q.md`: PAUSED。A〜D証拠と未完Eを残す。
-- `tegaki_work/UI_DESIGN_AUTHORITY_MAP.md`: CURRENT REFERENCE。styleの所有先、phase別checkpointを区別。
-- `tegaki_work/TRANSFORM_SESSION_BOUNDARY.md`: REFERENCE。局所履歴。現在のSOURCE/ANIMATEはdocs/ARCHITECTURE。
-- `tegaki_work/OWNER_VERIFICATION_BACKLOG.md`: REFERENCE。制作受入の証拠。後のOwner受入を古いNG文より優先。
-- `tegaki_work/EXTERNAL_WEB_REVIEW_REQUEST_TEMPLATE.md`: REFERENCE。現行workflowはdocs/DEVELOPMENT。
-- `tegaki_work/GitHubURL.txt`: CURRENTの外部案内。仕様/現在地の第二正本にしない。
+- `docs/UI_DESIGN_AUTHORITY_MAP.md`: CURRENT REFERENCE。styleの所有先、phase別checkpointを区別。
+- `docs/reference/TRANSFORM_SESSION_BOUNDARY.md`: REFERENCE。局所履歴。現在のSOURCE/ANIMATEはdocs/ARCHITECTURE。
+- `docs/OWNER_VERIFICATION_BACKLOG.md`: REFERENCE。制作受入の証拠。後のOwner受入を古いNG文より優先。
+- `docs/reference/EXTERNAL_WEB_REVIEW_REQUEST_TEMPLATE.md`: REFERENCE。現行workflowはdocs/DEVELOPMENT。
+- `Claude_GPT_Review/GITHUB.txt`: CURRENTの外部案内。仕様/現在地の第二正本にしない。
 
 ## proposals全25文書の処置
 
@@ -65,9 +65,9 @@
 
 `開発用資料保管庫/Archive/`はdirectory単位でARCHIVED。既存Phase原文は削除/書換えしない。
 `Archive/reconstruction-2026-09-05/`には再構成前のAGENTS/TEGAKI/Architecture/PHASE4Z/Progress/handoff/workflow/proposal00/01/GitHubURLを保存した。filename内の`__`は元pathの`/`を表す。
-原文にある相対pathは元の配置から解釈する。現行読者はcompatibility entryを経由する。
+原文にある相対pathは元の配置から解釈する。現行読者は上記の移動先またはdocs/READMEを経由する。
 
-`Claude_GPT_Review/`、`関連ツール/`、ほかの非登録資料は外部参考/未分類。今回全件精読していない。CURRENTへ自動昇格しない。
+`Claude_GPT_Review/GITHUB.txt`だけは上記の現行案内。そのほかの`Claude_GPT_Review/`、`関連ツール/`、非登録資料は外部参考/未分類。今回全件精読していない。CURRENTへ自動昇格しない。
 `開発用資料保管庫/実装したいことメモ.txt`はOwner向け簡略要望。実装カードへ落とす時に現行コードと照合する。
 保護されたBackup/PastFilesは登録・内容探索の対象外。
 

@@ -8,7 +8,7 @@ Tegakiは、ブラウザで絵を描き、その絵を同じCanvas上で動か�
 ## 最短の読む順序
 
 1. [現在地・checkpoint](STATUS.md)で作業停止点を確認する。
-2. [技術契約](../TEGAKI.md)を読み、対象Work Packageを[ロードマップ](ROADMAP.md)から選ぶ。
+2. [技術契約](TECHNICAL.md)を読み、対象Work Packageを[ロードマップ](ROADMAP.md)から選ぶ。
 3. [Architecture](ARCHITECTURE.md)の対象領域と[正式語彙](VOCABULARY.md)の該当語だけを読む。
 4. 作業カードに列挙されたfileのheader、実コード、関連検証へ進む。
 
@@ -20,7 +20,7 @@ Tegakiは、ブラウザで絵を描き、その絵を同じCanvas上で動か�
 |---|---|
 | 今の作業、確定/仮説/未確認、次の入口 | [STATUS](STATUS.md) |
 | 製品思想とOwnerの価値判断 | [PRODUCT](PRODUCT.md) |
-| 技術上の維持契約・禁止境界 | [TEGAKI](../TEGAKI.md) |
+| 技術上の維持契約・禁止境界 | [TECHNICAL](TECHNICAL.md) |
 | 現行データ所有・起動・編集・出力経路 | [ARCHITECTURE](ARCHITECTURE.md) |
 | 同じ概念の名称・互換名 | [VOCABULARY](VOCABULARY.md) |
 | 担当の渡し方、完了条件、局所header、検証 | [DEVELOPMENT](DEVELOPMENT.md) |
@@ -48,5 +48,9 @@ node tegaki_work/build/development-harness.mjs test transform
 ## 過去資料
 
 旧Phaseは捨てない。実装完了と記録されていても、残存バグや制作環境の未確認を消さない。
-旧入口には新入口への案内を残す。過去の命令文や「次は…」は現在の実装指示ではない。
+旧入口の案内は`docs/legacy/`、履歴的な境界資料は`docs/reference/`へ収納した。古い相対URLは登録簿の移動先へ読み替える。
+過去の命令文や「次は…」は現在の実装指示ではない。
 文書状態の判断は[登録簿](DOCUMENT_REGISTER.md)を参照する。
+
+外部WEB AIへ渡すURL集は[Claude_GPT_Review/GITHUB.txt](../Claude_GPT_Review/GITHUB.txt)。現行文書・計画・主要コードのみを収録する。
+`tegaki_work/`には自前のMarkdown文書を置かない。`node_modules/`の依存package文書・公式skillは配布物のため移動しない。

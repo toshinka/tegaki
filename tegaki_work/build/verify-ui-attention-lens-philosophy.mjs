@@ -15,7 +15,7 @@ const [tegaki, development, styleGuide, proposal, phase, authorityMap] = await P
     readFile(new URL('../../開発用資料保管庫/proposals/UI_CSSスタイルガイド.md', import.meta.url), 'utf8'),
     readFile(new URL('../../開発用資料保管庫/proposals/14_UIツール導線・Text・階層Motion将来設計.md', import.meta.url), 'utf8'),
     readFile(new URL('../../開発用資料保管庫/Archive/phase9m.md', import.meta.url), 'utf8'),
-    readFile(new URL('../UI_DESIGN_AUTHORITY_MAP.md', import.meta.url), 'utf8')
+    readFile(new URL('../../docs/UI_DESIGN_AUTHORITY_MAP.md', import.meta.url), 'utf8')
 ]);
 
 assert.match(tegaki, /外部toolは「水平参照」[\s\S]*?人気がある、多数が同じ配置という事実だけを設計正本にしない/,

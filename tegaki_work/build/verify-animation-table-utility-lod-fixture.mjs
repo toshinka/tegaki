@@ -7,7 +7,8 @@ const [fixture, phase, table, wheelHelper, selectedActions, githubUrls] = await 
     readFile(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8'),
     readFile(new URL('../system/animation/timeline-wheel-routing.js', import.meta.url), 'utf8'),
     readFile(new URL('./verify-animation-table-selected-clip-actions.mjs', import.meta.url), 'utf8'),
-    readFile(new URL('../GitHubURL.txt', import.meta.url), 'utf8')
+    // Historical fixture coverage belongs to its archived navigation, not the current review index.
+    readFile(new URL('../../開発用資料保管庫/Archive/reconstruction-2026-09-05/tegaki_work__GitHubURL.txt', import.meta.url), 'utf8')
 ]);
 
 assert.equal(fixture.match(/class="comparison-shell"/g)?.length, 1,

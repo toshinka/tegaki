@@ -108,7 +108,7 @@ Layer Motionだけのunsupported planの拒否がCPU側で抜ける箇所は[WP-
 
 palette/semantic tokenは`styles/main.css`、抽出済み静的styleは`styles/components/`。
 未抽出injected styleは残っている。component CSSとの二重宣言を増やさず、runtime座標/寸法だけJSに置く。
-詳細の現行style所有は[UI map](../tegaki_work/UI_DESIGN_AUTHORITY_MAP.md)、規約は[Style Guide](../開発用資料保管庫/proposals/UI_CSSスタイルガイド.md)。
+詳細の現行style所有は[UI map](UI_DESIGN_AUTHORITY_MAP.md)、規約は[Style Guide](../開発用資料保管庫/proposals/UI_CSSスタイルガイド.md)。
 EventBusは通知と既存互換を担う。同名eventの送受信/payloadを変更時に検索する。
 全caller一覧を手動文書化しない。KEY terminal等、順序が重要な処理は同期adapterの契約と実操作を確認する。
 

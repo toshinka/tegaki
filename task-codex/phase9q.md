@@ -20,11 +20,11 @@ Layer Transformの`WARP`を、絵を直接変形するFocus Lensとして接続�
 ## 2. 最初に読む
 
 1. `AGENTS.md`
-2. `TEGAKI.md`
-3. `tegaki_work/PROGRESS.md`
-4. `tegaki_work/NEXT_CHAT_HANDOFF.md`
+2. `docs/TECHNICAL.md`
+3. `docs/STATUS.md`
+4. `docs/legacy/NEXT_CHAT_HANDOFF.md`
 5. 本書
-6. `tegaki_work/TRANSFORM_SESSION_BOUNDARY.md`
+6. `docs/reference/TRANSFORM_SESSION_BOUNDARY.md`
 7. `開発用資料保管庫/proposals/Tegaki_Transform_Warp_Animation_Rig_FocusLens_Proposal_for_CODEX_2026-08-31.md`
 8. `開発用資料保管庫/proposals/Tegaki_Transform_Centric_Flow_Purification_Addendum_2026-09-01.md`
 9. `開発用資料保管庫/Archive/phase9p.md`

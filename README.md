@@ -9,6 +9,6 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-製品思想は[PRODUCT](docs/PRODUCT.md)、技術契約は[TEGAKI](TEGAKI.md)。
+製品思想は[PRODUCT](docs/PRODUCT.md)、技術契約は[TECHNICAL](docs/TECHNICAL.md)。
 同じrepositoryのComfyUIPortable / EasyReforgeExtension / RegionalLoRALabは別プロジェクトです。
 
