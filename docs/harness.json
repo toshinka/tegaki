@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "checkpoint": "docs/STATUS.md",
+  "documents": [
+    "AGENTS.md", "TEGAKI.md", "README.md",
+    "docs/README.md", "docs/STATUS.md", "docs/PRODUCT.md",
+    "docs/ARCHITECTURE.md", "docs/VOCABULARY.md", "docs/DEVELOPMENT.md",
+    "docs/ROADMAP.md", "docs/AUDIT.md", "docs/DOCUMENT_REGISTER.md",
+    "docs/work/README.md",
+    "tegaki_work/PROGRESS.md", "tegaki_work/ARCHITECTURE.md",
+    "tegaki_work/PHASE4Z_BOUNDARY.md", "tegaki_work/NEXT_CHAT_HANDOFF.md",
+    "tegaki_work/CODEX_MULTI_MODEL_WORKFLOW.md"
+  ],
+  "domains": {
+    "history": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": ["tegaki_work/system/history.js", "tegaki_work/system/drawing/raster-patch-history.js"],
+      "patterns": ["^verify-history-", "^verify-raster-snapshot-memory", "^verify-motion-gesture-history", "^verify-long-drawing-degradation-fix"]
+    },
+    "drawing": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": ["tegaki_work/system/drawing/drawing-engine.js", "tegaki_work/system/drawing/pointer-handler.js", "tegaki_work/system/drawing/brush-core.js", "tegaki_work/coordinate-system.js"],
+      "patterns": ["^verify-pen-", "^verify-long-drawing-", "^verify-raster-snapshot-memory", "^verify-text-to-raster", "^verify-camera-view-anchor"]
+    },
+    "transform": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": ["tegaki_work/system/layer-system.js", "tegaki_work/system/layer-transform.js", "tegaki_work/system/animation/transform-edit-context.js", "tegaki_work/system/animation/transform-edit-transaction.js", "tegaki_work/ui/animation-table-popup.js"],
+      "patterns": ["^verify-phase9[op]-", "^verify-clip-transform-", "^verify-clip-layer-transform", "^verify-timeline-wheel-routing"]
+    },
+    "animation": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": ["tegaki_work/system/animation/animation-data-model.js", "tegaki_work/system/animation/folder-part-render-plan.js", "tegaki_work/system/animation/timeline-frame-compositor.js", "tegaki_work/system/animation/part-rig.js"],
+      "patterns": ["^verify-(clip-layer|folder-|part-rig|bone-|nested-bone|two-bone|rig-target|rigged-internal|raster-skin-render|raster-bone-skinning|structured-bake|effect-target)", "^verify-motion-"]
+    },
+    "warp": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": ["tegaki_work/system/animation/clip-deformer.js", "tegaki_work/system/animation/clip-layer-deformer.js", "tegaki_work/system/animation/layer-warp-edit-transaction.js", "tegaki_work/system/animation/warp-grid-rasterizer.js"],
+      "patterns": ["^verify-warp-", "^verify-layer-warp-", "^verify-clip-layer-deformer", "^verify-folder-deformer", "^verify-radial-control-mesh"]
+    },
+    "project": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": ["tegaki_work/system/project-manager.js", "tegaki_work/system/export-manager.js", "tegaki_work/system/emergency-recovery-store.js"],
+      "patterns": ["^verify-project-", "^verify-emergency-", "^verify-bake-", "^verify-clip-bake-", "^verify-structured-bake", "^verify-folder-deformer-project"]
+    },
+    "ui": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": ["tegaki_work/ui/layer-panel-renderer.js", "tegaki_work/ui/dom-builder.js", "tegaki_work/ui/ui-panels.js", "tegaki_work/ui/keyboard-handler.js", "tegaki_work/styles/main.css"],
+      "patterns": ["^verify-animation-table-", "^verify-layer-panel-", "^verify-qtp-", "^verify-sidebar-", "^verify-ui-", "^verify-shortcut-", "^verify-touch-", "^verify-right-", "^verify-rig-workspace-"]
+    },
+    "docs": {
+      "architecture": "docs/README.md",
+      "entrypoints": ["docs/STATUS.md", "docs/DOCUMENT_REGISTER.md", "tegaki_work/GitHubURL.txt"],
+      "patterns": ["^verify-github-url-index", "^verify-ui-attention-lens-philosophy"]
+    }
+  },
+  "packages": [
+    {"id":"WP-001","document":"docs/work/WP-001-history-failure.md","status":"READY","dependsOn":[]},
+    {"id":"WP-002","document":"docs/work/WP-002-effect-guards.md","status":"READY","dependsOn":[]},
+    {"id":"WP-003","document":"docs/work/WP-003-key-continuation.md","status":"READY","dependsOn":[]},
+    {"id":"WP-004","document":"docs/work/WP-004-output-terminal.md","status":"READY","dependsOn":[]},
+    {"id":"WP-005","document":"docs/work/WP-005-simple-warp.md","status":"BLOCKED","dependsOn":["WP-002","WP-003","WP-004"]}
+  ]
+}

@@ -1,3 +1,5 @@
+> 状態: REFERENCE — 2026-09-05再構成で現行の作業順/正本から分離。採用済み事項と未採用案が混在する原資料。本文中のACTIVE/現行Phase/次の作業は執筆時点の記録。現在の判断は `docs/ROADMAP.md`、実装状態は `docs/AUDIT.md`、資料の効力は `docs/DOCUMENT_REGISTER.md` を参照する。
+
 # Tegaki 導線純化 追補提案
 ## Transform-Centric Authoring / Timeline Purification Architecture Gate
 ### — 「何を」「どう変形するか」「いつ記録するか」を分離する —

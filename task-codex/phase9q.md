@@ -1,7 +1,9 @@
 # Phase 9q — Drawing WARP Authority / Layer Transform Integration Gate
 
 更新日: 2026-09-05
-状態: ACTIVE — Gate 1 Task D＋Owner Timeline follow-up 完了、次はTask E
+状態: PAUSED — 2026-09-05 Owner指示で製品実装を停止。現在地は`docs/STATUS.md`。
+再開順は`docs/ROADMAP.md`、残Task Eは`docs/work/WP-005-simple-warp.md`へ引き継ぐ。
+以下の「次」「担当」は停止前の記録であり、自動開始の指示ではない。
 担当: SOL / MAX
 
 ## 1. 目的

@@ -1,5 +1,7 @@
 # Transform Session Boundary
 
+> 状態: REFERENCE — Phase別の設計変遷と詳細証拠。現在のSOURCE/ANIMATE/KEY連続編集は`docs/ARCHITECTURE.md`と`docs/STATUS.md`を優先する。本文冒頭のPhase 5限定説明を全contextへ一般化しない。
+
 更新日: 2026-09-04
 
 ## 目的

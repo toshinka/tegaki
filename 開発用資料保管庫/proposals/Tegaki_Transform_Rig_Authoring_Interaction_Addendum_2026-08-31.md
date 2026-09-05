@@ -1,3 +1,5 @@
+> 状態: REFERENCE — 2026-09-05再構成で現行の作業順/正本から分離。採用済み事項と未採用案が混在する原資料。本文中のACTIVE/現行Phase/次の作業は執筆時点の記録。現在の判断は `docs/ROADMAP.md`、実装状態は `docs/AUDIT.md`、資料の効力は `docs/DOCUMENT_REGISTER.md` を参照する。
+
 # Tegaki Transform / RIG Authoring Interaction Addendum
 ## 前提操作から高度Riggingまでを一本の学習線にするための追補
 ### — Input Grammar / Symbol Family / Root-first Rig / AutoMesh-first / Future Compatibility —
