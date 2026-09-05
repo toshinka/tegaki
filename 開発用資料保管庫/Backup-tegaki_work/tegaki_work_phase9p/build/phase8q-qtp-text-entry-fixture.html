@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 8q QTP Text Entry Gate</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --futaba-canvas: #fffdf0;
+      --futaba-panel: #fff9e8;
+      --futaba-panel-strong: #f8eadc;
+      --futaba-border: #d9aaa0;
+      --futaba-border-strong: #a8443d;
+      --futaba-text: #8f110c;
+      --futaba-muted: #a95e58;
+      --futaba-active: #ff893f;
+      --futaba-active-soft: #ffe1c8;
+      --setup-blue: #2f65a7;
+      --setup-blue-soft: #e8f1fb;
+      --surface-shadow: 0 10px 28px rgb(115 45 39 / 18%);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 0;
+      min-height: 720px;
+      color: var(--futaba-text);
+      background:
+        linear-gradient(90deg, rgb(168 68 61 / 4%) 1px, transparent 1px),
+        linear-gradient(rgb(168 68 61 / 4%) 1px, transparent 1px),
+        var(--futaba-canvas);
+      background-size: 28px 28px;
+      font: 600 13px/1.35 system-ui, sans-serif;
+    }
+
+    button, input, select, textarea { font: inherit; color: inherit; }
+
+    .fixture {
+      width: min(1180px, calc(100vw - 48px));
+      margin: 24px auto;
+    }
+
+    .fixture > header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 0 4px 18px;
+      border-bottom: 2px solid var(--futaba-border);
+    }
+
+    h1 { margin: 0; font-size: 22px; }
+    .lead { max-width: 620px; margin: 0; color: var(--futaba-muted); font-weight: 500; }
+
+    .variants {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(270px, 1fr));
+      gap: 22px;
+      padding-top: 22px;
+    }
+
+    .variant {
+      min-height: 590px;
+      padding: 16px;
+      border: 1px solid var(--futaba-border);
+      border-radius: 18px;
+      background: rgb(255 249 232 / 82%);
+      box-shadow: var(--surface-shadow);
+    }
+
+    .variant.recommended { border: 2px solid var(--setup-blue); }
+    .variant { overflow-wrap: anywhere; }
+    .variant h2 { margin: 0 0 5px; font-size: 16px; }
+    .variant .verdict { min-height: 34px; margin: 0 0 13px; color: var(--futaba-muted); font-size: 12px; font-weight: 500; }
+    .variant.recommended .verdict { color: var(--setup-blue); }
+
+    .qtp {
+      width: 160px;
+      margin: 0 auto;
+      padding: 10px;
+      border: 1px solid var(--futaba-border);
+      border-radius: 15px;
+      background: rgb(255 253 240 / 92%);
+      box-shadow: 0 7px 18px rgb(115 45 39 / 16%);
+    }
+
+    .qtp-head { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--futaba-border); padding-bottom: 6px; }
+    .qtp-head strong { font-size: 15px; }
+    .close { width: 25px; height: 25px; border: 0; border-radius: 8px; color: var(--futaba-panel); background: #bc7770; }
+    .section-label { margin: 7px 0 4px; color: var(--futaba-muted); font-size: 11px; }
+
+    .palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
+    .swatch { aspect-ratio: 1; border: 1px solid var(--futaba-border); border-radius: 5px; background: var(--swatch); }
+
+    .tools { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
+    .tool, .text-tool {
+      min-width: 0;
+      height: 27px;
+      padding: 0;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+    }
+    .tool.active { border-color: var(--futaba-active); background: var(--futaba-active-soft); }
+    .text-tool { border-color: var(--setup-blue); color: var(--setup-blue); background: var(--setup-blue-soft); }
+
+    .text-launcher {
+      width: 100%;
+      min-height: 31px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      margin-top: 7px;
+      border: 1px solid var(--futaba-border-strong);
+      border-radius: 9px;
+      background: var(--futaba-canvas);
+    }
+    .text-launcher.compact {
+      width: auto;
+      min-width: 70px;
+      min-height: 29px;
+      margin: 8px 0 0 auto;
+      padding: 0 10px;
+      border-color: var(--setup-blue);
+      color: var(--setup-blue);
+      background: var(--setup-blue-soft);
+    }
+    .t-icon { display: inline-grid; width: 21px; height: 21px; place-items: center; border: 1px solid currentColor; border-radius: 5px; }
+
+    .slots { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
+    .slot { height: 31px; border: 1px solid var(--futaba-border); border-radius: 8px; background: var(--futaba-panel); }
+    .slot::before { content: ''; display: block; width: 13px; height: 13px; margin: 5px auto 1px; border: 2px solid var(--futaba-border-strong); border-radius: 50%; }
+
+    .slider-row { margin-top: 7px; padding: 6px; border-radius: 9px; background: var(--futaba-panel-strong); }
+    .slider-title { display: flex; justify-content: center; gap: 5px; color: var(--futaba-muted); font-size: 11px; }
+    .slider { height: 7px; margin-top: 5px; border-radius: 99px; background: linear-gradient(90deg, var(--futaba-border-strong) 63%, var(--futaba-border) 63%); }
+
+    .text-panel { display: none; margin-top: 7px; padding: 7px; border: 1px solid var(--futaba-border); border-radius: 10px; background: var(--futaba-panel-strong); }
+    .text-panel.open { display: block; }
+    textarea { width: 100%; min-height: 55px; resize: vertical; border: 1px solid var(--futaba-border); border-radius: 7px; background: var(--futaba-canvas); padding: 6px; }
+    .field { margin-top: 6px; }
+    .field label { display: block; margin-bottom: 2px; color: var(--futaba-muted); font-size: 10px; }
+    .field select, .field input { width: 100%; min-width: 0; height: 27px; border: 1px solid var(--futaba-border); border-radius: 6px; background: var(--futaba-canvas); padding: 0 5px; }
+    .inline-options { display: grid; grid-template-columns: 1fr auto; gap: 5px; align-items: end; }
+    .bold { min-height: 27px; border: 1px solid var(--futaba-border); border-radius: 6px; background: var(--futaba-canvas); }
+    .panel-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 7px; }
+    .panel-actions button { min-height: 28px; border: 1px solid var(--futaba-border-strong); border-radius: 7px; background: var(--futaba-canvas); }
+    .panel-actions .primary { color: var(--futaba-canvas); background: var(--futaba-border-strong); }
+
+    .flow {
+      margin: 14px 0 0;
+      padding: 9px;
+      border-radius: 10px;
+      color: var(--futaba-muted);
+      background: var(--futaba-panel-strong);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    @media (max-width: 900px) {
+      .fixture { width: min(680px, calc(100vw - 24px)); margin-top: 12px; }
+      .fixture > header { align-items: start; }
+      .variants { grid-template-columns: 1fr; gap: 12px; }
+      .variant { padding: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="fixture">
+    <header>
+      <div>
+        <h1>Phase 8q · QTP Text Entry / Panel Density Gate</h1>
+        <p class="lead">同じ136〜160px幅で、描画tool・pen設定・one-shot Textの意味順を比較する。productionのText Raster正本とhandlerは変更しない。</p>
+      </div>
+    </header>
+
+    <section class="variants" aria-label="Text入口三案比較">
+      <article class="variant">
+        <h2>A · Current full-width</h2>
+        <p class="verdict">明示性は高いが、toolとpen slotsの間を常時分断する。</p>
+        <div class="qtp">
+          <div class="qtp-head"><strong>Quick</strong><button class="close" type="button">×</button></div>
+          <p class="section-label">COLOR 1</p>
+          <div class="palette"><i class="swatch" style="--swatch:#8f110c"></i><i class="swatch" style="--swatch:#b5544e"></i><i class="swatch" style="--swatch:#cf8179"></i><i class="swatch" style="--swatch:#e2aea6"></i><i class="swatch" style="--swatch:#f3d9ce"></i><i class="swatch" style="--swatch:#fffdf0"></i></div>
+          <p class="section-label">pen</p>
+          <div class="tools"><button class="tool active">✎</button><button class="tool">◇</button><button class="tool">⁙</button><button class="tool">⌁</button><button class="tool">◯</button><button class="tool">□</button></div>
+          <button class="text-launcher" type="button"><span class="t-icon">T</span> TEXT TO RASTER</button>
+          <p class="section-label">pen slots</p>
+          <div class="slots"><i class="slot"></i><i class="slot"></i><i class="slot"></i><i class="slot"></i><i class="slot"></i><i class="slot"></i></div>
+          <div class="slider-row"><div class="slider-title">SIZE <b>10.0px</b></div><div class="slider"></div></div>
+          <div class="slider-row"><div class="slider-title">OPACITY <b>100%</b></div><div class="slider"></div></div>
+        </div>
+        <p class="flow">視線順: tool → Text → preset → SIZE / OPACITY。Textが継続toolのように強く見える。</p>
+      </article>
+
+      <article class="variant recommended">
+        <h2>B · Compact utility after OPACITY</h2>
+        <p class="verdict">第一案。描画設定を連続させ、Text詳細は必要時だけ開く。</p>
+        <div class="qtp">
+          <div class="qtp-head"><strong>Quick</strong><button class="close" type="button">×</button></div>
+          <p class="section-label">COLOR 1</p>
+          <div class="palette"><i class="swatch" style="--swatch:#8f110c"></i><i class="swatch" style="--swatch:#b5544e"></i><i class="swatch" style="--swatch:#cf8179"></i><i class="swatch" style="--swatch:#e2aea6"></i><i class="swatch" style="--swatch:#f3d9ce"></i><i class="swatch" style="--swatch:#fffdf0"></i></div>
+          <p class="section-label">pen</p>
+          <div class="tools"><button class="tool active">✎</button><button class="tool">◇</button><button class="tool">⁙</button><button class="tool">⌁</button><button class="tool">◯</button><button class="tool">□</button></div>
+          <p class="section-label">pen slots</p>
+          <div class="slots"><i class="slot"></i><i class="slot"></i><i class="slot"></i><i class="slot"></i><i class="slot"></i><i class="slot"></i></div>
+          <div class="slider-row"><div class="slider-title">SIZE <b>10.0px</b></div><div class="slider"></div></div>
+          <div class="slider-row"><div class="slider-title">OPACITY <b>100%</b></div><div class="slider"></div></div>
+          <button class="text-launcher compact" type="button" aria-expanded="true"><span class="t-icon">T</span> TEXT</button>
+          <div class="text-panel open">
+            <textarea aria-label="文字を入力" placeholder="文字を入力"></textarea>
+            <div class="field"><label>FONT</label><select><option>Sans</option></select></div>
+            <div class="inline-options"><div class="field"><label>SIZE</label><input value="48"></div><button class="bold" type="button">B</button></div>
+            <div class="panel-actions"><button type="button">CANCEL</button><button class="primary" type="button">RASTERIZE</button></div>
+          </div>
+        </div>
+        <p class="flow">視線順: tool → preset → SIZE / OPACITY → utility。FONT / SIZEを二段化し、将来affordanceの余白を残す。</p>
+      </article>
+
+      <article class="variant">
+        <h2>C · Text in tool grid</h2>
+        <p class="verdict">最小面積だが、one-shot Raster確定を継続描画toolと誤認しやすい。</p>
+        <div class="qtp">
+          <div class="qtp-head"><strong>Quick</strong><button class="close" type="button">×</button></div>
+          <p class="section-label">COLOR 1</p>
+          <div class="palette"><i class="swatch" style="--swatch:#8f110c"></i><i class="swatch" style="--swatch:#b5544e"></i><i class="swatch" style="--swatch:#cf8179"></i><i class="swatch" style="--swatch:#e2aea6"></i><i class="swatch" style="--swatch:#f3d9ce"></i><i class="swatch" style="--swatch:#fffdf0"></i></div>
+          <p class="section-label">pen</p>
+          <div class="tools"><button class="tool active">✎</button><button class="tool">◇</button><button class="tool">⁙</button><button class="tool">⌁</button><button class="tool">◯</button><button class="text-tool">T</button></div>
+          <p class="section-label">pen slots</p>
+          <div class="slots"><i class="slot"></i><i class="slot"></i><i class="slot"></i><i class="slot"></i><i class="slot"></i><i class="slot"></i></div>
+          <div class="slider-row"><div class="slider-title">SIZE <b>10.0px</b></div><div class="slider"></div></div>
+          <div class="slider-row"><div class="slider-title">OPACITY <b>100%</b></div><div class="slider"></div></div>
+        </div>
+        <p class="flow">面積は小さいが、active tool stateとText panel open stateの意味が衝突する。persistent Textまで保留。</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,1850 @@
+/**
+ * ============================================================================
+ * ファイル名: system/layer-transform.js
+ * 責務: レイヤーの変形（移動・回転・拡大縮小・反転）を管理する
+ * 依存: config.js, system/event-bus.js, coordinate-system.js, pixi.js
+ * 被依存: layer-system.js
+ * 公開API: LayerTransform
+ * イベント発火: layer:updated, layer:transform-updated, thumbnail:layer-updated
+ * イベント受信: keyboard:vkey-state-changed, layer:reset-transform
+ * グローバル登録: window.LayerTransform
+ * 実装状態: ✅完成/整備
+ * ============================================================================
+ */
+
+import * as PIXI from 'pixi.js';
+import { TEGAKI_CONFIG } from '../config.js';
+import { TegakiEventBus } from './event-bus.js';
+import { coordinateSystem } from '../coordinate-system.js';
+import {
+    applyTransformMatrix,
+    createCenteredTransformMatrix,
+    invertTransformMatrixPoint,
+    rebaseTransformAnchor,
+    resolveDirectionalTransformDragMode
+} from './transform-math.js';
+import {
+    createAxisScaleTransformFromScreenProjection,
+    createRotationTransformFromScreenAngleDelta,
+    createUniformScaleTransformFromScreenDistance,
+    normalizeScreenAngleDelta,
+    resolveScreenBasisCoordinates,
+    resolveTransformContentCenterAnchor
+} from './transform-overlay-geometry.js';
+import { transformAnchorSite } from '../ui/transform-anchor-site.js';
+import { layerTransformBasicOverlay } from '../ui/layer-transform-basic-overlay.js';
+
+// Canvas handleは一本線まで潰せるようにする。exact zeroだけを避け、slider / wheelの下限は変更しない。
+const BASIC_HANDLE_SCALE_EPSILON = 0.0001;
+
+export class LayerTransform {
+    constructor(config, coordAPI) {
+        this.config = config || TEGAKI_CONFIG;
+        this.coordAPI = coordAPI || coordinateSystem;
+        this.coordinateSystem = coordinateSystem;
+        
+        this.transforms = new Map();
+        this.isVKeyPressed = false;
+        this.isDragging = false;
+        this.dragPointerId = null;
+        this.isPanelDragging = false;
+        this.panelDragPointerId = null;
+        this.dragTransformMode = null;
+        this.dragLastPoint = { x: 0, y: 0 };
+        this.dragStartPoint = { x: 0, y: 0 };
+        this.panelDragOffset = { x: 0, y: 0 };
+        
+        this.transformPanel = null;
+        this.app = null;
+        this.cameraSystem = null;
+        this.eventBus = TegakiEventBus;
+        
+        this.onTransformComplete = null;
+        this.onTransformUpdate = null;
+        this.onFlipRequest = null;
+        this.onDragRequest = null;
+        this.onSliderChange = null;
+        this.onRebuildRequired = null;
+        this.onGetActiveLayer = null;
+        this.onCanEnterMoveMode = null;
+        this.onGetTransformWorldCorners = null;
+        this.onGetTransformSourceBounds = null;
+        this.onCommitTimelineKey = null;
+        this.onStepTimelineFrame = null;
+        this._editContextProjection = null;
+        this.basicOverlayScaleGesture = null;
+        this.basicOverlayAxisScaleGesture = null;
+        this.basicOverlayRotationGesture = null;
+        
+        this._lastEmitTime = 0;
+        this._emitTimer = null;
+        this._sliderInstances = new Map();
+        this._syncingLayerTransformPanel = false;
+        this._syncingSelectionPanel = false;
+    }
+
+    init(app, cameraSystem) {
+        this.app = app;
+        this.cameraSystem = cameraSystem;
+        this.coordinateSystem = coordinateSystem;
+        
+        this._setupTransformPanel();
+        this._setupDragEvents();
+        this._setupWheelEvents();
+        this._setupEventListeners();
+    }
+
+    setEditContextProjection(projection = null) {
+        this._editContextProjection = projection ? { ...projection } : null;
+        this._syncEditContextProjection();
+    }
+
+    _syncEditContextProjection() {
+        const note = typeof document !== 'undefined'
+            ? document.getElementById('layer-transform-context-note')
+            : null;
+        const projection = this._editContextProjection;
+        if (!note) return;
+        if (!projection?.label) {
+            note.classList.remove('show');
+            note.removeAttribute('data-context-state');
+        } else {
+            note.textContent = projection.label;
+            note.dataset.contextState = projection.state || 'source';
+            note.classList.toggle('show', this.isVKeyPressed);
+        }
+
+        const anchorButton = document.getElementById('layer-transform-anchor-btn');
+        const anchorEditable = projection?.allowAnchorEdit !== false;
+        anchorButton?.classList.toggle('is-context-disabled', !anchorEditable);
+        anchorButton?.setAttribute('aria-disabled', anchorEditable ? 'false' : 'true');
+        if (!anchorEditable) {
+            transformAnchorSite.setEditable('layer-transform', false);
+            anchorButton?.classList.remove('active');
+        }
+        this._syncTimelineKeyStrip(projection?.keyGuide || null);
+    }
+
+    _syncTimelineKeyStrip(keyGuide = null) {
+        const strip = typeof document !== 'undefined'
+            ? document.getElementById('layer-transform-key-strip')
+            : null;
+        if (!strip) return;
+        const visible = this.isVKeyPressed && keyGuide?.visible === true;
+        strip.hidden = !visible;
+        if (!visible) {
+            strip.removeAttribute('data-key-state');
+            return;
+        }
+
+        const pending = keyGuide.pending === true;
+        const keyed = keyGuide.hasExplicitKey === true;
+        const frameLabel = `F${Math.max(0, Number(keyGuide.timelineFrame) || 0) + 1}`;
+        const state = pending ? 'pending' : (keyed ? 'keyed' : 'ready');
+        strip.dataset.keyState = state;
+
+        const label = document.getElementById('layer-transform-key-state-label');
+        if (label) {
+            label.textContent = pending
+                ? `${frameLabel} · KEY確定`
+                : `${frameLabel} · ${keyed ? 'KEY設定済' : 'KEY未設定'}`;
+        }
+
+        const commitButton = document.getElementById('layer-transform-key-commit-btn');
+        if (commitButton) {
+            commitButton.disabled = !pending;
+            commitButton.setAttribute('aria-label', pending
+                ? `${frameLabel}の変形KEYを確定`
+                : `${frameLabel}は${keyed ? 'KEY設定済み' : 'KEY未設定'}`);
+        }
+        const prevButton = document.getElementById('layer-transform-key-prev-btn');
+        const nextButton = document.getElementById('layer-transform-key-next-btn');
+        if (prevButton) prevButton.disabled = pending || keyGuide.canMovePrevious !== true;
+        if (nextButton) nextButton.disabled = pending || keyGuide.canMoveNext !== true;
+        strip.title = pending
+            ? 'KEYを確定するとFrame移動できます'
+            : '左右ボタンまたはホイールでFrame移動';
+    }
+
+    _canEditTransformAnchor() {
+        return this._editContextProjection?.allowAnchorEdit !== false;
+    }
+
+    _setupEventListeners() {
+        if (!this.eventBus) return;
+        
+        this.eventBus.on('keyboard:vkey-state-changed', ({ pressed }) => {
+            if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) {
+                const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
+                this.exitMoveMode(activeLayer);
+                return;
+            }
+            if (pressed) {
+                if (this.onCanEnterMoveMode?.() === false) return;
+                this.enterMoveMode();
+            } else {
+                const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
+                this.exitMoveMode(activeLayer);
+            }
+        });
+        
+        this.eventBus.on('layer:reset-transform', () => {
+            if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) return;
+            transformAnchorSite.setEditable('layer-transform', false);
+            document.getElementById('layer-transform-anchor-btn')?.classList.remove('active');
+            const selectionApi = this._getSelectionTransformApi();
+            if (selectionApi?.getState?.()?.transformSessionActive) {
+                selectionApi.resetTransform?.();
+                this._updateSelectionTransformPanel();
+                return;
+            }
+            if (this.isVKeyPressed) {
+                this.resetTransform();
+                this._showAnchorSite(false);
+            }
+        });
+
+        this.eventBus.on('selection:transform-started', () => {
+            this.transformPanel?.classList.add('show');
+            this._updateSelectionTransformPanel();
+        });
+        this.eventBus.on('selection:transform-preview-updated', () => {
+            this._updateSelectionTransformPanel();
+        });
+        this.eventBus.on('selection:transform-ended', () => {
+            if (!this.isVKeyPressed) this.transformPanel?.classList.remove('show');
+            this._clearTransformPanelFlipState();
+        });
+    }
+
+    _getSelectionTransformApi() {
+        return window.CoreRuntime?.api?.selection || null;
+    }
+
+    _hasAnimationLayerContext() {
+        const animationTable = window.PopupManager?.get?.('animationTable')
+            || window.coreEngine?.popupManager?.get?.('animationTable');
+        return !!(
+            animationTable?.model &&
+            (
+                (animationTable.model.tracks?.length || 0) > 0 ||
+                (animationTable.model.clipAssets?.length || 0) > 0
+            )
+        );
+    }
+
+    _canTransformActiveAnimationWorkingLayer() {
+        const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
+        return activeLayer?.layerData?.isAnimationWorkingLayer === true;
+    }
+
+    enterMoveMode() {
+        if (this.isVKeyPressed) return;
+        
+        this.isVKeyPressed = true;
+        
+        if (this.cameraSystem?.setVKeyPressed) {
+            this.cameraSystem.setVKeyPressed(true);
+            this.cameraSystem.hideGuideLines();
+        }
+        
+        if (this.transformPanel) {
+            this.transformPanel.classList.add('show');
+        }
+        
+        this._updateCursor();
+        this._initializeTransformForActiveLayer();
+        this._showAnchorSite(false);
+        this.syncBasicOverlay();
+        this._syncEditContextProjection();
+    }
+    
+    exitMoveMode(activeLayer) {
+        if (!this.isVKeyPressed) return;
+        
+        this.isVKeyPressed = false;
+        this.isDragging = false;
+        this.basicOverlayScaleGesture = null;
+        this.basicOverlayAxisScaleGesture = null;
+        this.basicOverlayRotationGesture = null;
+        
+        if (this.cameraSystem?.setVKeyPressed) {
+            this.cameraSystem.setVKeyPressed(false);
+            this.cameraSystem.hideGuideLines();
+        }
+        
+        if (this.transformPanel) {
+            this.transformPanel.classList.remove('show');
+        }
+        transformAnchorSite.deactivate('layer-transform');
+        layerTransformBasicOverlay.deactivate();
+        document.getElementById('layer-transform-anchor-btn')?.classList.remove('active');
+        const contextNote = document.getElementById('layer-transform-context-note');
+        contextNote?.classList.remove('show');
+        contextNote?.removeAttribute('data-context-state');
+        
+        this._updateCursor();
+    }
+    
+    toggleMoveMode(activeLayer) {
+        if (this.isVKeyPressed) {
+            this.exitMoveMode(activeLayer);
+        } else {
+            this.enterMoveMode();
+        }
+    }
+    
+    _initializeTransformForActiveLayer() {
+        if (!this.onGetActiveLayer) return;
+        const activeLayer = this.onGetActiveLayer();
+        if (!activeLayer?.layerData) return;
+        
+        const layerId = activeLayer.layerData.id;
+        const current = this.transforms.get(layerId) || {
+            x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+        };
+        let initialized = current;
+        if (!Number.isFinite(current.anchorX) || !Number.isFinite(current.anchorY)) {
+            const anchor = this._getContentCenterAnchor() || { x: 0.5, y: 0.5 };
+            initialized = rebaseTransformAnchor(
+                current,
+                anchor.x,
+                anchor.y,
+                this.config.canvas.width,
+                this.config.canvas.height
+            );
+        }
+        this.transforms.set(layerId, initialized);
+        
+        this.updateTransformPanelValues(activeLayer);
+        this.updateFlipButtons(activeLayer);
+    }
+
+    resetTransform() {
+        if (!this.onGetActiveLayer) return;
+        const activeLayer = this.onGetActiveLayer();
+        if (!activeLayer?.layerData) return;
+        
+        const layerId = activeLayer.layerData.id;
+        const current = this.transforms.get(layerId) || {};
+        const anchor = this._canEditTransformAnchor()
+            ? (this._getContentCenterAnchor() || { x: 0.5, y: 0.5 })
+            : {
+                x: Number.isFinite(current.anchorX) ? current.anchorX : 0.5,
+                y: Number.isFinite(current.anchorY) ? current.anchorY : 0.5
+            };
+        const resetTransform = {
+            x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1,
+            anchorX: anchor.x, anchorY: anchor.y
+        };
+        this.transforms.set(layerId, resetTransform);
+        
+        activeLayer.position.set(0, 0);
+        activeLayer.rotation = 0;
+        activeLayer.scale.set(1, 1);
+        activeLayer.pivot.set(0, 0);
+        
+        this.updateTransformPanelValues(activeLayer);
+        this.updateFlipButtons(activeLayer);
+        this._emitTransformUpdated(layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, resetTransform);
+    }
+
+    updateTransform(layer, property, value) {
+        if (!layer?.layerData) return;
+        
+        const layerId = layer.layerData.id;
+        
+        if (!this.transforms.has(layerId)) {
+            this.transforms.set(layerId, {
+                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+            });
+        }
+        
+        const transform = this.transforms.get(layerId);
+        const centerX = this.config.canvas.width / 2;
+        const centerY = this.config.canvas.height / 2;
+        
+        switch(property) {
+            case 'x':
+                transform.x = Number(value) || 0;
+                break;
+            case 'y':
+                transform.y = Number(value) || 0;
+                break;
+            case 'rotation':
+                if (this.config.layer.rotationLoop) {
+                    const maxRot = this.config.layer.maxRotation * Math.PI / 180;
+                    let rot = Number(value) || 0;
+                    while (rot > maxRot) rot -= (maxRot * 2);
+                    while (rot < -maxRot) rot += (maxRot * 2);
+                    transform.rotation = rot;
+                } else {
+                    transform.rotation = Number(value) || 0;
+                }
+                break;
+            case 'scale':
+                const hFlipped = transform.scaleX < 0;
+                const vFlipped = transform.scaleY < 0;
+                const scaleVal = Math.max(this.config.layer.minScale, 
+                                         Math.min(this.config.layer.maxScale, Number(value)));
+                transform.scaleX = hFlipped ? -scaleVal : scaleVal;
+                transform.scaleY = vFlipped ? -scaleVal : scaleVal;
+                break;
+        }
+        
+        this.applyTransform(layer, transform, centerX, centerY);
+        this._emitTransformUpdated(layerId, layer);
+        
+        if (this.onTransformUpdate) {
+            this.onTransformUpdate(layer, transform);
+        }
+    }
+    
+    applyTransform(layer, transform, centerX, centerY) {
+        const pivotX = Number.isFinite(transform?.anchorX)
+            ? transform.anchorX * this.config.canvas.width
+            : centerX;
+        const pivotY = Number.isFinite(transform?.anchorY)
+            ? transform.anchorY * this.config.canvas.height
+            : centerY;
+        this._applyTransformDirect(layer, transform, pivotX, pivotY);
+    }
+    
+    _applyTransformDirect(layer, transform, centerX, centerY) {
+        const x = Number(transform.x) || 0;
+        const y = Number(transform.y) || 0;
+        const rotation = Number(transform.rotation) || 0;
+        const scaleX = Number(transform.scaleX) || 1;
+        const scaleY = Number(transform.scaleY) || 1;
+        
+        if (!isFinite(x) || !isFinite(y) || !isFinite(rotation) || 
+            !isFinite(scaleX) || !isFinite(scaleY)) {
+            return;
+        }
+        
+        if (rotation !== 0 || scaleX !== 1 || scaleY !== 1) {
+            layer.pivot.set(centerX, centerY);
+            layer.position.set(centerX + x, centerY + y);
+            layer.rotation = rotation;
+            layer.scale.set(scaleX, scaleY);
+        } else if (x !== 0 || y !== 0) {
+            layer.pivot.set(0, 0);
+            layer.position.set(x, y);
+            layer.rotation = 0;
+            layer.scale.set(1, 1);
+        } else {
+            layer.pivot.set(0, 0);
+            layer.position.set(0, 0);
+            layer.rotation = 0;
+            layer.scale.set(1, 1);
+        }
+    }
+
+    flipLayer(layer, direction, skipHistory = false) {
+        if (!layer?.layerData) return;
+        
+        const layerId = layer.layerData.id;
+        
+        if (!this.transforms.has(layerId)) {
+            this.transforms.set(layerId, {
+                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+            });
+        }
+        
+        const transform = this.transforms.get(layerId);
+        const centerX = this.config.canvas.width / 2;
+        const centerY = this.config.canvas.height / 2;
+        
+        if (direction === 'horizontal') {
+            transform.scaleX *= -1;
+        } else if (direction === 'vertical') {
+            transform.scaleY *= -1;
+        }
+        
+        this.applyTransform(layer, transform, centerX, centerY);
+        
+        this.updateFlipButtons(layer);
+        this._emitTransformUpdated(layerId, layer);
+        
+        if (this.onTransformUpdate) {
+            this.onTransformUpdate(layer, transform);
+        }
+    }
+
+    moveLayer(layer, direction, amount = 5) {
+        if (!layer?.layerData) return;
+        
+        const layerId = layer.layerData.id;
+        
+        if (!this.transforms.has(layerId)) {
+            this.transforms.set(layerId, {
+                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+            });
+        }
+        
+        const transform = this.transforms.get(layerId);
+        
+        switch(direction) {
+            case 'ArrowUp':    transform.y -= amount; break;
+            case 'ArrowDown':  transform.y += amount; break;
+            case 'ArrowLeft':  transform.x -= amount; break;
+            case 'ArrowRight': transform.x += amount; break;
+        }
+        
+        const centerX = this.config.canvas.width / 2;
+        const centerY = this.config.canvas.height / 2;
+        
+        this.applyTransform(layer, transform, centerX, centerY);
+        this.updateTransformPanelValues(layer);
+        this._emitTransformUpdated(layerId, layer);
+        
+        if (this.onTransformUpdate) {
+            this.onTransformUpdate(layer, transform);
+        }
+    }
+
+    scaleLayer(layer, keyCode) {
+        if (!layer?.layerData) return;
+        
+        const layerId = layer.layerData.id;
+        
+        if (!this.transforms.has(layerId)) {
+            this.transforms.set(layerId, {
+                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+            });
+        }
+        
+        const transform = this.transforms.get(layerId);
+        const centerX = this.config.canvas.width / 2;
+        const centerY = this.config.canvas.height / 2;
+        
+        let currentScale = Math.abs(transform.scaleX);
+        let newScale;
+        
+        if (keyCode === 'ArrowUp') {
+            newScale = Math.min(this.config.layer.maxScale, currentScale * 1.1);
+        } else if (keyCode === 'ArrowDown') {
+            newScale = Math.max(this.config.layer.minScale, currentScale * 0.9);
+        } else {
+            return;
+        }
+        
+        const hFlipped = transform.scaleX < 0;
+        const vFlipped = transform.scaleY < 0;
+        transform.scaleX = hFlipped ? -newScale : newScale;
+        transform.scaleY = vFlipped ? -newScale : newScale;
+        
+        this.applyTransform(layer, transform, centerX, centerY);
+        this.updateTransformPanelValues(layer);
+        this._emitTransformUpdated(layerId, layer);
+        
+        if (this.onTransformUpdate) {
+            this.onTransformUpdate(layer, transform);
+        }
+    }
+
+    rotateLayer(layer, keyCode) {
+        if (!layer?.layerData) return;
+        
+        const layerId = layer.layerData.id;
+        
+        if (!this.transforms.has(layerId)) {
+            this.transforms.set(layerId, {
+                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+            });
+        }
+        
+        const transform = this.transforms.get(layerId);
+        const centerX = this.config.canvas.width / 2;
+        const centerY = this.config.canvas.height / 2;
+        
+        const rotationAmount = (15 * Math.PI) / 180;
+        
+        if (keyCode === 'ArrowLeft') {
+            transform.rotation -= rotationAmount;
+        } else if (keyCode === 'ArrowRight') {
+            transform.rotation += rotationAmount;
+        } else {
+            return;
+        }
+        
+        if (this.config.layer.rotationLoop) {
+            const maxRot = (this.config.layer.maxRotation || 360) * Math.PI / 180;
+            while (transform.rotation > maxRot) transform.rotation -= (maxRot * 2);
+            while (transform.rotation < -maxRot) transform.rotation += (maxRot * 2);
+        }
+        
+        this.applyTransform(layer, transform, centerX, centerY);
+        this.updateTransformPanelValues(layer);
+        this._emitTransformUpdated(layerId, layer);
+        
+        if (this.onTransformUpdate) {
+            this.onTransformUpdate(layer, transform);
+        }
+    }
+
+    confirmTransform(layer, skipHistory = false) {
+        if (!layer?.layerData) return false;
+        
+        const layerId = layer.layerData.id;
+        const transform = this.transforms.get(layerId);
+        
+        if (!this._isTransformNonDefault(transform)) {
+            return false;
+        }
+        
+        const pathsBackup = structuredClone(layer.layerData.paths);
+        const success = this.applyTransformToPaths(layer, transform);
+        
+        if (!success) return false;
+        
+        layer.position.set(0, 0);
+        layer.rotation = 0;
+        layer.scale.set(1, 1);
+        layer.pivot.set(0, 0);
+        
+        this.transforms.set(layerId, {
+            x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+        });
+        
+        if (this.onRebuildRequired) {
+            this.onRebuildRequired(layer, layer.layerData.paths);
+        }
+        
+        if (!skipHistory && this.onTransformComplete) {
+            this.onTransformComplete(layer, pathsBackup);
+        }
+        
+        this.updateFlipButtons(layer);
+        
+        if (this.eventBus) {
+            const layerMgr = window.layerManager;
+            if (layerMgr) {
+                const layerIndex = layerMgr.getLayerIndex(layer);
+                
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    layerIndex,
+                    layerId
+                });
+                
+                this._lastEmitTime = performance.now();
+            }
+        }
+        
+        return true;
+    }
+    
+    applyTransformToPaths(layer, transform) {
+        if (!layer.layerData?.paths || layer.layerData.paths.length === 0) {
+            return true;
+        }
+        
+        try {
+            const centerX = this.config.canvas.width / 2;
+            const centerY = this.config.canvas.height / 2;
+            
+            const matrix = this._createTransformMatrix(transform, centerX, centerY);
+            const transformedPaths = [];
+            
+            for (let path of layer.layerData.paths) {
+                if (!path?.points || !Array.isArray(path.points) || path.points.length === 0) {
+                    continue;
+                }
+                
+                const transformedPoints = this._transformPoints(path.points, matrix);
+                
+                if (transformedPoints.length === 0) {
+                    continue;
+                }
+                
+                transformedPaths.push({
+                    id: path.id,
+                    points: transformedPoints,
+                    color: path.color,
+                    size: path.size,
+                    opacity: path.opacity,
+                    tool: path.tool,
+                    isComplete: path.isComplete || true,
+                    strokeOptions: path.strokeOptions,
+                    graphics: null
+                });
+            }
+            
+            layer.layerData.paths = transformedPaths;
+            return true;
+            
+        } catch (error) {
+            return false;
+        }
+    }
+
+    _createTransformMatrix(transform, centerX, centerY) {
+        return createCenteredTransformMatrix(transform, centerX, centerY);
+    }
+    
+    _transformPoints(points, matrix) {
+        return points.map(p => {
+            const localX = Number(p.localX) || (Number(p.x) || 0);
+            const localY = Number(p.localY) || (Number(p.y) || 0);
+            
+            return {
+                localX: matrix.a * localX + matrix.c * localY + matrix.tx,
+                localY: matrix.b * localX + matrix.d * localY + matrix.ty,
+                pressure: p.pressure || 0.5,
+                timestamp: p.timestamp || 0
+            };
+        });
+    }
+    
+    _isTransformNonDefault(transform) {
+        if (!transform) return false;
+        return (
+            Math.abs(transform.x) > 0.01 ||
+            Math.abs(transform.y) > 0.01 ||
+            Math.abs(transform.rotation) > 0.001 ||
+            Math.abs(transform.scaleX - 1) > 0.01 ||
+            Math.abs(transform.scaleY - 1) > 0.01
+        );
+    }
+    
+    _setupTransformPanel() {
+        this.transformPanel = document.getElementById('layer-transform-panel');
+        
+        if (!this.transformPanel) return;
+        
+        if (!window.TegakiUI?.SliderUtils) {
+            return;
+        }
+        
+        this._setupSlider('layer-x-slider', 'x', 
+            this.config.layer.minX, this.config.layer.maxX, 0,
+            (value) => Math.round(value) + 'px');
+        
+        this._setupSlider('layer-y-slider', 'y',
+            this.config.layer.minY, this.config.layer.maxY, 0,
+            (value) => Math.round(value) + 'px');
+        
+        this._setupSlider('layer-rotation-slider', 'rotation',
+            this.config.layer.minRotation, this.config.layer.maxRotation, 0,
+            (value) => Math.round(value) + '°');
+        
+        this._setupSlider('layer-scale-slider', 'scale',
+            this.config.layer.minScale, this.config.layer.maxScale, 1.0,
+            (value) => value.toFixed(2) + 'x');
+        
+        const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
+        const flipVerticalBtn = document.getElementById('flip-vertical-btn');
+        const anchorBtn = document.getElementById('layer-transform-anchor-btn');
+        
+        if (flipHorizontalBtn) {
+            flipHorizontalBtn.removeAttribute('disabled');
+        }
+        
+        if (flipVerticalBtn) {
+            flipVerticalBtn.removeAttribute('disabled');
+        }
+        anchorBtn?.addEventListener('click', event => {
+            if (event.detail > 1) return;
+            this._toggleAnchorSite();
+        });
+        anchorBtn?.addEventListener('dblclick', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!this._canEditTransformAnchor()) return;
+            if (this._resetAnchorToContentCenter()) {
+                transformAnchorSite.setEditable('layer-transform', true);
+                anchorBtn.classList.add('active');
+            }
+        });
+
+        const keyStrip = document.getElementById('layer-transform-key-strip');
+        const keyCommitButton = document.getElementById('layer-transform-key-commit-btn');
+        const keyPrevButton = document.getElementById('layer-transform-key-prev-btn');
+        const keyNextButton = document.getElementById('layer-transform-key-next-btn');
+        keyCommitButton?.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (keyCommitButton.disabled) return;
+            this.onCommitTimelineKey?.();
+        });
+        keyPrevButton?.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (keyPrevButton.disabled) return;
+            this.onStepTimelineFrame?.(-1);
+        });
+        keyNextButton?.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (keyNextButton.disabled) return;
+            this.onStepTimelineFrame?.(1);
+        });
+        keyStrip?.addEventListener('wheel', event => {
+            if (keyStrip.hidden || Math.abs(event.deltaY) < 0.01) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const stepButton = event.deltaY < 0 ? keyPrevButton : keyNextButton;
+            if (stepButton?.disabled) return;
+            this.onStepTimelineFrame?.(event.deltaY < 0 ? -1 : 1);
+        }, { passive: false });
+        
+        this._setupPanelDrag();
+    }
+
+    _toggleAnchorSite() {
+        if (!this._canEditTransformAnchor()) return false;
+        const button = document.getElementById('layer-transform-anchor-btn');
+        if (transformAnchorSite.isActive('layer-transform')) {
+            const editable = !transformAnchorSite.isEditable('layer-transform');
+            transformAnchorSite.setEditable('layer-transform', editable);
+            button?.classList.toggle('active', editable);
+            return editable;
+        }
+        return this._showAnchorSite(true);
+    }
+
+    _showAnchorSite(editable = false) {
+        const button = document.getElementById('layer-transform-anchor-btn');
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!this.isVKeyPressed || !activeLayer?.layerData) return false;
+        const layerId = activeLayer.layerData.id;
+        const transform = this.transforms.get(layerId) || {
+            x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, anchorX: 0.5, anchorY: 0.5
+        };
+        if (!Number.isFinite(transform.anchorX)) transform.anchorX = 0.5;
+        if (!Number.isFinite(transform.anchorY)) transform.anchorY = 0.5;
+        this.transforms.set(layerId, transform);
+        const getCurrentTransform = () => {
+            const current = this.transforms.get(layerId) || transform;
+            if (!Number.isFinite(current.anchorX)) current.anchorX = 0.5;
+            if (!Number.isFinite(current.anchorY)) current.anchorY = 0.5;
+            return current;
+        };
+        const activated = transformAnchorSite.activate('layer-transform', {
+            editable: editable === true,
+            hint: '中心をドラッグ / 上の中心ボタンをダブルクリック',
+            coordinateSystem: this.coordinateSystem,
+            width: this.config.canvas.width,
+            height: this.config.canvas.height,
+            getAnchor: () => {
+                const current = getCurrentTransform();
+                return { x: current.anchorX, y: current.anchorY };
+            },
+            getWorldPosition: anchor => {
+                const current = getCurrentTransform();
+                const matrix = createCenteredTransformMatrix(
+                    current,
+                    this.config.canvas.width / 2,
+                    this.config.canvas.height / 2
+                );
+                return applyTransformMatrix(
+                    matrix,
+                    anchor.x * this.config.canvas.width,
+                    anchor.y * this.config.canvas.height
+                );
+            },
+            worldToAnchor: point => {
+                const current = getCurrentTransform();
+                const matrix = createCenteredTransformMatrix(
+                    current,
+                    this.config.canvas.width / 2,
+                    this.config.canvas.height / 2
+                );
+                const local = invertTransformMatrixPoint(matrix, point.worldX, point.worldY);
+                return local ? {
+                    x: local.x / this.config.canvas.width,
+                    y: local.y / this.config.canvas.height
+                } : { x: current.anchorX, y: current.anchorY };
+            },
+            onChange: anchor => {
+                const current = getCurrentTransform();
+                const rebased = rebaseTransformAnchor(
+                    current,
+                    anchor.x,
+                    anchor.y,
+                    this.config.canvas.width,
+                    this.config.canvas.height
+                );
+                this.transforms.set(layerId, rebased);
+                this.applyTransform(activeLayer, rebased, this.config.canvas.width / 2, this.config.canvas.height / 2);
+                this.updateTransformPanelValues(activeLayer);
+                this._emitTransformUpdated(layerId, activeLayer);
+                this.onTransformUpdate?.(activeLayer, rebased);
+            }
+        });
+        if (activated) {
+            this.cameraSystem?.hideGuideLines?.();
+            transformAnchorSite.setEditable('layer-transform', editable);
+        }
+        button?.classList.toggle('active', activated && editable);
+        return activated;
+    }
+
+    _resetAnchorToContentCenter() {
+        if (!this._canEditTransformAnchor()) return false;
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!this.isVKeyPressed || !activeLayer?.layerData) return false;
+        const anchor = this._getContentCenterAnchor();
+        if (!anchor) return false;
+
+        const layerId = activeLayer.layerData.id;
+        const current = this.transforms.get(layerId) || {
+            x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, anchorX: 0.5, anchorY: 0.5
+        };
+        const next = rebaseTransformAnchor(
+            current,
+            anchor.x,
+            anchor.y,
+            this.config.canvas.width,
+            this.config.canvas.height
+        );
+        this.transforms.set(layerId, next);
+        this.applyTransform(activeLayer, next, this.config.canvas.width / 2, this.config.canvas.height / 2);
+        this.updateTransformPanelValues(activeLayer);
+        this._emitTransformUpdated(layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, next);
+        return true;
+    }
+
+    _getContentCenterAnchor() {
+        return resolveTransformContentCenterAnchor(
+            this.onGetTransformSourceBounds?.(),
+            { width: this.config.canvas.width, height: this.config.canvas.height }
+        );
+    }
+
+    syncBasicOverlay() {
+        if (!this.isVKeyPressed || typeof this.onGetTransformWorldCorners !== 'function') {
+            layerTransformBasicOverlay.deactivate();
+            return false;
+        }
+        return layerTransformBasicOverlay.activate({
+            coordinateSystem: this.coordinateSystem,
+            getWorldCorners: () => this.onGetTransformWorldCorners?.() || [],
+            shouldDisplay: () => this.isVKeyPressed,
+            onUniformScaleStart: gesture => this._startBasicUniformScaleGesture(gesture),
+            onUniformScaleMove: gesture => this._updateBasicUniformScaleGesture(gesture),
+            onUniformScaleEnd: gesture => this._finishBasicUniformScaleGesture(gesture),
+            onAxisScaleStart: gesture => this._startBasicAxisScaleGesture(gesture),
+            onAxisScaleMove: gesture => this._updateBasicAxisScaleGesture(gesture),
+            onAxisScaleEnd: gesture => this._finishBasicAxisScaleGesture(gesture),
+            onRotationStart: gesture => this._startBasicRotationGesture(gesture),
+            onRotationMove: gesture => this._updateBasicRotationGesture(gesture),
+            onRotationEnd: gesture => this._finishBasicRotationGesture(gesture)
+        });
+    }
+
+    _getBasicTransformAnchorScreenPosition(transform) {
+        const anchorX = Number.isFinite(transform?.anchorX) ? transform.anchorX : 0.5;
+        const anchorY = Number.isFinite(transform?.anchorY) ? transform.anchorY : 0.5;
+        const matrix = createCenteredTransformMatrix(
+            transform || {},
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        const world = applyTransformMatrix(
+            matrix,
+            anchorX * this.config.canvas.width,
+            anchorY * this.config.canvas.height
+        );
+        const screen = this.coordinateSystem.worldToScreenImmediate?.(world.x, world.y)
+            || this.coordinateSystem.worldToScreen?.(world.x, world.y);
+        if (!screen || !Number.isFinite(screen.clientX) || !Number.isFinite(screen.clientY)) {
+            return null;
+        }
+        const worldXAxis = this.coordinateSystem.worldToScreenImmediate?.(world.x + 1, world.y)
+            || this.coordinateSystem.worldToScreen?.(world.x + 1, world.y);
+        const worldYAxis = this.coordinateSystem.worldToScreenImmediate?.(world.x, world.y + 1)
+            || this.coordinateSystem.worldToScreen?.(world.x, world.y + 1);
+        const determinant = worldXAxis && worldYAxis
+            ? (worldXAxis.clientX - screen.clientX) * (worldYAxis.clientY - screen.clientY)
+                - (worldXAxis.clientY - screen.clientY) * (worldYAxis.clientX - screen.clientX)
+            : 1;
+        return {
+            x: screen.clientX,
+            y: screen.clientY,
+            orientation: Number.isFinite(determinant) && determinant < 0 ? -1 : 1
+        };
+    }
+
+    _startBasicUniformScaleGesture(gesture) {
+        if (!this.isVKeyPressed
+            || this.basicOverlayScaleGesture
+            || this.basicOverlayAxisScaleGesture
+            || this.basicOverlayRotationGesture) return false;
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData) return false;
+        const layerId = activeLayer.layerData.id;
+        const transform = this.transforms.get(layerId);
+        if (!transform) return false;
+        const anchorScreen = this._getBasicTransformAnchorScreenPosition(transform);
+        if (!anchorScreen) return false;
+        const geometry = layerTransformBasicOverlay.getScreenGeometry();
+        const handlePoint = geometry?.corners?.[gesture.cornerIndex];
+        if (!handlePoint) return false;
+        const startVector = {
+            x: handlePoint.x - anchorScreen.x,
+            y: handlePoint.y - anchorScreen.y
+        };
+        const startDistance = Math.hypot(
+            startVector.x,
+            startVector.y
+        );
+        if (!Number.isFinite(startDistance) || startDistance < 1) return false;
+
+        this.basicOverlayScaleGesture = {
+            pointerId: gesture.pointerId,
+            layerId,
+            startTransform: { ...transform },
+            anchorScreen,
+            startDistance,
+            startVector,
+            startPointer: {
+                x: Number(gesture.clientX),
+                y: Number(gesture.clientY)
+            }
+        };
+        this.cameraSystem?.hideGuideLines?.();
+        return true;
+    }
+
+    _updateBasicUniformScaleGesture(gesture) {
+        const state = this.basicOverlayScaleGesture;
+        if (!state || state.pointerId !== gesture.pointerId || !this.isVKeyPressed) return false;
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData || activeLayer.layerData.id !== state.layerId) return false;
+        const currentVector = {
+            x: state.startVector.x + Number(gesture.clientX) - state.startPointer.x,
+            y: state.startVector.y + Number(gesture.clientY) - state.startPointer.y
+        };
+        const currentDistance = Math.hypot(currentVector.x, currentVector.y);
+        const direction = state.startVector.x * currentVector.x
+            + state.startVector.y * currentVector.y < 0
+            ? -1
+            : 1;
+        const next = createUniformScaleTransformFromScreenDistance(
+            state.startTransform,
+            state.startDistance,
+            currentDistance,
+            {
+                minScale: BASIC_HANDLE_SCALE_EPSILON,
+                maxScale: this.config.layer.maxScale,
+                direction
+            }
+        );
+        this.transforms.set(state.layerId, next);
+        this.applyTransform(
+            activeLayer,
+            next,
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        this.updateTransformPanelValues(activeLayer);
+        this.updateFlipButtons(activeLayer);
+        this._emitTransformUpdated(state.layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, next);
+        return true;
+    }
+
+    _finishBasicUniformScaleGesture(gesture) {
+        const state = this.basicOverlayScaleGesture;
+        if (!state || state.pointerId !== gesture.pointerId) return false;
+        this.basicOverlayScaleGesture = null;
+        if (gesture.cancelled !== true) return true;
+
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData || activeLayer.layerData.id !== state.layerId) return false;
+        const restored = { ...state.startTransform };
+        this.transforms.set(state.layerId, restored);
+        this.applyTransform(
+            activeLayer,
+            restored,
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        this.updateTransformPanelValues(activeLayer);
+        this.updateFlipButtons(activeLayer);
+        this._emitTransformUpdated(state.layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, restored);
+        return true;
+    }
+
+    _startBasicAxisScaleGesture(gesture) {
+        if (!this.isVKeyPressed
+            || this.basicOverlayScaleGesture
+            || this.basicOverlayAxisScaleGesture
+            || this.basicOverlayRotationGesture
+            || (gesture.axis !== 'x' && gesture.axis !== 'y')) return false;
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData) return false;
+        const layerId = activeLayer.layerData.id;
+        const transform = this.transforms.get(layerId);
+        if (!transform) return false;
+        const anchorScreen = this._getBasicTransformAnchorScreenPosition(transform);
+        const geometry = layerTransformBasicOverlay.getScreenGeometry();
+        if (!anchorScreen || !geometry?.corners?.length) return false;
+        const xAxis = {
+            x: geometry.corners[1].x - geometry.corners[0].x,
+            y: geometry.corners[1].y - geometry.corners[0].y
+        };
+        const yAxis = {
+            x: geometry.corners[3].x - geometry.corners[0].x,
+            y: geometry.corners[3].y - geometry.corners[0].y
+        };
+        const handlePoint = geometry.sideMidpoints?.[gesture.sideIndex];
+        const handleCoordinates = resolveScreenBasisCoordinates(
+            anchorScreen,
+            handlePoint,
+            xAxis,
+            yAxis
+        );
+        const pointerCoordinates = resolveScreenBasisCoordinates(
+            anchorScreen,
+            { x: Number(gesture.clientX), y: Number(gesture.clientY) },
+            xAxis,
+            yAxis
+        );
+        const startProjection = handleCoordinates?.[gesture.axis];
+        const startPointerProjection = pointerCoordinates?.[gesture.axis];
+        if (!Number.isFinite(startProjection) || Math.abs(startProjection) < 0.000001) return false;
+        if (!Number.isFinite(startPointerProjection)) return false;
+
+        this.basicOverlayAxisScaleGesture = {
+            pointerId: gesture.pointerId,
+            layerId,
+            axis: gesture.axis,
+            startTransform: { ...transform },
+            anchorScreen,
+            xAxis,
+            yAxis,
+            startProjection,
+            startPointerProjection
+        };
+        this.cameraSystem?.hideGuideLines?.();
+        return true;
+    }
+
+    _updateBasicAxisScaleGesture(gesture) {
+        const state = this.basicOverlayAxisScaleGesture;
+        if (!state || state.pointerId !== gesture.pointerId || !this.isVKeyPressed) return false;
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData || activeLayer.layerData.id !== state.layerId) return false;
+        const coordinates = resolveScreenBasisCoordinates(
+            state.anchorScreen,
+            { x: Number(gesture.clientX), y: Number(gesture.clientY) },
+            state.xAxis,
+            state.yAxis
+        );
+        if (!coordinates) return false;
+        const currentProjection = state.startProjection
+            + coordinates[state.axis]
+            - state.startPointerProjection;
+        const next = createAxisScaleTransformFromScreenProjection(
+            state.startTransform,
+            state.axis,
+            state.startProjection,
+            currentProjection,
+            {
+                minScale: BASIC_HANDLE_SCALE_EPSILON,
+                maxScale: this.config.layer.maxScale
+            }
+        );
+        this.transforms.set(state.layerId, next);
+        this.applyTransform(
+            activeLayer,
+            next,
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        this.updateTransformPanelValues(activeLayer);
+        this.updateFlipButtons(activeLayer);
+        this._emitTransformUpdated(state.layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, next);
+        return true;
+    }
+
+    _finishBasicAxisScaleGesture(gesture) {
+        const state = this.basicOverlayAxisScaleGesture;
+        if (!state || state.pointerId !== gesture.pointerId) return false;
+        this.basicOverlayAxisScaleGesture = null;
+        if (gesture.cancelled !== true) return true;
+
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData || activeLayer.layerData.id !== state.layerId) return false;
+        const restored = { ...state.startTransform };
+        this.transforms.set(state.layerId, restored);
+        this.applyTransform(
+            activeLayer,
+            restored,
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        this.updateTransformPanelValues(activeLayer);
+        this.updateFlipButtons(activeLayer);
+        this._emitTransformUpdated(state.layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, restored);
+        return true;
+    }
+
+    _startBasicRotationGesture(gesture) {
+        if (!this.isVKeyPressed
+            || this.basicOverlayScaleGesture
+            || this.basicOverlayAxisScaleGesture
+            || this.basicOverlayRotationGesture) return false;
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData) return false;
+        const layerId = activeLayer.layerData.id;
+        const transform = this.transforms.get(layerId);
+        if (!transform) return false;
+        const anchorScreen = this._getBasicTransformAnchorScreenPosition(transform);
+        if (!anchorScreen) return false;
+        const dx = Number(gesture.clientX) - anchorScreen.x;
+        const dy = Number(gesture.clientY) - anchorScreen.y;
+        if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.hypot(dx, dy) < 1) return false;
+
+        this.basicOverlayRotationGesture = {
+            pointerId: gesture.pointerId,
+            layerId,
+            startTransform: { ...transform },
+            anchorScreen,
+            lastPointerAngle: Math.atan2(dy, dx),
+            screenAngleDelta: 0
+        };
+        this.cameraSystem?.hideGuideLines?.();
+        return true;
+    }
+
+    _updateBasicRotationGesture(gesture) {
+        const state = this.basicOverlayRotationGesture;
+        if (!state || state.pointerId !== gesture.pointerId || !this.isVKeyPressed) return false;
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData || activeLayer.layerData.id !== state.layerId) return false;
+        const dx = Number(gesture.clientX) - state.anchorScreen.x;
+        const dy = Number(gesture.clientY) - state.anchorScreen.y;
+        if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.hypot(dx, dy) < 1) return false;
+        const currentPointerAngle = Math.atan2(dy, dx);
+        state.screenAngleDelta += normalizeScreenAngleDelta(
+            state.lastPointerAngle,
+            currentPointerAngle
+        );
+        state.lastPointerAngle = currentPointerAngle;
+        const next = createRotationTransformFromScreenAngleDelta(
+            state.startTransform,
+            state.screenAngleDelta,
+            {
+                direction: state.anchorScreen.orientation,
+                rotationLoop: this.config.layer.rotationLoop,
+                minRotation: this.config.layer.minRotation * Math.PI / 180,
+                maxRotation: this.config.layer.maxRotation * Math.PI / 180
+            }
+        );
+        this.transforms.set(state.layerId, next);
+        this.applyTransform(
+            activeLayer,
+            next,
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        this.updateTransformPanelValues(activeLayer);
+        this._emitTransformUpdated(state.layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, next);
+        return true;
+    }
+
+    _finishBasicRotationGesture(gesture) {
+        const state = this.basicOverlayRotationGesture;
+        if (!state || state.pointerId !== gesture.pointerId) return false;
+        this.basicOverlayRotationGesture = null;
+        if (gesture.cancelled !== true) return true;
+
+        const activeLayer = this.onGetActiveLayer?.();
+        if (!activeLayer?.layerData || activeLayer.layerData.id !== state.layerId) return false;
+        const restored = { ...state.startTransform };
+        this.transforms.set(state.layerId, restored);
+        this.applyTransform(
+            activeLayer,
+            restored,
+            this.config.canvas.width / 2,
+            this.config.canvas.height / 2
+        );
+        this.updateTransformPanelValues(activeLayer);
+        this._emitTransformUpdated(state.layerId, activeLayer);
+        this.onTransformUpdate?.(activeLayer, restored);
+        return true;
+    }
+
+    _setupSlider(sliderId, property, min, max, initial, formatCallback) {
+        const container = document.getElementById(sliderId);
+        if (!container) return;
+
+        const sliderInstance = window.TegakiUI.SliderUtils.createSlider({
+            container: sliderId,
+            min: min,
+            max: max,
+            initial: initial,
+            momentum: false,
+            onChange: (value) => {
+                if (this._syncingLayerTransformPanel) return;
+                if (property === 'rotation' && this.config.layer.rotationLoop) {
+                    while (value > max) value -= (max - min);
+                    while (value < min) value += (max - min);
+                }
+                
+                const selectionApi = this._getSelectionTransformApi();
+                if (selectionApi?.getState?.()?.transformSessionActive) {
+                    if (this._syncingSelectionPanel) return;
+                    const transformValue = property === 'rotation'
+                        ? (value * Math.PI / 180)
+                        : value;
+                    selectionApi.updateTransform?.(property, transformValue);
+                    return;
+                }
+                const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
+                if (activeLayer) {
+                    const transformValue = property === 'rotation' 
+                        ? (value * Math.PI / 180)
+                        : value;
+                    this.updateTransform(activeLayer, property, transformValue);
+                }
+            },
+            format: formatCallback
+        });
+
+        if (sliderInstance) {
+            this._sliderInstances.set(sliderId, sliderInstance);
+            
+            // [指示書] 数値部分のダブルクリックで直接入力
+            const valueDisplay = container.parentNode?.querySelector('.slider-value');
+            if (valueDisplay) {
+                valueDisplay.dataset.tooltip = 'ダブルクリックで数値を直接入力';
+                valueDisplay.classList.add('ui-help-tooltip');
+                valueDisplay.addEventListener('dblclick', (e) => {
+                    this._showDirectInput(valueDisplay, sliderInstance, property, min, max);
+                });
+            }
+        }
+    }
+
+    _showDirectInput(displayEl, slider, property, min, max) {
+        const currentVal = slider.getValue();
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.value = currentVal;
+        input.step = property === 'scale' ? '0.01' : '1';
+        input.className = 'layer-transform-value-input';
+        const inputShell = document.createElement('span');
+        inputShell.className = 'layer-transform-value-input-shell';
+        const stepper = document.createElement('span');
+        stepper.className = 'layer-transform-value-stepper';
+        const createStepButton = (label, direction) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'layer-transform-value-step-btn';
+            button.textContent = label;
+            button.title = direction > 0 ? '値を増やす' : '値を減らす';
+            button.addEventListener('pointerdown', event => event.preventDefault());
+            button.addEventListener('click', () => {
+                try {
+                    if (direction > 0) input.stepUp();
+                    else input.stepDown();
+                } catch (_error) {}
+                input.focus();
+                input.select();
+            });
+            return button;
+        };
+        stepper.append(
+            createStepButton('▲', 1),
+            createStepButton('▼', -1)
+        );
+        inputShell.append(input, stepper);
+        
+        const originalDisplay = displayEl.textContent;
+        displayEl.textContent = '';
+        displayEl.appendChild(inputShell);
+        input.focus();
+        input.select();
+
+        let isFinished = false;
+        const finish = () => {
+            if (isFinished) return;
+            isFinished = true;
+            const val = parseFloat(input.value);
+            if (inputShell.parentNode === displayEl) {
+                displayEl.removeChild(inputShell);
+            }
+            if (!isNaN(val)) {
+                const clamped = Math.max(min, Math.min(max, val));
+                slider.setValue(clamped);
+                // onChange が自動で呼ばれる
+            } else {
+                displayEl.textContent = originalDisplay;
+                slider.updateDisplay?.();
+            }
+        };
+
+        input.addEventListener('blur', finish);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') finish();
+            if (e.key === 'Escape') {
+                if (isFinished) return;
+                isFinished = true;
+                if (inputShell.parentNode === displayEl) {
+                    displayEl.removeChild(inputShell);
+                }
+                displayEl.textContent = originalDisplay;
+                slider.updateDisplay?.();
+            }
+        });
+    }
+
+    _setupDragEvents() {
+        const canvas = this._getSafeCanvas();
+        if (!canvas) return;
+        
+        canvas.addEventListener('pointerdown', (e) => {
+            if (this.isVKeyPressed && e.button === 0) {
+                if (!this.coordinateSystem) return;
+                
+                const world = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);
+                
+                this.isDragging = true;
+                this.dragPointerId = e.pointerId;
+                this.dragStartPoint = { x: world.worldX, y: world.worldY };
+                this.dragLastPoint = { x: world.worldX, y: world.worldY };
+                this.dragTransformMode = null;
+                canvas.style.cursor = 'move';
+                try {
+                    canvas.setPointerCapture?.(e.pointerId);
+                } catch (error) {}
+                e.preventDefault();
+            }
+        });
+        
+        canvas.addEventListener('pointermove', (e) => {
+            if (this.dragPointerId !== null && e.pointerId !== this.dragPointerId) return;
+            if (this.isDragging && this.isVKeyPressed) {
+                this._handleDrag(e);
+            }
+        });
+        
+        canvas.addEventListener('pointerup', (e) => {
+            this._finishCanvasDrag(canvas, e.pointerId);
+        });
+
+        canvas.addEventListener('pointercancel', (e) => {
+            this._finishCanvasDrag(canvas, e.pointerId);
+        });
+    }
+
+    _finishCanvasDrag(canvas, pointerId) {
+        if (this.dragPointerId !== null && pointerId !== this.dragPointerId) return;
+        this.isDragging = false;
+        this.dragTransformMode = null;
+        try {
+            canvas.releasePointerCapture?.(pointerId);
+        } catch (error) {}
+        this.dragPointerId = null;
+        this._updateCursor();
+    }
+
+    _setupPanelDrag() {
+        if (!this.transformPanel) return;
+        
+        const dragSurface = this.transformPanel;
+        dragSurface.style.cursor = 'grab';
+        dragSurface.style.touchAction = 'none';
+
+        if (!dragSurface._tegakiContextMenuGuard) {
+            dragSurface.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            dragSurface._tegakiContextMenuGuard = true;
+        }
+        
+        dragSurface.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            if (e.target.closest('.slider-container') || 
+                e.target.closest('.slider') ||
+                e.target.closest('.slider-track') ||
+                e.target.closest('.slider-handle') ||
+                e.target.closest('.slider-value') ||
+                e.target.closest('input') ||
+                e.target.closest('.flip-button') ||
+                e.target.closest('button') ||
+                e.target.closest('summary')) {
+                return;
+            }
+            
+            this.isPanelDragging = true;
+            this.panelDragPointerId = e.pointerId;
+            dragSurface.style.cursor = 'grabbing';
+            
+            const rect = this.transformPanel.getBoundingClientRect();
+            this.panelDragOffset = {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+            
+            if (dragSurface.setPointerCapture) {
+                try {
+                    dragSurface.setPointerCapture(e.pointerId);
+                } catch (err) {}
+            }
+            
+            e.preventDefault();
+            e.stopPropagation();
+        }, { passive: false });
+        
+        document.addEventListener('pointermove', (e) => {
+            if (!this.isPanelDragging) return;
+            if (e.pointerId !== this.panelDragPointerId) return;
+            
+            const newLeft = e.clientX - this.panelDragOffset.x;
+            const newTop = e.clientY - this.panelDragOffset.y;
+            
+            this.transformPanel.style.left = `${newLeft}px`;
+            this.transformPanel.style.top = `${newTop}px`;
+            this.transformPanel.style.transform = 'none';
+            
+            e.preventDefault();
+            e.stopPropagation();
+        }, { passive: false, capture: true });
+        
+        document.addEventListener('pointerup', (e) => {
+            if (!this.isPanelDragging) return;
+            if (e.pointerId !== this.panelDragPointerId) return;
+            
+            this.isPanelDragging = false;
+            this.panelDragPointerId = null;
+            dragSurface.style.cursor = 'grab';
+            
+            if (dragSurface.releasePointerCapture) {
+                try {
+                    dragSurface.releasePointerCapture(e.pointerId);
+                } catch (err) {}
+            }
+            
+            e.stopPropagation();
+        }, { capture: true });
+        
+        document.addEventListener('pointercancel', (e) => {
+            if (!this.isPanelDragging) return;
+            if (e.pointerId !== this.panelDragPointerId) return;
+            
+            this.isPanelDragging = false;
+            this.panelDragPointerId = null;
+            dragSurface.style.cursor = 'grab';
+            
+            e.stopPropagation();
+        }, { capture: true });
+    }
+
+    _handleDrag(e) {
+        if (!this.coordinateSystem) return;
+        
+        const world = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);
+        
+        if (!isFinite(world.worldX) || !isFinite(world.worldY)) {
+            return;
+        }
+        
+        const dx = world.worldX - this.dragLastPoint.x;
+        const dy = world.worldY - this.dragLastPoint.y;
+        let dragTransformMode = null;
+
+        if (e.shiftKey) {
+            if (!this.dragTransformMode) {
+                this.dragTransformMode = resolveDirectionalTransformDragMode(
+                    this.dragStartPoint,
+                    { x: world.worldX, y: world.worldY }
+                );
+                if (!this.dragTransformMode) return;
+            }
+            dragTransformMode = this.dragTransformMode;
+        } else {
+            this.dragTransformMode = null;
+        }
+        
+        this.dragLastPoint = { x: world.worldX, y: world.worldY };
+        
+        if (this.onDragRequest) {
+            this.onDragRequest(dx, dy, e.shiftKey, dragTransformMode);
+        }
+    }
+
+    _setupWheelEvents() {
+        const canvas = this._getSafeCanvas();
+        if (!canvas) return;
+        
+        canvas.addEventListener('wheel', (e) => {
+            if (!this.isVKeyPressed) return;
+            
+            if (!this.onGetActiveLayer) return;
+            const activeLayer = this.onGetActiveLayer();
+            if (!activeLayer?.layerData) return;
+            
+            const layerId = activeLayer.layerData.id;
+            
+            if (!this.transforms.has(layerId)) {
+                this.transforms.set(layerId, {
+                    x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+                });
+            }
+            
+            const transform = this.transforms.get(layerId);
+            const centerX = this.config.canvas.width / 2;
+            const centerY = this.config.canvas.height / 2;
+            
+            if (e.shiftKey) {
+                const rotationDelta = e.deltaY > 0 ? 0.05 : -0.05;
+                transform.rotation += rotationDelta;
+                
+                if (this.config.layer.rotationLoop) {
+                    const maxRot = Math.PI;
+                    while (transform.rotation > maxRot) transform.rotation -= (maxRot * 2);
+                    while (transform.rotation < -maxRot) transform.rotation += (maxRot * 2);
+                }
+            } else {
+                const scaleDelta = e.deltaY > 0 ? 0.95 : 1.05;
+                const currentScale = Math.abs(transform.scaleX);
+                const newScale = Math.max(
+                    this.config.layer.minScale,
+                    Math.min(this.config.layer.maxScale, currentScale * scaleDelta)
+                );
+                
+                const hFlipped = transform.scaleX < 0;
+                const vFlipped = transform.scaleY < 0;
+                transform.scaleX = hFlipped ? -newScale : newScale;
+                transform.scaleY = vFlipped ? -newScale : newScale;
+            }
+            
+            this.applyTransform(activeLayer, transform, centerX, centerY);
+            this.updateTransformPanelValues(activeLayer);
+            this._emitTransformUpdated(layerId, activeLayer);
+            
+            if (this.onTransformUpdate) {
+                this.onTransformUpdate(activeLayer, transform);
+            }
+            
+            e.preventDefault();
+        }, { passive: false });
+    }
+
+    _emitTransformUpdated(layerId, layer) {
+        if (this.eventBus) {
+            const layerMgr = window.layerManager;
+            if (layerMgr && layer) {
+                const layerIndex = layerMgr.getLayerIndex(layer);
+                
+                this.eventBus.emit('layer:updated', {
+                    component: 'layer',
+                    action: 'transform-changed',
+                    data: { layerIndex, layerId }
+                });
+            }
+        }
+        
+        const now = performance.now();
+        if (this._lastEmitTime && (now - this._lastEmitTime) < 100) {
+            if (this._emitTimer) {
+                clearTimeout(this._emitTimer);
+            }
+            this._emitTimer = setTimeout(() => {
+                this._emitTransformUpdateImmediate(layerId, layer);
+            }, 100);
+            return;
+        }
+        
+        this._emitTransformUpdateImmediate(layerId, layer);
+    }
+    
+    _emitTransformUpdateImmediate(layerId, layer) {
+        if (!this.eventBus) return;
+        
+        const layerMgr = window.layerManager;
+        if (!layerMgr || !layer) return;
+        
+        const layerIndex = layerMgr.getLayerIndex(layer);
+        const transform = this.transforms.get(layerId);
+        
+        if (!transform) return;
+        
+        const transformPayload = {
+            x: Number(transform.x) || 0,
+            y: Number(transform.y) || 0,
+            scaleX: Number(transform.scaleX) || 1,
+            scaleY: Number(transform.scaleY) || 1,
+            rotation: Number(transform.rotation) || 0
+        };
+        
+        this.eventBus.emit('layer:transform-updated', {
+            component: 'layer',
+            action: 'transform-updated',
+            data: { layerIndex, layerId, transform: transformPayload }
+        });
+        
+        this.eventBus.emit('thumbnail:layer-updated', {
+            layerIndex,
+            layerId
+        });
+        
+        this._lastEmitTime = performance.now();
+    }
+
+    updateTransformPanelValues(layer) {
+        if (!layer?.layerData || !this.transformPanel) return;
+        
+        const layerId = layer.layerData.id;
+        const transform = this.transforms.get(layerId);
+        
+        if (!transform) return;
+        
+        const xSlider = this._sliderInstances.get('layer-x-slider');
+        const ySlider = this._sliderInstances.get('layer-y-slider');
+        const rotationSlider = this._sliderInstances.get('layer-rotation-slider');
+        const scaleSlider = this._sliderInstances.get('layer-scale-slider');
+        
+        this._syncingLayerTransformPanel = true;
+        try {
+            if (xSlider) {
+                xSlider.setValue(transform.x);
+            }
+
+            if (ySlider) {
+                ySlider.setValue(transform.y);
+            }
+
+            if (rotationSlider) {
+                let rotationDeg = transform.rotation * 180 / Math.PI;
+
+                if (this.config.layer.rotationLoop) {
+                    const min = this.config.layer.minRotation;
+                    const max = this.config.layer.maxRotation;
+                    while (rotationDeg > max) rotationDeg -= (max - min);
+                    while (rotationDeg < min) rotationDeg += (max - min);
+                }
+
+                rotationSlider.setValue(rotationDeg);
+            }
+
+            if (scaleSlider) {
+                scaleSlider.setValue(Math.abs(transform.scaleX));
+            }
+        } finally {
+            this._syncingLayerTransformPanel = false;
+        }
+    }
+
+    updateFlipButtons(layer) {
+        if (!layer?.layerData || !this.transformPanel) return;
+        
+        const layerId = layer.layerData.id;
+        const transform = this.transforms.get(layerId);
+        
+        if (!transform) return;
+        
+        const flipHBtn = document.getElementById('flip-horizontal-btn');
+        const flipVBtn = document.getElementById('flip-vertical-btn');
+        
+        if (flipHBtn) {
+            if (transform.scaleX < 0) {
+                flipHBtn.classList.add('active');
+            } else {
+                flipHBtn.classList.remove('active');
+            }
+        }
+        
+        if (flipVBtn) {
+            if (transform.scaleY < 0) {
+                flipVBtn.classList.add('active');
+            } else {
+                flipVBtn.classList.remove('active');
+            }
+        }
+    }
+
+    _updateSelectionTransformPanel() {
+        if (!this.transformPanel) return;
+        const transform = this._getSelectionTransformApi()?.getTransform?.();
+        if (!transform) return;
+        this._syncingSelectionPanel = true;
+        try {
+            this._sliderInstances.get('layer-x-slider')?.setValue(transform.x);
+            this._sliderInstances.get('layer-y-slider')?.setValue(transform.y);
+            this._sliderInstances.get('layer-rotation-slider')
+                ?.setValue((transform.rotation * 180) / Math.PI);
+            this._sliderInstances.get('layer-scale-slider')?.setValue(Math.abs(transform.scaleX));
+        } finally {
+            this._syncingSelectionPanel = false;
+        }
+        document.getElementById('flip-horizontal-btn')
+            ?.classList.toggle('active', transform.scaleX < 0);
+        document.getElementById('flip-vertical-btn')
+            ?.classList.toggle('active', transform.scaleY < 0);
+    }
+
+    _clearTransformPanelFlipState() {
+        document.getElementById('flip-horizontal-btn')?.classList.remove('active');
+        document.getElementById('flip-vertical-btn')?.classList.remove('active');
+    }
+
+    _getSafeCanvas() {
+        return this.app?.canvas || document.querySelector('canvas');
+    }
+
+    _updateCursor() {
+        const canvas = this._getSafeCanvas();
+        if (!canvas) return;
+        
+        if (this.isVKeyPressed && !this.isDragging) {
+            canvas.style.cursor = 'move';
+        } else if (this.isDragging) {
+            canvas.style.cursor = 'grabbing';
+        } else {
+            canvas.style.cursor = 'crosshair';
+        }
+    }
+
+    getTransform(layerId) {
+        return this.transforms.get(layerId);
+    }
+
+    setTransform(layerId, transform) {
+        this.transforms.set(layerId, transform);
+    }
+
+    hasTransform(layerId) {
+        return this.transforms.has(layerId);
+    }
+
+    clearTransform(layerId) {
+        this.transforms.delete(layerId);
+    }
+
+    destroy() {
+        if (this._emitTimer) {
+            clearTimeout(this._emitTimer);
+        }
+        
+        for (const [id, instance] of this._sliderInstances) {
+            if (instance?.destroy) {
+                instance.destroy();
+            }
+        }
+        this._sliderInstances.clear();
+        layerTransformBasicOverlay.deactivate();
+        
+        this.transforms.clear();
+    }
+}
+
+// 下位互換性のためにグローバルに登録
+window.LayerTransform = LayerTransform;
+window.TegakiLayerTransform = LayerTransform;
