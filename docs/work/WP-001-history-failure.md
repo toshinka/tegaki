@@ -48,3 +48,14 @@ command内部rollback、非同期History、保存schema、複数command補償が
 ## Completion
 
 修正前失敗/修正後成功の出力、diff、既存limits、build、対象外変更なしをleadが確認。Owner視覚受入はこの非UI修正の必須条件ではない。
+
+### 2026-09-06 実施結果 — DONE
+
+- 対象commit: `9b6ea3c208bd924d21c9b018c78888432469b64a`。開始時worktree clean。再構成の読む順序・リンク・WP境界をレビューし、harness check成功。GITHUB.txtは案内に留めた。
+- 修正前: `node tegaki_work/build/verify-history-failure.mjs`がexit 1、`failed redo must preserve the starting index`、actual=-1 / expected=0。
+- 原因/修正: do前のindex加算と二重catch減算をやめ、do正常終了後だけ次indexを確定。成功後の通知例外ではindexを戻さない。redo内だけの変更で、stack/byte制限/command形式は不変。
+- 修正後: 新規verifier成功。初回/中間/末尾、反復例外、以前のcommandのUndo、再試行、通常Undo/Redo、通知例外、部分mutationの非保証を実HistoryManagerで確認。
+- `node --check tegaki_work/system/history.js`、history suite 5/5、全verifier 148/148、Vite build成功。buildは専用Temp出力、dist生成差分なし。既存util externalization/chunk警告は継続。
+- read-only agentが呼び出し側/Raster Patchのindex依存と最終diffを確認し、主担当が統合。製品変更はhistory.js、新規検証はverify-history-failure.mjsのみ。文書は完了状態/既知残存の同期だけ。
+- Browser/Owner実操作は今回未実施。本WPは非UIの同期例外経路をproduction classで検証し、視覚受入を必須にしていない。
+- 残存別件: command途中のmutation rollback、push失敗時redo枝、composite補償/byteSize、非同期Historyは未修正。WP-002以降には未着手。

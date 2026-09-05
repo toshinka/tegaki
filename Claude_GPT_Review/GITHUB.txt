@@ -10,7 +10,7 @@
 
 読む順序: AGENTS → docs/README → STATUS → TECHNICAL → ARCHITECTURE / VOCABULARY。
 製品思想の評価ならPRODUCT、計画の評価ならROADMAPとWork Packageへ進む。
-AUDITには調査済み・未確認・既知不具合を分けている。製品実装は再構成レビュー中のため停止中。
+AUDITには調査済み・未確認・既知不具合を分けている。現在の作業状態・完了範囲はSTATUSと対象WPを確認する。
 実装対象を限定し、全コードやArchiveを最初から読み直す必要はない。
 
 文書と現行計画

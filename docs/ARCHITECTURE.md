@@ -102,7 +102,7 @@ Layer Motionだけのunsupported planの拒否がCPU側で抜ける箇所は[WP-
 - Project全体loadでのHistory clearと、Frame/CAF切替で履歴を保つことを区別する。
 - exportはTimelineModelを使うcompositor経路と旧AnimationSystem fallbackを持つ。
 - Project saveとExportの未確定Transform終端が同じかは未検証。現在同一契約とは記さない。
-- History commandは `{ name, do, undo, byteSize?, meta? }`。失敗時redo indexの二重減算は[WP-001](work/WP-001-history-failure.md)へ。
+- History commandは `{ name, do, undo, byteSize?, meta? }`。redoはdo成功後だけindexを進め、通知例外では戻さない（[WP-001検証](work/WP-001-history-failure.md)）。command内部の部分mutation rollbackは保証しない。
 
 ## UI / CSS / event
 
