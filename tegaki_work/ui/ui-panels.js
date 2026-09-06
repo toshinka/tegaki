@@ -139,6 +139,10 @@ export class UIController {
             this.setSidebarModePressed('layer-transform-tool', pressed === true);
         });
 
+        this.eventBus.on('layer:transform-exit', () => {
+            this.setSidebarModePressed('layer-transform-tool', false);
+        });
+
         this.eventBus.on('selection:transform-started', () => {
             this.setSidebarModePressed('layer-transform-tool', true);
         });
