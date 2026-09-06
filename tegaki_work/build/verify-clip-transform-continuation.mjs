@@ -15,11 +15,17 @@ const resume = method('_resumeLayerTransformTimelineSession', 'commitLayerTransf
 const commit = method('commitLayerTransformTimelineKeyAndContinue', 'stepLayerTransformTimelineFrame');
 const step = method('stepLayerTransformTimelineFrame', 'exitLayerMoveMode');
 const target = TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY;
+const uiSource = readFileSync(new URL('../ui/ui-panels.js', import.meta.url), 'utf8');
+const uiStart = uiSource.indexOf('\n    setupEventBusListeners(');
+const uiEnd = uiSource.indexOf('\n    ensurePopupCloseButtons(', uiStart);
+assert(uiStart >= 0 && uiEnd > uiStart);
+const setupUIListeners = new Function(`return ({${uiSource.slice(uiStart, uiEnd)}}).setupEventBusListeners;`)();
 function fixture({ accepts = true, changed = true, committed = true } = {}) {
     const events = [];
+    const listeners = new Map();
     const layer = { layerData: { id: 'working-raster' } };
     const host = {
-        events, begins: 0, finishes: 0, history: 0, moved: 0, panel: true, camera: true,
+        events, begins: 0, finishes: 0, history: 0, moved: 0, panel: true, camera: true, toolbar: true,
         _layerTransformSession: { layerId: layer.layerData.id, transaction: { target }, previewResult: { changed } },
         getActiveLayer: () => layer,
         enterLayerMoveMode() { this.begins++; return accepts; },
@@ -31,7 +37,13 @@ function fixture({ accepts = true, changed = true, committed = true } = {}) {
         },
         _resumeLayerTransformTimelineSession: resume,
         _emitPanelUpdateRequest() {},
-        eventBus: { emit: (name, payload) => events.push({ name, payload }) },
+        eventBus: {
+            on(name, callback) { listeners.set(name, [...(listeners.get(name) || []), callback]); },
+            emit(name, payload) {
+                events.push({ name, payload });
+                for (const callback of listeners.get(name) || []) callback(payload);
+            }
+        },
         _transformEditAdapter: { moveFrame() { host.moved++; return true; } },
         transform: {
             updateTransformPanelValues() {}, syncBasicOverlay() {}, setEditContextProjection() {},
@@ -39,6 +51,13 @@ function fixture({ accepts = true, changed = true, committed = true } = {}) {
         },
         cameraSystem: { setVKeyPressed(value) { host.camera = value; } }
     };
+    setupUIListeners.call({
+        eventBus: host.eventBus,
+        setSidebarModePressed(id, value) {
+            assert.equal(id, 'layer-transform-tool');
+            host.toolbar = value;
+        }
+    });
     return host;
 }
 const success = fixture();
@@ -62,6 +81,7 @@ for (const changed of [true, false]) {
     assert.equal(changed ? commit.call(rejected) : step.call(rejected, 1), false);
     assert.equal(rejected.panel, false);
     assert.equal(rejected.camera, false);
+    assert.equal(rejected.toolbar, false, 'production UI listener clears the V button');
     assert.equal(rejected.begins, 1, 'no speculative begin retry');
     assert.equal(rejected.history, changed ? 1 : 0, 'successful commit survives rejected resume');
     const exits = rejected.events.filter(e => e.name === 'layer:transform-exit');
