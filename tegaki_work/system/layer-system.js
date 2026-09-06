@@ -3489,7 +3489,7 @@ export class LayerSystem {
         return result;
     }
 
-    _resumeLayerTransformTimelineSession() {
+    _resumeLayerTransformTimelineSession(terminal = {}) {
         const resumed = this.enterLayerMoveMode() === true;
         const activeLayer = this.getActiveLayer();
         if (resumed && activeLayer) {
@@ -3500,6 +3500,14 @@ export class LayerSystem {
         this.transform?.exitMoveMode?.(activeLayer);
         this.cameraSystem?.setVKeyPressed?.(false);
         this.transform?.setEditContextProjection?.(null);
+        // KEYの確定結果を保持したまま、拒否された再入場を全consumerへ終了通知する。
+        // sessionはfinish済みなのでexitLayerMoveModeのSOURCE確定経路には入れない。
+        this.eventBus?.emit('layer:transform-exit', {
+            layerId: terminal.layerId || activeLayer?.layerData?.id || null,
+            target: terminal.target,
+            confirmed: terminal.confirmed === true,
+            cancelled: false
+        });
         return false;
     }
 
@@ -3517,7 +3525,9 @@ export class LayerSystem {
         const target = session.transaction.target;
         const layerId = session.layerId;
         const result = this._finishLayerTransformTimelineSession({ cancelled: false });
-        const resumed = this._resumeLayerTransformTimelineSession();
+        const resumed = this._resumeLayerTransformTimelineSession({
+            layerId, target, confirmed: result?.commit === true
+        });
         if (result?.commit === true) {
             this.eventBus?.emit('layer:transform-key-committed', {
                 layerId,
@@ -3543,13 +3553,14 @@ export class LayerSystem {
             return false;
         }
         const transaction = session.transaction;
+        const terminal = { layerId: session.layerId, target: transaction.target };
         const result = this._finishLayerTransformTimelineSession({ cancelled: false });
         if (result?.ok !== true) {
-            this._resumeLayerTransformTimelineSession();
+            this._resumeLayerTransformTimelineSession(terminal);
             return false;
         }
         const moved = this._transformEditAdapter.moveFrame({ transaction, delta: direction }) === true;
-        const resumed = this._resumeLayerTransformTimelineSession();
+        const resumed = this._resumeLayerTransformTimelineSession(terminal);
         return moved && resumed;
     }
 
