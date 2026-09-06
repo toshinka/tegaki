@@ -5,7 +5,9 @@
  * 長時間描画中の突然のクラッシュや誤操作に備え、最新の描画状態を1件だけ退避する。
  * localStorage の制限を避けるため IndexedDB を使用し、パフォーマンスのために保存頻度を強く制限する。
  * SettingsManagerを設定正本とし、本classは操作中記録・間隔・非表示時記録のruntime派生状態だけを持つ。
+ * 周期checkpointはTimeline Transform編集中に延期する。明示/forced保存のterminalは変更しない。
  */
+import { isTransformTimelineKeyTarget } from './animation/transform-edit-transaction.js';
 export class EmergencyRecoveryStore {
     constructor() {
         this.dbName = 'TegakiEmergencyRecovery';
@@ -103,7 +105,7 @@ export class EmergencyRecoveryStore {
         }
         const now = Date.now();
 
-        if (!force && this._isDrawingActive()) {
+        if (!force && (this._isDrawingActive() || this._isTimelineTransformActive())) {
             this._pendingSave = true;
             this._scheduleRetry(this._drawingRetryDelay);
             return;
@@ -137,7 +139,7 @@ export class EmergencyRecoveryStore {
         }
         if (!window.projectManager) return false;
         const reason = options.reason || (force ? 'forced' : 'periodic');
-        if (!force && this._isDrawingActive()) {
+        if (!force && (this._isDrawingActive() || this._isTimelineTransformActive())) {
             this._pendingSave = true;
             this._scheduleRetry(this._drawingRetryDelay);
             return;
@@ -294,6 +296,11 @@ export class EmergencyRecoveryStore {
             isSaving: this._isSaving,
             pending: this._pendingSave
         };
+    }
+
+    _isTimelineTransformActive() {
+        const layerSystem = window.projectManager?.layerSystem;
+        return isTransformTimelineKeyTarget(layerSystem?.getActiveTransformEditTarget?.());
     }
 
     _isDrawingActive() {

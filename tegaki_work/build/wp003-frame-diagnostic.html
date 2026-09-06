@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WP-003 isolated browser diagnostic</title>
+<link rel="stylesheet" href="/styles/main.css">
+<link rel="stylesheet" href="/styles/components/sidebar-rail.css">
+<link rel="stylesheet" href="/styles/components/layer-panel-surface.css">
+<link rel="stylesheet" href="/styles/components/animation-table-playback.css">
+<link rel="stylesheet" href="/styles/components/animation-table-utility-lod.css">
+<link rel="stylesheet" href="/styles/components/quick-access-popup.css">
+<link rel="stylesheet" href="/styles/components/layer-transform-basic.css">
+</head><body><div id="app"><canvas id="webgl2-canvas" style="position:absolute;pointer-events:none"></canvas></div>
+<script type="module">
+import { TEGAKI_CONFIG } from '/config.js';
+import { LayerSystem } from '/system/layer-system.js';
+import { TegakiEventBus } from '/system/event-bus.js';
+import '/core-initializer.js';
+TEGAKI_CONFIG.debug = true;
+function state() {
+ const l = window.layerManager, p = window.coreEngine?.popupManager?.get('animationTable');
+ return { active: l?.getActiveLayer()?.layerData?.id, index: l?.activeLayerIndex,
+ session: l?._layerTransformSession?.layerId, target: l?._layerTransformSession?.transaction?.target,
+ preview: l?._layerTransformSession?.previewResult, keyboard: window.KeyboardHandler?.isVKeyPressed(),
+ v: l?.isLayerMoveMode, selected: p?.selectedInternalLayerId, frame: p?.model?.playback?.currentFrame,
+ suspended: p?.isTransformPreviewSuspended, bridge: !!p?._layerTransformBridgeSession, bounds:l?._layerTransformSession?.sourceBounds, layers:l?.getLayers()?.map(n=>({id:n.layerData?.id,visible:n.visible,savedVisible:n.layerData?.visible,x:n.x,y:n.y,sx:n.scale.x,sy:n.scale.y,px:n.pivot.x,py:n.pivot.y,transform:l.transform?.getTransform(n.layerData?.id),parentVisible:n.parent?.visible})) };
+}
+for (const name of ['enterLayerMoveMode','_finishLayerTransformTimelineSession','_resumeLayerTransformTimelineSession','exitLayerMoveMode','stepLayerTransformTimelineFrame','setActiveLayer']) {
+ const original = LayerSystem.prototype[name];
+ LayerSystem.prototype[name] = function(...args) {
+  if (TEGAKI_CONFIG.debug) console.debug('[WP003]', JSON.stringify({phase:'before',name,args,state:state()}));
+  const result = original.apply(this,args);
+  if (TEGAKI_CONFIG.debug) console.debug('[WP003]', JSON.stringify({phase:'after',name,result,state:state()}));
+  return result;
+ };
+}
+for (const event of ['layer:transform-exit','keyboard:vkey-state-changed','animation:frame-changed']) {
+ TegakiEventBus.on(event, payload => {
+  if (TEGAKI_CONFIG.debug) console.debug('[WP003]', JSON.stringify({event,payload,state:state(),stack:new Error().stack}));
+ },100);
+}
+window.addEventListener('blur',()=> { if(TEGAKI_CONFIG.debug) console.debug('[WP003 blur]',JSON.stringify(state())); });
+</script></body></html>
+
