@@ -57,6 +57,18 @@ assert.match(controller, /shouldDisplay:[\s\S]*?getLayerWarpEditSession/);
 assert.match(animationPopup, /const isLayerTransformWarpEditing = !!this\.layerSystem\?\.getLayerWarpEditSession\?\.\(\)/);
 assert.match(animationPopup, /!isLayerTransformWarpEditing[\s\S]*?warpGridOverlay\.isActive\(\)/);
 
+// Table close must cancel the Layer WARP transaction before hiding the panel
+// and must tear down the shared overlay only after that terminal path.
+const hideStart = animationPopup.indexOf('    hide() {');
+const hideEnd = animationPopup.indexOf('\n    _loadUiPreferences()', hideStart);
+assert.ok(hideStart >= 0 && hideEnd > hideStart);
+const hideBlock = animationPopup.slice(hideStart, hideEnd);
+const finishWarpIndex = hideBlock.indexOf('finishLayerWarpEditSession?.({ cancelled: true })');
+const hidePanelIndex = hideBlock.indexOf("this.panel.style.display = 'none'");
+assert.ok(finishWarpIndex >= 0, 'Table close must cancel a pending Layer WARP transaction');
+assert.ok(hidePanelIndex > finishWarpIndex, 'Table close must terminate the transaction before hiding the panel');
+assert.match(hideBlock, /this\._exitWarpGridEditMode\(\)/);
+
 assert.match(overlay, /interactive/);
 assert.match(overlay, /warp-grid-overlay-point-hit/);
 assert.match(overlay, /onPointPointerDown/);
