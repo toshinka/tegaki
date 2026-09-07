@@ -63,6 +63,49 @@
 
 診断BrowserはChrome 152 / `680x561` / DPR `2.25` / console errors `0`。production runtimeは未変更のため、既存のharness・warp・animation verifierの再実行結果は前回PASSを継承し、今回の限定変更では`git diff --check`と診断ページ実行を追加確認する。Actual App UI、Owner操作感、trusted device pointercancelはこのsliceの対象外で未受入。
 
+## Preview Parity Convergence Gate (2026-09-07)
+
+### Motion-only baseline
+
+baseline HEADは`061d9e93f6a3aecc9b55d148ed177190dfa67aef`。既存差分を保持し、production runtimeは変更していない。追加diagnosticは`build/wp005-preview-convergence-diagnostic.html`。
+
+同じ16x16 asymmetric fixtureでLayer Motionだけを比較した。
+
+| case | CPU | Pixi | diff / max | CPU bbox | Pixi bbox |
+| --- | --- | --- | ---: | --- | --- |
+| integer opaque | `0xf8d32585` | `0x4df056b3` | 3px / 255 | `{x:4,y:4,w:13,h:11}` | `{x:3,y:2,w:14,h:13}` |
+| integer alpha | `0x2f2030ea` | `0x06e245ab` | 3px / 255 | `{x:4,y:4,w:13,h:11}` | `{x:3,y:2,w:14,h:13}` |
+| subpixel opaque | `0x27ec05e7` | `0xfd6c1212` | 23px / 255 | `{x:4,y:4,w:14,h:12}` | `{x:3,y:2,w:15,h:14}` |
+| subpixel alpha | `0x4e2ee189` | `0x86950156` | 23px / 255 | `{x:4,y:4,w:14,h:12}` | `{x:3,y:2,w:15,h:14}` |
+
+integerの最初の差は`(3,2)`でCPU `[180,20,35,255]` / Pixi `[0,0,0,0]`。Motion-onlyにもopaque差があるため判定は`M1`であり、WARP Meshだけの問題（M0）ではない。
+
+### CPU-reference prototypes
+
+- WARP-only: CPU final `0x17a134da`、current production Mesh Pixi `0x63f4c1ac`（9px / max102）。CPU WARP surfaceをPixi Sprite化したprototypeは`0xe6d751d6`（7px / max102）。CPU/PixiのbboxとnonTransparentは一致し、残差は半透明RGBのupload canonicalization相当だった。
+- WARP + Motion: CPU final `0x8525007f`、current Pixi `0xf73d350c`（9px / max196）。P1（CPU WARP surface → Pixi Motion）は`0xc90ee9b6`（7px / max196）で、Mesh由来の差は減るがbbox差が残った。
+- P2（CPU compositorでWARP + Motionまでfinal surface → Pixi Sprite）は`0x734812cb`（4px / max102）。CPUとbbox/nonTransparentが一致し、代表差は`[181,20,34,207]`対`[180,20,34,207]`でalpha同値のRGB差だった。P2はgeometryを収束させるが、生成された半透明edgeのupload canonicalizationは残る。
+
+### Performance evidence
+
+warmup 3回後30サンプル。数値は`median / p95 / max`のmsで、正式なframe-time閾値は設定していない。`Texture.from`はdescriptor計測で、GPU uploadはrenderer.render時に発生する。
+
+| size | CPU render | Canvas/ImageData | Texture.from | Pixi render | total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 344x135 | `13.4/15.4/17.7` | `0.2/0.4/0.5` | `0/0.1/0.2` | `0.3/0.5/0.5` | `14.1/16.1/18.4` |
+| 512x512 | `76.5/81.7/89.9` | `0.6/0.8/2.3` | `0.1/0.1/0.2` | `0.3/0.4/0.5` | `77.4/83.2/92.7` |
+| 1024x1024 | `284.4/294.8/306.4` | `1.5/3.6/6.0` | `0.1/0.1/0.1` | `0.3/0.5/0.5` | `286.5/299.9/310.5` |
+
+512x512の30 update dragはtotal `73.0/83.8/85.0ms`、CPU `72.1/82.6/83.3ms`、Pixi render `0.2/0.4/0.4ms`。tracked Texture/RenderTexture balanceは`0/0`、console errors `0`、JS heapは`77,513,690→60,574,826` bytes（delta `-16,938,864`）だった。メモリ増加やtracked leakは見られないが、GC spike・正式性能閾値は判定していない。1920x1080はこの限定gateでは実行していない。
+
+### Classification and stop
+
+分類は`P-B`。Motion-onlyもM1で、WARP MeshとMotion GPU sampling双方に差がある。P2 full CPU-reference surface → Pixi Spriteでgeometryは収束し、残るのは半透明upload canonicalizationである。512x512以上はCPU renderが明確に重いため`P-D risk`を併記するが、性能仕様や許容閾値は決めない。CPU-reference previewをproductionへ導入せず、現行Pixi Meshを削除せず、許容誤差policy・schema・History・Layer WARPを変更しない。次の判断は、CPU authorityを維持したCPU-reference previewの採用可否、またはGPU proxyの差を許容するpreview policyをArchitecture Leadが決めることとする。WP-005は`ACTIVE / GPT review required`で停止する。
+
+### Verification
+
+full convergence Browser gateはChrome 152 / `680x561` / DPR `2.25` / console errors `0`。新規diagnostic module parse、既存harness/warp/animation verifier、`git diff --check`を実行する。Actual App UI、Owner操作感、trusted device pointercancelは未受入。
+
 ## Goal
 
 旧Phase 9q A〜Dのmodel/Project/render/transaction資産を使い、Layer Transform WARPをCanvas直接操作へ接続する。
