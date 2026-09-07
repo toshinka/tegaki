@@ -90,7 +90,10 @@ const snapshot = {
 };
 const compositor = new TimelineFrameCompositor({
     getClipAsset(id) { return id === asset.id ? asset : null; },
-    getDrawingSnapshot(id) { return id === snapshot.id ? snapshot : null; }
+    getDrawingSnapshot(id) { return id === snapshot.id ? snapshot : null; },
+    findClipEntry(id) {
+        return id === clip.id ? { clip, lane: { id: 'lane' } } : null;
+    }
 });
 const destination = new FakeCanvas();
 destination.width = 16;
@@ -100,6 +103,9 @@ assert.throws(() => compositor._renderClipEntry(destination.context, clip, 16, 1
     'CPU entry must reject a Layer Motion-only unsupported plan before drawing');
 assert.equal(destination.context.operations.some(operation => operation[0] === 'drawImage'), false,
     'unsupported plan must not reach the Canvas draw operation');
+assert.throws(() => compositor.renderClipFrameSurface(clip.id, 0),
+    /Layer effect render is unsupported: .*layer-transform-rig-overlap/,
+    'clip surface export path must use the same unsupported-plan guard');
 
 const projectSource = readFileSync(new URL('../system/project-manager.js', import.meta.url), 'utf8');
 const exportSource = readFileSync(new URL('../system/export-manager.js', import.meta.url), 'utf8');
