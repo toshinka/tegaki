@@ -18412,7 +18412,15 @@ export class AnimationTablePopup {
                 && warpGridOverlay.isActive()
                 && warpState?.entry?.clip?.id === this._warpGridEditingClipId
                 && warpState?.folderLayerId === this._warpGridEditingFolderId;
-            if (!isWarpEditing && !isWarpPlaybackOverlay && warpGridOverlay.isActive()) {
+            // Layer TransformのSimple 4x4 WARPも同じ共有overlayを使う。
+            // bridge preview後のこのrenderで高度WARP GRID用でないと誤判定して
+            // overlayを破棄すると、sessionは生きたまま点編集だけが消える。
+            const isLayerTransformWarpEditing = !!this.layerSystem?.getLayerWarpEditSession?.()
+                && this.layerSystem?.transform?.getTransformMode?.() === 'warp';
+            if (!isWarpEditing
+                && !isWarpPlaybackOverlay
+                && !isLayerTransformWarpEditing
+                && warpGridOverlay.isActive()) {
                 warpGridOverlay.deactivate();
             }
             motionControls.classList.toggle('is-warp-editing', isWarpEditing);
