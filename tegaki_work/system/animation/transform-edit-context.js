@@ -23,6 +23,7 @@ export const TRANSFORM_EDIT_AUTHORITY = Object.freeze({
     LAYER_SOURCE: 'layer-source',
     CLIP_TRANSFORM_KEY: 'clip-transform-key',
     CLIP_LAYER_TRANSFORM_KEY: 'clip-layer-transform-key',
+    CLIP_FOLDER_TRANSFORM_KEY: 'clip-folder-transform-key',
     NONE: 'none'
 });
 
@@ -38,6 +39,7 @@ function createContext(overrides = {}) {
         keyIndex: -1,
         hasExplicitKey: false,
         internalLayerId: null,
+        folderLayerId: null,
         ...overrides
     };
 }
@@ -113,10 +115,18 @@ export function projectTransformEditContext(input = {}) {
     const internalLayerId = typeof input.internalLayerId === 'string' && input.internalLayerId.length > 0
         ? input.internalLayerId
         : null;
+    const folderLayerId = typeof input.folderLayerId === 'string' && input.folderLayerId.length > 0
+        ? input.folderLayerId
+        : null;
     const layerTrack = internalLayerId
         ? (clip.layerTransformTracks || []).find(track => track?.internalLayerId === internalLayerId) || null
         : null;
-    const keyframes = internalLayerId
+    const folderTrack = folderLayerId
+        ? (clip.folderTransformTracks || []).find(track => track?.folderLayerId === folderLayerId) || null
+        : null;
+    const keyframes = folderLayerId
+        ? (Array.isArray(folderTrack?.keyframes) ? folderTrack.keyframes : [])
+        : internalLayerId
         ? (Array.isArray(layerTrack?.keyframes) ? layerTrack.keyframes : [])
         : (Array.isArray(clip.transformKeyframes) ? clip.transformKeyframes : []);
     const keyIndex = keyframes.findLastIndex(key => key?.frame === localFrame);
@@ -125,15 +135,18 @@ export function projectTransformEditContext(input = {}) {
         mode: hasExplicitKey
             ? TRANSFORM_EDIT_CONTEXT_MODE.ANIMATE_KEYED
             : TRANSFORM_EDIT_CONTEXT_MODE.ANIMATE_READY,
-        authority: internalLayerId
-            ? TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY
-            : TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY,
+        authority: folderLayerId
+            ? TRANSFORM_EDIT_AUTHORITY.CLIP_FOLDER_TRANSFORM_KEY
+            : (internalLayerId
+                ? TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY
+                : TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY),
         writable: true,
         clipId: clip.id || null,
         timelineFrame,
         localFrame,
         keyIndex,
         hasExplicitKey,
-        internalLayerId
+        internalLayerId,
+        folderLayerId
     });
 }

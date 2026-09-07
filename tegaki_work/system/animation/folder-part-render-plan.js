@@ -31,6 +31,11 @@ import {
     validateClipLayerTransformTracks
 } from './clip-layer-transform.js';
 import {
+    normalizeClipFolderTransformTracks,
+    sampleClipFolderTransform,
+    validateClipFolderTransformTracks
+} from './clip-folder-transform.js';
+import {
     sampleClipLayerDeformers,
     validateClipLayerDeformers
 } from './clip-layer-deformer.js';
@@ -274,7 +279,9 @@ export function createRigPartRenderPlan(asset, clip, timelineFrame) {
     const rigPlan = createStaticRigPartRenderPlan(asset, clip, timelineFrame);
     const tracks = normalizeClipLayerTransformTracks(clip?.layerTransformTracks)
         .filter(track => Array.isArray(track?.keyframes) && track.keyframes.length > 0);
-    if (tracks.length === 0) return rigPlan;
+    const folderTracks = normalizeClipFolderTransformTracks(clip?.folderTransformTracks)
+        .filter(track => Array.isArray(track?.keyframes) && track.keyframes.length > 0);
+    if (tracks.length === 0 && folderTracks.length === 0) return rigPlan;
     if (rigPlan.status === 'invalid' || rigPlan.status === 'unsupported') return rigPlan;
 
     const validation = validateClipLayerTransformTracks(
@@ -282,7 +289,14 @@ export function createRigPartRenderPlan(asset, clip, timelineFrame) {
         asset?.internalLayers || [],
         Math.max(1, Number.isInteger(clip?.duration) ? clip.duration : 1)
     );
-    if (!validation.ok) return createEmptyPlan('invalid', validation.errors);
+    const folderValidation = validateClipFolderTransformTracks(
+        folderTracks,
+        asset?.internalLayers || [],
+        Math.max(1, Number.isInteger(clip?.duration) ? clip.duration : 1)
+    );
+    if (!validation.ok || !folderValidation.ok) {
+        return createEmptyPlan('invalid', [...validation.errors, ...folderValidation.errors]);
+    }
 
     const layerById = new Map((asset?.internalLayers || []).map(layer => [layer?.id, layer]));
     const meshTargets = new Set((asset?.meshDefinitions || [])
@@ -340,11 +354,80 @@ export function createRigPartRenderPlan(asset, clip, timelineFrame) {
             worldMatrix: createAffineTransformMatrix(sampled)
         };
     }).filter(Boolean);
+    const folderIslands = folderValidation.value.map(track => {
+        const targetLayer = layerById.get(track.folderLayerId) || null;
+        const layerIds = collectInternalLayerSubtreeIds(asset?.internalLayers || [], track.folderLayerId);
+        if (!targetLayer || targetLayer.type !== 'folder') {
+            errors.push(addPlanError(
+                'folder-transform-target-invalid',
+                'Folder Motion target must be an internal Folder',
+                { folderId: track.folderLayerId }
+            ));
+            return null;
+        }
+        const rigOverlap = [...layerIds].find(layerId => rigPlan.islandByLayerId?.has(layerId)) || null;
+        if (rigOverlap) {
+            errors.push(addPlanError(
+                'folder-transform-rig-overlap',
+                'A Folder subtree cannot use Folder Motion and RIG Part at the same time',
+                { folderId: track.folderLayerId, targetLayerId: rigOverlap }
+            ));
+            return null;
+        }
+        const layerMotionOverlap = layerIslands
+            .find(island => layerIds.has(island.targetLayerId)) || null;
+        if (layerMotionOverlap) {
+            errors.push(addPlanError(
+                'folder-transform-layer-motion-overlap',
+                'A Folder subtree cannot use Folder Motion and Layer Motion at the same time',
+                { folderId: track.folderLayerId, targetLayerId: layerMotionOverlap.targetLayerId }
+            ));
+            return null;
+        }
+        const meshOverlap = [...layerIds].find(layerId => meshTargets.has(layerId)) || null;
+        if (meshOverlap) {
+            errors.push(addPlanError(
+                'folder-transform-mesh-overlap',
+                'A Folder subtree cannot use Folder Motion and Mesh / Skin at the same time',
+                { folderId: track.folderLayerId, targetLayerId: meshOverlap }
+            ));
+            return null;
+        }
+        const clipping = validateFolderPartClippingBoundary(asset, layerIds);
+        if (!clipping.ok) {
+            errors.push(...clipping.errors.map(error => ({
+                ...error,
+                code: 'folder-transform-clipping-boundary-split',
+                folderId: track.folderLayerId
+            })));
+            return null;
+        }
+        const sampled = sampleClipFolderTransform(clip, targetLayer.id, timelineFrame);
+        if (!sampled) return null;
+        return {
+            partId: null,
+            folderMotionTargetId: targetLayer.id,
+            targetLayerId: targetLayer.id,
+            targetKind: 'folder-motion',
+            folderId: targetLayer.id,
+            parentPartId: null,
+            layerIds,
+            partWorldMatrix: null,
+            boneDeltaMatrix: null,
+            rigidBinding: null,
+            worldMatrix: createAffineTransformMatrix(sampled)
+        };
+    }).filter(Boolean);
     if (errors.length > 0) return createEmptyPlan('unsupported', errors);
 
-    const islands = [...(rigPlan.islands || []), ...layerIslands];
+    const islands = [...(rigPlan.islands || []), ...layerIslands, ...folderIslands];
     const islandByLayerId = new Map(rigPlan.islandByLayerId || []);
     layerIslands.forEach(island => islandByLayerId.set(island.targetLayerId, island));
+    folderIslands.forEach(island => {
+        island.layerIds.forEach(layerId => islandByLayerId.set(layerId, island));
+    });
+    const islandByFolderId = new Map(rigPlan.islandByFolderId || []);
+    folderIslands.forEach(island => islandByFolderId.set(island.folderId, island));
     return {
         ok: true,
         status: 'ready',
@@ -352,7 +435,7 @@ export function createRigPartRenderPlan(asset, clip, timelineFrame) {
         errors: [],
         islands,
         islandByPartId: new Map(rigPlan.islandByPartId || []),
-        islandByFolderId: new Map(rigPlan.islandByFolderId || []),
+        islandByFolderId,
         islandByLayerId
     };
 }
@@ -493,6 +576,14 @@ export function createFolderEffectRenderPlan(asset, clip, timelineFrame) {
         const rigIsland = rigRenderPlan.status === 'ready'
             ? rigRenderPlan.islandByLayerId?.get(folderId) || null
             : null;
+        if (rigIsland?.targetKind === 'folder-motion') {
+            errors.push(addPlanError(
+                'folder-deformer-motion-overlap',
+                'A Folder cannot use Folder WARP and Folder Motion at the same time in the initial slice',
+                { folderId }
+            ));
+            return;
+        }
         islands.push({
             folderId,
             targetLayer,

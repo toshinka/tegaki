@@ -8,12 +8,17 @@ function method(name, next) {
     const start = source.indexOf(`\n    ${name}(`);
     const end = source.indexOf(`\n    ${next}(`, start + 1);
     assert(start >= 0 && end > start);
-    return new Function('isTransformTimelineKeyTarget', 'TRANSFORM_EDIT_TRANSACTION_TARGET',
-        `return ({${source.slice(start, end)}}).${name};`)(isTransformTimelineKeyTarget, TRANSFORM_EDIT_TRANSACTION_TARGET);
+    return new Function('isTransformTimelineKeyTarget', 'TRANSFORM_EDIT_TRANSACTION_TARGET', 'restoreLayerTransformPreviewSampling',
+        `return ({${source.slice(start, end)}}).${name};`)(
+        isTransformTimelineKeyTarget,
+        TRANSFORM_EDIT_TRANSACTION_TARGET,
+        record => { if (record) record.restored = true; }
+    );
 }
 const resume = method('_resumeLayerTransformTimelineSession', 'commitLayerTransformTimelineKeyAndContinue');
 const commit = method('commitLayerTransformTimelineKeyAndContinue', 'stepLayerTransformTimelineFrame');
-const step = method('stepLayerTransformTimelineFrame', 'exitLayerMoveMode');
+const step = method('stepLayerTransformTimelineFrame', 'refreshLayerTransformTimelineSessionAfterHistory');
+const refresh = method('refreshLayerTransformTimelineSessionAfterHistory', 'exitLayerMoveMode');
 const target = TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY;
 const uiSource = readFileSync(new URL('../ui/ui-panels.js', import.meta.url), 'utf8');
 const uiStart = uiSource.indexOf('\n    setupEventBusListeners(');
@@ -25,8 +30,14 @@ function fixture({ accepts = true, changed = true, committed = true } = {}) {
     const listeners = new Map();
     const layer = { layerData: { id: 'working-raster' } };
     const host = {
-        events, begins: 0, finishes: 0, history: 0, moved: 0, panel: true, camera: true, toolbar: true,
-        _layerTransformSession: { layerId: layer.layerData.id, transaction: { target }, previewResult: { changed } },
+        events, begins: 0, finishes: 0, abandons: 0, restores: 0, history: 0, moved: 0, panel: true, camera: true, toolbar: true,
+        _layerTransformSession: {
+            layerId: layer.layerData.id,
+            transaction: { target },
+            previewResult: { changed },
+            previewSampling: {},
+            targetLayerTransforms: []
+        },
         getActiveLayer: () => layer,
         enterLayerMoveMode() { this.begins++; return accepts; },
         _finishLayerTransformTimelineSession() {
@@ -36,6 +47,7 @@ function fixture({ accepts = true, changed = true, committed = true } = {}) {
             return { ok: true, commit: committed && changed, target };
         },
         _resumeLayerTransformTimelineSession: resume,
+        _restoreTransformTargetState() { this.restores++; },
         _emitPanelUpdateRequest() {},
         eventBus: {
             on(name, callback) { listeners.set(name, [...(listeners.get(name) || []), callback]); },
@@ -44,7 +56,10 @@ function fixture({ accepts = true, changed = true, committed = true } = {}) {
                 for (const callback of listeners.get(name) || []) callback(payload);
             }
         },
-        _transformEditAdapter: { moveFrame() { host.moved++; return true; } },
+        _transformEditAdapter: {
+            moveFrame() { host.moved++; return true; },
+            abandonAfterHistory() { host.abandons++; return true; }
+        },
         transform: {
             updateTransformPanelValues() {}, syncBasicOverlay() {}, setEditContextProjection() {},
             exitMoveMode() { host.panel = false; }
@@ -60,6 +75,16 @@ function fixture({ accepts = true, changed = true, committed = true } = {}) {
     });
     return host;
 }
+const historyRefresh = fixture({ changed: false });
+const sampling = historyRefresh._layerTransformSession.previewSampling;
+assert.equal(refresh.call(historyRefresh), true);
+assert.equal(historyRefresh.abandons, 1);
+assert.equal(historyRefresh.restores, 1);
+assert.equal(sampling.restored, true);
+assert.equal(historyRefresh.begins, 1);
+const pendingHistoryRefresh = fixture({ changed: true });
+assert.equal(refresh.call(pendingHistoryRefresh), false);
+assert.equal(pendingHistoryRefresh.abandons, 0);
 const success = fixture();
 assert.equal(commit.call(success), true);
 assert.equal(success.history, 1);
@@ -88,4 +113,4 @@ for (const changed of [true, false]) {
     assert.equal(exits.length, 1, 'rejected resume must notify Keyboard/Popup/UI terminal');
     assert.deepEqual(exits[0].payload, { layerId: 'working-raster', target, confirmed: changed, cancelled: false });
 }
-console.log('WP-003 production continuation: success/no-op/pending/rejected resume passed (isolated host).');
+console.log('WP-003 production continuation: success/no-op/pending/history refresh/rejected resume passed (isolated host).');

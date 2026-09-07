@@ -40,3 +40,13 @@ runtime変更、schema導入、外部ファイル上書き、Owner Projectの破
 ## Completion
 
 結果表、再現入力、実行証拠、修正案、HD-005推奨が揃いleadが確認。製品修正は別READYカードへ切り出す。
+
+## Progress
+
+### 2026-09-07 Slice 1 — CPU拒否抜けとterminal差のproduction probe
+
+- 新規`verify-output-terminal-audit.mjs`でproduction `createFolderEffectRenderPlan()`と`TimelineFrameCompositor._renderClipEntry()`を直接実行した。
+- 同じRasterへRig PartとLayer Motionを持つ競合fixtureはplanが`unsupported / layer-transform-rig-overlap`になる。一方、Clipに`layerDeformers`がない場合、CPU compositorのassertは通過し、fake Canvasへ`drawImage`まで進む。F-003の拒否抜けを実consumerで確定した。
+- このprobeはCanvas API呼出順を捕捉するfake Canvasで、実pixel/hash一致ではない。実Canvas固定画素は未実施として残す。
+- production sourceの入口比較では、Project saveはSelection確定後にactive Layer Transformを明示終了する。Export/sequence/previewはSelectionだけを確定し、Layer Transformを終了しない。
+- 初期比較表とHD-005候補は[WP-004 results](WP-004-results.md)へ記録。製品runtimeは変更していない。

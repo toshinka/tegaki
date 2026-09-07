@@ -6,6 +6,7 @@ import {
 } from './clip-deformer.js';
 import { sampleClipTransform } from './clip-transform-sampler.js';
 import { sampleClipLayerTransformTracksForBake } from './clip-layer-transform.js';
+import { sampleClipFolderTransformTracksForBake } from './clip-folder-transform.js';
 import { sampleClipLayerDeformersForBake } from './clip-layer-deformer.js';
 import { sampleRigMotionForBake } from './part-rig.js';
 
@@ -53,6 +54,10 @@ export function sampleClipBakeState(clip, timelineFrame) {
         clip,
         Number.isFinite(timelineFrame) ? timelineFrame : startFrame
     );
+    const folderTransformTracks = sampleClipFolderTransformTracksForBake(
+        clip,
+        Number.isFinite(timelineFrame) ? timelineFrame : startFrame
+    );
     const layerDeformers = sampleClipLayerDeformersForBake(
         clip.layerDeformers,
         localFrame,
@@ -80,6 +85,7 @@ export function sampleClipBakeState(clip, timelineFrame) {
         transform: { ...transform },
         transformKeyframes: [],
         ...(layerTransformTracks.length > 0 ? { layerTransformTracks } : {}),
+        ...(folderTransformTracks.length > 0 ? { folderTransformTracks } : {}),
         ...(layerDeformers ? { layerDeformers } : {}),
         deformer,
         ...(folderDeformers ? { folderDeformers } : {}),
