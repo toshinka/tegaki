@@ -16,6 +16,19 @@
 - Pointer terminal: `verify-layer-warp-pointer-terminal.mjs`でproduction `LayerTransformWarpController`をinstantiateし、Gesture Aのpointerup保持、Gesture Bのpointercancel rollback、capture loss rollback、pointerup後late loss保持、History/finish 0を固定した。`build/wp005-pointer-terminal-diagnostic.html`ではproduction `WarpGridOverlay`のDOM listenerへsynthetic `PointerEvent`をdispatchし、NORMAL SOURCE／CAF ANIMATEの両方で同じ結果をBrowser確認した。IAB診断はviewport 1280x720、DPR 2.25、console errors 0。trusted device由来のpointercancelは未検証として残す。
 - 未完了: 実Pixi/CPU/export画素一致、save/reopen、非4x4/排他対象の実画面拒否、trusted device pointercancel、Owner操作受入。CAF SOURCEのdrag→Vは確認済みだが、DrawingSnapshotのsave/reopen往復と実画素比較は未確認。
 
+## Final technical evidence slice (2026-09-07)
+
+- このSliceのlive baselineは`86803e1de0d649648c079b44e20389dc868981fd`、開始時worktreeはclean。既存WARP/UI/terminal差分を保持し、production JSは変更していない。
+
+- `build/wp005-final-evidence-diagnostic.html`を追加し、固定16x16非対称Rasterをproduction `warpRgbaWithControlMesh`、`TimelineFrameCompositor`、`ExportManager`、`ProjectManager`、`AnimationTablePopup._renderInternalLayerPreviewGroup`へ接続した。Chrome 152、viewport `680x561`、DPR `2.25`、console errors `0`。
+- normal SOURCEのCPU preview / bake / PNG exportは一致した。hash `0x17a134da`、nonTransparent `18`、bbox `{x:1,y:1,width:14,height:13}`。Project save/reopenは、Pixiへ一度uploadしたproduction canonical Rasterでは `0x191a3ed6 → 0x191a3ed6`、reload後Exportも同hashで一致した。CPU入力そのものは `0x7de6acda`から`0x191a3ed6`へ変わり、半透明RGBの8bit premultiplied-alpha量子化（代表 `[179,19,36,121] → [177,17,36,121]`）を固定fixtureで確認した。保存schemaやrendererは変更していない。
+- CAF SOURCEのDrawingSnapshot / CPU preview / PNG export / Project reloadはすべて hash `0x17a134da`で一致した。DrawingSnapshotはProject load後も同じCanvas評価結果を返した。
+- CAF ANIMATEのCPU compositor / PNG exportは hash `0x17a134da`で一致し、save/reopen後も同hash、`F1 → F2 → F1`は各 `0x17a134da`を再現した。`ClipInstance.layerDeformers`はbefore/afterで`internal-raster`、`control-mesh`、4x4、frame `0`、16点が一致した。
+- CAF ANIMATEのproduction Pixi previewは描画まで成功したが、unpremultiply後hash `0x63f4c1ac`でCPUとの差が残った。差は9px、diff bbox `{x:1,y:1,width:9,height:9}`、最大channel差102、最初の差 `[177,17,36,121]`対`[179,19,36,121]`。半透明境界を含むWebGL Mesh samplingとCPU triangle rasterizerの差として記録し、許容誤差を独断で導入していない。
+- Layer WARP + Layer Motionはproductionの評価順`DrawingSnapshot → Layer WARP → Layer Motion`を通り、CPU / PNG exportは hash `0x8525007f`で一致した。Pixiは hash `0xf73d350c`、9px差、diff bbox `{x:3,y:2,width:9,height:9}`、最大channel差196（Pixi bbox `{x:3,y:2,width:14,height:13}`、CPU bbox `{x:4,y:2,width:13,height:13}`）。同じくGPU Mesh / Canvas変換境界の差であり、renderer再設計は今回の範囲外。
+- `build/verify-layer-transform-warp-entry-guards.mjs`を追加した。実production `AnimationTablePopup._projectLayerWarpBridgeStart`と`LayerSystem.beginLayerWarpEditSession`を同一fixtureへ接続し、non-4x4=`advanced-layer-warp-required`、RIG=`layer-deformer-rig-overlap`、Mesh/Skin=`layer-deformer-mesh-overlap`、clipping owner/source=`layer-deformer-clipping-overlap`を全件、effect/model mutation `0`、History `0`、session `none`で固定した。既存deformerも保持した。
+- このSliceの判定は`PARTIAL / GPT review required`。Pixi/CPU境界差とCPU入力対production canonical save差の扱いは、renderer/schema変更を伴うため今回独断で修正しない。WP-005は`ACTIVE`のまま、Owner ACCEPTEDへ進めない。WP-007はproduction JS未変更のため`NOT RERUN — no relevant production change`を継承する。trusted device pointercancelとActual App UI/Owner操作感も未確認のまま。
+
 ## Goal
 
 旧Phase 9q A〜Dのmodel/Project/render/transaction資産を使い、Layer Transform WARPをCanvas直接操作へ接続する。
