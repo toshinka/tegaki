@@ -5496,6 +5496,19 @@ button.anim-motion-graph-legend-item.is-primary {
     background: color-mix(in srgb, var(--futaba-maroon) 38%, var(--futaba-background));
 }
 
+.anim-caf-warp-key-projection {
+    display: block;
+    margin: auto;
+    color: var(--active-border);
+    font-size: 9px;
+    line-height: 1;
+    pointer-events: none;
+}
+
+.anim-caf-warp-key-projection.is-key-selected {
+    color: var(--futaba-maroon);
+}
+
 .animation-table-panel .anim-part-track-item.is-selected {
     box-shadow: inset 3px 0 0 var(--active-border);
     background: color-mix(in srgb, var(--futaba-background) 72%, var(--futaba-light-medium) 28%);

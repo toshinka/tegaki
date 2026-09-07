@@ -1234,8 +1234,9 @@ export class AnimationTablePopup {
         this._motionEditPreviewFrame = null;
     }
 
-    _applyVisibilityPreview() {
-        if ((!this.isVisible && !this.isPlaying) || !this.isPreviewActive || !this.layerSystem) return;
+    _applyVisibilityPreview(options = {}) {
+        const force = options.force === true;
+        if ((!this.isVisible && !this.isPlaying) || (!force && !this.isPreviewActive) || !this.layerSystem) return;
         if (this.isDrawingPreviewSuspended !== true) {
             this._clearDrawingLiveStrokeOverlay({ restoreSourceLayers: true });
         }
@@ -2518,6 +2519,24 @@ export class AnimationTablePopup {
         const isSelected = !this.selectedRigBoneId
             && this.selectedInternalLayerId === context.layer.id;
         const selectedClass = isSelected ? ' is-selected' : '';
+        const layerWarpPreviewSession = this._layerWarpBridgeSession;
+        const layerWarpPreviewTransaction = layerWarpPreviewSession?.transaction;
+        const isLayerWarpPreviewTarget = !isFolderTarget
+            && layerWarpPreviewSession?.previewApplied === true
+            && layerWarpPreviewSession.changed === true
+            && layerWarpPreviewTransaction?.kind === 'layer-warp-edit-transaction'
+            && layerWarpPreviewTransaction.clipId === clip.id
+            && layerWarpPreviewTransaction.internalLayerId === context.layer.id;
+        // WARP候補は表示中だけClipInstanceへ投影されるため、Timeline markerは
+        // その間baselineを読む。元KEYがあれば残し、新規候補だけはmarkerを出さない。
+        const layerWarpMarkerDeformer = !isFolderTarget
+            ? getClipLayerDeformer(
+                isLayerWarpPreviewTarget
+                    ? layerWarpPreviewSession.baselineLayerDeformers
+                    : clip.layerDeformers,
+                context.layer.id
+            )
+            : null;
         const previewSession = this._layerTransformBridgeSession;
         const previewTransaction = previewSession?.transaction;
         let html = `<div class="anim-timeline-row anim-rig-folder-timeline-row${selectedClass}"
@@ -2539,6 +2558,15 @@ export class AnimationTablePopup {
                     ? previewTransaction.folderLayerId === context.layer.id
                     : previewTransaction.internalLayerId === context.layer.id)
                 && previewTransaction.localFrame === localFrame;
+            const hasLayerWarpKey = isSelected
+                && isInside
+                && (layerWarpMarkerDeformer?.keyframes || []).some(key => key?.frame === localFrame);
+            const layerWarpKeySelected = hasLayerWarpKey && this._isMotionTimelineKeySelected({
+                clipId: clip.id,
+                kind: 'warp',
+                targetId: context.layer.id,
+                frame: localFrame
+            });
             html += `<div class="anim-cell-slot anim-rig-folder-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}"
                 data-track-id="${context.entry.lane.id}"
                 data-clip-id="${clip.id}"
@@ -2549,6 +2577,10 @@ export class AnimationTablePopup {
                     role="img"
                     aria-label="${isFolderTarget ? 'Folder' : 'Layer'} Motion key${isProvisionalLayerMotionKey ? ' preview' : ''}: Frame ${frame + 1}"
                     title="${isFolderTarget ? 'Folder' : 'Layer'} Motion key${isProvisionalLayerMotionKey ? ' preview · 未確定' : ''} · F${frame + 1}"></span>` : ''}
+                ${hasLayerWarpKey ? `<span class="anim-caf-warp-key-projection${layerWarpKeySelected ? ' is-key-selected' : ''}"
+                    role="img"
+                    aria-label="Layer WARP key: Frame ${frame + 1}"
+                    title="Layer WARP key · F${frame + 1}">◆</span>` : ''}
             </div>`;
         }
         return `${html}</div>`;
@@ -11181,6 +11213,44 @@ export class AnimationTablePopup {
         };
     }
 
+    _createLayerWarpKeyGuide({ transaction, hasExplicitKey = false, pending = false } = {}) {
+        const localFrame = transaction?.localFrame;
+        const duration = transaction?.duration;
+        if (transaction?.kind !== 'layer-warp-edit-transaction'
+            || !Number.isInteger(transaction?.timelineFrame)
+            || !Number.isInteger(localFrame)
+            || !Number.isInteger(duration)
+            || duration <= 1) {
+            return null;
+        }
+        return {
+            visible: true,
+            timelineFrame: transaction.timelineFrame,
+            localFrame,
+            hasExplicitKey: hasExplicitKey === true,
+            pending: pending === true,
+            canMovePrevious: pending !== true && localFrame > 0,
+            canMoveNext: pending !== true && localFrame < duration - 1
+        };
+    }
+
+    _createLayerWarpProjection({ transaction, hasExplicitKey = false, pending = false } = {}) {
+        const keyed = hasExplicitKey === true;
+        const labelState = pending
+            ? (keyed ? 'KEYED · 未確定変更' : '未確定')
+            : (keyed ? 'KEYED' : 'READY');
+        return {
+            state: keyed ? 'keyed' : 'ready',
+            label: `ANIMATE · F${Number(transaction?.timelineFrame) + 1} WARP ${labelState}`,
+            allowAnchorEdit: false,
+            keyGuide: this._createLayerWarpKeyGuide({
+                transaction,
+                hasExplicitKey: keyed,
+                pending
+            })
+        };
+    }
+
     _projectLayerTransformBridgeStart({ layerId } = {}) {
         const context = this.getTransformEditContext(layerId);
         if (context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY) {
@@ -11527,11 +11597,11 @@ export class AnimationTablePopup {
             transaction,
             points: transaction.baselinePoints.map(point => ({ ...point })),
             bindBounds: { ...transaction.bindBounds },
-            projection: {
-                state: hasExplicitKey ? 'keyed' : 'ready',
-                label: `ANIMATE · F${context.timelineFrame + 1} WARP ${hasExplicitKey ? 'KEYED' : 'READY'}`,
-                allowAnchorEdit: false
-            }
+            projection: this._createLayerWarpProjection({
+                transaction,
+                hasExplicitKey,
+                pending: false
+            })
         };
     }
 
@@ -11613,14 +11683,14 @@ export class AnimationTablePopup {
                 this._scheduleLayerTransformBridgeRender();
             }
         }
-        const hasExplicitKey = plan.action === LAYER_WARP_TRANSACTION_ACTION.PREVIEW;
+        const hasExplicitKey = transaction.hadExplicitKey === true;
         return {
             ...plan,
-            projection: {
-                state: hasExplicitKey ? 'keyed' : 'ready',
-                label: `ANIMATE · F${transaction.timelineFrame + 1} WARP ${hasExplicitKey ? 'KEYED' : 'READY'}`,
-                allowAnchorEdit: false
-            }
+            projection: this._createLayerWarpProjection({
+                transaction,
+                hasExplicitKey,
+                pending: plan.changed === true
+            })
         };
     }
 
@@ -18259,6 +18329,9 @@ export class AnimationTablePopup {
         }
 
         // プレビューの適用判定
+        const layerWarpEditSession = this.layerSystem?.getLayerWarpEditSession?.();
+        const isAnimateLayerWarpPreview = layerWarpEditSession?.transaction?.kind
+            === 'layer-warp-edit-transaction';
         if (this.isLaneOnlySelected) {
             this._restoreVisibility();
         } else if (this.isDrawingPreviewSuspended) {
@@ -18268,6 +18341,12 @@ export class AnimationTablePopup {
                 this.isDrawingPreviewSuspended = false;
                 this._restoreVisibility();
             }
+        } else if (isAnimateLayerWarpPreview
+            && this.isTransformPreviewSuspended) {
+            // ANIMATE Layer WARPはcandidate deformerをClipInstanceへ投影する。
+            // V編集中も同じproduction Pixi previewを通し、working Rasterへ戻して
+            // 候補だけが見えなくなることを防ぐ。確定/保存のauthorityは変えない。
+            this._applyVisibilityPreview({ force: true });
         } else if (this.isClipEditModeActive || this.isTransformPreviewSuspended) {
             // EDIT/変形中は合成を停止し、実レイヤー表示を優先する。
             this._restoreVisibility();
