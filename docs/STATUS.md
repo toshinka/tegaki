@@ -1,7 +1,7 @@
 # Tegaki — 再開checkpoint
 
 状態: WP-001 / WP-002 / WP-003 / WP-006 DONE（Owner操作感は未確認）。WP-004 ACTIVE。
-更新日: 2026-09-07。現在HEADは`dd12dcc08228eada66350526056533ebd8237704`。再開時にlive HEADと既存差分を確認し、WP-004の限定監査を継続中。
+更新日: 2026-09-07。現在HEADは`c5ddf8c45fe5df40122497112f53d1b352b60950`。再開時にlive HEADと既存差分を確認し、WP-004の限定監査を継続中。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
@@ -27,7 +27,7 @@ WP-006のFolder自身Motion KEYは技術完了。次の[WP-004](work/WP-004-outp
 WP-001は非UI・同期例外経路を実production classで検証して完了。Browser/Owner実操作は今回未実施であり、受入済みとは記録しない。
 WP-002は指定経路の技術完了。Browser実操作・実Pixi・本番History callback全体は未確認で、全機能受入とはしない。
 WP-003はDONE。拒否時terminal、自動保存延期、Undo/Redo再同期の隔離回帰がpass。通常RasterのF1/F2継続、周期跨ぎ、History 1/0、Project保存往復をBrowser確認済み。描画直後の初回SOURCE Vも通常Recovery延期へ含め、Browserで維持を確認。Owner操作感の受入は未確認。WP-006もDONE。Folder自身のMotion schema、現行subtree評価、Folder専用V bridge、History/Undo/Redo、保存metadataと双方向effect排他を実装した。BrowserでTable展開後の2子Raster同時preview、KEY、次Frame継続を確認。CPU/export実画素とOwner受入は未確認。WP-004はACTIVE、WP-005は前提未完でBLOCKED。旧9qはPAUSED。
-WP-004 Slice 1/2で、Layer Motionだけのunsupported planがCPU compositorで拒否されず描画まで進むF-003をproduction consumer＋fake Canvasで確定し、`none/ready`だけを通す限定修正を適用した。修正後はCanvas描画前にreason付き拒否となる。Project saveはactive Layer Transformを終了する一方、Export/sequence/previewはSelectionだけを確定するterminal差も確認。実Canvas画素と4編集種別のBrowser出力比較、OwnerのHD-005判断が残る。
+WP-004 Slice 1/2で、Layer Motionだけのunsupported planがCPU compositorで拒否されず描画まで進むF-003をproduction consumer＋fake Canvasで確定し、`none/ready`だけを通す限定修正を適用した。Slice 3Aでは実BrowserのHTMLCanvas/PNGでready Layer/Folder Motionのhash・bbox一致とunsupportedの描画前拒否を確認し、Selection/SOURCE/CAF SOURCE/ANIMATEのfixture terminal差を記録した。Slice 3Bの隔離UIでは通常SOURCEのPreview後session残留とANIMATE LayerのExport toolbar時session終了を観測した。実UIは限定確認であり、OwnerのHD-005判断が残る。
 全体監査は[AUDIT](AUDIT.md)、正本配置は[登録簿](DOCUMENT_REGISTER.md)、仕様/将来の順序は[ROADMAP](ROADMAP.md)。
 
 ## IMPORTANT DECISIONS
@@ -43,9 +43,9 @@ WP-004 Slice 1/2で、Layer Motionだけのunsupported planがCPU compositorで�
 - WP-002の指定登録/解除経路は修正済み。別件F-007: 並べ替え/reparentでclipping sourceが変化し競合する可能性は未修正・全経路未再現。
 - WP-003: toolbar残留、自動保存によるV終了、Undo/Redo後のprojection不一致を補修。forced/manual saveは現行terminalを維持。詳細・検証結果はカード。
 - Owner補足の「描画直後だけSOURCE Vが閉じる」は、描画後に予約された通常RecoveryがSOURCE sessionを延期しない経路と一致。activeなSOURCE/Timeline双方を延期する追補を適用し、forced/manual保存は維持。
-- WP-004: CPU拒否抜けは限定修正済み。save/export未確定terminal比較は仕様判断待ち。実画素比較は未実施。
-- WP-004結果: CPU拒否修正、save/export terminal差、HD-005の判断材料は[結果表](work/WP-004-results.md)へ固定。Export側の自動確定/一時評価/明示停止は未採用。
-- 既知UI不具合: Animation Contextの右Layer PanelでCAF `clip-layer-mirror` rowを選択すると、pointerdownの先行visual selection後に正式click同期が省略される可能性がある。Animation Table側の選択回避経路は存在するため、WP-004をブロックしないDEFERRED。後日、pointerdown→clickの限定Verifierから再開する。
+- WP-004: CPU拒否抜けは限定修正済み。実Browser/Canvasのready Layer/Folder Motionとunsupported拒否は確認済み。save/exportのfixture terminal差と限定UI差は記録済みだが、Export側の自動確定/一時評価/明示停止は仕様判断待ち。
+- WP-004結果: Slice 3のBrowser/Canvas・隔離UI evidence、CPU拒否修正、save/export terminal差、HD-005の判断材料は[結果表](work/WP-004-results.md)へ固定。実UIのCAF SOURCE/Folder Motion/連番downloadとOwner操作感は未受入。
+- Animation Contextの右Layer PanelでCAF `clip-layer-mirror` rowを選択できない症状は、Owner実確認で解消済み。WP-004では追加調査・追加修正を行わない。
 - 全solver/codec/長時間pen/全GPU/全Archiveの全面再調査は行わない。必要な対象だけ限定追加する。
 
 ## HUMAN DECISION NEEDED
@@ -57,9 +57,9 @@ OwnerはFolder自身のKEYを選択。個別Raster KEY展開や暗黙Rig登録�
 
 ## NEXT
 
-1. WP-004でsave/export開始時の未確定SOURCE/ANIMATE Transform terminalを同じfixtureで比較する。
-2. unsupported Layer/Folder MotionがCPU/exportで成功扱いにならないことを固定入力と実callerで検証する。
-3. Folder MotionのBrowser Album保存/再読込とCPU/export実画素はWP-004の経路で確認する。F-007へ広げない。
+1. Slice 3の[Browser / Canvas結果](work/WP-004-results.md)をWEB GPTへ渡し、HD-005（Export terminal仕様）の判断を待つ。製品runtimeは変更しない。
+2. GPT判断が返るまで、実UIの限定観測とfixtureの技術passを混同せず、WP-004をACTIVEのまま保持する。
+3. Folder MotionのBrowser Album保存/再読込や追加UI確認は、GPTから明示された場合だけWP-004内で限定実施する。F-007へ広げない。
 
 ## RISKS / BLOCKERS
 
