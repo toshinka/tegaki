@@ -27,7 +27,7 @@ WP-006のFolder自身Motion KEYは技術完了。次の[WP-004](work/WP-004-outp
 WP-001は非UI・同期例外経路を実production classで検証して完了。Browser/Owner実操作は今回未実施であり、受入済みとは記録しない。
 WP-002は指定経路の技術完了。Browser実操作・実Pixi・本番History callback全体は未確認で、全機能受入とはしない。
 WP-003はDONE。拒否時terminal、自動保存延期、Undo/Redo再同期の隔離回帰がpass。通常RasterのF1/F2継続、周期跨ぎ、History 1/0、Project保存往復をBrowser確認済み。描画直後の初回SOURCE Vも通常Recovery延期へ含め、Browserで維持を確認。Owner操作感の受入は未確認。WP-006もDONE。Folder自身のMotion schema、現行subtree評価、Folder専用V bridge、History/Undo/Redo、保存metadataと双方向effect排他を実装した。BrowserでTable展開後の2子Raster同時preview、KEY、次Frame継続を確認。CPU/export実画素とOwner受入は未確認。WP-004はACTIVE、WP-005は前提未完でBLOCKED。旧9qはPAUSED。
-WP-004 Slice 1で、Layer Motionだけのunsupported planがCPU compositorで拒否されず描画まで進むF-003をproduction consumer＋fake Canvasで確定した。Project saveはactive Layer Transformを終了する一方、Export/sequence/previewはSelectionだけを確定するterminal差も確認。製品runtimeは未変更で、実Canvas画素と4編集種別のBrowser出力比較が残る。
+WP-004 Slice 1/2で、Layer Motionだけのunsupported planがCPU compositorで拒否されず描画まで進むF-003をproduction consumer＋fake Canvasで確定し、`none/ready`だけを通す限定修正を適用した。修正後はCanvas描画前にreason付き拒否となる。Project saveはactive Layer Transformを終了する一方、Export/sequence/previewはSelectionだけを確定するterminal差も確認。実Canvas画素と4編集種別のBrowser出力比較、OwnerのHD-005判断が残る。
 全体監査は[AUDIT](AUDIT.md)、正本配置は[登録簿](DOCUMENT_REGISTER.md)、仕様/将来の順序は[ROADMAP](ROADMAP.md)。
 
 ## IMPORTANT DECISIONS
@@ -43,8 +43,8 @@ WP-004 Slice 1で、Layer Motionだけのunsupported planがCPU compositorで拒
 - WP-002の指定登録/解除経路は修正済み。別件F-007: 並べ替え/reparentでclipping sourceが変化し競合する可能性は未修正・全経路未再現。
 - WP-003: toolbar残留、自動保存によるV終了、Undo/Redo後のprojection不一致を補修。forced/manual saveは現行terminalを維持。詳細・検証結果はカード。
 - Owner補足の「描画直後だけSOURCE Vが閉じる」は、描画後に予約された通常RecoveryがSOURCE sessionを延期しない経路と一致。activeなSOURCE/Timeline双方を延期する追補を適用し、forced/manual保存は維持。
-- WP-004: unsupported Layer Motion-onlyのCPU拒否抜け、save/export未確定terminal比較。実画素比較は未実施。
-- WP-004初期結果: CPU拒否抜けとsave/export terminal差は[結果表](work/WP-004-results.md)へ固定。最小修正とHD-005最終UXはまだ未採用。
+- WP-004: CPU拒否抜けは限定修正済み。save/export未確定terminal比較は仕様判断待ち。実画素比較は未実施。
+- WP-004結果: CPU拒否修正、save/export terminal差、HD-005の判断材料は[結果表](work/WP-004-results.md)へ固定。Export側の自動確定/一時評価/明示停止は未採用。
 - 全solver/codec/長時間pen/全GPU/全Archiveの全面再調査は行わない。必要な対象だけ限定追加する。
 
 ## HUMAN DECISION NEEDED

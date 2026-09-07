@@ -748,9 +748,9 @@ export class TimelineFrameCompositor {
     }
 
     _assertLayerDeformerPlanReady(plan, clip, assetId) {
-        if (clip?.layerDeformers == null || plan?.status === 'ready') return;
+        if (!plan || plan.status === 'none' || plan.status === 'ready') return;
         const message = plan?.errors?.map(error => error.code).join(', ') || plan?.status || 'invalid';
-        throw new Error(`ClipAsset ${assetId || '(unknown)'} Layer WARP render is ${plan?.status || 'invalid'}: ${message}`);
+        throw new Error(`ClipAsset ${assetId || '(unknown)'} Layer effect render is ${plan?.status || 'invalid'}: ${message}`);
     }
 
     _assertSurfaceSizeAllowed(bounds, label = 'Raster surface') {

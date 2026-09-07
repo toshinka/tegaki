@@ -95,10 +95,11 @@ const compositor = new TimelineFrameCompositor({
 const destination = new FakeCanvas();
 destination.width = 16;
 destination.height = 16;
-assert.doesNotThrow(() => compositor._renderClipEntry(destination.context, clip, 16, 16, 0),
-    'current CPU entry incorrectly advances past a Layer Motion-only unsupported plan');
-assert.equal(destination.context.operations.some(operation => operation[0] === 'drawImage'), true,
-    'the unsupported entry is still emitted instead of being rejected');
+assert.throws(() => compositor._renderClipEntry(destination.context, clip, 16, 16, 0),
+    /Layer effect render is unsupported: .*layer-transform-rig-overlap/,
+    'CPU entry must reject a Layer Motion-only unsupported plan before drawing');
+assert.equal(destination.context.operations.some(operation => operation[0] === 'drawImage'), false,
+    'unsupported plan must not reach the Canvas draw operation');
 
 const projectSource = readFileSync(new URL('../system/project-manager.js', import.meta.url), 'utf8');
 const exportSource = readFileSync(new URL('../system/export-manager.js', import.meta.url), 'utf8');
@@ -116,4 +117,4 @@ for (const methodName of ['export', 'exportSequencePNG', 'generatePreview']) {
     assert.doesNotMatch(body, /commitActiveLayerTransform/, `${methodName} does not terminate Layer Transform`);
 }
 
-console.log('WP-004 audit: CPU accepts Layer Motion-only unsupported plan; save/export Layer Transform terminals differ.');
+console.log('WP-004 audit: CPU rejects Layer Motion-only unsupported plan; save/export Layer Transform terminals differ.');
