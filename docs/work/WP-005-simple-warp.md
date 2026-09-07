@@ -127,7 +127,7 @@ full convergence Browser gateはChrome 152 / `680x561` / DPR `2.25` / console er
 
 - **normal SOURCE:** WARP入場、16点drag、V、Undo、Redo、Esc cancel。
 - **CAF SOURCE:** `SOURCE · WARP`、drag、V、CAF close/reopen後の結果維持。
-- **CAF ANIMATE:** `READY`、drag、`KEYED`、V、F2、F1再現、Table close rollback。
+- **CAF ANIMATE:** `READY`、drag、明示KEY confirm後の`KEYED`継続、F2/F1再現、V、Table close rollback。
 - **Export:** pending WARPからExportが`pending-layer-transform`で止まり、V確定後またはEsc後に成功すること。
 - **Actual output:** production UIからPNGを最低1回downloadすること。
 - **Preview fidelity:** point drag中のPixi previewが制作判断を妨げるほどずれて見えないこと、V確定・再生・Exportの切替で実用上不自然な跳ねがないこと。問題があれば別WP候補として記録し、WP-005のauthority/schemaは再設計しない。
@@ -152,9 +152,10 @@ full convergence Browser gateはChrome 152 / `680x561` / DPR `2.25` / console er
 
 3. **CAF ANIMATE（最低2 Frame）**
    - F1でinternal Rasterを選択し、`V` → `WARP`。表示が`ANIMATE · F1 READY`、16点表示になることを確認する。
-   - drag後に`ANIMATE · F1 WARP KEYED`となり、drag中も16点overlayが消えないことを確認する。
-   - `V`でHistoryが`+1`、F1 keyが確定し、Table通常状態へ戻ることを確認する。
-   - `F2` → `F1`でF1のWARP結果と単色丸markerを再現し、F1へ再入場して既存WARPを表示することを確認する。
+   - drag後に`ANIMATE · F1 WARP 未確定`となり、drag中も16点overlayが消えないことを確認する。
+   - 明示KEY confirmでHistoryが`+1`、F1 keyと単色丸markerが確定し、panel、V、WARP、16点が残って`KEYED`になることを確認する。
+   - arrowまたはstrip wheelで`F2`へ移動し、F2で同じくdrag→明示KEY confirmを行う。`F2 → F1`でF1のWARP結果とmarkerを再現し、F1へ再入場せず既存WARPを表示することを確認する。
+   - stable `KEYED`で`V`を押すとHistoryを増やさずpanelとoverlayだけが終了し、確定keyが残ることを確認する。
 
 4. **Table close rollback**
    - F1 → `WARP` → drag → Table closeを1ケース実施する。
@@ -189,7 +190,7 @@ Ownerのproduction再現で、CAF ANIMATE / internal Rasterの`V → WARP`中に
 
 - `_previewLayerWarpBridge()`は既存の`ClipInstance.layerDeformers`へ候補を投影して`render()`を予約するが、`isTransformPreviewSuspended`中の通常`render()`はworking Layerを復元していた。そのため、既存のPixi RenderPlan / Mesh deformer previewがmain canvasへ届かなかった。
 - 候補の`PREVIEW` actionを`hasExplicitKey`へ使っていたため、元KEYなしでも`KEYED`表示になっていた。WARP transaction自身の`hadExplicitKey`を正本にし、`keyGuide.pending`を分けた。
-- WARPの明示確定buttonは既存V WARP terminalへ委譲し、`exitLayerMoveMode({ cancelled: false })`から既存`finishLayerWarpEditSession()`だけを通す。基底Layer Transform bridgeはno-opで解放され、History二重化を作らない。
+  - 当時のWARP明示確定buttonは既存V WARP terminalへ委譲していた。このterminal意味論は後述のFinal Owner UX Fixで、明示KEY confirmだけcommit-and-continueへ変更した。基底Layer Transform bridgeはno-opで解放され、History二重化を作らない。
 - active ANIMATE Layer WARPだけ`_applyVisibilityPreview({ force: true })`を使う。PREVIEW toggleがOFFでも編集対象のlive visualを表示するが、CPU連続preview・保存正本・Export authorityは変更しない。
 - Timelineのinternal Raster rowはpending中にbaseline `layerDeformers`を読む。元KEYは残し、新規候補だけではsolid markerを表示しない。確定後はmodelの既存keyframeからsolid markerを表示する。
 
@@ -198,6 +199,23 @@ Ownerのproduction再現で、CAF ANIMATE / internal Rasterの`V → WARP`中に
 `build/verify-layer-transform-warp-animate-live-preview.mjs`を追加し、WARP候補の`READY → 未確定`、既存KEYの`KEYED → KEYED · 未確定変更`、cancel/confirmのtransaction、Pixi preview分岐、Vと同じexplicit terminal、Timeline marker baselineを隔離検証した。関連suiteはwarp 22件、transform 13件、animation 34件、project 9件が全件PASS。構文、harness check、Vite production build、`git diff --check`もPASS。生成`dist`はHEAD内容へ戻している。
 
 production UI（localhost:5173、viewport `905×609`、DPR `2.025`）では、CAFを2 Frameへ延長してLayerを選択し、`V → WARP`で`ANIMATE · F1 WARP READY`、16点、`F1 · KEY未設定`のKEY strip、console error/warn 0件を確認した。pointer dragでmain canvasが追従すること、pointerup保持、明示button/VのHistory +1、Esc/table close rollback、既存KEY再編集、Export block/retry、PNG download、Owner操作感は未受入である。したがってWP-005は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`へ戻し、Owner確認後にのみ受入を更新する。
+
+## Final Owner UX Fix — WARP KEY continuation / Frame step alignment (2026-09-08)
+
+### Bounded contract
+
+- **明示KEY confirm:** pending WARPを既存WARP bridgeでcurrent FrameへHistory `+1`だけ確定し、panel、V、WARP、16点、Canvas結果を維持する。同Frameの新しいstable WARP sessionは確定済み`ClipInstance.layerDeformers`をbaselineとする。
+- **V / Esc:** 既存terminalを維持する。stable VはHistory `0`で終了し、pending Vは既存どおり確定して終了、Escはcandidateだけをrollbackして終了する。
+- **Frame step:** stable WARPは既存WP-003 moverを通ってprev/next/strip wheelで移動し、target Frameのmodelからfresh WARP sessionを開始する。pending中はFrame、candidate、History、overlayを変えず拒否する。
+- **Undo / Redo:** old WARP bridgeをfinishせずabandonして復元済みmodelからfresh sessionを開始する。復元済みkeyへold baselineを戻さない。
+
+### Implementation and evidence
+
+`system/layer-system.js`へWARP専用のresume、commit-and-continue、stable Frame-step、History refresh helperを追加した。`ui/animation-table-popup.js`はWARP HistoryのUndo/Redo時だけbridge所有権をabandonするadapterを追加した。新しい保存writer、History command、schema、CPU/Pixi authority、Export guardは追加・変更していない。
+
+`verify-layer-transform-warp-key-continuation.mjs`は、confirm `+1` / no-op `0`、fresh baseline後のEsc、stable step `0`、pending step拒否、Undo/Redo refreshをproduction methodから隔離実行する。更新したlive-preview verifierとWP-003 continuation verifierも通過した。harnessはwarp 23件、transform 13件、animation 34件、project 9件、harness check、構文、Vite build、`git diff --check`がPASS。
+
+実production UIでは、新規3 Frame CAFで`F1 → F2 → F3 → F2 → F1`を実行し、各Frameでpanel、V、WARP選択、KEY stripを維持した。stable WARPのV終了も従来どおり確認した。CUAのBrowser入力にはCanvas point dragを注入する経路がないため、実Rasterをdragして明示KEY confirmする連続flowはOwner recheckへ残す。Owner受入前の状態は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`である。
 
 ## Goal
 

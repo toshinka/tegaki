@@ -3779,6 +3779,44 @@ export class LayerSystem {
     }
 
     /**
+     * WARPの明示KEY確定・Frame移動後に、既存のV sessionを保ったまま
+     * current modelから同FrameのWARP transactionを張り直す。
+     */
+    _resumeLayerWarpTimelineSession() {
+        const session = this._layerTransformSession;
+        if (!session
+            || !isTransformTimelineKeyTarget(session.transaction?.target)
+            || this._layerWarpEditSession) {
+            return false;
+        }
+        return this.transform?.warpController?.begin?.() === true;
+    }
+
+    _commitLayerWarpTimelineKeyAndContinue() {
+        const warpSession = this._layerWarpEditSession;
+        if (warpSession?.kind !== 'animate'
+            || warpSession.transaction?.kind !== 'layer-warp-edit-transaction'
+            || warpSession.changed !== true) {
+            return false;
+        }
+        const layerId = warpSession.layerId;
+        const target = warpSession.transaction.target;
+        const result = this.finishLayerWarpEditSession({ cancelled: false });
+        if (result?.commit !== true) return false;
+
+        const resumed = this._resumeLayerWarpTimelineSession();
+        if (!resumed) {
+            // Commit itself is durable. Do not leave the panel showing a
+            // WARP mode whose fresh transaction failed to begin.
+            this.transform?.setTransformMode?.('basic');
+            return false;
+        }
+        this.eventBus?.emit('layer:transform-key-committed', { layerId, target });
+        this._emitPanelUpdateRequest();
+        return true;
+    }
+
+    /**
      * ANIMATE previewをTimeline Historyへ確定し、V panelを閉じず同じFrameへ再入場する。
      * SOURCE Raster bakeと未変更baselineはこの入口で確定しない。
      */
@@ -3786,11 +3824,7 @@ export class LayerSystem {
         const warpSession = this._layerWarpEditSession;
         if (warpSession?.kind === 'animate'
             && warpSession.transaction?.kind === 'layer-warp-edit-transaction') {
-            if (warpSession.changed !== true) return false;
-            // WARPの明示確定は、V解除と同じ既存terminalへ委譲する。
-            // WARP bridgeが唯一のTimeline Historyを作り、基底のLayer Transform
-            // bridgeはno-opとして解放されるため、二重commitを作らない。
-            return this.exitLayerMoveMode({ cancelled: false }) === true;
+            return this._commitLayerWarpTimelineKeyAndContinue();
         }
         const session = this._layerTransformSession;
         if (!session
@@ -3819,6 +3853,11 @@ export class LayerSystem {
      * 未確定previewは暗黙commitもrollbackもせず、UI側と同じく移動を拒否する。
      */
     stepLayerTransformTimelineFrame(delta) {
+        const warpSession = this._layerWarpEditSession;
+        if (warpSession?.kind === 'animate'
+            && warpSession.transaction?.kind === 'layer-warp-edit-transaction') {
+            return this._stepLayerWarpTimelineFrame(delta);
+        }
         const direction = delta < 0 ? -1 : (delta > 0 ? 1 : 0);
         const session = this._layerTransformSession;
         if (!direction
@@ -3837,6 +3876,29 @@ export class LayerSystem {
         }
         const moved = this._transformEditAdapter.moveFrame({ transaction, delta: direction }) === true;
         const resumed = this._resumeLayerTransformTimelineSession(terminal);
+        return moved && resumed;
+    }
+
+    _stepLayerWarpTimelineFrame(delta) {
+        const direction = delta < 0 ? -1 : (delta > 0 ? 1 : 0);
+        const warpSession = this._layerWarpEditSession;
+        if (!direction
+            || warpSession?.kind !== 'animate'
+            || warpSession.transaction?.kind !== 'layer-warp-edit-transaction'
+            || warpSession.changed === true) {
+            return false;
+        }
+
+        // A stable WARP transaction owns no candidate. Release it without a
+        // terminal mutation, let the existing WP-003 navigator move the
+        // Frame, then start a new transaction from that Frame's model state.
+        const released = this.finishLayerWarpEditSession({ cancelled: false });
+        if (released?.ok !== true || released.commit === true) return false;
+        const moved = this.stepLayerTransformTimelineFrame(direction);
+        const resumed = this._resumeLayerWarpTimelineSession();
+        if (!resumed) {
+            this.transform?.setTransformMode?.('basic');
+        }
         return moved && resumed;
     }
 
@@ -3865,6 +3927,30 @@ export class LayerSystem {
         this._layerTransformSession = null;
         this.coordAPI?.clearCache?.();
         return this._resumeLayerTransformTimelineSession(terminal);
+    }
+
+    /**
+     * WARP History適用後は、old transactionをfinishしない。finishすると
+     * Undo/Redo済みのClip modelへ旧baselineを戻してしまうため、bridgeの所有権
+     * だけを放棄して復元済みmodelからfresh sessionを開始する。
+     */
+    refreshLayerWarpTimelineSessionAfterHistory() {
+        const warpSession = this._layerWarpEditSession;
+        if (warpSession?.kind !== 'animate'
+            || warpSession.transaction?.kind !== 'layer-warp-edit-transaction'
+            || warpSession.changed === true
+            || typeof this._transformEditAdapter?.abandonWarpAfterHistory !== 'function') {
+            return false;
+        }
+        const abandoned = this._transformEditAdapter.abandonWarpAfterHistory({
+            transaction: warpSession.transaction
+        }) === true;
+        if (!abandoned) return false;
+        this._layerWarpEditSession = null;
+        this.transform?.deactivateWarpOverlay?.();
+        const resumed = this._resumeLayerWarpTimelineSession();
+        if (!resumed) this.transform?.setTransformMode?.('basic');
+        return resumed;
     }
 
     exitLayerMoveMode(options = {}) {
