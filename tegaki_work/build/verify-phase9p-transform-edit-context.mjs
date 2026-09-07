@@ -39,7 +39,8 @@ assert.deepEqual(projectTransformEditContext({
     localFrame: null,
     keyIndex: -1,
     hasExplicitKey: false,
-    internalLayerId: null
+    internalLayerId: null,
+    folderLayerId: null
 });
 
 assert.equal(projectTransformEditContext({ tableVisible: true, timelineFrame: 12 }).reason, 'clip-selection-required');
@@ -121,6 +122,33 @@ const layerKeyed = projectTransformEditContext({
 assert.equal(layerKeyed.authority, TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY);
 assert.equal(layerKeyed.mode, TRANSFORM_EDIT_CONTEXT_MODE.ANIMATE_KEYED);
 assert.equal(layerKeyed.keyIndex, 0);
+
+const folderClip = {
+    ...clip,
+    folderTransformTracks: [{
+        folderLayerId: 'folder-1',
+        pivotX: 100,
+        pivotY: 120,
+        keyframes: [{ frame: 2, x: 8, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }]
+    }]
+};
+const folderReady = projectTransformEditContext({
+    tableVisible: true,
+    selectedClip: folderClip,
+    timelineFrame: 11,
+    folderLayerId: 'folder-1'
+});
+assert.equal(folderReady.authority, TRANSFORM_EDIT_AUTHORITY.CLIP_FOLDER_TRANSFORM_KEY);
+assert.equal(folderReady.mode, TRANSFORM_EDIT_CONTEXT_MODE.ANIMATE_READY);
+assert.equal(folderReady.folderLayerId, 'folder-1');
+const folderKeyed = projectTransformEditContext({
+    tableVisible: true,
+    selectedClip: folderClip,
+    timelineFrame: 12,
+    folderLayerId: 'folder-1'
+});
+assert.equal(folderKeyed.authority, TRANSFORM_EDIT_AUTHORITY.CLIP_FOLDER_TRANSFORM_KEY);
+assert.equal(folderKeyed.mode, TRANSFORM_EDIT_CONTEXT_MODE.ANIMATE_KEYED);
 
 const helperSource = read('system/animation/transform-edit-context.js');
 const popupSource = read('ui/animation-table-popup.js');

@@ -50,6 +50,11 @@ const layerReadyContext = {
     authority: TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY,
     internalLayerId: 'internal-layer-2'
 };
+const folderReadyContext = {
+    ...readyContext,
+    authority: TRANSFORM_EDIT_AUTHORITY.CLIP_FOLDER_TRANSFORM_KEY,
+    folderLayerId: 'folder-1'
+};
 const blockedContext = {
     mode: TRANSFORM_EDIT_CONTEXT_MODE.BLOCKED,
     authority: TRANSFORM_EDIT_AUTHORITY.NONE,
@@ -256,6 +261,41 @@ assert.equal(validateTransformEditTransactionContext(layerAnimate, {
     ...layerReadyContext,
     internalLayerId: 'internal-layer-1'
 }).reason, 'layer-target-changed');
+
+const folderTracks = [{
+    folderLayerId: 'folder-other',
+    pivotX: 10,
+    pivotY: 20,
+    keyframes: [{ frame: 2, interpolation: 'linear', x: 4, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }]
+}];
+const folderAnimate = planTransformEditTransactionStart({
+    context: folderReadyContext,
+    layerId: 'working-folder-child',
+    clipSample,
+    folderTransformTracks: folderTracks,
+    folderLayerId: 'folder-1',
+    pivotX: 120,
+    pivotY: 140,
+    duration: 8
+});
+assert.equal(folderAnimate.ok, true);
+assert.equal(folderAnimate.target, TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_FOLDER_TRANSFORM_KEY);
+const folderPreview = planTransformEditTransactionPreview({
+    transaction: folderAnimate,
+    context: folderReadyContext,
+    layerStart,
+    layerCurrent: { ...layerStart, x: layerStart.x + 18 }
+});
+assert.equal(folderPreview.ok, true);
+assert.equal(folderPreview.tracks.length, 2);
+assert.equal(folderPreview.tracks[1].folderLayerId, 'folder-1');
+assert.equal(folderPreview.tracks[1].pivotX, 120);
+assert.equal(folderPreview.tracks[1].keyframes[0].frame, 4);
+assert.equal(folderPreview.tracks[1].keyframes[0].x, clipSample.x + 18);
+assert.equal(validateTransformEditTransactionContext(folderAnimate, {
+    ...folderReadyContext,
+    folderLayerId: 'folder-2'
+}).reason, 'folder-target-changed');
 
 const anchorBlocked = planTransformEditTransactionPreview({
     transaction: animate,

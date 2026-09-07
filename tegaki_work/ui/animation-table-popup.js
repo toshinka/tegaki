@@ -78,6 +78,12 @@ import {
     sampleClipLayerTransform
 } from '../system/animation/clip-layer-transform.js';
 import {
+    getClipFolderTransformTrack,
+    remapClipFolderTransformTracks,
+    retimeClipFolderTransformTracks,
+    sampleClipFolderTransform
+} from '../system/animation/clip-folder-transform.js';
+import {
     getClipLayerDeformer,
     remapClipLayerDeformers,
     retimeClipLayerDeformers,
@@ -2505,10 +2511,10 @@ export class AnimationTablePopup {
             }, totalFrames, currentFrame, showCurrentFrame);
         }
         const clip = context.entry.clip;
-        const layerMotionTrack = getClipLayerTransformTrack(
-            clip.layerTransformTracks,
-            context.layer.id
-        );
+        const isFolderTarget = context.layer.type === 'folder';
+        const layerMotionTrack = isFolderTarget
+            ? getClipFolderTransformTrack(clip.folderTransformTracks, context.layer.id)
+            : getClipLayerTransformTrack(clip.layerTransformTracks, context.layer.id);
         const isSelected = !this.selectedRigBoneId
             && this.selectedInternalLayerId === context.layer.id;
         const selectedClass = isSelected ? ' is-selected' : '';
@@ -2525,9 +2531,13 @@ export class AnimationTablePopup {
             const isProvisionalLayerMotionKey = hasLayerMotionKey
                 && previewSession?.previewApplied === true
                 && previewSession.changed === true
-                && previewTransaction?.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY
+                && previewTransaction?.target === (isFolderTarget
+                    ? TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_FOLDER_TRANSFORM_KEY
+                    : TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY)
                 && previewTransaction.clipId === clip.id
-                && previewTransaction.internalLayerId === context.layer.id
+                && (isFolderTarget
+                    ? previewTransaction.folderLayerId === context.layer.id
+                    : previewTransaction.internalLayerId === context.layer.id)
                 && previewTransaction.localFrame === localFrame;
             html += `<div class="anim-cell-slot anim-rig-folder-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}"
                 data-track-id="${context.entry.lane.id}"
@@ -2537,8 +2547,8 @@ export class AnimationTablePopup {
                 ${hasLayerMotionKey ? `<span class="anim-caf-motion-key-projection${isProvisionalLayerMotionKey ? ' is-provisional' : ''}"
                     data-layer-motion-key-frame="${localFrame}"
                     role="img"
-                    aria-label="Layer Motion key${isProvisionalLayerMotionKey ? ' preview' : ''}: Frame ${frame + 1}"
-                    title="Layer Motion key${isProvisionalLayerMotionKey ? ' preview · 未確定' : ''} · F${frame + 1}"></span>` : ''}
+                    aria-label="${isFolderTarget ? 'Folder' : 'Layer'} Motion key${isProvisionalLayerMotionKey ? ' preview' : ''}: Frame ${frame + 1}"
+                    title="${isFolderTarget ? 'Folder' : 'Layer'} Motion key${isProvisionalLayerMotionKey ? ' preview · 未確定' : ''} · F${frame + 1}"></span>` : ''}
             </div>`;
         }
         return `${html}</div>`;
@@ -7829,6 +7839,14 @@ export class AnimationTablePopup {
         if (!this.isVisible || !this.selectedCelId) return;
         if (!['record', 'undo', 'redo'].includes(data.action)) return;
         if (data.action === 'record' && data.meta?.type === 'draw') return;
+        if ((data.action === 'undo' || data.action === 'redo')
+            && ['caf-clip-transform-layer-bridge', 'caf-clip-transform-folder-bridge'].includes(data.meta?.type)
+            && this.isTransformPreviewSuspended) {
+            this.layerSystem?.refreshLayerTransformTimelineSessionAfterHistory?.();
+            this.render();
+            this._requestLayerPanelSync();
+            return;
+        }
         if (typeof data.meta?.type === 'string' && data.meta.type.startsWith('caf-')) return;
 
         const layerId = data.meta?.layerId || null;
@@ -7889,6 +7907,7 @@ export class AnimationTablePopup {
                     transform: this._cloneClipInstanceMetadata(clip.transform),
                     transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
                     layerTransformTracks: this._cloneClipInstanceMetadata(clip.layerTransformTracks, []),
+                    folderTransformTracks: this._cloneClipInstanceMetadata(clip.folderTransformTracks, []),
                     layerDeformers: this._cloneClipInstanceMetadata(clip.layerDeformers, null),
                     deformer: this._cloneClipInstanceMetadata(clip.deformer, null),
                     folderDeformers: this._cloneClipInstanceMetadata(clip.folderDeformers, null),
@@ -7918,6 +7937,7 @@ export class AnimationTablePopup {
                 transform: anchorItem.transform,
                 transformKeyframes: anchorItem.transformKeyframes,
                 layerTransformTracks: anchorItem.layerTransformTracks,
+                folderTransformTracks: anchorItem.folderTransformTracks,
                 layerDeformers: anchorItem.layerDeformers,
                 deformer: anchorItem.deformer,
                 folderDeformers: anchorItem.folderDeformers,
@@ -8679,6 +8699,7 @@ export class AnimationTablePopup {
             transform: this._cloneClipInstanceMetadata(clip.transform, {}),
             transformKeyframes: this._cloneClipInstanceMetadata(clip.transformKeyframes, []),
             layerTransformTracks: this._cloneClipInstanceMetadata(clip.layerTransformTracks, []),
+            folderTransformTracks: this._cloneClipInstanceMetadata(clip.folderTransformTracks, []),
             layerDeformers: this._cloneClipInstanceMetadata(clip.layerDeformers, null),
             deformer: this._cloneClipInstanceMetadata(clip.deformer, null),
             folderDeformers: this._cloneClipInstanceMetadata(clip.folderDeformers, null),
@@ -8738,6 +8759,7 @@ export class AnimationTablePopup {
                 transform: this._copiedCelRef.transform,
                 transformKeyframes: this._copiedCelRef.transformKeyframes,
                 layerTransformTracks: this._copiedCelRef.layerTransformTracks,
+                folderTransformTracks: this._copiedCelRef.folderTransformTracks,
                 layerDeformers: this._copiedCelRef.layerDeformers,
                 deformer: this._copiedCelRef.deformer,
                 folderDeformers: this._copiedCelRef.folderDeformers,
@@ -8817,6 +8839,12 @@ export class AnimationTablePopup {
                         pastedAssetCopy.internalLayerIdMap
                     )
                     : this._cloneClipInstanceMetadata(item.layerTransformTracks, []),
+                folderTransformTracks: pastedAssetCopy
+                    ? remapClipFolderTransformTracks(
+                        item.folderTransformTracks,
+                        pastedAssetCopy.internalLayerIdMap
+                    )
+                    : this._cloneClipInstanceMetadata(item.folderTransformTracks, []),
                 layerDeformers: pastedAssetCopy
                     ? remapClipLayerDeformers(item.layerDeformers, pastedAssetCopy.internalLayerIdMap)
                     : this._cloneClipInstanceMetadata(item.layerDeformers, null),
@@ -11072,15 +11100,23 @@ export class AnimationTablePopup {
     getTransformEditContext(workingLayerId = null) {
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
         const asset = entry?.clip?.assetId ? this.model.getClipAsset(entry.clip.assetId) : null;
-        const candidateInternalLayerId = workingLayerId && asset
-            ? this._resolveInternalLayerIdForWorkingLayer(asset, workingLayerId)
-            : this.selectedInternalLayerId;
+        const selectedInternalLayer = asset?.internalLayers?.find(layer => (
+            layer?.id === this.selectedInternalLayerId
+        )) || null;
+        const candidateInternalLayerId = selectedInternalLayer?.type === 'folder'
+            ? selectedInternalLayer.id
+            : (workingLayerId && asset
+                ? this._resolveInternalLayerIdForWorkingLayer(asset, workingLayerId)
+                : this.selectedInternalLayerId);
         const candidateInternalLayer = asset?.internalLayers?.find(layer => (
             layer?.id === candidateInternalLayerId
         )) || null;
         const internalLayerId = candidateInternalLayer
             && candidateInternalLayer.type !== 'folder'
             && candidateInternalLayer.isBackground !== true
+            ? candidateInternalLayer.id
+            : null;
+        const folderLayerId = candidateInternalLayer?.type === 'folder'
             ? candidateInternalLayer.id
             : null;
         const selectedClipCount = this.selectedCelIds instanceof Set
@@ -11092,7 +11128,8 @@ export class AnimationTablePopup {
             selectedClip: entry?.clip || null,
             selectedClipCount,
             timelineFrame: this.model.playback?.currentFrame,
-            internalLayerId
+            internalLayerId,
+            folderLayerId
         });
     }
 
@@ -11106,12 +11143,21 @@ export class AnimationTablePopup {
             begin: request => this._beginLayerTransformBridge(request),
             preview: request => this._previewLayerTransformBridge(request),
             finish: request => this._finishLayerTransformBridge(request),
+            abandonAfterHistory: request => this._abandonLayerTransformBridgeAfterHistory(request),
             moveFrame: request => this._moveLayerTransformBridgeFrame(request),
             canStartWarp: request => this._projectLayerWarpBridgeStart(request),
             beginWarp: request => this._beginLayerWarpBridge(request),
             previewWarp: request => this._previewLayerWarpBridge(request),
             finishWarp: request => this._finishLayerWarpBridge(request)
         };
+    }
+
+    _abandonLayerTransformBridgeAfterHistory({ transaction } = {}) {
+        const session = this._layerTransformBridgeSession;
+        if (!session || session.transaction !== transaction || session.changed === true) return false;
+        this._layerTransformBridgeSession = null;
+        this._animationPreviewKey = null;
+        return true;
     }
 
     _createLayerTransformKeyGuide({ transaction, hasExplicitKey = false, pending = false } = {}) {
@@ -11135,34 +11181,41 @@ export class AnimationTablePopup {
         };
     }
 
-    _projectLayerTransformBridgeStart({ layerId, isFolder = false } = {}) {
+    _projectLayerTransformBridgeStart({ layerId } = {}) {
         const context = this.getTransformEditContext(layerId);
         if (context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY) {
             const check = this.model.preflightClipLayerEffectTarget(context.clipId, context.internalLayerId);
             if (!check.ok) return { ...check, blocked: true };
         }
-        const motionState = context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY
+        const motionState = context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_FOLDER_TRANSFORM_KEY
+            ? this._getSelectedClipFolderMotionFrame()
+            : (context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY
             ? this._getSelectedClipLayerMotionFrame(layerId)
             : (context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY
                 ? this._getSelectedClipMotionFrame()
-                : null);
+                : null));
         if (motionState) {
-            if (isFolder) {
-                return { ok: false, blocked: true, reason: 'clip-root-raster-proxy-required' };
-            }
             if (!this.canEditSelectedWorkingLayer(layerId)) {
                 return { ok: false, blocked: true, reason: 'selected-clip-working-layer-required' };
             }
         }
+        const transactionLayerId = context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_FOLDER_TRANSFORM_KEY
+            ? motionState?.targetWorkingLayerIds?.[0] || null
+            : layerId;
+        if (!transactionLayerId) {
+            return { ok: false, blocked: true, reason: 'clip-working-layers-required' };
+        }
 
         const transaction = planTransformEditTransactionStart({
             context,
-            layerId,
+            layerId: transactionLayerId,
             activeTransaction: this._layerTransformBridgeSession?.transaction || null,
             clipSample: motionState?.sampled || null,
             keyframes: motionState?.entry?.clip?.transformKeyframes || [],
             layerTransformTracks: motionState?.entry?.clip?.layerTransformTracks || [],
+            folderTransformTracks: motionState?.entry?.clip?.folderTransformTracks || [],
             internalLayerId: motionState?.internalLayerId || null,
+            folderLayerId: motionState?.folderLayerId || null,
             pivotX: motionState?.pivotX ?? null,
             pivotY: motionState?.pivotY ?? null,
             duration: motionState?.entry?.clip?.duration ?? null
@@ -11171,9 +11224,11 @@ export class AnimationTablePopup {
 
         const animate = isTransformTimelineKeyTarget(transaction.target);
         const targetLayerIds = animate
-            ? (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY
+            ? (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_FOLDER_TRANSFORM_KEY
+                ? motionState.targetWorkingLayerIds
+                : (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY
                 ? [layerId]
-                : [...(this._getWorkingLayerIdsForClipAsset(motionState.entry.clip.assetId) || [])])
+                : [...(this._getWorkingLayerIdsForClipAsset(motionState.entry.clip.assetId) || [])]))
             : [];
         if (animate && targetLayerIds.length === 0) {
             return { ok: false, blocked: true, reason: 'clip-working-layers-required' };
@@ -11189,6 +11244,7 @@ export class AnimationTablePopup {
             ok: true,
             blocked: false,
             transaction,
+            inputLayerId: transactionLayerId,
             targetLayerIds,
             initialTransform: animate ? { ...transaction.baselineTransform } : null,
             projection: {
@@ -11238,7 +11294,11 @@ export class AnimationTablePopup {
         const transaction = session?.transaction;
         const entry = transaction?.clipId ? this.model.findClipEntry(transaction.clipId) : null;
         if (!entry?.clip) return false;
-        if (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY) {
+        if (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_FOLDER_TRANSFORM_KEY) {
+            entry.clip.folderTransformTracks = structuredClone(
+                transaction.baselineFolderTransformTracks || []
+            );
+        } else if (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY) {
             entry.clip.layerTransformTracks = structuredClone(
                 transaction.baselineLayerTransformTracks || []
             );
@@ -11264,6 +11324,25 @@ export class AnimationTablePopup {
             const check = this.model.preflightClipLayerEffectTarget(transaction.clipId, transaction.internalLayerId);
             if (!check.ok) plan = { ...check, blocked: true };
         }
+        if (plan.ok && transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_FOLDER_TRANSFORM_KEY) {
+            const entry = this.model.findClipEntry(transaction.clipId);
+            const asset = entry?.clip?.assetId ? this.model.getClipAsset(entry.clip.assetId) : null;
+            const supportPlan = asset && entry?.clip
+                ? createFolderPartRenderPlan(
+                    asset,
+                    { ...entry.clip, folderTransformTracks: plan.tracks || [] },
+                    transaction.timelineFrame
+                )
+                : null;
+            if (!supportPlan || supportPlan.status !== 'ready') {
+                plan = {
+                    ok: false,
+                    blocked: true,
+                    reason: supportPlan?.errors?.[0]?.code || 'folder-transform-target-unsupported',
+                    errors: supportPlan?.errors || []
+                };
+            }
+        }
         if (!plan.ok) {
             if (session.previewApplied) {
                 this._restoreLayerTransformBridgePreview(session);
@@ -11280,7 +11359,16 @@ export class AnimationTablePopup {
             return { ok: false, blocked: true, reason: 'clip-target-missing' };
         }
         if (plan.action === TRANSFORM_EDIT_TRANSACTION_ACTION.PREVIEW_ANIMATE) {
-            if (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY) {
+            if (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_FOLDER_TRANSFORM_KEY) {
+                const result = this.model.setClipFolderTransformTracks(transaction.clipId, plan.tracks || []);
+                if (!result.ok) {
+                    if (session.previewApplied) this._restoreLayerTransformBridgePreview(session);
+                    session.changed = false;
+                    session.previewApplied = false;
+                    session.invalidated = true;
+                    return { ...result, blocked: true };
+                }
+            } else if (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY) {
                 entry.clip.layerTransformTracks = structuredClone(plan.tracks || []);
             } else {
                 entry.clip.transformKeyframes = structuredClone(plan.keyframes);
@@ -11291,7 +11379,9 @@ export class AnimationTablePopup {
         } else if (plan.action === TRANSFORM_EDIT_TRANSACTION_ACTION.PREVIEW_ANIMATE_NOOP) {
             session.changed = false;
             if (session.previewApplied) {
-                if (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY) {
+                if (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_FOLDER_TRANSFORM_KEY) {
+                    entry.clip.folderTransformTracks = structuredClone(plan.tracks || []);
+                } else if (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY) {
                     entry.clip.layerTransformTracks = structuredClone(plan.tracks || []);
                 } else {
                     entry.clip.transformKeyframes = structuredClone(plan.keyframes);
@@ -11335,13 +11425,17 @@ export class AnimationTablePopup {
         if (rollback) {
             this._restoreLayerTransformBridgePreview(session);
         } else if (finish.commit === true) {
+            const historyType = transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_FOLDER_TRANSFORM_KEY
+                ? 'caf-clip-transform-folder-bridge'
+                : 'caf-clip-transform-layer-bridge';
             this._recordTimelineHistory(
                 session.beforeState,
                 this._captureTimelineHistoryState(),
-                'caf-clip-transform-layer-bridge',
+                historyType,
                 {
-                    type: 'caf-clip-transform-layer-bridge',
+                    type: historyType,
                     clipId: transaction.clipId,
+                    folderLayerId: transaction.folderLayerId || null,
                     frameIndex: transaction.timelineFrame,
                     localFrame: transaction.localFrame
                 }
@@ -11653,6 +11747,85 @@ export class AnimationTablePopup {
             asset,
             internalLayer,
             internalLayerId: internalLayer.id,
+            localFrame,
+            keyIndex,
+            key: keyIndex >= 0 ? track.keyframes[keyIndex] : null,
+            pivotX,
+            pivotY,
+            sampled
+        };
+    }
+
+    _getSelectedClipFolderMotionFrame() {
+        const motionClipId = this.selectedCelId || (this.isPlaying ? this._motionPlaybackClipId : null);
+        const entry = motionClipId ? this.model.findClipEntry(motionClipId) : null;
+        if (!entry?.clip || entry.clip.duration <= 1) return null;
+        const asset = entry.clip.assetId ? this.model.getClipAsset(entry.clip.assetId) : null;
+        const folderLayerId = this.selectedInternalLayerId;
+        const folder = asset?.internalLayers?.find(layer => (
+            layer?.id === folderLayerId && layer.type === 'folder'
+        )) || null;
+        if (!asset || !folder) return null;
+        const localFrame = this.model.playback.currentFrame - entry.clip.startFrame;
+        if (localFrame < 0 || localFrame >= entry.clip.duration) return null;
+
+        const subtreeIds = collectInternalLayerSubtreeIds(asset.internalLayers, folder.id);
+        const drawableLayers = this._getDrawableInternalLayers(asset);
+        const workingLayers = this._getRasterWorkingLayers();
+        const targetWorkingLayerIds = drawableLayers
+            .map((layer, index) => subtreeIds.has(layer.id) ? workingLayers[index]?.layerData?.id : null)
+            .filter(Boolean);
+        if (targetWorkingLayerIds.length === 0) return null;
+
+        const bounds = unionRasterBounds(drawableLayers
+            .filter(layer => subtreeIds.has(layer.id))
+            .map(layer => {
+                const snapshot = layer.drawingSnapshotId
+                    ? this.model.getDrawingSnapshot(layer.drawingSnapshotId)
+                    : null;
+                return snapshot ? normalizeRasterBounds(snapshot.rasterBounds, {
+                    width: snapshot.width || 1,
+                    height: snapshot.height || 1
+                }) : null;
+            }));
+        if (!bounds) return null;
+        const track = getClipFolderTransformTrack(entry.clip.folderTransformTracks, folder.id);
+        const pivotX = track?.pivotX ?? (bounds.x + bounds.width / 2);
+        const pivotY = track?.pivotY ?? (bounds.y + bounds.height / 2);
+        const canvasWidth = Math.max(1,
+            this.layerSystem?.config?.canvas?.width
+            || this.config?.canvas?.width
+            || bounds.x + bounds.width
+        );
+        const canvasHeight = Math.max(1,
+            this.layerSystem?.config?.canvas?.height
+            || this.config?.canvas?.height
+            || bounds.y + bounds.height
+        );
+        const sampledTrack = sampleClipFolderTransform(
+            entry.clip,
+            folder.id,
+            this.model.playback.currentFrame
+        );
+        const sampled = {
+            x: sampledTrack?.x || 0,
+            y: sampledTrack?.y || 0,
+            scaleX: Number.isFinite(sampledTrack?.scaleX) ? sampledTrack.scaleX : 1,
+            scaleY: Number.isFinite(sampledTrack?.scaleY) ? sampledTrack.scaleY : 1,
+            rotation: sampledTrack?.rotation || 0,
+            opacity: 1,
+            blendMode: 'normal',
+            blendStrength: 1,
+            anchorX: pivotX / canvasWidth,
+            anchorY: pivotY / canvasHeight
+        };
+        const keyIndex = (track?.keyframes || []).findLastIndex(key => key?.frame === localFrame);
+        return {
+            entry,
+            asset,
+            folder,
+            folderLayerId: folder.id,
+            targetWorkingLayerIds,
             localFrame,
             keyIndex,
             key: keyIndex >= 0 ? track.keyframes[keyIndex] : null,
@@ -13099,6 +13272,10 @@ export class AnimationTablePopup {
                     transformKeyframes: sampled.transformKeyframes,
                     layerTransformTracks: remapClipLayerTransformTracks(
                         sampled.layerTransformTracks,
+                        duplicate.internalLayerIdMap
+                    ),
+                    folderTransformTracks: remapClipFolderTransformTracks(
+                        sampled.folderTransformTracks,
                         duplicate.internalLayerIdMap
                     ),
                     layerDeformers: remapClipLayerDeformers(
@@ -21321,6 +21498,7 @@ export class AnimationTablePopup {
                                 duration: cel.duration,
                                 transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
                                 layerTransformTracks: this._cloneClipInstanceMetadata(cel.layerTransformTracks, []),
+                                folderTransformTracks: this._cloneClipInstanceMetadata(cel.folderTransformTracks, []),
                                 layerDeformers: this._cloneClipInstanceMetadata(cel.layerDeformers, null),
                                 deformer: this._cloneClipInstanceMetadata(cel.deformer, null),
                                 folderDeformers: this._cloneClipInstanceMetadata(cel.folderDeformers, null),
@@ -21829,6 +22007,7 @@ export class AnimationTablePopup {
                     duration: cel.duration,
                     transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
                     layerTransformTracks: this._cloneClipInstanceMetadata(cel.layerTransformTracks, []),
+                    folderTransformTracks: this._cloneClipInstanceMetadata(cel.folderTransformTracks, []),
                     layerDeformers: this._cloneClipInstanceMetadata(cel.layerDeformers, null),
                     deformer: this._cloneClipInstanceMetadata(cel.deformer, null),
                     folderDeformers: this._cloneClipInstanceMetadata(cel.folderDeformers, null),
@@ -21868,6 +22047,7 @@ export class AnimationTablePopup {
             duration: cel.duration,
             transformKeyframes: this._cloneClipInstanceMetadata(cel.transformKeyframes, []),
             layerTransformTracks: this._cloneClipInstanceMetadata(cel.layerTransformTracks, []),
+            folderTransformTracks: this._cloneClipInstanceMetadata(cel.folderTransformTracks, []),
             layerDeformers: this._cloneClipInstanceMetadata(cel.layerDeformers, null),
             deformer: this._cloneClipInstanceMetadata(cel.deformer, null),
             folderDeformers: this._cloneClipInstanceMetadata(cel.folderDeformers, null),
@@ -23770,6 +23950,10 @@ export class AnimationTablePopup {
                 original.layerTransformTracks,
                 []
             );
+            cel.folderTransformTracks = this._cloneClipInstanceMetadata(
+                original.folderTransformTracks,
+                []
+            );
             cel.layerDeformers = this._cloneClipInstanceMetadata(original.layerDeformers, null);
             cel.deformer = this._cloneClipInstanceMetadata(original.deformer, null);
             cel.folderDeformers = this._cloneClipInstanceMetadata(original.folderDeformers, null);
@@ -23872,6 +24056,11 @@ export class AnimationTablePopup {
                 targetDuration
             )
         }));
+        cel.folderTransformTracks = retimeClipFolderTransformTracks(
+            cel.folderTransformTracks,
+            startDuration,
+            targetDuration
+        );
         cel.layerDeformers = retimeClipLayerDeformers(
             cel.layerDeformers,
             startDuration,

@@ -1,6 +1,6 @@
 # TEGAKI — 外部WEB AI向け GitHub読解リンク集
 
-更新日: 2026-09-06
+更新日: 2026-09-07
 対象: 現行コード・製品思想・技術契約・現在の計画。Archive / 過去Reviewは収録しない。
 このリンク集は案内であり、仕様の第二正本ではない。
 
@@ -73,6 +73,9 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-0
 
 docs/work/WP-005-simple-warp.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-005-simple-warp.md
+
+docs/work/WP-006-folder-transform-key.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-006-folder-transform-key.md
 
 ツールコード / 開発検証入口
 詳細の依存関係・役割はdocs/ARCHITECTURE.md、領域別入口はdocs/harness.jsonを参照。

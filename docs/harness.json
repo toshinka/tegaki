@@ -44,7 +44,7 @@
     "project": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": ["tegaki_work/system/project-manager.js", "tegaki_work/system/export-manager.js", "tegaki_work/system/emergency-recovery-store.js"],
-      "patterns": ["^verify-project-", "^verify-emergency-", "^verify-bake-", "^verify-clip-bake-", "^verify-structured-bake", "^verify-folder-deformer-project"]
+      "patterns": ["^verify-project-", "^verify-emergency-", "^verify-bake-", "^verify-clip-bake-", "^verify-structured-bake", "^verify-folder-deformer-project", "^verify-output-terminal"]
     },
     "ui": {
       "architecture": "docs/ARCHITECTURE.md",
@@ -60,8 +60,9 @@
   "packages": [
     {"id":"WP-001","document":"docs/work/WP-001-history-failure.md","status":"DONE","dependsOn":[]},
     {"id":"WP-002","document":"docs/work/WP-002-effect-guards.md","status":"DONE","dependsOn":[]},
-    {"id":"WP-003","document":"docs/work/WP-003-key-continuation.md","status":"ACTIVE","dependsOn":[]},
-    {"id":"WP-004","document":"docs/work/WP-004-output-terminal.md","status":"READY","dependsOn":[]},
+    {"id":"WP-003","document":"docs/work/WP-003-key-continuation.md","status":"DONE","dependsOn":[]},
+    {"id":"WP-006","document":"docs/work/WP-006-folder-transform-key.md","status":"DONE","dependsOn":["WP-003"]},
+    {"id":"WP-004","document":"docs/work/WP-004-output-terminal.md","status":"ACTIVE","dependsOn":["WP-006"]},
     {"id":"WP-005","document":"docs/work/WP-005-simple-warp.md","status":"BLOCKED","dependsOn":["WP-002","WP-003","WP-004"]}
   ]
 }

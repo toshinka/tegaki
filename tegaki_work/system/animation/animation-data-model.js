@@ -79,6 +79,13 @@ import {
     validateClipLayerTransformTracks
 } from './clip-layer-transform.js';
 import {
+    normalizeClipFolderTransformTracks,
+    removeClipFolderTransformTargets,
+    remapClipFolderTransformTracks,
+    serializeClipFolderTransformTracks,
+    validateClipFolderTransformTracks
+} from './clip-folder-transform.js';
+import {
     normalizeClipLayerDeformers,
     removeClipLayerDeformerTargets,
     remapClipLayerDeformers,
@@ -385,6 +392,11 @@ export class ClipInstanceModel {
         // Phase 9p: CAF全体Motionとは別に、選択internal Rasterだけの非破壊Motionを保持する。
         // RIG登録やworking Layerを保存正本にせず、ClipInstance単位でAsset内Layer IDを参照する。
         this.layerTransformTracks = normalizeClipLayerTransformTracks(options.layerTransformTracks);
+        this._folderTransformSourceErrors = options.folderTransformTracks == null
+            ? []
+            : validateClipFolderTransformTracks(options.folderTransformTracks, [], this.duration).errors
+                .filter(error => error.code !== 'dangling-folder-transform-target');
+        this.folderTransformTracks = normalizeClipFolderTransformTracks(options.folderTransformTracks);
         // Phase 9q: Table-open ANIMATE時の個別internal Raster WARP。
         // raw validationはProject復元時の警告用runtime診断であり、serializeしない。
         this._layerDeformerSourceErrors = options.layerDeformers == null
@@ -440,6 +452,9 @@ export class ClipInstanceModel {
             ...(this.layerTransformTracks.length === 0
                 ? {}
                 : { layerTransformTracks: serializeClipLayerTransformTracks(this.layerTransformTracks) }),
+            ...(this.folderTransformTracks.length === 0
+                ? {}
+                : { folderTransformTracks: serializeClipFolderTransformTracks(this.folderTransformTracks) }),
             ...(this.layerDeformers == null
                 ? {}
                 : { layerDeformers: serializeClipLayerDeformers(this.layerDeformers) }),
@@ -911,6 +926,36 @@ export class TimelineModel {
             if (reason) return { ok: false, reason, internalLayerId: track.internalLayerId };
         }
         entry.clip.layerTransformTracks = validation.value;
+        return { ok: true, lane: entry.lane, clip: entry.clip };
+    }
+
+    setClipFolderTransformTracks(clipId, tracks = []) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry) return { ok: false, reason: 'clip-not-found' };
+        const asset = entry.clip.assetId ? this.getClipAsset(entry.clip.assetId) : null;
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const validation = validateClipFolderTransformTracks(tracks, asset.internalLayers, entry.clip.duration);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-folder-transform-tracks', errors: validation.errors };
+        }
+        for (const track of validation.value) {
+            if (!track.keyframes.length) continue;
+            const subtreeIds = [
+                track.folderLayerId,
+                ...getInternalFolderRasterDescendants(asset, track.folderLayerId).map(layer => layer.id)
+            ];
+            for (const internalLayerId of subtreeIds) {
+                const reason = layerEffectConflictReason(asset, internalLayerId);
+                if (reason) {
+                    return { ok: false, reason, folderLayerId: track.folderLayerId, internalLayerId };
+                }
+            }
+            if (normalizeClipFolderDeformers(entry.clip.folderDeformers)?.targets
+                ?.some(target => target.folderLayerId === track.folderLayerId)) {
+                return { ok: false, reason: 'folder-deformer-motion-unsupported', folderLayerId: track.folderLayerId };
+            }
+        }
+        entry.clip.folderTransformTracks = validation.value;
         return { ok: true, lane: entry.lane, clip: entry.clip };
     }
 
@@ -1532,6 +1577,10 @@ export class TimelineModel {
         if (deformer !== null && deformer !== undefined && !normalizeClipDeformer(deformer)) {
             return { ok: false, reason: 'invalid-folder-deformer' };
         }
+        if (deformer != null && entry.clip.folderTransformTracks
+            ?.some(track => track?.folderLayerId === folderLayerId && track.keyframes?.length)) {
+            return { ok: false, reason: 'folder-deformer-motion-unsupported', folderLayerId };
+        }
         const next = deformer === null || deformer === undefined
             ? removeClipFolderDeformerTarget(entry.clip.folderDeformers, folderLayerId)
             : setClipFolderDeformerTarget(entry.clip.folderDeformers, folderLayerId, deformer);
@@ -1579,11 +1628,28 @@ export class TimelineModel {
 
     // Static Asset edits must inspect every referencing Clip, not only the selected frame.
     _preflightClipAssetLayerEffects(assetId, targetIds) {
+        const asset = this.getClipAsset(assetId);
         for (const clip of this.getClipInstancesForAsset(assetId)) {
             const warp = clip.layerDeformers?.targets?.find(target => targetIds.has(target.internalLayerId));
             if (warp) return { ok: false, reason: 'layer-deformer-conflict', clipId: clip.id, internalLayerId: warp.internalLayerId };
             const motion = clip.layerTransformTracks?.find(track => targetIds.has(track.internalLayerId) && track.keyframes?.length);
             if (motion) return { ok: false, reason: 'layer-transform-conflict', clipId: clip.id, internalLayerId: motion.internalLayerId };
+            const folderMotion = clip.folderTransformTracks?.find(track => {
+                if (!track?.keyframes?.length) return false;
+                const subtreeIds = new Set([
+                    track.folderLayerId,
+                    ...getInternalFolderRasterDescendants(asset, track.folderLayerId).map(layer => layer.id)
+                ]);
+                return [...targetIds].some(targetId => subtreeIds.has(targetId));
+            });
+            if (folderMotion) {
+                return {
+                    ok: false,
+                    reason: 'folder-transform-conflict',
+                    clipId: clip.id,
+                    folderLayerId: folderMotion.folderLayerId
+                };
+            }
         }
         return { ok: true };
     }
@@ -1952,6 +2018,10 @@ export class TimelineModel {
                     clip.layerTransformTracks,
                     deleteIds
                 );
+                clip.folderTransformTracks = removeClipFolderTransformTargets(
+                    clip.folderTransformTracks,
+                    deleteIds
+                );
                 clip.layerDeformers = removeClipLayerDeformerTargets(
                     clip.layerDeformers,
                     deleteIds
@@ -2103,6 +2173,14 @@ export class TimelineModel {
         this.tracks.forEach(track => {
             (track.cels || []).forEach(clip => {
                 if (clip.assetId !== asset.id) return;
+                const sourceFolderTransformTracks = (clip.folderTransformTracks || [])
+                    .filter(folderTrack => sourceIds.has(folderTrack?.folderLayerId));
+                if (sourceFolderTransformTracks.length > 0) {
+                    clip.folderTransformTracks = [
+                        ...normalizeClipFolderTransformTracks(clip.folderTransformTracks),
+                        ...remapClipFolderTransformTracks(sourceFolderTransformTracks, idMap)
+                    ];
+                }
                 if (clip.folderDeformers) {
                     const sourceTargets = normalizeClipFolderDeformers(clip.folderDeformers)?.targets
                         ?.filter(target => sourceIds.has(target.folderLayerId)) || [];
@@ -2331,6 +2409,7 @@ export class TimelineModel {
                 transform: normalizeClipTransform(clip.transform || {}),
                 transformKeyframes: (clip.transformKeyframes || []).map(keyframe => clonePlainObject(keyframe)),
                 layerTransformTracks: serializeClipLayerTransformTracks(clip.layerTransformTracks),
+                folderTransformTracks: serializeClipFolderTransformTracks(clip.folderTransformTracks),
                 ...(clip.layerDeformers == null
                     ? {}
                     : { layerDeformers: serializeClipLayerDeformers(clip.layerDeformers) }),

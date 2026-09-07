@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import { TRANSFORM_EDIT_TRANSACTION_TARGET as TARGET } from '../system/animation/transform-edit-transaction.js';
 globalThis.window = {};
 const { EmergencyRecoveryStore } = await import('../system/emergency-recovery-store.js');
-for (const target of [TARGET.CLIP_TRANSFORM_KEY, TARGET.CLIP_LAYER_TRANSFORM_KEY]) {
-    let activeTarget = target;
+for (const target of [TARGET.LAYER_SOURCE, TARGET.CLIP_TRANSFORM_KEY, TARGET.CLIP_LAYER_TRANSFORM_KEY]) {
+    let sessionActive = true;
     let exports = 0;
     let writes = 0;
     const retries = [];
     window.projectManager = {
-        layerSystem: { getActiveTransformEditTarget: () => activeTarget },
+        layerSystem: {
+            getActiveTransformEditTarget: () => target,
+            hasActiveLayerTransformSession: () => sessionActive
+        },
         async exportProject() { exports++; return { app: 'tegaki' }; }
     };
     const store = new EmergencyRecoveryStore();
@@ -27,12 +30,12 @@ for (const target of [TARGET.CLIP_TRANSFORM_KEY, TARGET.CLIP_LAYER_TRANSFORM_KEY
     assert.equal(store._pendingSave, true);
     assert.equal(store._isSaving, false);
     assert.deepEqual(retries, [500, 500]);
-    activeTarget = TARGET.LAYER_SOURCE;
+    sessionActive = false;
     assert.equal(await store._trySave(), true);
     assert.equal(exports, 1);
     assert.equal(writes, 1);
     assert.equal(store._pendingSave, false);
-    activeTarget = target;
+    sessionActive = true;
     assert.equal(await store.performSave({ force: true, reason: 'visibility-hidden' }), true);
     assert.equal(exports, 2, 'forced checkpoint retains its existing terminal');
     assert.equal(writes, 2);
@@ -40,4 +43,4 @@ for (const target of [TARGET.CLIP_TRANSFORM_KEY, TARGET.CLIP_LAYER_TRANSFORM_KEY
     assert.equal(await store._trySave(), false);
     assert.equal(exports, 2);
 }
-console.log('WP-003 recovery: Timeline session deferral, pending retry, post-exit save, forced behavior passed.');
+console.log('WP-003 recovery: SOURCE/Timeline session deferral, pending retry, post-exit save, forced behavior passed.');

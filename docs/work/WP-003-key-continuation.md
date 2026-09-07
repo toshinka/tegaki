@@ -74,6 +74,24 @@ Ownerが追加改修を許可。ProjectManagerの保存前確定を迂回せず�
 - 注意: Vを長時間開いたままだと、その間の周期checkpointは古いままになる。forced checkpointは現行どおりsessionを終了し得る。この区別も受入条件へ明記する。
 - 検証: 実RecoveryStoreの`_trySave`/`performSave`でV編集中のexport呼出0、V終了後1、pending保持、既存描画延期とforced経路不変。Browserで周期保存間隔を跨いでF1/F2 KEY継続、cancel/no-op 0、手動save/reopen・Undo/Redoを確認する。
 
-RecoveryStoreの両入口へ延期条件を実装。`verify-clip-transform-recovery.mjs`は実クラスでroot/個別Layerの延期、pending保持、終了後保存、forced保存不変を確認。既存recovery scheduling/settings回帰もpass。Browserで周期を跨ぐ確認は継続中。
+RecoveryStoreの両入口へ延期条件を実装。`verify-clip-transform-recovery.mjs`は実クラスでroot/個別Layerの延期、pending保持、終了後保存、forced保存不変を確認。既存recovery scheduling/settings回帰もpass。Browserで通常自動保存の周期を跨ぐV維持と終了後保存を確認済み。
 
 Owner追報: 立上げ/編集中にもV自動解除が多い。Folder選択で子2/3の一括変形にならず代表Layer2だけを操作し、KEYも設定できない（添付F11画像）。自動保存補修の後にFolder routingを調査する。別の保存正本や未承認のFolder KEY schemaを作らず、既存経路との差を確定してから補修範囲を整理する。
+
+### 2026-09-07 再開後の技術検証
+
+- 再開HEAD `63a9ffd9`、worktree cleanを確認。このHEADに自動保存延期、recovery verifier、Browser診断入口が収録済み。
+- 通常自動保存の周期を3分以上跨いでもV/panel/handles/sessionを維持。未確定F2変形をEscapeするとHistory 0でrollback。forced/manual saveの現行terminalは変更していない。
+- F1 KEY確定はHistory 3→4、Undo 4→3、Redo 3→4。Timeline丸は正しく消去/復元したが、修正前は上部projectionだけKEYEDのまま残った。
+- History適用後、pendingのないTimeline V sessionを旧baselineへfinishせず破棄し、復元済みmodelから同Frameへ再入場する限定補修を追加。修正後はUndoで`ANIMATE · F1 READY`/KEY未設定、RedoでKEYED/KEY設定済へ同期し、panel/Vを維持。
+- `verify-clip-transform-continuation.mjs`へhistory refresh成功とpending拒否を追加。Transform 13/13、UI 45/45、変更JS構文がpass。
+- Albumの通常Project保存→選択Project load→Table再表示を実施。Project loadでHistoryは仕様どおり0へclear、F1のLayer Motion key丸と2F Clipを復元。Browser consoleの新規errorなし。
+- Folder追報の調査では、既存`layerTransformTracks`は個別Raster専用、`rigMotion`は登録済みRig Part必須で、未RIG Folder自身のMotion保存先が存在しないと確定。Ownerは「子Rasterへの同時個別KEY」ではなく「Folder自身のKEY（追加設計）」を選択。これは[WP-006](WP-006-folder-transform-key.md)へ分離した。
+- 変更JS構文、Transform 13/13、UI 45/45、Vite buildが成功。Owner操作感の受入は技術完了と分けて未確認のまま記録する。
+
+### 2026-09-07 Owner補足 — 描画直後の初回SOURCE V
+
+- 描画後に予約された通常Recovery保存はTimeline KEY sessionだけを延期していた。Tableを開く前のSOURCE Vは対象外で、`exportProject`の既存terminalが開始直後のsessionを終了する。保存済みとなる二回目から安定する報告と一致する。
+- LayerSystemのactive session有無をpublic queryにし、通常Recoveryの両capture入口でSOURCE/Timeline双方を延期する。session終了後のretryとforced/manual保存の既存terminalは維持する。
+- 実RecoveryStore verifierへSOURCEを追加し、export 0、pending保持、終了後1回保存、forced保存不変を確認する。
+- Browserの新規400×400 Projectで描画直後に初回Vを入力し、2.5秒後も`SOURCE · 原画` panelとV選択を維持。Escapeで正常終了を確認した。Owner環境での再受入は未確認。

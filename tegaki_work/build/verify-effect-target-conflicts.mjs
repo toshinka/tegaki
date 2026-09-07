@@ -12,6 +12,12 @@ const { HistoryManager } = await import('../system/history.js');
 
 const warp = () => createWarpGridDeformer({ bindBounds: { x: 0, y: 0, width: 16, height: 16 } });
 const motion = id => [{ internalLayerId: id, pivotX: 0, pivotY: 0, keyframes: [{ frame: 0, x: 2 }] }];
+const folderMotion = id => [{
+    folderLayerId: id,
+    pivotX: 0,
+    pivotY: 0,
+    keyframes: [{ frame: 0, x: 2, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }]
+}];
 function fixture(folder = false) {
     const model = new TimelineModel({
         clipAssets: [{ id: 'asset', internalLayers: [
@@ -26,6 +32,45 @@ function fixture(folder = false) {
         ] }]
     });
     return model;
+}
+
+// Folder Motion owns the current Folder subtree in both registration orders.
+{
+    const rigAfterMotion = fixture(true);
+    assert.equal(rigAfterMotion.setClipFolderTransformTracks('shared', folderMotion('folder')).ok, true);
+    rejectUnchanged(rigAfterMotion,
+        () => rigAfterMotion.registerClipAssetRigPart('asset', 'folder'),
+        'folder-transform-conflict');
+
+    const meshAfterMotion = fixture(true);
+    assert.equal(meshAfterMotion.setClipFolderTransformTracks('clip', folderMotion('folder')).ok, true);
+    rejectUnchanged(meshAfterMotion,
+        () => meshAfterMotion.generateClipAssetRasterBoneSetup('asset', 'raster'),
+        'folder-transform-conflict');
+
+    const clippingAfterMotion = fixture(true);
+    assert.equal(clippingAfterMotion.setClipFolderTransformTracks('clip', folderMotion('folder')).ok, true);
+    rejectUnchanged(clippingAfterMotion,
+        () => clippingAfterMotion.toggleClipAssetInternalLayerClipping('asset', 'raster'),
+        'folder-transform-conflict');
+
+    const rigBeforeMotion = fixture(true);
+    assert.equal(rigBeforeMotion.registerClipAssetRigPart('asset', 'folder').ok, true);
+    rejectUnchanged(rigBeforeMotion,
+        () => rigBeforeMotion.setClipFolderTransformTracks('clip', folderMotion('folder')),
+        'rig-part-layer-unsupported');
+
+    const meshBeforeMotion = fixture(true);
+    meshBeforeMotion.getClipAsset('asset').meshDefinitions = [{ meshId: 'mesh', targetInternalLayerId: 'raster' }];
+    rejectUnchanged(meshBeforeMotion,
+        () => meshBeforeMotion.setClipFolderTransformTracks('clip', folderMotion('folder')),
+        'mesh-layer-unsupported');
+
+    const clippingBeforeMotion = fixture(true);
+    assert.equal(clippingBeforeMotion.toggleClipAssetInternalLayerClipping('asset', 'raster').ok, true);
+    rejectUnchanged(clippingBeforeMotion,
+        () => clippingBeforeMotion.setClipFolderTransformTracks('clip', folderMotion('folder')),
+        'internal-clipping-unsupported');
 }
 function rejectUnchanged(model, action, reason) {
     const before = model.serialize();

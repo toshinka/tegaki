@@ -1,13 +1,12 @@
 # Tegaki — 再開checkpoint
 
-状態: WP-001 / WP-002 DONE。WP-003 ACTIVE（追加scope承認済み、自動保存補修・Folder routing調査）。
-更新日: 2026-09-06。開始基準`9b6ea3c2`＋WP-001差分。途中のOwner commit後、終盤HEADは`743ce53a5d3f02554699ebc7afa4859a9e6d2716`。その後の未コミット追補を含む。
+状態: WP-001 / WP-002 / WP-003 / WP-006 DONE（Owner操作感は未確認）。WP-004 ACTIVE。
+更新日: 2026-09-07。現在HEADは`63a9ffd971b3bcc97cd1196747736c40b0e7c520`。再開時worktree cleanを確認後、WP-003を技術完了し、未コミットのWP-006 pure schema/model Sliceを進行中。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
 
-WP-003のKEY継続編集を検証中。再入場拒否時の終了通知/toolbar同期を補修し、実機のpanel消失は再入場成功後のEmergency Recovery自動保存によるsession終了と捕捉した。
-現在HEADはOwner commit後の`da092c9f0bc440cfffda71da97fe65dfdb670b77`。証拠と未適用の限定追加案は[WP-003](work/WP-003-key-continuation.md)。
+WP-006のFolder自身Motion KEYは技術完了。次の[WP-004](work/WP-004-output-terminal.md)で未確定Transformとunsupported Motionのsave/export terminalを監査する。
 
 ## COMPLETED
 
@@ -27,7 +26,8 @@ WP-003のKEY継続編集を検証中。再入場拒否時の終了通知/toolbar
 
 WP-001は非UI・同期例外経路を実production classで検証して完了。Browser/Owner実操作は今回未実施であり、受入済みとは記録しない。
 WP-002は指定経路の技術完了。Browser実操作・実Pixi・本番History callback全体は未確認で、全機能受入とはしない。
-WP-003はACTIVE。拒否時terminal補修・隔離回帰はpass。通常RasterのF1/F2 KEY確定はpanel/handles維持を確認したが、周期自動保存が後からVを終了する原因は未修正。WP-004はREADY、WP-005は前提未完でBLOCKED。旧9qはPAUSED。
+WP-003はDONE。拒否時terminal、自動保存延期、Undo/Redo再同期の隔離回帰がpass。通常RasterのF1/F2継続、周期跨ぎ、History 1/0、Project保存往復をBrowser確認済み。描画直後の初回SOURCE Vも通常Recovery延期へ含め、Browserで維持を確認。Owner操作感の受入は未確認。WP-006もDONE。Folder自身のMotion schema、現行subtree評価、Folder専用V bridge、History/Undo/Redo、保存metadataと双方向effect排他を実装した。BrowserでTable展開後の2子Raster同時preview、KEY、次Frame継続を確認。CPU/export実画素とOwner受入は未確認。WP-004はACTIVE、WP-005は前提未完でBLOCKED。旧9qはPAUSED。
+WP-004 Slice 1で、Layer Motionだけのunsupported planがCPU compositorで拒否されず描画まで進むF-003をproduction consumer＋fake Canvasで確定した。Project saveはactive Layer Transformを終了する一方、Export/sequence/previewはSelectionだけを確定するterminal差も確認。製品runtimeは未変更で、実Canvas画素と4編集種別のBrowser出力比較が残る。
 全体監査は[AUDIT](AUDIT.md)、正本配置は[登録簿](DOCUMENT_REGISTER.md)、仕様/将来の順序は[ROADMAP](ROADMAP.md)。
 
 ## IMPORTANT DECISIONS
@@ -41,22 +41,24 @@ WP-003はACTIVE。拒否時terminal補修・隔離回帰はpass。通常Raster�
 
 - WP-001範囲内の既知残存なし。範囲外: do途中mutationのrollback、push失敗前のredo枝破棄、composite補償/byteSize、非同期History。
 - WP-002の指定登録/解除経路は修正済み。別件F-007: 並べ替え/reparentでclipping sourceが変化し競合する可能性は未修正・全経路未再現。
-- WP-003: toolbar残留は終了通知/受信を補修。panel消失はEmergencyRecoveryStore→exportProject→project-save terminalを実機捕捉。自動保存の延期は許可file外のため未適用。詳細・検証結果はカード。
+- WP-003: toolbar残留、自動保存によるV終了、Undo/Redo後のprojection不一致を補修。forced/manual saveは現行terminalを維持。詳細・検証結果はカード。
+- Owner補足の「描画直後だけSOURCE Vが閉じる」は、描画後に予約された通常RecoveryがSOURCE sessionを延期しない経路と一致。activeなSOURCE/Timeline双方を延期する追補を適用し、forced/manual保存は維持。
 - WP-004: unsupported Layer Motion-onlyのCPU拒否抜け、save/export未確定terminal比較。実画素比較は未実施。
+- WP-004初期結果: CPU拒否抜けとsave/export terminal差は[結果表](work/WP-004-results.md)へ固定。最小修正とHD-005最終UXはまだ未採用。
 - 全solver/codec/長時間pen/全GPU/全Archiveの全面再調査は行わない。必要な対象だけ限定追加する。
 
 ## HUMAN DECISION NEEDED
 
-OwnerはWP-003へ`emergency-recovery-store.js`の限定追加を許可済み。周期保存延期を実装・隔離回帰pass、Browser確認を継続中。Folder選択時の子集合変形/KEY不成立も追報され、既存routingを調査する。
+OwnerはFolder自身のKEYを選択。個別Raster KEY展開や暗黙Rig登録をせず、[WP-006](work/WP-006-folder-transform-key.md)の`folderTransformTracks`として実装済み。
 
 [HD-001〜005](ROADMAP.md#human-decisions): 大規模移行方式、static RIG host、内部Layer複製時の時間effect継承、永続非破壊SOURCE、export未確定編集。
 既存不具合の限定補修を妨げないが、未採用案を実装契約へ昇格しない。今回これらの結論は変更していない。
 
 ## NEXT
 
-1. 通常自動保存延期を周期を跨いでBrowser検証し、History/保存往復を確認。
-2. Owner追報のFolder代表Layerへの誤routingとKEY不成立を調査し、既存保存契約内で補修する。
-3. WP-003の技術検証とOwner操作感の受入を分ける。WP-004以降/F-007は開始しない。
+1. WP-004でsave/export開始時の未確定SOURCE/ANIMATE Transform terminalを同じfixtureで比較する。
+2. unsupported Layer/Folder MotionがCPU/exportで成功扱いにならないことを固定入力と実callerで検証する。
+3. Folder MotionのBrowser Album保存/再読込とCPU/export実画素はWP-004の経路で確認する。F-007へ広げない。
 
 ## RISKS / BLOCKERS
 

@@ -195,6 +195,10 @@ export class LayerSystem {
             || TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE;
     }
 
+    hasActiveLayerTransformSession() {
+        return this._layerTransformSession != null;
+    }
+
     /**
      * 後続Simple 4x4 controller用のLayer WARP transaction入口。
      * pointer/DOMは持たず、active working RasterとPopup adapterの同期境界だけを所有する。
@@ -3244,11 +3248,11 @@ export class LayerSystem {
 
     enterLayerMoveMode() {
         if (!this.transform) return false;
-        const activeLayer = this.getActiveLayer();
+        let activeLayer = this.getActiveLayer();
         if (!activeLayer?.layerData || activeLayer.layerData.isBackground) return false;
         if (activeLayer.layerData.isFolder && !this._isFolderWithRasterTargets(activeLayer)) return false;
 
-        const layerId = activeLayer.layerData.id;
+        let layerId = activeLayer.layerData.id;
         const sourceTransform = this.transform.getTransform(layerId)
             || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
         const adapterStart = this._transformEditAdapter?.begin?.({
@@ -3263,6 +3267,22 @@ export class LayerSystem {
             projection: null
         };
         if (adapterStart.ok !== true) return false;
+        if (adapterStart.inputLayerId && adapterStart.inputLayerId !== layerId) {
+            const inputLayer = this.getLayers().find(layer => (
+                layer?.layerData?.id === adapterStart.inputLayerId
+            )) || null;
+            if (!inputLayer?.layerData) {
+                this._transformEditAdapter?.finish?.({
+                    transaction: adapterStart.transaction,
+                    cancelled: true
+                });
+                return false;
+            }
+            activeLayer = inputLayer;
+            layerId = inputLayer.layerData.id;
+            const inputIndex = this.getLayers().indexOf(inputLayer);
+            if (inputIndex >= 0) this.setActiveLayer?.(inputIndex);
+        }
 
         const isClipKey = isTransformTimelineKeyTarget(adapterStart.transaction?.target);
         const targetLayerIds = new Set(adapterStart.targetLayerIds || []);
@@ -3562,6 +3582,33 @@ export class LayerSystem {
         const moved = this._transformEditAdapter.moveFrame({ transaction, delta: direction }) === true;
         const resumed = this._resumeLayerTransformTimelineSession(terminal);
         return moved && resumed;
+    }
+
+    /**
+     * Timeline HistoryのUndo/Redo後、確定済みの空sessionだけを復元後modelへ張り直す。
+     * adapter finishは旧baselineをmodelへ戻すため使わず、専用abandonで所有権だけ解放する。
+     */
+    refreshLayerTransformTimelineSessionAfterHistory() {
+        const session = this._layerTransformSession;
+        if (!session
+            || !isTransformTimelineKeyTarget(session.transaction?.target)
+            || session.previewResult?.changed === true
+            || typeof this._transformEditAdapter?.abandonAfterHistory !== 'function') {
+            return false;
+        }
+        const terminal = {
+            layerId: session.layerId,
+            target: session.transaction.target
+        };
+        const abandoned = this._transformEditAdapter.abandonAfterHistory({
+            transaction: session.transaction
+        }) === true;
+        if (!abandoned) return false;
+        restoreLayerTransformPreviewSampling(session.previewSampling);
+        this._restoreTransformTargetState(session.targetLayerTransforms);
+        this._layerTransformSession = null;
+        this.coordAPI?.clearCache?.();
+        return this._resumeLayerTransformTimelineSession(terminal);
     }
 
     exitLayerMoveMode(options = {}) {
