@@ -56,3 +56,9 @@ runtime変更、schema導入、外部ファイル上書き、Owner Projectの破
 - `TimelineFrameCompositor._assertLayerDeformerPlanReady()`の早期return条件を`none/ready`だけへ限定した。
 - Layer Motionだけの競合fixtureで、共有planが`unsupported`を返した時に`_renderClipEntry()`がCanvas描画前にreason付き例外を出すことを確認した。
 - legacy fallbackや正常planのconsumer、Save/Exportのterminalは変更していない。
+
+### 2026-09-07 Slice 3 — Browser / Canvas evidence
+
+- 製品runtimeを変更せず、production consumerを実`HTMLCanvasElement`とPNG Blobへ接続する診断ページを追加した。ready Layer/Folder Motionはframe surfaceとPNGでhash/bboxが一致し、unsupported overlapは`renderFrame`、`renderClipFrameSurface`、preview callerの全入口で描画前にreason付き拒否となった。
+- Selection、SOURCE、CAF SOURCE、ANIMATE Layer/Folderについて、fixtureのSaveは未確定Transform/KEYを確定してHistoryを1件進め、Export/Preview直呼出しはLayer Transformを終了せずHistoryを増やさない差を記録した。
+- 隔離した実UIでは通常SOURCEのPreview後にV/sessionが残りEscapeで閉じた。ANIMATE LayerはExport toolbar click時にsessionが閉じてからPreviewへ進んだ。入口差が残るためExport terminal仕様は変更せず、HD-005をGPT判断待ちとする。

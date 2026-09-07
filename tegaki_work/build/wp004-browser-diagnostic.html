@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WP-004 Slice 3 Browser / Canvas diagnostic</title>
+<style>
+  :root { color-scheme: light; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  body { margin: 24px; background: #ffffee; color: #400000; }
+  h1 { font: 700 20px system-ui, sans-serif; }
+  #status { padding: 10px 12px; border: 1px solid #b8706b; background: #f0e0d6; }
+  #output { white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; border: 1px solid #d4a8a0; background: #fffaf5; }
+  #canvas-host { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  canvas { image-rendering: pixelated; border: 1px solid #b8706b; background: #ffffee; }
+  .note { font: 13px system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<h1>WP-004 Slice 3 — Browser / Canvas evidence</h1>
+<div id="status">実Browser診断を実行中…</div>
+<p class="note">production compositor / ExportManager / PNGExporter を実HTMLCanvasElementで呼び出します。製品UI・保存ファイル・downloadは使用しません。</p>
+<pre id="output">準備中…</pre>
+<div id="canvas-host"></div>
+<script>document.querySelector('#status').textContent = '診断scriptを起動中…';</script>
+<script type="module">
+let TEGAKI_CONFIG;
+let TimelineFrameCompositor;
+let ExportManager;
+let ProjectManager;
+
+const statusNode = document.querySelector('#status');
+const outputNode = document.querySelector('#output');
+const canvasHost = document.querySelector('#canvas-host');
+statusNode.textContent = '診断moduleを起動中…';
+window.addEventListener('error', event => {
+  statusNode.textContent = `BLOCKED — ${event.message || 'module error'}`;
+  outputNode.textContent = String(event.error?.stack || event.message || event);
+});
+window.addEventListener('unhandledrejection', event => {
+  statusNode.textContent = `BLOCKED — ${event.reason?.message || event.reason || 'promise error'}`;
+  outputNode.textContent = String(event.reason?.stack || event.reason || event);
+});
+const results = {
+  meta: {
+    userAgent: navigator.userAgent,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    dpr: window.devicePixelRatio,
+    canvas: 'pending',
+    consoleErrors: []
+  },
+  cases: [],
+  ui: {
+    status: 'not-run',
+    reason: 'Slice 3Bの実UIイベント順序は専用fixtureの手動確認対象。Slice 3Aではproduction callerを自動観測した。'
+  }
+};
+
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  results.meta.consoleErrors.push(args.map(value => String(value)).join(' '));
+  originalConsoleError(...args);
+};
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function makePixels(width, height, points) {
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (const [x, y, r, g, b, a = 255] of points) {
+    if (x < 0 || y < 0 || x >= width || y >= height) continue;
+    const offset = (y * width + x) * 4;
+    pixels[offset] = r;
+    pixels[offset + 1] = g;
+    pixels[offset + 2] = b;
+    pixels[offset + 3] = a;
+  }
+  return pixels;
+}
+
+function makeSnapshot(id, points) {
+  return {
+    id,
+    width: 6,
+    height: 6,
+    rasterBounds: { x: 0, y: 0, width: 6, height: 6 },
+    pixels: makePixels(6, 6, points)
+  };
+}
+
+function makeAsset(kind, snapshots) {
+  if (kind === 'folder' || kind === 'animate-folder') {
+    return {
+      id: 'asset-folder',
+      internalLayers: [
+        { id: 'folder-root', type: 'folder', parentLayerId: null, visible: true, opacity: 1, blendMode: 'normal' },
+        { id: 'folder-a', type: 'raster', parentLayerId: 'folder-root', drawingSnapshotId: 'snap-a', visible: true, opacity: 1, blendMode: 'normal' },
+        { id: 'folder-b', type: 'raster', parentLayerId: 'folder-root', drawingSnapshotId: 'snap-b', visible: true, opacity: 1, blendMode: 'normal' }
+      ],
+      rigDefinition: null,
+      meshDefinitions: [],
+      snapshots
+    };
+  }
+
+  const unsupported = kind === 'unsupported';
+  return {
+    id: unsupported ? 'asset-unsupported' : 'asset-layer',
+    internalLayers: [
+      { id: 'layer-target', type: 'raster', parentLayerId: null, drawingSnapshotId: 'snap-a', visible: true, opacity: 1, blendMode: 'normal' }
+    ],
+    rigDefinition: unsupported ? {
+      version: 1,
+      parts: [{
+        partId: 'layer-target',
+        parentPartId: null,
+        bindTransform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, pivotX: 0, pivotY: 0 }
+      }]
+    } : null,
+    meshDefinitions: [],
+    snapshots
+  };
+}
+
+function makeClip(kind, asset) {
+  const base = {
+    id: `clip-${kind}`,
+    assetId: asset.id,
+    laneId: `lane-${kind}`,
+    startFrame: 0,
+    duration: 1,
+    visible: true,
+    deformer: null,
+    transformKeyframes: [],
+    layerTransformTracks: [],
+    folderTransformTracks: [],
+    layerDeformers: null,
+    folderDeformers: null
+  };
+  if (kind === 'folder' || kind === 'animate-folder') {
+    base.folderTransformTracks = [{
+      folderLayerId: 'folder-root',
+      pivotX: 0,
+      pivotY: 0,
+      keyframes: [{ frame: 0, interpolation: 'linear', x: 4, y: 3, scaleX: 1, scaleY: 1, rotation: 0 }]
+    }];
+  } else {
+    base.layerTransformTracks = [{
+      internalLayerId: 'layer-target',
+      pivotX: 0,
+      pivotY: 0,
+      keyframes: [{ frame: 0, interpolation: 'linear', x: 4, y: 3, scaleX: 1, scaleY: 1, rotation: 0 }]
+    }];
+  }
+  return base;
+}
+
+function makeModel(kind, options = {}) {
+  const snapshots = [
+    makeSnapshot('snap-a', [
+      [0, 1, 220, 30, 30], [1, 1, 220, 30, 30], [0, 2, 30, 120, 220],
+      [4, 4, 30, 180, 60], [5, 4, 240, 180, 20]
+    ]),
+    makeSnapshot('snap-b', [
+      [1, 0, 150, 30, 210], [1, 1, 150, 30, 210], [2, 1, 150, 30, 210],
+      [4, 5, 20, 170, 90]
+    ])
+  ];
+  const asset = makeAsset(kind, snapshots);
+  const clip = makeClip(kind, asset);
+  const track = {
+    id: `track-${kind}`,
+    type: 'clip',
+    sourceLayerId: null,
+    visible: true,
+    cels: [{ frame: 0, clipId: clip.id, assetId: asset.id }]
+  };
+  const model = {
+    fps: 12,
+    totalFrames: 1,
+    tracks: [track],
+    clipAssets: [asset],
+    drawingSnapshots: snapshots,
+    playback: { currentFrame: 0 },
+    getClipAsset(id) { return id === asset.id ? asset : null; },
+    getDrawingSnapshot(id) { return snapshots.find(snapshot => snapshot.id === id) || null; },
+    findClipEntry(id) { return id === clip.id ? { clip, lane: { id: clip.laneId } } : null; },
+    getFrameAssetTree() { return { clips: [clip] }; },
+    collectUnreferencedDrawingSnapshots() { return { removed: 0 }; },
+    _fixtureKind: kind
+  };
+  if (options.serialize === true) model.serialize = () => true;
+  return { model, asset, clip, snapshots };
+}
+
+function installAnimationTable(model) {
+  const animationTable = {
+    model,
+    selectedCelId: null,
+    activeLaneId: null,
+    selectedAssetId: model.clipAssets?.[0]?.id || null,
+    selectedAssetFolderId: null,
+    selectedInternalLayerId: null,
+    isLaneOnlySelected: false,
+    playbackScope: 'all',
+    includedLaneIds: [],
+    _saveSelectedClipFromWorkingLayers() {},
+    _captureAnimationUiState() {}
+  };
+  window.PopupManager = {
+    get(name) { return name === 'animationTable' ? animationTable : null; },
+    popups: { get(name) { return name === 'animationTable' ? { instance: animationTable } : null; } }
+  };
+  window.coreEngine = { popupManager: window.PopupManager };
+  return animationTable;
+}
+
+function makeSelectionApi(state) {
+  return {
+    getState() { return { transformSessionActive: state.active }; },
+    confirmTransform() {
+      if (!state.active) return false;
+      state.active = false;
+      state.history += 1;
+      state.confirmed += 1;
+      return true;
+    }
+  };
+}
+
+function makeLayerSystem(kind, active) {
+  const state = { active, history: 0, exitCalls: [] };
+  const sourceCanvas = document.createElement('canvas');
+  sourceCanvas.width = 6;
+  sourceCanvas.height = 6;
+  const sourceContext = sourceCanvas.getContext('2d');
+  sourceContext.putImageData(new ImageData(makePixels(6, 6, [
+    [0, 1, 220, 30, 30], [1, 1, 220, 30, 30], [4, 4, 30, 180, 60], [5, 4, 240, 180, 20]
+  ]), 6, 6), 0, 0);
+  const layerData = {
+    id: `project-${kind}`,
+    name: kind,
+    visible: true,
+    opacity: 1,
+    blendMode: 'normal',
+    isFolder: false,
+    isBackground: false,
+    renderTexture: { width: 6, height: 6 },
+    rasterBounds: { x: 0, y: 0, width: 6, height: 6 },
+    parentId: null
+  };
+  return {
+    state,
+    sourceCanvas,
+    getLayers() { return [{ layerData }]; },
+    getLayerMoveCommitState() { return { active: state.active }; },
+    exitLayerMoveMode(options = {}) {
+      state.exitCalls.push({ ...options });
+      if (state.active) {
+        state.active = false;
+        state.history += 1;
+      }
+    },
+    _getMaxRenderTextureSize() { return 4096; }
+  };
+}
+
+function makeProjectApp(sourceCanvas) {
+  return {
+    renderer: {
+      extract: {
+        canvas() { return sourceCanvas; }
+      }
+    }
+  };
+}
+
+function makeCompositor(model) {
+  const compositorLayerSystem = {
+    getLayers() { return []; },
+    _getMaxRenderTextureSize() { return 4096; }
+  };
+  return new TimelineFrameCompositor(model, compositorLayerSystem);
+}
+
+function canvasEvidence(canvas) {
+  const context = canvas.getContext('2d');
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  let hash = 2166136261;
+  let left = canvas.width;
+  let top = canvas.height;
+  let right = -1;
+  let bottom = -1;
+  let nonTransparent = 0;
+  for (let offset = 0; offset < image.data.length; offset += 4) {
+    for (let channel = 0; channel < 4; channel++) {
+      hash ^= image.data[offset + channel];
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    if (image.data[offset + 3] > 0) {
+      const pixel = offset / 4;
+      const x = pixel % canvas.width;
+      const y = Math.floor(pixel / canvas.width);
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x);
+      bottom = Math.max(bottom, y);
+      nonTransparent += 1;
+    }
+  }
+  return {
+    width: canvas.width,
+    height: canvas.height,
+    hash: `0x${hash.toString(16).padStart(8, '0')}`,
+    nonTransparent,
+    bbox: nonTransparent > 0 ? { x: left, y: top, width: right - left + 1, height: bottom - top + 1 } : null
+  };
+}
+
+function blobFromCanvas(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('canvas.toBlob returned null')), 'image/png');
+  });
+}
+
+async function blobEvidence(blob) {
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0);
+  bitmap.close?.();
+  return { blobBytes: blob.size, ...canvasEvidence(canvas) };
+}
+
+function publishCanvas(label, canvas) {
+  const copy = document.createElement('canvas');
+  copy.width = canvas.width;
+  copy.height = canvas.height;
+  copy.getContext('2d').drawImage(canvas, 0, 0);
+  copy.title = label;
+  canvasHost.append(copy);
+}
+
+async function runOutputAndTerminalCase(kind, options = {}) {
+  const fixture = makeModel(kind, { serialize: options.animate === true });
+  installAnimationTable(fixture.model);
+  const compositor = makeCompositor(fixture.model);
+  const frameCanvas = compositor.renderFrame(0, { sourceWidth: 32, sourceHeight: 32, resolution: 1, transparent: true });
+  const surface = compositor.renderClipFrameSurface(fixture.clip.id, 0, { sourceWidth: 32, sourceHeight: 32 });
+  assert(surface?.canvas, `${kind}: renderClipFrameSurface did not return a Canvas`);
+  const frame = canvasEvidence(frameCanvas);
+  const clipSurface = { ...canvasEvidence(surface.canvas), bounds: surface.bounds };
+  const exportLayerSystem = { getLayers() { return []; }, _getMaxRenderTextureSize() { return 4096; } };
+  const exportManager = new ExportManager({ renderer: {} }, exportLayerSystem);
+  exportManager.renderToCanvas = () => compositor.renderFrame(0, { sourceWidth: 32, sourceHeight: 32, resolution: 1, transparent: true });
+  exportManager.registerExporter('png', new window.PNGExporter(exportManager));
+  const exportLayerState = { active: options.layerTransform === true };
+  const exportSelectionState = { active: false, history: 0, confirmed: 0 };
+  window.CoreRuntime = { api: { selection: makeSelectionApi(exportSelectionState) } };
+  const beforeExport = { layerTransformActive: exportLayerState.active, history: exportSelectionState.history };
+  const preview = await exportManager.generatePreview('png', { transparent: true });
+  const exportEvidence = await blobEvidence(preview.blob);
+  const afterExport = { layerTransformActive: exportLayerState.active, history: exportSelectionState.history };
+
+  const saveLayerSystem = makeLayerSystem(kind, options.layerTransform === true);
+  const saveSelectionState = { active: options.selection === true, history: 0, confirmed: 0 };
+  window.CoreRuntime = { api: { selection: makeSelectionApi(saveSelectionState) } };
+  const projectManager = new ProjectManager(saveLayerSystem, makeProjectApp(saveLayerSystem.sourceCanvas));
+  const beforeSave = {
+    layerTransformActive: saveLayerSystem.state.active,
+    selectionActive: saveSelectionState.active,
+    history: saveLayerSystem.state.history + saveSelectionState.history
+  };
+  const project = await projectManager.exportProject({ profile: true });
+  const afterSave = {
+    layerTransformActive: saveLayerSystem.state.active,
+    selectionActive: saveSelectionState.active,
+    history: saveLayerSystem.state.history + saveSelectionState.history,
+    exitCalls: saveLayerSystem.state.exitCalls.map(call => call.source || null)
+  };
+
+  publishCanvas(`${kind} frame`, frameCanvas);
+  return {
+    case: kind,
+    entry: 'production TimelineFrameCompositor + ExportManager.generatePreview(PNG) + ProjectManager.exportProject',
+    canvas: { frame, clipSurface, export: exportEvidence, frameMatchesExport: frame.hash === exportEvidence.hash && frame.bbox?.x === exportEvidence.bbox?.x && frame.bbox?.y === exportEvidence.bbox?.y },
+    save: { before: beforeSave, after: afterSave, animationSerialized: !!project?.animation, layerCount: project?.layers?.length || 0, historyDelta: afterSave.history - beforeSave.history },
+    export: { before: beforeExport, after: afterExport, historyDelta: afterExport.history - beforeExport.history, format: preview.format },
+    limitation: 'manager seam uses fixture model and compositor-backed renderToCanvas; production UI click/blur was not exercised in this page.'
+  };
+}
+
+async function runSelectionCase() {
+  const fixture = makeModel('selection', { serialize: false });
+  installAnimationTable(fixture.model);
+  const state = { active: true, history: 0, confirmed: 0 };
+  const saveLayerSystem = makeLayerSystem('selection', false);
+  window.CoreRuntime = { api: { selection: makeSelectionApi(state) } };
+  const projectManager = new ProjectManager(saveLayerSystem, makeProjectApp(saveLayerSystem.sourceCanvas));
+  await projectManager.exportProject({ profile: true });
+  const save = { active: state.active, history: state.history, confirmed: state.confirmed };
+
+  const exportState = { active: true, history: 0, confirmed: 0 };
+  window.CoreRuntime = { api: { selection: makeSelectionApi(exportState) } };
+  const compositor = makeCompositor(fixture.model);
+  const exportManager = new ExportManager({ renderer: {} }, { getLayers() { return []; } });
+  exportManager.renderToCanvas = () => compositor.renderFrame(0, { sourceWidth: 32, sourceHeight: 32, transparent: true });
+  exportManager.registerExporter('png', new window.PNGExporter(exportManager));
+  await exportManager.generatePreview('png', { transparent: true });
+  const exportResult = { active: exportState.active, history: exportState.history, confirmed: exportState.confirmed };
+  return {
+    case: 'selection',
+    entry: 'production Selection commit caller through ProjectManager / ExportManager',
+    save,
+    export: exportResult,
+    limitation: 'Selection uses the production CoreRuntime selection boundary with a minimal fixture; no UI focus transition.'
+  };
+}
+
+async function runUnsupportedCase() {
+  const fixture = makeModel('unsupported', { serialize: true });
+  installAnimationTable(fixture.model);
+  const compositor = makeCompositor(fixture.model);
+  const errors = {};
+  try { compositor.renderFrame(0, { sourceWidth: 32, sourceHeight: 32 }); }
+  catch (error) { errors.frame = String(error.message); }
+  try { compositor.renderClipFrameSurface(fixture.clip.id, 0, { sourceWidth: 32, sourceHeight: 32 }); }
+  catch (error) { errors.surface = String(error.message); }
+  const exportManager = new ExportManager({ renderer: {} }, { getLayers() { return []; } });
+  exportManager.renderToCanvas = () => compositor.renderFrame(0, { sourceWidth: 32, sourceHeight: 32 });
+  exportManager.registerExporter('png', new window.PNGExporter(exportManager));
+  try { await exportManager.generatePreview('png', { transparent: true }); }
+  catch (error) { errors.export = String(error.message); }
+  const rejectedBeforeDrawing = Object.values(errors).every(message => /unsupported|layer-transform-rig-overlap/i.test(message));
+  assert(rejectedBeforeDrawing, `unsupported case did not produce reasoned rejection: ${JSON.stringify(errors)}`);
+  return {
+    case: 'unsupported-layer-motion-overlap',
+    entry: 'production renderFrame / renderClipFrameSurface / ExportManager preview',
+    rejectedBeforeDrawing,
+    errors,
+    limitation: 'The fixture intentionally registers the same Raster as a RIG Part and Layer Motion target to exercise the existing unsupported plan.'
+  };
+}
+
+async function run() {
+  results.cases.push(await runSelectionCase());
+  results.cases.push(await runOutputAndTerminalCase('source-layer', { layerTransform: true }));
+  results.cases.push(await runOutputAndTerminalCase('caf-source', { layerTransform: true }));
+  results.cases.push(await runOutputAndTerminalCase('animate-layer', { animate: true, layerTransform: true }));
+  results.cases.push(await runOutputAndTerminalCase('animate-folder', { animate: true, layerTransform: true }));
+  results.cases.push(await runUnsupportedCase());
+  results.meta.consoleErrors = results.meta.consoleErrors.slice(0, 20);
+  statusNode.textContent = 'PASS — production Browser / Canvas diagnostic complete';
+  outputNode.textContent = JSON.stringify(results, null, 2);
+  window.__WP004_BROWSER_RESULTS__ = results;
+}
+
+async function bootstrap() {
+  try {
+    statusNode.textContent = 'import config.js…';
+    const configModule = await import('/config.js');
+    statusNode.textContent = 'import compositor…';
+    const compositorModule = await import('/system/animation/timeline-frame-compositor.js');
+    statusNode.textContent = 'import export-manager…';
+    const exportManagerModule = await import('/system/export-manager.js');
+    statusNode.textContent = 'import project-manager…';
+    const projectManagerModule = await import('/system/project-manager.js');
+    statusNode.textContent = 'import png-exporter…';
+    await import('/system/exporters/png-exporter.js');
+    TEGAKI_CONFIG = configModule.TEGAKI_CONFIG;
+    TimelineFrameCompositor = compositorModule.TimelineFrameCompositor;
+    ExportManager = exportManagerModule.ExportManager;
+    ProjectManager = projectManagerModule.ProjectManager;
+    TEGAKI_CONFIG.debug = true;
+    TEGAKI_CONFIG.canvas.width = 32;
+    TEGAKI_CONFIG.canvas.height = 32;
+    results.meta.canvas = `${TEGAKI_CONFIG.canvas.width}x${TEGAKI_CONFIG.canvas.height}`;
+    await run();
+  } catch (error) {
+    results.failed = { message: String(error.message), stack: String(error.stack || '') };
+    statusNode.textContent = 'BLOCKED — diagnostic failed';
+    outputNode.textContent = JSON.stringify(results, null, 2);
+    window.__WP004_BROWSER_RESULTS__ = results;
+  }
+}
+
+statusNode.textContent = '診断bootstrapを開始…';
+bootstrap();
+</script>
+</body>
+</html>
