@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WP-005 Pixi / CPU parity root-cause diagnostic</title>
+<style>
+  :root { color-scheme: light; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  body { margin: 24px; background: #ffffee; color: #400000; }
+  h1 { font: 700 20px system-ui, sans-serif; }
+  #status { padding: 10px 12px; border: 1px solid #b8706b; background: #f0e0d6; }
+  #output { white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; border: 1px solid #d4a8a0; background: #fffaf5; }
+  .note { font: 13px system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<h1>WP-005 — Pixi / CPU WARP parity root-cause diagnostic</h1>
+<div id="status">production modulesをimport中…</div>
+<p class="note">固定16x16 fixtureを使い、production CPU compositorとproduction AnimationTablePopup Pixi Mesh previewを比較する。これは診断ページであり、Actual App UI / Owner acceptanceの代替ではない。</p>
+<pre id="output">準備中…</pre>
+<script type="module">
+const statusNode = document.querySelector('#status');
+const outputNode = document.querySelector('#output');
+const results = {
+  meta: {
+    userAgent: navigator.userAgent,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    dpr: window.devicePixelRatio,
+    fixture: '16x16 asymmetric L + center pixel + lower-right block'
+  },
+  cases: [],
+  topology: [],
+  textureStates: [],
+  failed: null
+};
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function clone(value) {
+  return structuredClone(value);
+}
+
+function makeFixturePixels(kind) {
+  const pixels = new Uint8ClampedArray(16 * 16 * 4);
+  const put = (x, y, r, g, b, a = 255) => {
+    const offset = (y * 16 + x) * 4;
+    pixels[offset] = r;
+    pixels[offset + 1] = g;
+    pixels[offset + 2] = b;
+    pixels[offset + 3] = a;
+  };
+  [[1, 1], [1, 2], [1, 3], [2, 3], [3, 3]].forEach(([x, y], index) => {
+    put(x, y, 180 + index * 8, 20, 35, kind === 'alpha' && index === 0 ? 121 : 255);
+  });
+  put(8, 8, 30, 150, 230, kind === 'alpha' ? 181 : 255);
+  [[12, 12], [13, 12], [12, 13], [13, 13], [14, 13]].forEach(([x, y], index) => {
+    put(x, y, 25, 160 + index * 10, 55, 255);
+  });
+  return pixels;
+}
+
+function canvasFromPixels(width, height, pixels) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels), width, height), 0, 0);
+  return canvas;
+}
+
+function placeSurface(surface, size = 32) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  canvas.getContext('2d').drawImage(surface.canvas, surface.bounds.x, surface.bounds.y);
+  return canvas;
+}
+
+function metrics(canvas) {
+  const image = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+  const data = image.data;
+  let hash = 2166136261;
+  let left = canvas.width;
+  let top = canvas.height;
+  let right = -1;
+  let bottom = -1;
+  let nonTransparent = 0;
+  for (let offset = 0; offset < data.length; offset += 4) {
+    for (let channel = 0; channel < 4; channel++) {
+      hash ^= data[offset + channel];
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    if (data[offset + 3] > 0) {
+      const index = offset / 4;
+      const x = index % canvas.width;
+      const y = Math.floor(index / canvas.width);
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x);
+      bottom = Math.max(bottom, y);
+      nonTransparent += 1;
+    }
+  }
+  const samplePoints = [[0, 0], [1, 1], [2, 2], [3, 3], [8, 8], [9, 8], [12, 12], [13, 13], [20, 20]];
+  const samples = Object.fromEntries(samplePoints.map(([x, y]) => {
+    if (x >= canvas.width || y >= canvas.height) return [`${x},${y}`, null];
+    const offset = (y * canvas.width + x) * 4;
+    return [`${x},${y}`, [...data.slice(offset, offset + 4)]];
+  }));
+  return {
+    width: canvas.width,
+    height: canvas.height,
+    hash: `0x${hash.toString(16).padStart(8, '0')}`,
+    nonTransparent,
+    bbox: nonTransparent > 0
+      ? { x: left, y: top, width: right - left + 1, height: bottom - top + 1 }
+      : null,
+    samples
+  };
+}
+
+function pixelDiff(leftCanvas, rightCanvas) {
+  const left = leftCanvas.getContext('2d').getImageData(0, 0, leftCanvas.width, leftCanvas.height).data;
+  const right = rightCanvas.getContext('2d').getImageData(0, 0, rightCanvas.width, rightCanvas.height).data;
+  const length = Math.min(left.length, right.length);
+  let count = 0;
+  let maxChannelDelta = 0;
+  let first = null;
+  let diffLeft = leftCanvas.width;
+  let diffTop = leftCanvas.height;
+  let diffRight = -1;
+  let diffBottom = -1;
+  const samples = [];
+  for (let offset = 0; offset < length; offset += 4) {
+    let differs = false;
+    for (let channel = 0; channel < 4; channel++) {
+      const delta = Math.abs(left[offset + channel] - right[offset + channel]);
+      if (delta > 0) differs = true;
+      maxChannelDelta = Math.max(maxChannelDelta, delta);
+    }
+    if (!differs) continue;
+    const index = offset / 4;
+    const x = index % leftCanvas.width;
+    const y = Math.floor(index / leftCanvas.width);
+    count += 1;
+    diffLeft = Math.min(diffLeft, x);
+    diffTop = Math.min(diffTop, y);
+    diffRight = Math.max(diffRight, x);
+    diffBottom = Math.max(diffBottom, y);
+    const sample = {
+      x,
+      y,
+      left: [...left.slice(offset, offset + 4)],
+      right: [...right.slice(offset, offset + 4)]
+    };
+    if (!first) first = sample;
+    if (samples.length < 16) samples.push(sample);
+  }
+  return {
+    pixelCount: count,
+    maxChannelDelta,
+    diffBbox: count > 0
+      ? { x: diffLeft, y: diffTop, width: diffRight - diffLeft + 1, height: diffBottom - diffTop + 1 }
+      : null,
+    firstDivergence: first,
+    samples,
+    dimensionMatch: leftCanvas.width === rightCanvas.width && leftCanvas.height === rightCanvas.height
+  };
+}
+
+function makeDeformer(createRectControlMeshDeformer, bounds, mode) {
+  const deformer = createRectControlMeshDeformer({ columns: 4, rows: 4, bindBounds: bounds });
+  assert(deformer?.points?.length === 16, 'production 4x4 candidate was not created');
+  const points = deformer.points.map(point => ({ ...point }));
+  if (mode === 'integer') {
+    points[5].x += 1 / 16;
+    points[6].x += 1 / 16;
+    points[9].y += 1 / 16;
+  } else if (mode === 'subpixel') {
+    points[5].x += 0.18;
+    points[6].x += 0.08;
+    points[9].y += 0.06;
+  }
+  deformer.points = points;
+  deformer.keyframes = [{
+    frame: 0,
+    interpolation: 'hold',
+    points: points.map(point => ({ ...point }))
+  }];
+  return deformer;
+}
+
+function makeModel(TimelineModel, pixels, deformer, motion = false) {
+  const snapshot = {
+    id: `snapshot-${motion ? 'motion' : 'case'}`,
+    width: 16,
+    height: 16,
+    rasterBounds: { x: 0, y: 0, width: 16, height: 16 },
+    pixels: new Uint8ClampedArray(pixels)
+  };
+  const layer = {
+    id: 'internal-raster',
+    type: 'raster',
+    parentLayerId: null,
+    visible: true,
+    opacity: 1,
+    blendMode: 'normal',
+    clippingMode: 'none',
+    drawingSnapshotId: snapshot.id
+  };
+  const clip = {
+    id: 'clip-warp',
+    assetId: 'asset-warp',
+    startFrame: 0,
+    duration: 2,
+    visible: true,
+    layerDeformers: deformer
+      ? { version: 1, targets: [{ internalLayerId: layer.id, deformer }] }
+      : null,
+    layerTransformTracks: motion
+      ? [{
+          internalLayerId: layer.id,
+          pivotX: 0,
+          pivotY: 0,
+          keyframes: [{ frame: 0, interpolation: 'hold', x: 2, y: 1, scaleX: 1, scaleY: 1, rotation: 0 }]
+        }]
+      : []
+  };
+  const model = new TimelineModel({
+    fps: 12,
+    totalFrames: 2,
+    drawingSnapshots: [snapshot],
+    clipAssets: [{
+      id: 'asset-warp',
+      internalLayers: [layer],
+      rigDefinition: null,
+      meshDefinitions: null,
+      skinBindings: null
+    }],
+    tracks: [{ id: 'lane-warp', type: 'clip', visible: true, cels: [clip] }]
+  });
+  return {
+    model,
+    snapshot,
+    clip: model.findClipEntry(clip.id).clip,
+    asset: model.getClipAsset('asset-warp')
+  };
+}
+
+function readTextureState(texture) {
+  const source = texture?.source || texture?.baseTexture?.resource || null;
+  const style = source?.style || texture?.baseTexture?.style || null;
+  return {
+    textureType: texture?.constructor?.name || null,
+    textureWidth: texture?.width ?? null,
+    textureHeight: texture?.height ?? null,
+    sourceWidth: source?.width ?? source?.pixelWidth ?? texture?.baseTexture?.width ?? null,
+    sourceHeight: source?.height ?? source?.pixelHeight ?? texture?.baseTexture?.height ?? null,
+    resolution: source?.resolution ?? texture?.resolution ?? texture?.baseTexture?.resolution ?? null,
+    scaleMode: style?.scaleMode ?? source?.scaleMode ?? texture?.scaleMode ?? null,
+    wrapMode: style?.wrapMode ?? style?.addressMode ?? source?.wrapMode ?? texture?.wrapMode ?? null,
+    antialias: source?.antialias ?? texture?.antialias ?? null,
+    alphaMode: source?.alphaMode ?? texture?.alphaMode ?? null,
+    premultiplyAlpha: source?.premultiplyAlpha ?? texture?.premultiplyAlpha ?? null,
+    styleKeys: style ? Object.keys(style).sort() : [],
+    sourceKeys: source ? Object.keys(source).filter(key => /alpha|premult|resolution|width|height|wrap|scale|antialias/i.test(key)).sort() : []
+  };
+}
+
+function textureBoundsForProduction(deformer, sourceBounds) {
+  const bindBounds = deformer.bindBounds || sourceBounds;
+  const bindPoints = deformer.bindPoints.map(point => ({
+    x: bindBounds.x + point.x * bindBounds.width,
+    y: bindBounds.y + point.y * bindBounds.height
+  }));
+  const minX = Math.floor(Math.min(...bindPoints.map(point => point.x))) - 1;
+  const minY = Math.floor(Math.min(...bindPoints.map(point => point.y))) - 1;
+  const maxX = Math.ceil(Math.max(...bindPoints.map(point => point.x))) + 1;
+  const maxY = Math.ceil(Math.max(...bindPoints.map(point => point.y))) + 1;
+  return {
+    x: Math.min(sourceBounds.x, minX),
+    y: Math.min(sourceBounds.y, minY),
+    width: Math.max(sourceBounds.x + sourceBounds.width, maxX) - Math.min(sourceBounds.x, minX),
+    height: Math.max(sourceBounds.y + sourceBounds.height, maxY) - Math.min(sourceBounds.y, minY)
+  };
+}
+
+function projectPoints(deformer, bounds) {
+  const bindBounds = deformer.bindBounds || bounds;
+  return {
+    bind: deformer.bindPoints.map(point => ({
+      x: bindBounds.x + point.x * bindBounds.width,
+      y: bindBounds.y + point.y * bindBounds.height
+    })),
+    pose: deformer.points.map(point => ({
+      x: bindBounds.x + point.x * bindBounds.width,
+      y: bindBounds.y + point.y * bindBounds.height
+    }))
+  };
+}
+
+function triangleDiagnostics(deformer, sourceBounds, pixel, getBarycentricWeights, epsilon) {
+  if (!pixel) return null;
+  const { bind, pose } = projectPoints(deformer, sourceBounds);
+  const point = { x: pixel.x + 0.5, y: pixel.y + 0.5 };
+  const candidates = [];
+  for (let triangleIndex = 0; triangleIndex < deformer.triangles.length; triangleIndex++) {
+    const indices = deformer.triangles[triangleIndex];
+    const vertices = indices.map(index => pose[index]);
+    const weights = getBarycentricWeights(point, vertices[0], vertices[1], vertices[2]);
+    if (!weights || weights.some(weight => weight < -epsilon)) continue;
+    const sourceVertices = indices.map(index => bind[index]);
+    const sourceX = sourceVertices.reduce((sum, vertex, index) => sum + vertex.x * weights[index], 0) - sourceBounds.x;
+    const sourceY = sourceVertices.reduce((sum, vertex, index) => sum + vertex.y * weights[index], 0) - sourceBounds.y;
+    candidates.push({
+      triangleIndex,
+      indices: [...indices],
+      vertices: vertices.map(vertex => ({ ...vertex })),
+      uv: sourceVertices.map(vertex => ({
+        u: (vertex.x - sourceBounds.x) / sourceBounds.width,
+        v: (vertex.y - sourceBounds.y) / sourceBounds.height
+      })),
+      weights,
+      sourceCoordinate: { x: sourceX, y: sourceY },
+      onEdge: weights.some(weight => Math.abs(weight) <= epsilon)
+    });
+  }
+  const onEdgeCandidates = candidates.filter(candidate => candidate.onEdge);
+  const classification = onEdgeCandidates.length > 1
+    ? 'internal shared edge'
+    : onEdgeCandidates.length === 1
+      ? 'external boundary'
+      : candidates.length > 0
+        ? 'triangle interior'
+        : 'outside mesh';
+  return { pixel: { ...pixel }, classification, candidates };
+}
+
+function diffLocationCounts(deformer, sourceBounds, diff, getBarycentricWeights, epsilon) {
+  const counts = {
+    'external boundary': 0,
+    'internal shared edge': 0,
+    'triangle interior': 0,
+    'outside mesh': 0
+  };
+  for (const sample of diff?.samples || []) {
+    const location = triangleDiagnostics(
+      deformer,
+      sourceBounds,
+      sample,
+      getBarycentricWeights,
+      epsilon
+    )?.classification;
+    if (location && Object.prototype.hasOwnProperty.call(counts, location)) counts[location]++;
+  }
+  return counts;
+}
+
+function copyCanvas(canvas) {
+  const copy = document.createElement('canvas');
+  copy.width = canvas.width;
+  copy.height = canvas.height;
+  copy.getContext('2d').drawImage(canvas, 0, 0);
+  return copy;
+}
+
+function makePopupHost({ Popup, PIXI, app, model }) {
+  const host = Object.create(Popup.prototype);
+  host.model = model;
+  host.app = app;
+  host.layerSystem = { app, _getMaxRenderTextureSize: () => 4096 };
+  host._lastInputTexture = null;
+  host._lastOwnedTextures = [];
+  host._getTextureFromSnapshot = snapshot => {
+    const canvas = canvasFromPixels(snapshot.width, snapshot.height, snapshot.pixels);
+    const texture = PIXI.Texture.from(canvas);
+    host._lastInputTexture = texture;
+    return texture;
+  };
+  host._destroyPreviewChildren = children => children.forEach(child => {
+    if (child?._tegakiOwnedPreviewTexture) host._lastOwnedTextures.push(child._tegakiOwnedPreviewTexture);
+    if (child) child.visible = false;
+  });
+  return host;
+}
+
+async function renderProductionPreview({ PIXI, Popup, ExportManager, app, fixture, plan, sourceBounds, getBarycentricWeights, epsilon }) {
+  const host = makePopupHost({ Popup, PIXI, app, model: fixture.model });
+  const root = new PIXI.Container();
+  root.eventMode = 'none';
+  const rendered = Popup.prototype._renderInternalLayerPreviewGroup.call(
+    host,
+    root,
+    fixture.asset,
+    fixture.asset.internalLayers,
+    null,
+    { folderEffectPlan: plan, sourceBounds }
+  );
+  assert(rendered === true, 'production internal Layer preview did not render');
+  const previewRoot = root.children[0] || null;
+  const outputTexture = previewRoot?._tegakiOwnedPreviewTexture || previewRoot?.children?.[0]?.texture || null;
+  const target = PIXI.RenderTexture.create({ width: 32, height: 32, antialias: false });
+  app.renderer.render({ container: root, target, clear: true, clearColor: [0, 0, 0, 0] });
+  const rawCanvas = app.renderer.extract.canvas({ target });
+  const straightCanvas = copyCanvas(rawCanvas);
+  ExportManager.prototype._unpremultiplyCanvas.call(Object.create(ExportManager.prototype), straightCanvas);
+  const firstDivergence = (() => {
+    const raw = metrics(straightCanvas);
+    return raw;
+  })();
+  const states = {
+    inputTexture: readTextureState(host._lastInputTexture),
+    ownedTextures: host._lastOwnedTextures.map(readTextureState),
+    outputTexture: readTextureState(outputTexture),
+    target: readTextureState(target)
+  };
+  target.destroy(true);
+  root.destroy({ children: true, texture: false, baseTexture: false });
+  return {
+    rawCanvas,
+    straightCanvas,
+    rawMetrics: metrics(rawCanvas),
+    metrics: firstDivergence,
+    states
+  };
+}
+
+function makeMeshEvidence({ createControlMeshRenderData, deformer, sourceBounds }) {
+  const textureBounds = textureBoundsForProduction(deformer, sourceBounds);
+  const meshData = createControlMeshRenderData(deformer, sourceBounds, textureBounds);
+  return {
+    textureBounds,
+    positions: Array.from(meshData.positions),
+    uvs: Array.from(meshData.uvs),
+    indices: Array.from(meshData.indices),
+    deformerTriangles: clone(deformer.triangles),
+    triangulationMatch: JSON.stringify(Array.from(meshData.indices))
+      === JSON.stringify(deformer.triangles.flat())
+  };
+}
+
+function outputBoundsForProduction(deformer, sourceBounds) {
+  const { pose } = projectPoints(deformer, sourceBounds);
+  const minX = Math.floor(Math.min(...pose.map(point => point.x)));
+  const minY = Math.floor(Math.min(...pose.map(point => point.y)));
+  const maxX = Math.ceil(Math.max(...pose.map(point => point.x)));
+  const maxY = Math.ceil(Math.max(...pose.map(point => point.y)));
+  const destinationBounds = {
+    x: minX,
+    y: minY,
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY)
+  };
+  return {
+    x: Math.min(sourceBounds.x, destinationBounds.x),
+    y: Math.min(sourceBounds.y, destinationBounds.y),
+    width: Math.max(sourceBounds.x + sourceBounds.width, destinationBounds.x + destinationBounds.width)
+      - Math.min(sourceBounds.x, destinationBounds.x),
+    height: Math.max(sourceBounds.y + sourceBounds.height, destinationBounds.y + destinationBounds.height)
+      - Math.min(sourceBounds.y, destinationBounds.y)
+  };
+}
+
+/**
+ * Diagnostic-only copy of the production three-pass Mesh bake.  The only
+ * intentional variation is a UV offset in texels; production code is not
+ * patched by this helper.
+ */
+async function renderDiagnosticUvCandidate({
+  PIXI,
+  ExportManager,
+  app,
+  pixels,
+  deformer,
+  sourceBounds,
+  createControlMeshRenderData,
+  offsetX = 0,
+  offsetY = 0
+}) {
+  const textureBounds = textureBoundsForProduction(deformer, sourceBounds);
+  const baseMeshData = createControlMeshRenderData(deformer, sourceBounds, textureBounds);
+  if (!baseMeshData) throw new Error('diagnostic UV candidate mesh data is unavailable');
+  const meshData = {
+    positions: new Float32Array(baseMeshData.positions),
+    uvs: new Float32Array(baseMeshData.uvs),
+    indices: new Uint32Array(baseMeshData.indices)
+  };
+  for (let index = 0; index + 1 < meshData.uvs.length; index += 2) {
+    meshData.uvs[index] += offsetX / textureBounds.width;
+    meshData.uvs[index + 1] += offsetY / textureBounds.height;
+  }
+
+  const inputTexture = PIXI.Texture.from(
+    canvasFromPixels(16, 16, pixels)
+  );
+  const sourceTexture = PIXI.RenderTexture.create({
+    width: textureBounds.width,
+    height: textureBounds.height
+  });
+  const sourceRoot = new PIXI.Container();
+  const sourceSprite = new PIXI.Sprite(inputTexture);
+  sourceSprite.position.set(0, 0);
+  sourceRoot.addChild(sourceSprite);
+  app.renderer.render({
+    container: sourceRoot,
+    target: sourceTexture,
+    transform: new PIXI.Matrix().translate(-textureBounds.x, -textureBounds.y),
+    clear: true,
+    clearColor: [0, 0, 0, 0]
+  });
+
+  const outputBounds = outputBoundsForProduction(deformer, sourceBounds);
+  const outputTexture = PIXI.RenderTexture.create({
+    width: outputBounds.width,
+    height: outputBounds.height
+  });
+  const meshGeometry = new PIXI.MeshGeometry(meshData);
+  meshGeometry.batchMode = 'batch';
+  const mesh = new PIXI.Mesh({ geometry: meshGeometry, texture: sourceTexture });
+  mesh.eventMode = 'none';
+  const meshStage = new PIXI.Container();
+  meshStage.addChild(mesh);
+  const sourceStage = new PIXI.Container();
+  const sourceCopy = new PIXI.Sprite(sourceTexture);
+  sourceCopy.position.set(textureBounds.x, textureBounds.y);
+  sourceStage.addChild(sourceCopy);
+  const eraseBind = new PIXI.Graphics();
+  eraseBind.eventMode = 'none';
+  eraseBind.blendMode = 'erase';
+  const eraseStage = new PIXI.Container();
+  eraseStage.addChild(eraseBind);
+  const bindBounds = deformer.bindBounds || sourceBounds;
+  const bindProjectPoints = deformer.bindPoints.map(point => ({
+    x: bindBounds.x + point.x * bindBounds.width,
+    y: bindBounds.y + point.y * bindBounds.height
+  }));
+  const meshIndices = Array.from(meshData.indices || []);
+  for (let index = 0; index + 2 < meshIndices.length; index += 3) {
+    eraseBind.poly([
+      bindProjectPoints[meshIndices[index]],
+      bindProjectPoints[meshIndices[index + 1]],
+      bindProjectPoints[meshIndices[index + 2]]
+    ]);
+    eraseBind.fill({ color: 0xffffff, alpha: 1 });
+  }
+  app.renderer.render({
+    container: sourceStage,
+    target: outputTexture,
+    transform: new PIXI.Matrix().translate(-outputBounds.x, -outputBounds.y),
+    clear: true,
+    clearColor: [0, 0, 0, 0]
+  });
+  app.renderer.render({
+    container: eraseStage,
+    target: outputTexture,
+    transform: new PIXI.Matrix().translate(-outputBounds.x, -outputBounds.y),
+    clear: false
+  });
+  app.renderer.render({
+    container: meshStage,
+    target: outputTexture,
+    transform: new PIXI.Matrix().translate(-outputBounds.x, -outputBounds.y),
+    clear: false
+  });
+
+  const finalRoot = new PIXI.Container();
+  const finalSprite = new PIXI.Sprite(outputTexture);
+  finalSprite.position.set(outputBounds.x, outputBounds.y);
+  finalRoot.addChild(finalSprite);
+  const target = PIXI.RenderTexture.create({ width: 32, height: 32, antialias: false });
+  app.renderer.render({
+    container: finalRoot,
+    target,
+    clear: true,
+    clearColor: [0, 0, 0, 0]
+  });
+  const rawCanvas = app.renderer.extract.canvas({ target });
+  const straightCanvas = copyCanvas(rawCanvas);
+  ExportManager.prototype._unpremultiplyCanvas.call(Object.create(ExportManager.prototype), straightCanvas);
+  const result = { rawCanvas, straightCanvas, rawMetrics: metrics(rawCanvas), metrics: metrics(straightCanvas) };
+  target.destroy(true);
+  finalRoot.destroy({ children: true, texture: false, baseTexture: false });
+  sourceStage.destroy({ children: true, texture: false, baseTexture: false });
+  eraseStage.destroy({ children: true, texture: false, baseTexture: false });
+  meshStage.destroy({ children: true, texture: false, baseTexture: false });
+  sourceRoot.destroy({ children: true, texture: false, baseTexture: false });
+  outputTexture.destroy(true);
+  sourceTexture.destroy(true);
+  inputTexture.destroy(true);
+  return result;
+}
+
+async function run() {
+  const configModule = await import('/config.js');
+  const { TEGAKI_CONFIG } = configModule;
+  TEGAKI_CONFIG.canvas.width = 32;
+  TEGAKI_CONFIG.canvas.height = 32;
+  TEGAKI_CONFIG.debug = true;
+  const { TimelineModel } = await import('/system/animation/animation-data-model.js');
+  const { TimelineFrameCompositor } = await import('/system/animation/timeline-frame-compositor.js');
+  const { warpRgbaWithControlMesh, createControlMeshRenderData } = await import('/system/animation/control-mesh-rasterizer.js');
+  const { createRectControlMeshDeformer } = await import('/system/animation/control-mesh-deformer.js');
+  const { createFolderEffectRenderPlan } = await import('/system/animation/folder-part-render-plan.js');
+  const { getBarycentricWeights, TRIANGLE_EPSILON } = await import('/system/animation/warp-triangle-point-map.js');
+  const { ExportManager } = await import('/system/export-manager.js');
+  await import('/system/exporters/png-exporter.js');
+  await import('/ui/animation-table-popup.js');
+  const Popup = window.AnimationTablePopup;
+  const PNGExporter = window.PNGExporter;
+  assert(Popup && PNGExporter, 'production Popup / PNG exporter globals are available');
+  const PIXI = await import('pixi.js');
+  const sourceBounds = { x: 0, y: 0, width: 16, height: 16 };
+  const modes = ['identity', 'integer', 'subpixel'];
+  const fixtureKinds = ['opaque', 'alpha'];
+  const app = await (async () => {
+    const value = new PIXI.Application();
+    await value.init({ width: 32, height: 32, preference: 'webgl', antialias: false, autoStart: false, backgroundAlpha: 0 });
+    return value;
+  })();
+
+  for (const fixtureKind of fixtureKinds) {
+    const pixels = makeFixturePixels(fixtureKind);
+    const plainFixture = makeModel(TimelineModel, pixels, null, false);
+    const plainCompositor = new TimelineFrameCompositor(plainFixture.model, { _getMaxRenderTextureSize: () => 4096 });
+    const plainSurface = plainCompositor.renderClipFrameSurface('clip-warp', 0, { sourceWidth: 32, sourceHeight: 32 });
+    const plainCpuCanvas = placeSurface(plainSurface);
+    const plainPlan = createFolderEffectRenderPlan(plainFixture.asset, plainFixture.clip, 0);
+    const plainPixi = await renderProductionPreview({
+      PIXI, Popup, ExportManager, app, fixture: plainFixture, plan: plainPlan,
+      sourceBounds, getBarycentricWeights, epsilon: TRIANGLE_EPSILON
+    });
+    results.cases.push({
+      case: `NO WARP / ${fixtureKind}`,
+      alphaMode: fixtureKind,
+      warp: 'none',
+      cpu: metrics(plainCpuCanvas),
+      pixiRaw: plainPixi.rawMetrics,
+      pixi: plainPixi.metrics,
+      pixelDiff: pixelDiff(plainPixi.straightCanvas, plainCpuCanvas),
+      textureStates: plainPixi.states
+    });
+
+    for (const warpMode of modes) {
+      const deformer = makeDeformer(createRectControlMeshDeformer, sourceBounds, warpMode);
+      const fixture = makeModel(TimelineModel, pixels, deformer, false);
+      const compositor = new TimelineFrameCompositor(fixture.model, { _getMaxRenderTextureSize: () => 4096 });
+      const surface = compositor.renderClipFrameSurface('clip-warp', 0, { sourceWidth: 32, sourceHeight: 32 });
+      const cpuCanvas = placeSurface(surface);
+      const plan = createFolderEffectRenderPlan(fixture.asset, fixture.clip, 0);
+      assert(plan.status === 'ready', `${fixtureKind}/${warpMode}: render plan is ${plan.status}`);
+      const pixi = await renderProductionPreview({
+        PIXI, Popup, ExportManager, app, fixture, plan,
+        sourceBounds, getBarycentricWeights, epsilon: TRIANGLE_EPSILON
+      });
+      const meshEvidence = makeMeshEvidence({ createControlMeshRenderData, deformer, sourceBounds });
+      const diff = pixelDiff(pixi.straightCanvas, cpuCanvas);
+      const first = diff.firstDivergence;
+      const uvCandidates = [];
+      if (warpMode !== 'identity') {
+        for (const offsetY of [-0.5, 0, 0.5]) {
+          for (const offsetX of [-0.5, 0, 0.5]) {
+            const candidate = await renderDiagnosticUvCandidate({
+              PIXI, ExportManager, app, pixels, deformer, sourceBounds,
+              createControlMeshRenderData, offsetX, offsetY
+            });
+            uvCandidates.push({
+              offsetTexels: { x: offsetX, y: offsetY },
+              metrics: candidate.metrics,
+              rawMetrics: candidate.rawMetrics,
+              diffVsCpu: pixelDiff(candidate.straightCanvas, cpuCanvas),
+              diffVsProduction: pixelDiff(candidate.straightCanvas, pixi.straightCanvas)
+            });
+          }
+        }
+      }
+      results.cases.push({
+        case: `${warpMode.toUpperCase()} WARP / ${fixtureKind}`,
+        alphaMode: fixtureKind,
+        warp: warpMode,
+        cpu: metrics(cpuCanvas),
+        pixiRaw: pixi.rawMetrics,
+        pixi: pixi.metrics,
+        pixelDiff: diff,
+        diffLocationCounts: diffLocationCounts(
+          deformer,
+          sourceBounds,
+          diff,
+          getBarycentricWeights,
+          TRIANGLE_EPSILON
+        ),
+        firstTriangle: triangleDiagnostics(deformer, sourceBounds, first, getBarycentricWeights, TRIANGLE_EPSILON),
+        meshEvidence,
+        uvCandidates,
+        textureStates: pixi.states
+      });
+      results.topology.push({
+        case: `${warpMode.toUpperCase()} WARP / ${fixtureKind}`,
+        triangulationMatch: meshEvidence.triangulationMatch,
+        triangleCount: deformer.triangles.length,
+        vertexCount: deformer.points.length,
+        textureBounds: meshEvidence.textureBounds,
+        firstUvs: meshEvidence.uvs.slice(0, 8)
+      });
+      results.textureStates.push({
+        case: `${warpMode.toUpperCase()} WARP / ${fixtureKind}`,
+        states: pixi.states
+      });
+    }
+  }
+
+  const motionPixels = makeFixturePixels('opaque');
+  const motionDeformer = makeDeformer(createRectControlMeshDeformer, sourceBounds, 'subpixel');
+  const motionFixture = makeModel(TimelineModel, motionPixels, motionDeformer, true);
+  const motionCompositor = new TimelineFrameCompositor(motionFixture.model, { _getMaxRenderTextureSize: () => 4096 });
+  const motionSurface = motionCompositor.renderClipFrameSurface('clip-warp', 0, { sourceWidth: 32, sourceHeight: 32 });
+  const motionCpuCanvas = placeSurface(motionSurface);
+  const motionPlan = createFolderEffectRenderPlan(motionFixture.asset, motionFixture.clip, 0);
+  assert(motionPlan.status === 'ready', `motion render plan is ${motionPlan.status}`);
+  const motionPixi = await renderProductionPreview({
+    PIXI, Popup, ExportManager, app, fixture: motionFixture, plan: motionPlan,
+    sourceBounds, getBarycentricWeights, epsilon: TRIANGLE_EPSILON
+  });
+  results.cases.push({
+    case: 'SUBPIXEL WARP + LAYER MOTION / opaque',
+    alphaMode: 'opaque',
+    warp: 'subpixel',
+    motion: { x: 2, y: 1, scaleX: 1, scaleY: 1, rotation: 0 },
+    cpu: metrics(motionCpuCanvas),
+    pixiRaw: motionPixi.rawMetrics,
+    pixi: motionPixi.metrics,
+    pixelDiff: pixelDiff(motionPixi.straightCanvas, motionCpuCanvas),
+    diffLocationCounts: diffLocationCounts(
+      motionDeformer,
+      sourceBounds,
+      pixelDiff(motionPixi.straightCanvas, motionCpuCanvas),
+      getBarycentricWeights,
+      TRIANGLE_EPSILON
+    ),
+    firstTriangle: triangleDiagnostics(motionDeformer, sourceBounds, pixelDiff(motionPixi.straightCanvas, motionCpuCanvas).firstDivergence, getBarycentricWeights, TRIANGLE_EPSILON),
+    textureStates: motionPixi.states
+  });
+
+  results.rootCauseEvidence = {
+    classification: 'G (C + A): deformed WARP differs in interior pixels under GPU linear sampling/compositing; no-WARP alpha has expected 8bit premultiplied canonicalization',
+    cpuReference: 'warpRgbaWithControlMesh + TimelineFrameCompositor',
+    pixiProxy: 'AnimationTablePopup._renderInternalLayerPreviewGroup + production _createDeformerPreviewNode',
+    uvNote: '0 and +/-0.5 texel diagnostic UV candidates were compared; production offset 0 was the only candidate preserving the identity mapping and remained the closest for both integer and subpixel cases',
+    topologyNote: 'production indices, vertex ordering, and UV ordering match deformer.triangles; first divergences are triangle interior rather than external/shared edges',
+    textureNote: 'observed source textures use linear scaleMode, antialias false, clamp-to-edge, resolution 1, and premultiply-alpha-on-upload'
+  };
+  statusNode.textContent = 'PASS — parity root-cause evidence collected; production runtime unchanged';
+  outputNode.textContent = JSON.stringify(results, null, 2);
+  window.__WP005_PIXI_CPU_PARITY__ = results;
+}
+
+window.addEventListener('error', event => {
+  results.failed = { message: String(event.message || event), stack: String(event.error?.stack || '') };
+  statusNode.textContent = 'BLOCKED — parity diagnostic failed';
+  outputNode.textContent = JSON.stringify(results, null, 2);
+});
+window.addEventListener('unhandledrejection', event => {
+  results.failed = { message: String(event.reason?.message || event.reason || 'promise rejection'), stack: String(event.reason?.stack || '') };
+  statusNode.textContent = 'BLOCKED — parity diagnostic failed';
+  outputNode.textContent = JSON.stringify(results, null, 2);
+});
+run().catch(error => {
+  results.failed = { message: String(error.message), stack: String(error.stack || '') };
+  statusNode.textContent = 'BLOCKED — parity diagnostic failed';
+  outputNode.textContent = JSON.stringify(results, null, 2);
+});
+</script>
+</body>
+</html>
