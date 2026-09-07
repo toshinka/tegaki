@@ -12,6 +12,7 @@ const layerTransform = read('system/layer-transform.js');
 const layerSystem = read('system/layer-system.js');
 const controller = read('ui/layer-transform-warp-controller.js');
 const overlay = read('ui/warp-grid-overlay.js');
+const animationPopup = read('ui/animation-table-popup.js');
 const layerTransformStyles = read('styles/components/layer-transform-basic.css');
 const styles = read('styles/main.css');
 
@@ -50,6 +51,11 @@ assert.match(controller, /onPointLostPointerCapture/);
 assert.match(controller, /previewLayerWarpEditSession/);
 assert.match(controller, /_onPointerUp/);
 assert.match(controller, /shouldDisplay:[\s\S]*?getLayerWarpEditSession/);
+
+// CAF ANIMATEのbridge previewはAnimationTablePopup.render()を予約する。
+// Simple Layer Transform WARPの共有overlayを高度WARP GRIDのcleanup対象にしない。
+assert.match(animationPopup, /const isLayerTransformWarpEditing = !!this\.layerSystem\?\.getLayerWarpEditSession\?\.\(\)/);
+assert.match(animationPopup, /!isLayerTransformWarpEditing[\s\S]*?warpGridOverlay\.isActive\(\)/);
 
 assert.match(overlay, /interactive/);
 assert.match(overlay, /warp-grid-overlay-point-hit/);

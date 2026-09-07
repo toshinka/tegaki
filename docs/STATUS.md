@@ -27,7 +27,7 @@ WP-005のSimple 4x4 WARP UIを既存Layer Transform transactionへ接続中。no
 WP-001は非UI・同期例外経路を実production classで検証して完了。Browser/Owner実操作は今回未実施であり、受入済みとは記録しない。
 WP-002は指定経路の技術完了。Browser実操作・実Pixi・本番History callback全体は未確認で、全機能受入とはしない。
 WP-003はDONE。拒否時terminal、自動保存延期、Undo/Redo再同期の隔離回帰がpass。通常RasterのF1/F2継続、周期跨ぎ、History 1/0、Project保存往復をBrowser確認済み。描画直後の初回SOURCE Vも通常Recovery延期へ含め、Browserで維持を確認。Owner操作感の受入は未確認。WP-006もDONE。Folder自身のMotion schema、現行subtree評価、Folder専用V bridge、History/Undo/Redo、保存metadataと双方向effect排他を実装した。BrowserでTable展開後の2子Raster同時preview、KEY、次Frame継続を確認。CPU/export実画素とOwner受入は未確認。WP-004は監査DONE、WP-007は技術DONE、WP-005はSimple 4x4 WARP UI実装中で、normal/CAF SOURCE/CAF ANIMATEの実画面・実画素受入が残る。旧9qはPAUSED。
-WP-005は、関連verifier・harness・構文・Vite buildをPASS。normal SOURCEの実Browserで4x4/16点表示、点drag、Esc取消、V確定、Undo/Redo、変更中のBASIC切替拒否を確認し、CAF ANIMATEは2Frameの入場・preview・Escまで確認した。CAF SOURCE、CAF ANIMATEのV確定/Frame継続、実Pixi/CPU/export画素、save/reopen、pointercancel実操作、Owner操作感は未受入で、WP-005はACTIVEを維持する。
+WP-005は、関連verifier・harness・構文・Vite buildをPASS。normal SOURCEの実Browserで4x4/16点表示、点drag、Esc取消、V確定、Undo/Redo、変更中のBASIC切替拒否を確認した。CAF ANIMATEでは、bridge preview後の共有overlay消失を修正し、2Frameの`READY→drag→KEYED`、V確定、History +1、次Frame移動を確認した。Tableを閉じたCAF SOURCEでも`SOURCE · WARP`のdrag→V確定を確認した。いずれもconsole errorは0件。CAF ANIMATEのTable close rollback、実Pixi/CPU/export画素、save/reopen、pointercancel実操作、非4x4/排他対象の実画面拒否、Owner操作感は未受入で、WP-005はACTIVEを維持する。
 WP-004 Slice 1〜3で、Layer Motionだけのunsupported planがCPU compositorで拒否されず描画まで進むF-003をproduction consumer＋fake Canvasで確定し、`none/ready`だけを通す限定修正を適用した。実BrowserのHTMLCanvas/PNGでready Layer/Folder Motionのhash・bbox一致とunsupportedの描画前拒否、Selection/SOURCE/CAF SOURCE/ANIMATEのfixture terminal差を確認し、HD-005をMIXEDで確定した。WP-007ではExportManager共通guard、Export toolbar/popup preflight、zero-mutation verifier、Browser Canvas診断を追加した。
 WP-007は`pending-layer-transform`でSOURCE / CAF SOURCE / ANIMATE Layer / ANIMATE FolderのExport・Preview・Sequence・Blob入口を明示停止する。Chrome 152のCanvas診断はviewport 1280x720、DPR 2.25、consoleErrors 0でPASS。隔離実UIではSOURCEのblock→V/Esc→Preview、ANIMATE Layerのblock→V→Preview、通常Folder SOURCEのblock→V→Previewを確認し、FolderのAnimation Context target表示まで確認したがFolder自身ANIMATE VとCAF SOURCE UIは未受入として残す。
 全体監査は[AUDIT](AUDIT.md)、正本配置は[登録簿](DOCUMENT_REGISTER.md)、仕様/将来の順序は[ROADMAP](ROADMAP.md)。
@@ -63,7 +63,7 @@ HD-005はLead決定済み（MIXED）で、[WP-007](work/WP-007-export-terminal-g
 
 ## NEXT
 
-1. WP-005のCAF SOURCE Raster bakeとCAF ANIMATEのV確定・Frame/Table close継続をBrowserで確認する。
+1. WP-005のCAF ANIMATE Table close rollbackとpointercancelをBrowserで確認する。
 2. normal/CAFの固定入力についてPixi preview・CPU・bake/exportの実画素とsave/reopenを比較し、非4x4/排他対象の実画面拒否を確認する。
 3. Owner受入（normal/CAF SOURCE/ANIMATE、Export操作感、実download）を技術passと分けて実施する。Layer Panel、F-007、HD-001〜004、広範囲の再監査へ展開しない。
 
