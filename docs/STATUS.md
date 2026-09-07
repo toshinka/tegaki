@@ -1,7 +1,7 @@
 # Tegaki — 再開checkpoint
 
 状態: WP-001 / WP-002 / WP-003 / WP-006 DONE（Owner操作感は未確認）。WP-004 ACTIVE。
-更新日: 2026-09-07。現在HEADは`63a9ffd971b3bcc97cd1196747736c40b0e7c520`。再開時worktree cleanを確認後、WP-003を技術完了し、未コミットのWP-006 pure schema/model Sliceを進行中。
+更新日: 2026-09-07。現在HEADは`dd12dcc08228eada66350526056533ebd8237704`。再開時にlive HEADと既存差分を確認し、WP-004の限定監査を継続中。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
@@ -45,6 +45,7 @@ WP-004 Slice 1/2で、Layer Motionだけのunsupported planがCPU compositorで�
 - Owner補足の「描画直後だけSOURCE Vが閉じる」は、描画後に予約された通常RecoveryがSOURCE sessionを延期しない経路と一致。activeなSOURCE/Timeline双方を延期する追補を適用し、forced/manual保存は維持。
 - WP-004: CPU拒否抜けは限定修正済み。save/export未確定terminal比較は仕様判断待ち。実画素比較は未実施。
 - WP-004結果: CPU拒否修正、save/export terminal差、HD-005の判断材料は[結果表](work/WP-004-results.md)へ固定。Export側の自動確定/一時評価/明示停止は未採用。
+- 既知UI不具合: Animation Contextの右Layer PanelでCAF `clip-layer-mirror` rowを選択すると、pointerdownの先行visual selection後に正式click同期が省略される可能性がある。Animation Table側の選択回避経路は存在するため、WP-004をブロックしないDEFERRED。後日、pointerdown→clickの限定Verifierから再開する。
 - 全solver/codec/長時間pen/全GPU/全Archiveの全面再調査は行わない。必要な対象だけ限定追加する。
 
 ## HUMAN DECISION NEEDED
