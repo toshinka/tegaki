@@ -50,3 +50,9 @@ runtime変更、schema導入、外部ファイル上書き、Owner Projectの破
 - このprobeはCanvas API呼出順を捕捉するfake Canvasで、実pixel/hash一致ではない。実Canvas固定画素は未実施として残す。
 - production sourceの入口比較では、Project saveはSelection確定後にactive Layer Transformを明示終了する。Export/sequence/previewはSelectionだけを確定し、Layer Transformを終了しない。
 - 初期比較表とHD-005候補は[WP-004 results](WP-004-results.md)へ記録。製品runtimeは変更していない。
+
+### 2026-09-07 Slice 2 — CPU拒否抜けの限定修正
+
+- `TimelineFrameCompositor._assertLayerDeformerPlanReady()`の早期return条件を`none/ready`だけへ限定した。
+- Layer Motionだけの競合fixtureで、共有planが`unsupported`を返した時に`_renderClipEntry()`がCanvas描画前にreason付き例外を出すことを確認した。
+- legacy fallbackや正常planのconsumer、Save/Exportのterminalは変更していない。
