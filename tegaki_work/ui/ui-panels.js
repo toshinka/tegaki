@@ -17,6 +17,7 @@
 import { DOMBuilder } from './dom-builder.js';
 import { SliderUtils } from './slider-utils.js';
 import { TegakiEventBus } from '../system/event-bus.js';
+import { showFeedbackToast } from './feedback-toast.js';
 
 const SIDEBAR_POPUP_BUTTONS = Object.freeze({
     album: 'library-tool',
@@ -45,9 +46,11 @@ export class UIController {
     }
     
     showPopup(name) {
+        if (name === 'export' && !this._canOpenExportPopup()) return false;
         if (this.popupManager) {
-            this.popupManager.show(name);
+            return this.popupManager.show(name);
         }
+        return false;
     }
     
     hidePopup(name) {
@@ -57,9 +60,18 @@ export class UIController {
     }
     
     togglePopup(name) {
+        if (name === 'export' && !this._canOpenExportPopup()) return false;
         if (this.popupManager) {
-            this.popupManager.toggle(name);
+            return this.popupManager.toggle(name);
         }
+        return false;
+    }
+
+    _canOpenExportPopup() {
+        const guard = window.exportManager?.getPendingLayerTransformExportGuard?.();
+        if (!guard?.blocked) return true;
+        showFeedbackToast(guard.message, { duration: 2600 });
+        return false;
     }
 
     toggleSettingsPopup() {

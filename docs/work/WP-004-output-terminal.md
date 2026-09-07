@@ -1,5 +1,7 @@
 # WP-004 — 出力拒否と未確定編集の比較監査
 
+状態: DONE — audit / decision complete（2026-09-07）。Owner制作操作感の受入は別途未確認。WP-007のruntime guardは後続カードで実装する。
+
 ## Goal
 
 Layer Motionがunsupported時に落ちる経路を固定入力で示し、Project save/exportが未確定編集をどう扱うかを明文化する。ここは診断・設計資料のカード。
@@ -41,6 +43,12 @@ runtime変更、schema導入、外部ファイル上書き、Owner Projectの破
 
 結果表、再現入力、実行証拠、修正案、HD-005推奨が揃いleadが確認。製品修正は別READYカードへ切り出す。
 
+## Closure — 2026-09-07
+
+- Slice 1〜3のCPU拒否、実Canvas/PNG、save/export terminal比較、限定実UI観測を`WP-004-results.md`へ固定した。
+- HD-005は`MIXED`で確定した。Selectionは既存auto commitを維持し、SOURCE / CAF SOURCE / ANIMATE Layer / ANIMATE Folderは未確定Layer Transformを明示停止する後続WP-007へ切り出した。Project Saveは変更しない。
+- WP-004は監査と判断の完了でDONEとする。WP-007の製品runtime変更、実UI統一、sequence/download境界はWP-004の成果へ遡及しない。
+
 ## Progress
 
 ### 2026-09-07 Slice 1 — CPU拒否抜けとterminal差のproduction probe
@@ -61,4 +69,4 @@ runtime変更、schema導入、外部ファイル上書き、Owner Projectの破
 
 - 製品runtimeを変更せず、production consumerを実`HTMLCanvasElement`とPNG Blobへ接続する診断ページを追加した。ready Layer/Folder Motionはframe surfaceとPNGでhash/bboxが一致し、unsupported overlapは`renderFrame`、`renderClipFrameSurface`、preview callerの全入口で描画前にreason付き拒否となった。
 - Selection、SOURCE、CAF SOURCE、ANIMATE Layer/Folderについて、fixtureのSaveは未確定Transform/KEYを確定してHistoryを1件進め、Export/Preview直呼出しはLayer Transformを終了せずHistoryを増やさない差を記録した。
-- 隔離した実UIでは通常SOURCEのPreview後にV/sessionが残りEscapeで閉じた。ANIMATE LayerはExport toolbar click時にsessionが閉じてからPreviewへ進んだ。入口差が残るためExport terminal仕様は変更せず、HD-005をGPT判断待ちとする。
+- 隔離した実UIでは通常SOURCEのPreview後にV/sessionが残りEscapeで閉じた。ANIMATE LayerはExport toolbar click時にsessionが閉じてからPreviewへ進んだ。この差をHD-005判断材料として固定し、後続WP-007で明示停止guardへ統一する。

@@ -14,6 +14,7 @@
 
 import { TegakiEventBus } from '../system/event-bus.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
+import { showFeedbackToast } from './feedback-toast.js';
 
 export class ExportPopup {
     constructor(dependencies = {}) {
@@ -371,6 +372,7 @@ export class ExportPopup {
     async executeExport() {
         if (!this.manager) return;
         if (this.manager.isExporting()) return;
+        if (this._showPendingLayerTransformBlock()) return;
         
         const progressEl = document.getElementById('export-progress');
         const executeBtn = document.getElementById('export-execute');
@@ -390,8 +392,10 @@ export class ExportPopup {
             };
             await this.manager.export(this.selectedFormat, options);
         } catch (error) {
-            console.error('Export error:', error);
-            this.showStatus('エクスポート失敗: ' + error.message, true);
+            if (!this._showPendingLayerTransformBlock(error)) {
+                console.error('Export error:', error);
+                this.showStatus('エクスポート失敗: ' + error.message, true);
+            }
             if (progressEl) progressEl.style.display = 'none';
             if (executeBtn) executeBtn.disabled = false;
             if (previewBtn) previewBtn.disabled = false;
@@ -402,6 +406,7 @@ export class ExportPopup {
     async executePreview() {
         if (!this.manager) return;
         if (this.manager.isExporting()) return;
+        if (this._showPendingLayerTransformBlock()) return;
         
         const previewBtn = document.getElementById('export-preview');
         const executeBtn = document.getElementById('export-execute');
@@ -458,8 +463,10 @@ export class ExportPopup {
             this.resetProgress();
             
         } catch (error) {
-            console.error('Preview generation error:', error);
-            this.showStatus('プレビュー生成失敗: ' + error.message, true);
+            if (!this._showPendingLayerTransformBlock(error)) {
+                console.error('Preview generation error:', error);
+                this.showStatus('プレビュー生成失敗: ' + error.message, true);
+            }
             if (previewBtn) {
                 previewBtn.textContent = 'プレビュー';
                 previewBtn.disabled = false;
@@ -588,6 +595,19 @@ export class ExportPopup {
         if (!wasVisible) {
             this.eventBus.emit('popup:shown', { name: 'export' });
         }
+    }
+
+    _showPendingLayerTransformBlock(error = null) {
+        const isBlocked = error
+            ? this.manager?.isPendingLayerTransformExportError?.(error) === true
+            : this.manager?.getPendingLayerTransformExportGuard?.()?.blocked === true;
+        if (!isBlocked) return false;
+        const guard = this.manager?.getPendingLayerTransformExportGuard?.();
+        showFeedbackToast(
+            guard?.message || '変形を確定（V）またはキャンセル（Esc）してから出力してください',
+            { duration: 2600 }
+        );
+        return true;
     }
     
     hide() {

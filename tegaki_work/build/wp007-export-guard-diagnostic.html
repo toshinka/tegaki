@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WP-007 Export terminal guard diagnostic</title>
+<style>
+  :root { color-scheme: light; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  body { margin: 24px; background: #ffffee; color: #400000; }
+  h1 { font: 700 20px system-ui, sans-serif; }
+  #status { padding: 10px 12px; border: 1px solid #b8706b; background: #f0e0d6; }
+  #output { white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; border: 1px solid #d4a8a0; background: #fffaf5; }
+  #canvas-host { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  canvas { image-rendering: pixelated; border: 1px solid #b8706b; background: #ffffee; width: 96px; height: 96px; }
+  .note { font: 13px system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<h1>WP-007 — Export terminal guard</h1>
+<div id="status">実Browser診断を実行中…</div>
+<p class="note">production ExportManager / PNGExporterを実HTMLCanvasElementへ接続します。未確定Layer Transformのblockでは、model・session・History・描画・downloadを変更しません。</p>
+<pre id="output">準備中…</pre>
+<div id="canvas-host"></div>
+<script type="module">
+let ExportManager;
+const statusNode = document.querySelector('#status');
+const outputNode = document.querySelector('#output');
+const canvasHost = document.querySelector('#canvas-host');
+const BLOCK_REASON = 'pending-layer-transform';
+const results = {
+  meta: {
+    userAgent: navigator.userAgent,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    dpr: window.devicePixelRatio,
+    canvas: '8x8',
+    consoleErrors: []
+  },
+  cases: [],
+  ui: {
+    status: 'not-run',
+    note: '実UIのtoolbar/popup event順序は隔離した実アプリ操作で別記録する。'
+  }
+};
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  results.meta.consoleErrors.push(args.map(value => String(value)).join(' '));
+  originalConsoleError(...args);
+};
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function assertStateEqual(actual, expected, message) {
+  assert(JSON.stringify(actual) === JSON.stringify(expected), message);
+}
+
+function makeState(kind) {
+  return {
+    active: true,
+    layerId: `${kind}-layer`,
+    hasPendingTransform: true,
+    target: kind === 'ANIMATE Layer'
+      ? 'clip-layer-transform-key'
+      : (kind === 'ANIMATE Folder' ? 'clip-folder-transform-key' : 'layer-source'),
+    history: 0,
+    model: {
+      kind,
+      layerTransform: { x: 3, y: 2 },
+      tracks: [{ frame: 0, x: 3, y: 2 }],
+      childRaster: { x: 3, y: 2 }
+    }
+  };
+}
+
+function makeLayerSystem(state, renderSource) {
+  return {
+    getLayerMoveCommitState() {
+      return {
+        active: state.active,
+        layerId: state.layerId,
+        hasPendingTransform: state.hasPendingTransform
+      };
+    },
+    hasActiveLayerTransformSession() { return state.active; },
+    getActiveTransformEditTarget() { return state.target; },
+    getLayers() { return []; },
+    _getMaxRenderTextureSize() { return 4096; },
+    renderSource
+  };
+}
+
+function drawPattern(mode) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 8;
+  canvas.height = 8;
+  const context = canvas.getContext('2d');
+  context.clearRect(0, 0, 8, 8);
+  context.fillStyle = mode === 'confirmed' ? '#800000' : '#1e78c8';
+  const points = mode === 'confirmed'
+    ? [[1, 1], [2, 1], [2, 2], [5, 5]]
+    : [[5, 5], [6, 5]];
+  for (const [x, y] of points) context.fillRect(x, y, 1, 1);
+  return canvas;
+}
+
+function canvasEvidence(canvas) {
+  const image = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+  let hash = 2166136261;
+  let left = canvas.width;
+  let top = canvas.height;
+  let right = -1;
+  let bottom = -1;
+  let nonTransparent = 0;
+  for (let offset = 0; offset < image.data.length; offset += 4) {
+    for (let channel = 0; channel < 4; channel++) {
+      hash ^= image.data[offset + channel];
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    if (image.data[offset + 3] > 0) {
+      const pixel = offset / 4;
+      const x = pixel % canvas.width;
+      const y = Math.floor(pixel / canvas.width);
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x);
+      bottom = Math.max(bottom, y);
+      nonTransparent += 1;
+    }
+  }
+  return {
+    width: canvas.width,
+    height: canvas.height,
+    hash: `0x${hash.toString(16).padStart(8, '0')}`,
+    nonTransparent,
+    bbox: nonTransparent > 0 ? { x: left, y: top, width: right - left + 1, height: bottom - top + 1 } : null
+  };
+}
+
+async function blobEvidence(blob) {
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0);
+  bitmap.close?.();
+  return { bytes: blob.size, ...canvasEvidence(canvas) };
+}
+
+function clone(value) { return structuredClone(value); }
+
+function makeManager(state, calls) {
+  const source = { mode: 'cancelled' };
+  const layerSystem = makeLayerSystem(state, source);
+  const manager = new ExportManager({ renderer: {} }, layerSystem);
+  manager.renderToCanvas = () => {
+    calls.render += 1;
+    return drawPattern(source.mode);
+  };
+  manager.downloadFile = () => { calls.download += 1; };
+  manager.registerExporter('png', new window.PNGExporter(manager));
+  return { manager, layerSystem, source };
+}
+
+async function blockedThenRetry(kind) {
+  const calls = { render: 0, download: 0 };
+  const state = makeState(kind);
+  const { manager, layerSystem, source } = makeManager(state, calls);
+  const before = clone(state);
+  let blocked = null;
+  try {
+    await manager.generatePreview('png', { transparent: true });
+  } catch (error) {
+    blocked = {
+      code: error.code,
+      reason: error.reason,
+      message: error.message,
+      blocked: error.blocked === true
+    };
+  }
+  assert(blocked?.reason === BLOCK_REASON, `${kind}: missing pending-transform reason`);
+  assertStateEqual(state, before, `${kind}: state changed during block`);
+  assert(calls.render === 0, `${kind}: blocked preview rendered`);
+  assert(calls.download === 0, `${kind}: blocked preview downloaded`);
+
+  state.active = false;
+  state.hasPendingTransform = false;
+  state.history += 1;
+  source.mode = 'confirmed';
+  const confirmed = await manager.generatePreview('png', { transparent: true });
+  const confirmedEvidence = await blobEvidence(confirmed.blob);
+  state.active = true;
+  state.hasPendingTransform = true;
+  state.history = 0;
+  state.model.layerTransform = { x: 0, y: 0 };
+  state.model.tracks = [];
+  source.mode = 'cancelled';
+  const cancelBefore = clone(state);
+  let cancelBlocked = null;
+  try {
+    await manager.generatePreview('png', { transparent: true });
+  } catch (error) {
+    cancelBlocked = { reason: error.reason, blocked: error.blocked === true };
+  }
+  assert(cancelBlocked?.reason === BLOCK_REASON, `${kind}: cancel path did not block pending state`);
+  assertStateEqual(state, cancelBefore, `${kind}: cancel block changed state`);
+  state.active = false;
+  state.hasPendingTransform = false;
+  const cancelled = await manager.generatePreview('png', { transparent: true });
+  const cancelledEvidence = await blobEvidence(cancelled.blob);
+  assert(confirmedEvidence.hash !== cancelledEvidence.hash, `${kind}: confirm/cancel hashes must differ`);
+  assert(confirmedEvidence.bbox?.x !== cancelledEvidence.bbox?.x, `${kind}: confirm/cancel bbox must differ`);
+
+  const preview = drawPattern('confirmed');
+  preview.title = `${kind} confirmed`;
+  canvasHost.append(preview);
+  return {
+    case: kind,
+    blocked,
+    zeroMutation: calls.render === 2 && calls.download === 0,
+    confirm: { history: 1, output: confirmedEvidence },
+    cancel: { history: 0, output: cancelledEvidence },
+    sessionAfterBlock: true,
+    modelAfterBlock: 'deep-equal',
+    target: layerSystem.getActiveTransformEditTarget()
+  };
+}
+
+async function selectionCase() {
+  const state = makeState('Selection');
+  state.active = false;
+  state.hasPendingTransform = false;
+  const selection = { active: true, confirmed: 0, history: 0 };
+  window.CoreRuntime = { api: { selection: {
+    getState: () => ({ transformSessionActive: selection.active }),
+    confirmTransform() {
+      selection.active = false;
+      selection.confirmed += 1;
+      selection.history += 1;
+      return true;
+    }
+  } } };
+  const calls = { render: 0, download: 0 };
+  const { manager } = makeManager(state, calls);
+  const result = await manager.generatePreview('png', { transparent: true });
+  assert(selection.confirmed === 1, 'Selection was not confirmed once');
+  assert(selection.history === 1, 'Selection History delta is not +1');
+  return { case: 'Selection', autoCommit: true, history: selection.history, output: await blobEvidence(result.blob) };
+}
+
+async function sequenceCase() {
+  const state = makeState('sequence');
+  const calls = { render: 0, download: 0 };
+  const { manager } = makeManager(state, calls);
+  manager._getFrameCount = () => 2;
+  manager.renderAnimationFrames = async () => { calls.render += 1; return []; };
+  let error = null;
+  try { await manager.exportSequencePNG({}); }
+  catch (caught) { error = caught; }
+  assert(error?.reason === BLOCK_REASON, 'Sequence did not use the pending-transform reason');
+  assert(calls.render === 0, 'Blocked sequence rendered frames');
+  assert(calls.download === 0, 'Blocked sequence downloaded frames');
+  return { case: 'sequence/download', blocked: true, reason: error.reason, renderCalls: calls.render, downloadCalls: calls.download };
+}
+
+async function run() {
+  window.CoreRuntime = { api: { selection: { getState: () => ({ transformSessionActive: false }) } } };
+  results.cases.push(await selectionCase());
+  for (const kind of ['SOURCE', 'CAF SOURCE', 'ANIMATE Layer', 'ANIMATE Folder']) {
+    results.cases.push(await blockedThenRetry(kind));
+  }
+  results.cases.push(await sequenceCase());
+  statusNode.textContent = 'PASS — WP-007 Browser / Canvas guard diagnostic complete';
+  outputNode.textContent = JSON.stringify(results, null, 2);
+  window.__WP007_BROWSER_RESULTS__ = results;
+}
+
+async function bootstrap() {
+  try {
+    await import('/system/export-manager.js');
+    await import('/system/exporters/png-exporter.js');
+    const module = await import('/system/export-manager.js');
+    ExportManager = module.ExportManager;
+    window.TEGAKI_CONFIG = { canvas: { width: 8, height: 8 } };
+    await run();
+  } catch (error) {
+    results.failed = { message: String(error.message), stack: String(error.stack || '') };
+    statusNode.textContent = 'BLOCKED — diagnostic failed';
+    outputNode.textContent = JSON.stringify(results, null, 2);
+    window.__WP007_BROWSER_RESULTS__ = results;
+  }
+}
+
+bootstrap();
+</script>
+</body>
+</html>
