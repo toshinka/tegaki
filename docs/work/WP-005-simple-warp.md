@@ -179,6 +179,26 @@ Owner ACCEPTの条件は、normal SOURCE、CAF SOURCE、CAF ANIMATE、Export blo
 
 このclosure後はsession境界抽出、別WP、許容誤差policy、CPU continuous preview、Pixi renderer/schema変更へ進まず、GPT reviewとOwner acceptanceで停止する。
 
+## Owner Acceptance Fix Slice — ANIMATE WARP Live Preview + Explicit Confirm (2026-09-08)
+
+### Reopen reason
+
+Ownerのproduction再現で、CAF ANIMATE / internal Rasterの`V → WARP`中に16点グリッドは動くがmain canvasのRasterが変形しなかった。statusは候補段階でも`KEYED`になり、明示KEY確定controlは見えなかった。これはPreview Equivalence Policyのbyte差ではなく、interactive previewが表示されないUI/runtime不具合なので、Owner acceptanceを一時的にblockedとして技術再開した。
+
+### Cause and bounded fix
+
+- `_previewLayerWarpBridge()`は既存の`ClipInstance.layerDeformers`へ候補を投影して`render()`を予約するが、`isTransformPreviewSuspended`中の通常`render()`はworking Layerを復元していた。そのため、既存のPixi RenderPlan / Mesh deformer previewがmain canvasへ届かなかった。
+- 候補の`PREVIEW` actionを`hasExplicitKey`へ使っていたため、元KEYなしでも`KEYED`表示になっていた。WARP transaction自身の`hadExplicitKey`を正本にし、`keyGuide.pending`を分けた。
+- WARPの明示確定buttonは既存V WARP terminalへ委譲し、`exitLayerMoveMode({ cancelled: false })`から既存`finishLayerWarpEditSession()`だけを通す。基底Layer Transform bridgeはno-opで解放され、History二重化を作らない。
+- active ANIMATE Layer WARPだけ`_applyVisibilityPreview({ force: true })`を使う。PREVIEW toggleがOFFでも編集対象のlive visualを表示するが、CPU連続preview・保存正本・Export authorityは変更しない。
+- Timelineのinternal Raster rowはpending中にbaseline `layerDeformers`を読む。元KEYは残し、新規候補だけではsolid markerを表示しない。確定後はmodelの既存keyframeからsolid markerを表示する。
+
+### Verification and current status
+
+`build/verify-layer-transform-warp-animate-live-preview.mjs`を追加し、WARP候補の`READY → 未確定`、既存KEYの`KEYED → KEYED · 未確定変更`、cancel/confirmのtransaction、Pixi preview分岐、Vと同じexplicit terminal、Timeline marker baselineを隔離検証した。関連suiteはwarp 22件、transform 13件、animation 34件、project 9件が全件PASS。構文、harness check、Vite production build、`git diff --check`もPASS。生成`dist`はHEAD内容へ戻している。
+
+production UI（localhost:5173、viewport `905×609`、DPR `2.025`）では、CAFを2 Frameへ延長してLayerを選択し、`V → WARP`で`ANIMATE · F1 WARP READY`、16点、`F1 · KEY未設定`のKEY strip、console error/warn 0件を確認した。pointer dragでmain canvasが追従すること、pointerup保持、明示button/VのHistory +1、Esc/table close rollback、既存KEY再編集、Export block/retry、PNG download、Owner操作感は未受入である。したがってWP-005は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`へ戻し、Owner確認後にのみ受入を更新する。
+
 ## Goal
 
 旧Phase 9q A〜Dのmodel/Project/render/transaction資産を使い、Layer Transform WARPをCanvas直接操作へ接続する。

@@ -1,7 +1,7 @@
 # Tegaki — 再開checkpoint
 
 状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。
-更新日: 2026-09-08。現在の作業baseline HEAD: `9d1002d5fba94edc887a3a6e6dcafe1ea11d0eb1`。WP-004の監査・HD-005判断とWP-007の限定runtime guardを完了し、WP-005 Simple 4x4 WARP UIの技術完了とOwner受入境界を記録する。
+更新日: 2026-09-08。現在の作業baseline HEAD: `0969a7e164695e46e387817f3ff0ca06298b32b5`。WP-005のOwner再現で判明したANIMATE WARP live preview不具合を限定修正し、実production UIでの最小確認とOwner受入境界を記録する。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
@@ -29,6 +29,14 @@ WP-002は指定経路の技術完了。Browser実操作・実Pixi・本番Histor
 WP-003はDONE。拒否時terminal、自動保存延期、Undo/Redo再同期の隔離回帰がpass。通常RasterのF1/F2継続、周期跨ぎ、History 1/0、Project保存往復をBrowser確認済み。描画直後の初回SOURCE Vも通常Recovery延期へ含め、Browserで維持を確認。Owner操作感の受入は未確認。WP-006もDONE。Folder自身のMotion schema、現行subtree評価、Folder専用V bridge、History/Undo/Redo、保存metadataと双方向effect排他を実装した。BrowserでTable展開後の2子Raster同時preview、KEY、次Frame継続を確認。CPU/export実画素とOwner受入は未確認。WP-004は監査DONE、WP-007は技術DONE、WP-005はSimple 4x4 WARP UIの技術作業を完了し、Ownerの実画面・実download・操作感受入が残る。旧9qはPAUSED。
 WP-005は、関連verifier・harness・構文・Vite buildをPASS。normal SOURCEの実Browserで4x4/16点表示、点drag、Esc取消、V確定、Undo/Redo、変更中のBASIC切替拒否を確認した。CAF ANIMATEでは、bridge preview後の共有overlay消失を修正し、2Frameの`READY→drag→KEYED`、V確定、History +1、次Frame移動を確認した。今回のterminal sliceでは、CAF ANIMATEの元KEYなし／元KEYありを対象に、pending WARP→通常Table close→overlay消失、History据え置き、元KEY保持またはKEY未設定への復帰をBrowserで確認した。close前後のcaller順序は既存production `hide()`をverifierで固定した。pointer端末はproduction controller/overlayのBrowser DOM診断で、normal SOURCE／CAF ANIMATEのpointercancel・capture lossがgesture単位でrollbackし、pointerup後のlate lossが結果を保持することを確認した。IAB実UIのconsole errorは0件。trusted OS pointercancel、Owner操作感は未受入として残るが、Pixi/CPU/export画素・save/reopen・非4x4/排他対象の技術証拠は完了し、WP-005は`TECHNICALLY COMPLETE` / `ACTIVE`を維持する。
 WP-005のFinal technical evidence sliceはlive baseline `86803e1de0d649648c079b44e20389dc868981fd`から、隔離16x16非対称RasterのChrome診断（Chrome 152 / viewport `680x561` / DPR `2.25` / console errors 0）まで完走した。normal SOURCEのCPU preview/bake/exportは`0x17a134da`で一致し、Project save/reopenはPixi upload後のproduction canonical Raster `0x191a3ed6`とreload後Exportまで一致した（CPU入力`0x7de6acda`との差は半透明RGBの8bit premultiplied-alpha量子化）。CAF SOURCEはDrawingSnapshot/PNG/save-reopenが`0x17a134da`で一致。CAF ANIMATEはCPU/Export/save-reopen/F1→F2→F1が一致し、4x4/16点/target/frameのlayerDeformersも保持したが、Pixiは`0x63f4c1ac`で9px差（最大channel 102）。Layer WARP + MotionはCPU/Export `0x8525007f`、Pixi `0xf73d350c`で9px差（bboxの1px差を含む）。GPU MeshとCPU rasterizerの境界差を固定証拠として記録し、許容誤差やrenderer/schema変更は行わない。production入口guard verifierはnon-4x4/RIG/Mesh/Skin/clipping owner+sourceを全件明示拒否、effect/model mutation 0、History 0、session noneでPASS。よってこのsliceは`PARTIAL / GPT review required`で、WP-005はACTIVEのまま。Actual App UI、Owner受入、trusted device pointercancelは未確認。WP-007はproduction JS未変更のため`NOT RERUN — no relevant production change`を継承する。
+
+### WP-005 Owner Acceptance Fix Slice — ANIMATE WARP live preview (2026-09-08)
+
+Owner報告のproduction再現では、CAF ANIMATE / internal Rasterの`V → WARP`中に16点グリッドだけが変形し、main canvasは元Rasterのまま残った。あわせてWARP候補が`KEYED`と表示され、WARP用の明示KEY確定controlが表示されない状態だった。原因は、WARP bridgeが既存`ClipInstance.layerDeformers`へ候補を投影しても、`isTransformPreviewSuspended`中の`render()`がworking Layer復元へ進み、既存Pixi previewを通さなかったこと、候補の`PREVIEW` actionを確定KEYと誤認していたこと、明示確定buttonが通常Layer Transform bridgeだけを扱っていたことである。
+
+今回の限定修正では、activeなANIMATE Layer WARPだけを既存`_applyVisibilityPreview({ force: true })`へ通し、同じRenderPlan / sampled layerDeformers / Pixi Mesh proxyを使ってpointermove中のcanvasへ反映する。WARP projectionへ`keyGuide`を追加し、元KEYなしは`READY → 未確定`、元KEYありは`KEYED → KEYED · 未確定変更`とする。明示buttonは既存V WARP terminal (`exitLayerMoveMode`)へ委譲し、WARP bridgeがTimeline Historyを1件だけ作ってsessionとoverlayを終了する。Timelineのinternal Raster rowは候補中baseline deformerを読むため、新規候補だけではsolid markerを出さず、元KEYは残る。保存正本、CPU compositor、Export、History schema、Pixi/CPU parity policyは変更していない。
+
+`verify-layer-transform-warp-animate-live-preview.mjs`を追加し、候補/確定/取消、status/keyGuide、既存Pixi preview経路、明示確定terminal、marker baselineを固定した。warp 22件、transform 13件、animation 34件、project 9件、構文、harness check、Vite production build、`git diff --check`はPASS。production UI（localhost:5173、viewport `905×609`、DPR `2.025`）では、CAFを2 Frameへ延長して`V → WARP`へ入り、`ANIMATE · F1 WARP READY`と16点表示、KEY strip（`F1 · KEY未設定`、未確定時は確定buttonとなる既存control）が表示され、console error/warnは0件だった。pointer drag・実確定・download・Owner操作感はこのturnでは未受入であり、Owner acceptance pendingを維持する。
 
 ### WP-005 Pixi / CPU WARP parity root-cause slice (2026-09-07)
 

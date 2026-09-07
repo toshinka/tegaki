@@ -3783,6 +3783,15 @@ export class LayerSystem {
      * SOURCE Raster bakeと未変更baselineはこの入口で確定しない。
      */
     commitLayerTransformTimelineKeyAndContinue() {
+        const warpSession = this._layerWarpEditSession;
+        if (warpSession?.kind === 'animate'
+            && warpSession.transaction?.kind === 'layer-warp-edit-transaction') {
+            if (warpSession.changed !== true) return false;
+            // WARPの明示確定は、V解除と同じ既存terminalへ委譲する。
+            // WARP bridgeが唯一のTimeline Historyを作り、基底のLayer Transform
+            // bridgeはno-opとして解放されるため、二重commitを作らない。
+            return this.exitLayerMoveMode({ cancelled: false }) === true;
+        }
         const session = this._layerTransformSession;
         if (!session
             || !isTransformTimelineKeyTarget(session.transaction?.target)
@@ -3943,6 +3952,7 @@ export class LayerSystem {
             this._folderTransformConfirmDeferred = false;
             this._hideOperationIndicator();
         }
+        return transformConfirmed;
     }
 
     _showOperationIndicator(message) {
