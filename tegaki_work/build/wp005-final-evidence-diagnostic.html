@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WP-005 final technical evidence</title>
+<style>
+  :root { color-scheme: light; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  body { margin: 24px; background: #ffffee; color: #400000; }
+  h1 { font: 700 20px system-ui, sans-serif; }
+  #status { padding: 10px 12px; border: 1px solid #b8706b; background: #f0e0d6; }
+  #output { white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; border: 1px solid #d4a8a0; background: #fffaf5; }
+  #canvas-host { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  canvas { image-rendering: pixelated; border: 1px solid #b8706b; width: 128px; height: 128px; background: #ffffee; }
+  .note { font: 13px system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<h1>WP-005 — Final technical evidence</h1>
+<div id="status">実Browser診断を起動中…</div>
+<p class="note">非対称16×16 fixtureをproduction WARP rasterizer / TimelineFrameCompositor / AnimationTablePopup Pixi preview / ExportManager PNG / ProjectManagerへ接続します。これは実アプリOwner操作の代替ではありません。</p>
+<pre id="output">準備中…</pre>
+<div id="canvas-host"></div>
+<script type="module">
+const statusNode = document.querySelector('#status');
+const outputNode = document.querySelector('#output');
+const canvasHost = document.querySelector('#canvas-host');
+const results = {
+  meta: {
+    userAgent: navigator.userAgent,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    dpr: window.devicePixelRatio,
+    fixture: '16x16 asymmetric L + center pixel + lower-right block',
+    consoleErrors: []
+  },
+  cases: [],
+  guards: [],
+  pixi: { status: 'not-run' },
+  limitations: [
+    'PRODUCTION VERIFIER and BROWSER DIAGNOSTIC are separate from ACTUAL APP UI / Owner acceptance.',
+    'The trusted pen/device pointercancel result remains NOT VERIFIED from the previous slice.'
+  ]
+};
+
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  results.meta.consoleErrors.push(args.map(value => String(value)).join(' '));
+  originalConsoleError(...args);
+};
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function clone(value) {
+  return structuredClone(value);
+}
+
+function makeFixturePixels() {
+  const pixels = new Uint8ClampedArray(16 * 16 * 4);
+  const put = (x, y, r, g, b, a = 255) => {
+    const offset = (y * 16 + x) * 4;
+    pixels[offset] = r;
+    pixels[offset + 1] = g;
+    pixels[offset + 2] = b;
+    pixels[offset + 3] = a;
+  };
+  // Asymmetric marks make mirroring, cropping, nearest-sample and ordering visible.
+  [[1, 1], [1, 2], [1, 3], [2, 3], [3, 3]].forEach(([x, y], index) => put(x, y, 180 + index * 8, 20, 35));
+  put(8, 8, 30, 150, 230);
+  [[12, 12], [13, 12], [12, 13], [13, 13], [14, 13]].forEach(([x, y], index) => put(x, y, 25, 160 + index * 10, 55));
+  return pixels;
+}
+
+function metrics(canvas) {
+  const ctx = canvas.getContext('2d');
+  assert(ctx, 'Canvas2D context is required for evidence');
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = image.data;
+  let hash = 2166136261;
+  let left = canvas.width;
+  let top = canvas.height;
+  let right = -1;
+  let bottom = -1;
+  let nonTransparent = 0;
+  for (let offset = 0; offset < data.length; offset += 4) {
+    for (let channel = 0; channel < 4; channel++) {
+      hash ^= data[offset + channel];
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    if (data[offset + 3] > 0) {
+      const index = offset / 4;
+      const x = index % canvas.width;
+      const y = Math.floor(index / canvas.width);
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x);
+      bottom = Math.max(bottom, y);
+      nonTransparent += 1;
+    }
+  }
+  const samplePoints = [[0, 0], [1, 1], [3, 3], [8, 8], [12, 12], [13, 13], [20, 20]];
+  const samples = Object.fromEntries(samplePoints.map(([x, y]) => {
+    if (x >= canvas.width || y >= canvas.height) return [`${x},${y}`, null];
+    const offset = (y * canvas.width + x) * 4;
+    return [`${x},${y}`, [...data.slice(offset, offset + 4)]];
+  }));
+  return {
+    width: canvas.width,
+    height: canvas.height,
+    hash: `0x${hash.toString(16).padStart(8, '0')}`,
+    nonTransparent,
+    bbox: nonTransparent > 0
+      ? { x: left, y: top, width: right - left + 1, height: bottom - top + 1 }
+      : null,
+    samples
+  };
+}
+
+function canvasFromPixels(width, height, pixels) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels), width, height), 0, 0);
+  return canvas;
+}
+
+function placeSurface(surface, size = 32) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  canvas.getContext('2d').drawImage(surface.canvas, surface.bounds.x, surface.bounds.y);
+  return canvas;
+}
+
+function compare(left, right) {
+  return left.width === right.width
+    && left.height === right.height
+    && left.hash === right.hash
+    && left.nonTransparent === right.nonTransparent
+    && JSON.stringify(left.bbox) === JSON.stringify(right.bbox)
+    && JSON.stringify(left.samples) === JSON.stringify(right.samples);
+}
+
+function pixelDiff(leftCanvas, rightCanvas) {
+  const left = leftCanvas.getContext('2d').getImageData(0, 0, leftCanvas.width, leftCanvas.height).data;
+  const right = rightCanvas.getContext('2d').getImageData(0, 0, rightCanvas.width, rightCanvas.height).data;
+  const length = Math.min(left.length, right.length);
+  let count = 0;
+  let maxChannelDelta = 0;
+  let first = null;
+  const samples = [];
+  let diffLeft = leftCanvas.width;
+  let diffTop = leftCanvas.height;
+  let diffRight = -1;
+  let diffBottom = -1;
+  for (let offset = 0; offset < length; offset += 4) {
+    let differs = false;
+    for (let channel = 0; channel < 4; channel++) {
+      const delta = Math.abs(left[offset + channel] - right[offset + channel]);
+      if (delta > 0) differs = true;
+      maxChannelDelta = Math.max(maxChannelDelta, delta);
+    }
+    if (differs) {
+      count += 1;
+      const x = (offset / 4) % leftCanvas.width;
+      const y = Math.floor((offset / 4) / leftCanvas.width);
+      diffLeft = Math.min(diffLeft, x);
+      diffTop = Math.min(diffTop, y);
+      diffRight = Math.max(diffRight, x);
+      diffBottom = Math.max(diffBottom, y);
+      if (!first) {
+        first = {
+          x,
+          y,
+          left: [...left.slice(offset, offset + 4)],
+          right: [...right.slice(offset, offset + 4)]
+        };
+      }
+      if (samples.length < 12) {
+        samples.push({
+          x,
+          y,
+          left: [...left.slice(offset, offset + 4)],
+          right: [...right.slice(offset, offset + 4)]
+        });
+      }
+    }
+  }
+  return {
+    pixelCount: count,
+    maxChannelDelta,
+    firstDivergence: first,
+    diffBbox: count > 0
+      ? { x: diffLeft, y: diffTop, width: diffRight - diffLeft + 1, height: diffBottom - diffTop + 1 }
+      : null,
+    samples,
+    dimensionMatch: leftCanvas.width === rightCanvas.width && leftCanvas.height === rightCanvas.height
+  };
+}
+
+function makeDeformer(createRectControlMeshDeformer, bounds) {
+  const deformer = createRectControlMeshDeformer({ columns: 4, rows: 4, bindBounds: bounds });
+  assert(deformer?.points?.length === 16, 'production Simple 4x4 candidate was not created');
+  const points = deformer.points.map(point => ({ ...point }));
+  points[5].x += 0.18;
+  points[6].x += 0.08;
+  points[9].y += 0.06;
+  deformer.points = points;
+  deformer.keyframes = [{ frame: 0, interpolation: 'hold', points: points.map(point => ({ ...point })) }];
+  return deformer;
+}
+
+function summarizeLayerDeformers(value) {
+  return value
+    ? {
+        version: value.version || null,
+        targets: (value.targets || []).map(target => ({
+          internalLayerId: target.internalLayerId || null,
+          type: target.deformer?.type || null,
+          columns: target.deformer?.columns || null,
+          rows: target.deformer?.rows || null,
+          keyframes: (target.deformer?.keyframes || []).map(keyframe => ({
+            frame: keyframe.frame,
+            interpolation: keyframe.interpolation,
+            pointCount: Array.isArray(keyframe.points) ? keyframe.points.length : 0
+          })),
+          points: (target.deformer?.points || []).map(point => ({ x: point.x, y: point.y }))
+        }))
+      }
+    : null;
+}
+
+function makeModel({ TimelineModel, deformer = null, motion = false, snapshotPixels, snapshotId = 'snapshot' }) {
+  const snapshot = {
+    id: snapshotId,
+    width: 16,
+    height: 16,
+    rasterBounds: { x: 0, y: 0, width: 16, height: 16 },
+    pixels: new Uint8ClampedArray(snapshotPixels)
+  };
+  const layer = {
+    id: 'internal-raster',
+    type: 'raster',
+    parentLayerId: null,
+    visible: true,
+    opacity: 1,
+    blendMode: 'normal',
+    clippingMode: 'none',
+    drawingSnapshotId: snapshotId
+  };
+  const clip = {
+    id: 'clip-warp',
+    assetId: 'asset-warp',
+    startFrame: 0,
+    duration: 2,
+    visible: true,
+    layerDeformers: deformer
+      ? { version: 1, targets: [{ internalLayerId: layer.id, deformer }] }
+      : null,
+    layerTransformTracks: motion
+      ? [{
+          internalLayerId: layer.id,
+          pivotX: 0,
+          pivotY: 0,
+          keyframes: [{ frame: 0, interpolation: 'hold', x: 2, y: 1, scaleX: 1, scaleY: 1, rotation: 0 }]
+        }]
+      : []
+  };
+  const model = new TimelineModel({
+    fps: 12,
+    totalFrames: 2,
+    drawingSnapshots: [snapshot],
+    clipAssets: [{
+      id: 'asset-warp',
+      internalLayers: [layer],
+      rigDefinition: null,
+      meshDefinitions: null,
+      skinBindings: null
+    }],
+    tracks: [{ id: 'lane-warp', type: 'clip', visible: true, cels: [clip] }]
+  });
+  return { model, snapshot, clip: model.findClipEntry(clip.id).clip, asset: model.getClipAsset('asset-warp') };
+}
+
+function makeExportManager(ExportManager, PNGExporter, renderCanvas) {
+  const layerSystem = {
+    getLayers() { return []; },
+    _getMaxRenderTextureSize() { return 4096; },
+    getLayerMoveCommitState() { return { active: false, hasPendingTransform: false }; }
+  };
+  const manager = new ExportManager({ renderer: {} }, layerSystem);
+  manager._getFrameCount = () => 1;
+  manager.renderToCanvas = () => renderCanvas;
+  manager.registerExporter('png', new PNGExporter(manager));
+  return manager;
+}
+
+async function blobMetrics(blob) {
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0);
+  bitmap.close?.();
+  return { bytes: blob.size, ...metrics(canvas) };
+}
+
+function publish(label, canvas) {
+  const copy = document.createElement('canvas');
+  copy.width = canvas.width;
+  copy.height = canvas.height;
+  copy.getContext('2d').drawImage(canvas, 0, 0);
+  copy.title = label;
+  canvasHost.append(copy);
+}
+
+async function createPixiPreview({ PIXI, Popup, app, model, asset, clip, plan, frameIndex = 0, unpremultiply }) {
+  const popupHost = Object.create(Popup.prototype);
+  popupHost.model = model;
+  popupHost.app = app;
+  popupHost.layerSystem = { app, _getMaxRenderTextureSize: () => 4096 };
+  popupHost._getTextureFromSnapshot = snapshot => {
+    const sourceCanvas = canvasFromPixels(snapshot.width, snapshot.height, snapshot.pixels);
+    return PIXI.Texture.from(sourceCanvas);
+  };
+  // The production method intentionally defers destruction for two render ticks.
+  // The diagnostic keeps the detached staging nodes alive until the page ends.
+  popupHost._destroyPreviewChildren = children => children.forEach(child => {
+    if (child) child.visible = false;
+  });
+  const root = new PIXI.Container();
+  root.eventMode = 'none';
+  const rendered = Popup.prototype._renderInternalLayerPreviewGroup.call(
+    popupHost,
+    root,
+    asset,
+    asset.internalLayers,
+    null,
+    { folderEffectPlan: plan, sourceBounds: { x: 0, y: 0, width: 16, height: 16 } }
+  );
+  assert(rendered === true, 'production AnimationTablePopup did not render the internal Raster preview');
+  // _renderClipAssetInternalLayerPreview applies Clip Motion after the internal
+  // Layer WARP node. Reproduce that production ordering for this detached
+  // preview host before rendering the target texture.
+  Popup.prototype._applyClipMotionToPreviewNode.call(popupHost, root, clip, frameIndex);
+  const target = PIXI.RenderTexture.create({ width: 32, height: 32, antialias: false });
+  app.renderer.render({ container: root, target, clear: true, clearColor: [0, 0, 0, 0] });
+  const canvas = app.renderer.extract.canvas({ target });
+  target.destroy(true);
+  root.destroy({ children: true, texture: false, baseTexture: false });
+  unpremultiply?.(canvas);
+  return canvas;
+}
+
+async function projectRoundTrip({ ProjectManager, TimelineFrameCompositor, ExportManager, PNGExporter, model, app, mode, PIXI, layerCanvas = null }) {
+  const history = {
+    isApplying: false,
+    beginRecordingSuppression() {},
+    endRecordingSuppression() {},
+    clear() {}
+  };
+  window.History = history;
+  window.coreEngine = { cameraSystem: { resizeCanvas() {} } };
+  const table = {
+    model,
+    selectedCelId: 'clip-warp',
+    activeLaneId: 'lane-warp',
+    selectedAssetId: 'asset-warp',
+    selectedInternalLayerId: 'internal-raster',
+    stop() {},
+    _exitWarpGridEditMode() {},
+    _restoreVisibility() {},
+    resetLaneReferenceMode() {},
+    _saveSelectedClipFromWorkingLayers() {},
+    _invalidateSnapshotTextureCache() {},
+    _syncWorkingLayersForCurrentFrame() {},
+    _flushLayerPanelSync() {},
+    render() {}
+  };
+  const layerData = layerCanvas
+    ? {
+        id: 'source-layer',
+        name: 'source-layer',
+        visible: true,
+        opacity: 1,
+        blendMode: 'normal',
+        isFolder: false,
+        isBackground: false,
+        rasterBounds: { x: 0, y: 0, width: layerCanvas.width, height: layerCanvas.height },
+        renderTexture: PIXI.RenderTexture.create({ width: layerCanvas.width, height: layerCanvas.height }),
+        layerSprite: new PIXI.Sprite()
+      }
+    : null;
+  let layers = layerData ? [{ layerData }] : [];
+  const sourceLayerSystem = {
+    getLayers() { return layers; },
+    getLayerMoveCommitState() { return { active: false, hasPendingTransform: false }; },
+    clearClippingMasks() {},
+    refreshClippingMasks() {},
+    setActiveLayer() {},
+    requestThumbnailUpdate() {},
+    deleteLayer(index) { layers.splice(index, 1); },
+    createLayer(name) {
+      const data = {
+        id: `restored-${name}`,
+        name,
+        visible: true,
+        opacity: 1,
+        blendMode: 'normal',
+        isFolder: false,
+        isBackground: false,
+        renderTexture: PIXI.RenderTexture.create({ width: 1, height: 1 }),
+        layerSprite: new PIXI.Sprite()
+      };
+      const layer = { layerData: data, id: data.id };
+      layers.push(layer);
+      return { layer };
+    }
+  };
+  const manager = new ProjectManager(sourceLayerSystem, { renderer: app.renderer });
+  window.PopupManager = { get(name) { return name === 'animationTable' && mode !== 'normal-source' ? table : null; } };
+
+  let canonicalBeforeCanvas = null;
+  if (layerCanvas) {
+    const texture = PIXI.Texture.from(layerCanvas);
+    app.renderer.render({
+      container: new PIXI.Sprite(texture),
+      target: layerData.renderTexture,
+      clear: true,
+      clearColor: [0, 0, 0, 0]
+    });
+    canonicalBeforeCanvas = app.renderer.extract.canvas({ target: layerData.renderTexture });
+    manager._unpremultiplyCanvas(canonicalBeforeCanvas);
+  }
+  const project = await manager.exportProject({ profile: true });
+    const encodedMetrics = layerCanvas && project.layers?.[0]?.image
+      ? await blobMetrics(await (await fetch(project.layers[0].image)).blob())
+      : null;
+    await manager.loadProject(JSON.parse(JSON.stringify(project)));
+
+  if (layerCanvas) {
+    const restored = app.renderer.extract.canvas({ target: layers[0].layerData.renderTexture });
+    manager._unpremultiplyCanvas(restored);
+    const before = metrics(layerCanvas);
+    const canonicalBefore = metrics(canonicalBeforeCanvas);
+    const after = metrics(restored);
+    const restoredExportManager = makeExportManager(ExportManager, PNGExporter, restored);
+    const restoredExport = await restoredExportManager.generatePreview('png', { transparent: true });
+    const exportAfter = await blobMetrics(restoredExport.blob);
+    return {
+      project,
+      before,
+      canonicalBefore,
+      encoded: encodedMetrics,
+      after,
+      exportAfter,
+      match: compare(before, after),
+      canonicalMatch: compare(canonicalBefore, after),
+      exportMatch: compare(canonicalBefore, exportAfter),
+      pixelDiff: pixelDiff(layerCanvas, restored),
+      canonicalPixelDiff: pixelDiff(canonicalBeforeCanvas, restored)
+    };
+  }
+
+  const restoredModel = table.model;
+  const restoredCompositor = new TimelineFrameCompositor(restoredModel, { _getMaxRenderTextureSize: () => 4096 });
+  const restoredSurface = restoredCompositor.renderClipFrameSurface('clip-warp', 0, { sourceWidth: 32, sourceHeight: 32 });
+  assert(restoredSurface?.canvas, 'CAF Project load did not restore a renderable clip');
+  return {
+    project,
+    before: metrics(placeSurface(new TimelineFrameCompositor(model, { _getMaxRenderTextureSize: () => 4096 }).renderClipFrameSurface('clip-warp', 0, { sourceWidth: 32, sourceHeight: 32 }))),
+    after: metrics(placeSurface(restoredSurface)),
+    match: compare(
+      metrics(placeSurface(new TimelineFrameCompositor(model, { _getMaxRenderTextureSize: () => 4096 }).renderClipFrameSurface('clip-warp', 0, { sourceWidth: 32, sourceHeight: 32 }))),
+      metrics(placeSurface(restoredSurface))
+    ),
+    layerDeformers: restoredModel.findClipEntry('clip-warp')?.clip?.layerDeformers || null,
+    frameRevisit: [0, 1, 0].map(frame => {
+      const surface = restoredCompositor.renderClipFrameSurface('clip-warp', frame, { sourceWidth: 32, sourceHeight: 32 });
+      return { frame, metrics: surface ? metrics(placeSurface(surface)) : null };
+    })
+  };
+}
+
+async function run() {
+  statusNode.textContent = 'production modulesをimport中…';
+  const configModule = await import('/config.js');
+  const { TEGAKI_CONFIG } = configModule;
+  TEGAKI_CONFIG.canvas.width = 32;
+  TEGAKI_CONFIG.canvas.height = 32;
+  TEGAKI_CONFIG.debug = true;
+  const { TimelineModel } = await import('/system/animation/animation-data-model.js');
+  const { TimelineFrameCompositor } = await import('/system/animation/timeline-frame-compositor.js');
+  const { warpRgbaWithControlMesh } = await import('/system/animation/control-mesh-rasterizer.js');
+  const { createRectControlMeshDeformer } = await import('/system/animation/control-mesh-deformer.js');
+  const { createFolderEffectRenderPlan } = await import('/system/animation/folder-part-render-plan.js');
+  const { ExportManager } = await import('/system/export-manager.js');
+  const { ProjectManager } = await import('/system/project-manager.js');
+  await import('/system/exporters/png-exporter.js');
+  await import('/ui/animation-table-popup.js');
+  const Popup = window.AnimationTablePopup;
+  const PNGExporter = window.PNGExporter;
+  assert(Popup && PNGExporter, 'production Popup / PNG exporter globals are available');
+  const PIXI = await import('pixi.js');
+  const unpremultiplyPixiCanvas = canvas => ExportManager.prototype._unpremultiplyCanvas.call(
+    Object.create(ExportManager.prototype),
+    canvas
+  );
+
+  const sourcePixels = makeFixturePixels();
+  const sourceBounds = { x: 0, y: 0, width: 16, height: 16 };
+  const deformer = makeDeformer(createRectControlMeshDeformer, sourceBounds);
+  const bakedResult = warpRgbaWithControlMesh({
+    deformer,
+    sourceBounds,
+    width: 16,
+    height: 16,
+    pixels: sourcePixels,
+    maxAxis: 4096,
+    maxPixels: 16 * 1024 * 1024
+  });
+  const bakedCanvas = canvasFromPixels(bakedResult.width, bakedResult.height, bakedResult.pixels);
+  const bakedPlaced = placeSurface({ canvas: bakedCanvas, bounds: bakedResult.bounds });
+  const bakedMetrics = metrics(bakedPlaced);
+  publish('production CPU WARP bake', bakedPlaced);
+
+  const sourceFixture = makeModel({ TimelineModel, snapshotPixels: bakedResult.pixels, snapshotId: 'source-baked-snapshot' });
+  const sourceCompositor = new TimelineFrameCompositor(sourceFixture.model, { _getMaxRenderTextureSize: () => 4096 });
+  const sourcePreviewCanvas = sourceCompositor.renderFrame(0, { sourceWidth: 32, sourceHeight: 32, transparent: true });
+  const sourceExportManager = makeExportManager(ExportManager, PNGExporter, sourcePreviewCanvas);
+  const sourceExport = await sourceExportManager.generatePreview('png', { transparent: true });
+  const sourceExportMetrics = await blobMetrics(sourceExport.blob);
+  const sourceFrameMetrics = metrics(sourcePreviewCanvas);
+  assert(compare(bakedMetrics, sourceFrameMetrics), 'normal SOURCE bake and compositor preview differ');
+  assert(compare(sourceFrameMetrics, sourceExportMetrics), 'normal SOURCE preview and PNG export differ');
+  const sourceSave = await projectRoundTrip({ ProjectManager, TimelineFrameCompositor, ExportManager, PNGExporter, model: sourceFixture.model, app: await createPixiApp(PIXI), PIXI, mode: 'normal-source', layerCanvas: bakedCanvas });
+  results.cases.push({
+    case: 'normal SOURCE',
+    evidence: 'PRODUCTION rasterizer + TimelineFrameCompositor + ExportManager PNG + ProjectManager image export/load',
+    preview: sourceFrameMetrics,
+    bake: bakedMetrics,
+    export: sourceExportMetrics,
+    pixelMatch: compare(bakedMetrics, sourceFrameMetrics) && compare(sourceFrameMetrics, sourceExportMetrics),
+    saveReopen: sourceSave,
+    undoRedo: 'Existing production History/WARP verifier PASS; this Browser page does not mutate the Owner project History.'
+  });
+
+  const cafSourceFixture = makeModel({ TimelineModel, snapshotPixels: bakedResult.pixels, snapshotId: 'caf-source-baked-snapshot' });
+  const cafSourceCompositor = new TimelineFrameCompositor(cafSourceFixture.model, { _getMaxRenderTextureSize: () => 4096 });
+  const cafSourceSurface = cafSourceCompositor.renderClipFrameSurface('clip-warp', 0, { sourceWidth: 32, sourceHeight: 32 });
+  const cafSourcePlaced = placeSurface(cafSourceSurface);
+  const cafSourceExportManager = makeExportManager(ExportManager, PNGExporter, cafSourcePlaced);
+  const cafSourceExport = await cafSourceExportManager.generatePreview('png', { transparent: true });
+  const cafSourceExportMetrics = await blobMetrics(cafSourceExport.blob);
+  const cafSourceMetrics = metrics(cafSourcePlaced);
+  const cafSourceSave = await projectRoundTrip({ ProjectManager, TimelineFrameCompositor, ExportManager, PNGExporter, model: cafSourceFixture.model, app: await createPixiApp(PIXI), PIXI, mode: 'caf-source' });
+  assert(compare(cafSourceMetrics, cafSourceExportMetrics), 'CAF SOURCE DrawingSnapshot and PNG export differ');
+  results.cases.push({
+    case: 'CAF SOURCE',
+    evidence: 'PRODUCTION DrawingSnapshot + TimelineFrameCompositor + ExportManager PNG + ProjectManager load',
+    preview: cafSourceMetrics,
+    drawingSnapshot: { id: cafSourceFixture.model.drawingSnapshots[0].id, metrics: cafSourceMetrics },
+    export: cafSourceExportMetrics,
+    pixelMatch: compare(cafSourceMetrics, cafSourceExportMetrics),
+    saveReopen: cafSourceSave
+  });
+
+  const animateFixture = makeModel({ TimelineModel, deformer, motion: false, snapshotPixels: sourcePixels });
+  const animateCompositor = new TimelineFrameCompositor(animateFixture.model, { _getMaxRenderTextureSize: () => 4096 });
+  const animateSurface = animateCompositor.renderClipFrameSurface('clip-warp', 0, { sourceWidth: 32, sourceHeight: 32 });
+  const animateCpuCanvas = placeSurface(animateSurface);
+  const animateCpuMetrics = metrics(animateCpuCanvas);
+  const plan = createFolderEffectRenderPlan(animateFixture.asset, animateFixture.clip, 0);
+  assert(plan.status === 'ready', `CAF ANIMATE render plan is ${plan.status}`);
+
+  const app = await createPixiApp(PIXI);
+  const pixiCanvas = await createPixiPreview({
+    PIXI,
+    Popup,
+    app,
+    model: animateFixture.model,
+    asset: animateFixture.asset,
+    clip: animateFixture.clip,
+    plan,
+    unpremultiply: unpremultiplyPixiCanvas
+  });
+  const pixiMetrics = metrics(pixiCanvas);
+  const animateExportManager = makeExportManager(ExportManager, PNGExporter, animateCpuCanvas);
+  const animateExport = await animateExportManager.generatePreview('png', { transparent: true });
+  const animateExportMetrics = await blobMetrics(animateExport.blob);
+  assert(compare(animateCpuMetrics, animateExportMetrics), 'CAF ANIMATE CPU compositor and PNG export differ');
+  results.pixi = { status: 'PASS — production AnimationTablePopup Pixi preview rendered', viewport: results.meta.viewport, dpr: results.meta.dpr };
+  const animateSave = await projectRoundTrip({ ProjectManager, TimelineFrameCompositor, ExportManager, PNGExporter, model: animateFixture.model, app, PIXI, mode: 'caf-animate' });
+  const layerDeformersBefore = summarizeLayerDeformers(animateFixture.clip.layerDeformers);
+  const layerDeformersAfter = summarizeLayerDeformers(animateSave.layerDeformers);
+  results.cases.push({
+    case: 'CAF ANIMATE',
+    evidence: 'ACTUAL Pixi renderer through production AnimationTablePopup._renderInternalLayerPreviewGroup + PRODUCTION CPU compositor + ExportManager PNG',
+    pixi: pixiMetrics,
+    cpu: animateCpuMetrics,
+    export: animateExportMetrics,
+    pixelMatch: compare(pixiMetrics, animateCpuMetrics) && compare(animateCpuMetrics, animateExportMetrics),
+    pixelDiff: compare(pixiMetrics, animateCpuMetrics)
+      ? null
+      : pixelDiff(pixiCanvas, animateCpuCanvas),
+    layerDeformersBefore,
+    layerDeformersAfter,
+    layerDeformersMatch: JSON.stringify(layerDeformersBefore) === JSON.stringify(layerDeformersAfter),
+    saveReopen: animateSave,
+    frameRevisit: [0, 1, 0].map(frame => {
+      const surface = animateCompositor.renderClipFrameSurface('clip-warp', frame, { sourceWidth: 32, sourceHeight: 32 });
+      return { frame, metrics: surface ? metrics(placeSurface(surface)) : null };
+    })
+  });
+
+  const motionFixture = makeModel({ TimelineModel, deformer, motion: true, snapshotPixels: sourcePixels });
+  const motionCompositor = new TimelineFrameCompositor(motionFixture.model, { _getMaxRenderTextureSize: () => 4096 });
+  const motionSurface = motionCompositor.renderClipFrameSurface('clip-warp', 0, { sourceWidth: 32, sourceHeight: 32 });
+  const motionCpuCanvas = placeSurface(motionSurface);
+  const motionPlan = createFolderEffectRenderPlan(motionFixture.asset, motionFixture.clip, 0);
+  assert(motionPlan.status === 'ready', `Layer WARP + Motion render plan is ${motionPlan.status}`);
+  const motionPixiCanvas = await createPixiPreview({
+    PIXI,
+    Popup,
+    app,
+    model: motionFixture.model,
+    asset: motionFixture.asset,
+    clip: motionFixture.clip,
+    plan: motionPlan,
+    frameIndex: 0,
+    unpremultiply: unpremultiplyPixiCanvas
+  });
+  const motionExportManager = makeExportManager(ExportManager, PNGExporter, motionCpuCanvas);
+  const motionExport = await motionExportManager.generatePreview('png', { transparent: true });
+  const motionCpuMetrics = metrics(motionCpuCanvas);
+  const motionPixiMetrics = metrics(motionPixiCanvas);
+  const motionExportMetrics = await blobMetrics(motionExport.blob);
+  results.cases.push({
+    case: 'Layer WARP + Layer Motion',
+    evidence: 'production render plan and actual Popup Pixi path',
+    pixi: motionPixiMetrics,
+    cpu: motionCpuMetrics,
+    export: motionExportMetrics,
+    order: 'DrawingSnapshot → Layer WARP → Layer Motion',
+    pixelMatch: compare(motionPixiMetrics, motionCpuMetrics) && compare(motionCpuMetrics, motionExportMetrics),
+    pixelDiff: compare(motionPixiMetrics, motionCpuMetrics)
+      ? null
+      : pixelDiff(motionPixiCanvas, motionCpuCanvas)
+  });
+
+  // The entry guard verifier supplies the exhaustive reason/zero-mutation matrix.
+  results.guards.push({
+    case: 'non-4x4 / RIG / Mesh / Skin / clipping owner+source',
+    evidence: 'PRODUCTION VERIFIER verify-layer-transform-warp-entry-guards.mjs',
+    result: 'PASS — explicit reason, no model/effect mutation, History 0, no LayerSystem session'
+  });
+  results.meta.consoleErrors = results.meta.consoleErrors.slice(0, 20);
+  const pixelMismatches = results.cases.filter(item => item.pixelMatch === false);
+  results.verdict = pixelMismatches.length === 0
+    ? 'PASS — fixed fixture pixel parity and save/reopen evidence complete'
+    : 'PARTIAL — diagnostic completed; fixed-fixture pixel divergence requires GPT review';
+  statusNode.textContent = results.verdict;
+  outputNode.textContent = JSON.stringify(results, null, 2);
+  window.__WP005_FINAL_EVIDENCE__ = results;
+}
+
+async function createPixiApp(PIXI) {
+  const app = new PIXI.Application();
+  await app.init({ width: 32, height: 32, preference: 'webgl', antialias: false, autoStart: false, backgroundAlpha: 0 });
+  return app;
+}
+
+window.addEventListener('error', event => {
+  results.failed = { message: String(event.message || event), stack: String(event.error?.stack || '') };
+  statusNode.textContent = 'BLOCKED — final diagnostic failed';
+  outputNode.textContent = JSON.stringify(results, null, 2);
+});
+window.addEventListener('unhandledrejection', event => {
+  results.failed = { message: String(event.reason?.message || event.reason || 'promise rejection'), stack: String(event.reason?.stack || '') };
+  statusNode.textContent = 'BLOCKED — final diagnostic failed';
+  outputNode.textContent = JSON.stringify(results, null, 2);
+});
+
+run().catch(error => {
+  results.failed = { message: String(error.message), stack: String(error.stack || '') };
+  statusNode.textContent = 'BLOCKED — final diagnostic failed';
+  outputNode.textContent = JSON.stringify(results, null, 2);
+});
+</script>
+</body>
+</html>

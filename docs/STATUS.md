@@ -28,6 +28,7 @@ WP-001は非UI・同期例外経路を実production classで検証して完了�
 WP-002は指定経路の技術完了。Browser実操作・実Pixi・本番History callback全体は未確認で、全機能受入とはしない。
 WP-003はDONE。拒否時terminal、自動保存延期、Undo/Redo再同期の隔離回帰がpass。通常RasterのF1/F2継続、周期跨ぎ、History 1/0、Project保存往復をBrowser確認済み。描画直後の初回SOURCE Vも通常Recovery延期へ含め、Browserで維持を確認。Owner操作感の受入は未確認。WP-006もDONE。Folder自身のMotion schema、現行subtree評価、Folder専用V bridge、History/Undo/Redo、保存metadataと双方向effect排他を実装した。BrowserでTable展開後の2子Raster同時preview、KEY、次Frame継続を確認。CPU/export実画素とOwner受入は未確認。WP-004は監査DONE、WP-007は技術DONE、WP-005はSimple 4x4 WARP UI実装中で、normal/CAF SOURCE/CAF ANIMATEの実画面・実画素受入が残る。旧9qはPAUSED。
 WP-005は、関連verifier・harness・構文・Vite buildをPASS。normal SOURCEの実Browserで4x4/16点表示、点drag、Esc取消、V確定、Undo/Redo、変更中のBASIC切替拒否を確認した。CAF ANIMATEでは、bridge preview後の共有overlay消失を修正し、2Frameの`READY→drag→KEYED`、V確定、History +1、次Frame移動を確認した。今回のterminal sliceでは、CAF ANIMATEの元KEYなし／元KEYありを対象に、pending WARP→通常Table close→overlay消失、History据え置き、元KEY保持またはKEY未設定への復帰をBrowserで確認した。close前後のcaller順序は既存production `hide()`をverifierで固定した。pointer端末はproduction controller/overlayのBrowser DOM診断で、normal SOURCE／CAF ANIMATEのpointercancel・capture lossがgesture単位でrollbackし、pointerup後のlate lossが結果を保持することを確認した。IAB実UIのconsole errorは0件。trusted OS pointercancel、実Pixi/CPU/export画素、save/reopen、非4x4/排他対象の実画面拒否、Owner操作感は未受入で、WP-005はACTIVEを維持する。
+WP-005のFinal technical evidence sliceはlive baseline `86803e1de0d649648c079b44e20389dc868981fd`から、隔離16x16非対称RasterのChrome診断（Chrome 152 / viewport `680x561` / DPR `2.25` / console errors 0）まで完走した。normal SOURCEのCPU preview/bake/exportは`0x17a134da`で一致し、Project save/reopenはPixi upload後のproduction canonical Raster `0x191a3ed6`とreload後Exportまで一致した（CPU入力`0x7de6acda`との差は半透明RGBの8bit premultiplied-alpha量子化）。CAF SOURCEはDrawingSnapshot/PNG/save-reopenが`0x17a134da`で一致。CAF ANIMATEはCPU/Export/save-reopen/F1→F2→F1が一致し、4x4/16点/target/frameのlayerDeformersも保持したが、Pixiは`0x63f4c1ac`で9px差（最大channel 102）。Layer WARP + MotionはCPU/Export `0x8525007f`、Pixi `0xf73d350c`で9px差（bboxの1px差を含む）。GPU MeshとCPU rasterizerの境界差を固定証拠として記録し、許容誤差やrenderer/schema変更は行わない。production入口guard verifierはnon-4x4/RIG/Mesh/Skin/clipping owner+sourceを全件明示拒否、effect/model mutation 0、History 0、session noneでPASS。よってこのsliceは`PARTIAL / GPT review required`で、WP-005はACTIVEのまま。Actual App UI、Owner受入、trusted device pointercancelは未確認。WP-007はproduction JS未変更のため`NOT RERUN — no relevant production change`を継承する。
 WP-004 Slice 1〜3で、Layer Motionだけのunsupported planがCPU compositorで拒否されず描画まで進むF-003をproduction consumer＋fake Canvasで確定し、`none/ready`だけを通す限定修正を適用した。実BrowserのHTMLCanvas/PNGでready Layer/Folder Motionのhash・bbox一致とunsupportedの描画前拒否、Selection/SOURCE/CAF SOURCE/ANIMATEのfixture terminal差を確認し、HD-005をMIXEDで確定した。WP-007ではExportManager共通guard、Export toolbar/popup preflight、zero-mutation verifier、Browser Canvas診断を追加した。
 WP-007は`pending-layer-transform`でSOURCE / CAF SOURCE / ANIMATE Layer / ANIMATE FolderのExport・Preview・Sequence・Blob入口を明示停止する。Chrome 152のCanvas診断はviewport 1280x720、DPR 2.25、consoleErrors 0でPASS。隔離実UIではSOURCEのblock→V/Esc→Preview、ANIMATE Layerのblock→V→Preview、通常Folder SOURCEのblock→V→Previewを確認し、FolderのAnimation Context target表示まで確認したがFolder自身ANIMATE VとCAF SOURCE UIは未受入として残す。
 全体監査は[AUDIT](AUDIT.md)、正本配置は[登録簿](DOCUMENT_REGISTER.md)、仕様/将来の順序は[ROADMAP](ROADMAP.md)。
@@ -63,13 +64,14 @@ HD-005はLead決定済み（MIXED）で、[WP-007](work/WP-007-export-terminal-g
 
 ## NEXT
 
-1. WP-005の次Sliceとして、normal/CAFの固定入力についてPixi preview・CPU・bake/exportの実画素とsave/reopenを比較し、非4x4/排他対象の実画面拒否を確認する。
+1. GPT review待ち。今回固定したPixi/CPU Mesh差とnormal SOURCEのCPU入力→Pixi canonical量子化差について、renderer変更・比較基準・後続対応の判断を得るまでWP-005を広げない。
 2. trusted device由来のpointercancelは別途実操作が必要ならOwner受入時に補完する。今回のsynthetic DOM PASSをtrusted PASSへ昇格しない。
-3. Owner受入（normal/CAF SOURCE/ANIMATE、Export操作感、実download）を技術passと分けて実施する。Layer Panel、F-007、HD-001〜004、広範囲の再監査へ展開しない。
+3. Owner受入（normal/CAF SOURCE/ANIMATE、Export操作感、実download）を技術passと分けて実施する。編集session境界抽出、Layer Panel、F-007、HD-001〜004、広範囲の再監査へ展開しない。
 
 ## RISKS / BLOCKERS
 
 - commandの一部mutation後throwは画像/モデルが部分変更のまま残り得る。本WPのindex修正はそれを巻き戻さない。
 - 既存verifier＋WP-007限定Verifier、Canvas診断、Vite buildは実機/Owner制作受入の代用ではない。buildの既存util externalization/大きなchunk警告は継続。
+- WP-005 Final evidenceのPixi/CPU差は、半透明境界のWebGL Mesh samplingとCPU triangle rasterizerの差（9px、最大channel 102/196）として固定した。normal SOURCEのraw CPU bakeとProject reloadの差はPixi 8bit premultiplied-alpha量子化で、save/reopenのproduction canonical同士は一致する。いずれも今回の範囲で独断の許容誤差・renderer/schema変更を行わず、GPT判断待ち。
 - mainの未push変更はWeb AIから不可視。Ownerがpush/対象SHAを指定する。公開先との一致は今回確認していない。
 - Backup/PastFiles/別project、Owner差分、依存packageは対象外。
