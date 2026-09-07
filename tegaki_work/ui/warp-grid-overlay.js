@@ -10,6 +10,7 @@ export class WarpGridOverlay {
         this._points = [];
         this._secondaryLines = [];
         this._secondaryPoints = [];
+        this._pointHitTargets = [];
         this._brushWeightField = null;
         this._brushCursor = null;
         this._brushCenter = null;
@@ -54,6 +55,7 @@ export class WarpGridOverlay {
         this._points = [];
         this._secondaryLines = [];
         this._secondaryPoints = [];
+        this._pointHitTargets = [];
         this._brushWeightField = null;
         this._brushCursor = null;
         this._brushCenter = null;
@@ -75,6 +77,7 @@ export class WarpGridOverlay {
         const svgNamespace = 'http://www.w3.org/2000/svg';
         this.element = document.createElementNS(svgNamespace, 'svg');
         this.element.classList.add('warp-grid-overlay');
+        this.element.classList.toggle('is-interactive', this.options?.interactive === true);
         this.element.classList.toggle('is-bind-editing', this.options?.mode === 'bind');
         this.element.classList.toggle('is-lens-editing', this.options?.mode === 'lens');
         this.element.setAttribute('aria-hidden', 'true');
@@ -141,6 +144,29 @@ export class WarpGridOverlay {
             ? 2.5
             : (this._topology.pointCount > 64 ? 3.25 : 4);
         for (let index = 0; index < this._topology.pointCount; index++) {
+            if (this.options?.interactive === true) {
+                const hitTarget = document.createElementNS(svgNamespace, 'circle');
+                hitTarget.classList.add('warp-grid-overlay-point-hit');
+                hitTarget.setAttribute('r', '14');
+                hitTarget.dataset.pointIndex = String(index);
+                hitTarget.addEventListener('pointerdown', event => (
+                    this.options?.onPointPointerDown?.(index, event)
+                ));
+                hitTarget.addEventListener('pointermove', event => (
+                    this.options?.onPointPointerMove?.(index, event)
+                ));
+                hitTarget.addEventListener('pointerup', event => (
+                    this.options?.onPointPointerUp?.(index, event)
+                ));
+                hitTarget.addEventListener('pointercancel', event => (
+                    this.options?.onPointPointerCancel?.(index, event)
+                ));
+                hitTarget.addEventListener('lostpointercapture', event => (
+                    this.options?.onPointLostPointerCapture?.(index, event)
+                ));
+                this.element.appendChild(hitTarget);
+                this._pointHitTargets.push(hitTarget);
+            }
             const point = document.createElementNS(svgNamespace, 'circle');
             point.classList.add('warp-grid-overlay-point');
             point.setAttribute('r', String(pointRadius));
@@ -240,6 +266,13 @@ export class WarpGridOverlay {
             point.setAttribute('cx', String(screen.x));
             point.setAttribute('cy', String(screen.y));
             point.classList.toggle('is-selected', selectedSet.has(index));
+        });
+        this._pointHitTargets.forEach((point, index) => {
+            const screen = screenPoints[index];
+            point.hidden = !screen;
+            if (!screen) return;
+            point.setAttribute('cx', String(screen.x));
+            point.setAttribute('cy', String(screen.y));
         });
         if (this._selectionMarquee) {
             const marquee = this.options.getSelectionMarquee?.();

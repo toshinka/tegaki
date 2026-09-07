@@ -39,6 +39,8 @@ import {
     createCenteredTransformMatrix
 } from './transform-math.js';
 import { createTransformBoundsWorldCorners } from './transform-overlay-geometry.js';
+import { createRectControlMeshDeformer } from './animation/control-mesh-deformer.js';
+import { warpRgbaWithGrid } from './animation/warp-grid-rasterizer.js';
 import {
     captureLayerTransformPreviewSampling,
     restoreLayerTransformPreviewSampling,
@@ -58,6 +60,7 @@ import {
     isTransformTimelineKeyTarget,
     TRANSFORM_EDIT_TRANSACTION_TARGET
 } from './animation/transform-edit-transaction.js';
+import { LayerTransformWarpController } from '../ui/layer-transform-warp-controller.js';
 
 export class LayerSystem {
     constructor() {
@@ -93,6 +96,10 @@ export class LayerSystem {
         if (!this.eventBus) throw new Error('EventBus required for LayerSystem');
 
         this.transform = new LayerTransform(this.config, this.coordAPI);
+        this.transform.setWarpController?.(new LayerTransformWarpController({
+            layerSystem: this,
+            coordinateSystem: this.coordAPI
+        }));
 
         this.currentFrameContainer = new Container();
         this.currentFrameContainer.label = 'temporary_frame_container';
@@ -191,7 +198,8 @@ export class LayerSystem {
     }
 
     getActiveTransformEditTarget() {
-        return this._layerTransformSession?.transaction?.target
+        return this._layerWarpEditSession?.transaction?.target
+            || this._layerTransformSession?.transaction?.target
             || TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE;
     }
 
@@ -208,13 +216,18 @@ export class LayerSystem {
         if (!activeLayer?.layerData
             || activeLayer.layerData.isBackground
             || activeLayer.layerData.isFolder
-            || this._layerTransformSession
-            || this._layerWarpEditSession
-            || !this._transformEditAdapter?.canStartWarp) {
+            || this._layerWarpEditSession) {
             return false;
         }
+        const basicState = this.getLayerMoveCommitState();
+        if (basicState.hasPendingTransform) return false;
         const sourceBounds = this._resolveLayerTransformSourceBounds(activeLayer);
-        const result = this._transformEditAdapter.canStartWarp({
+        if (!sourceBounds) return false;
+        const animate = isTransformTimelineKeyTarget(
+            this._layerTransformSession?.transaction?.target
+        );
+        if (!animate) return true;
+        const result = this._transformEditAdapter?.canStartWarp?.({
             layerId: activeLayer.layerData.id,
             sourceBounds
         });
@@ -226,22 +239,90 @@ export class LayerSystem {
         if (!activeLayer?.layerData
             || activeLayer.layerData.isBackground
             || activeLayer.layerData.isFolder
-            || this._layerTransformSession
-            || this._layerWarpEditSession
-            || !this._transformEditAdapter?.beginWarp) {
+            || this._layerWarpEditSession) {
             return { ok: false, blocked: true, reason: 'layer-warp-entry-blocked' };
         }
+        if (this.getLayerMoveCommitState().hasPendingTransform) {
+            return { ok: false, blocked: true, reason: 'pending-basic-transform' };
+        }
         const sourceBounds = this._resolveLayerTransformSourceBounds(activeLayer);
-        const start = this._transformEditAdapter.beginWarp({
-            layerId: activeLayer.layerData.id,
-            sourceBounds
-        });
-        if (start?.ok !== true) return start;
+        if (!sourceBounds) return { ok: false, blocked: true, reason: 'layer-raster-bounds-required' };
+        const animate = isTransformTimelineKeyTarget(
+            this._layerTransformSession?.transaction?.target
+        );
+        let start = null;
+        if (animate) {
+            if (typeof this._transformEditAdapter?.beginWarp !== 'function') {
+                return { ok: false, blocked: true, reason: 'layer-warp-entry-blocked' };
+            }
+            start = this._transformEditAdapter.beginWarp({
+                layerId: activeLayer.layerData.id,
+                sourceBounds
+            });
+            if (start?.ok !== true) return start || {
+                ok: false,
+                blocked: true,
+                reason: 'layer-warp-entry-blocked'
+            };
+            this._layerWarpEditSession = {
+                kind: 'animate',
+                layerId: activeLayer.layerData.id,
+                transaction: start.transaction,
+                sourceBounds,
+                bindBounds: start.bindBounds ? { ...start.bindBounds } : { ...sourceBounds },
+                points: (start.points || []).map(point => ({ ...point })),
+                changed: false,
+                previewApplied: false
+            };
+        } else {
+            const baselineSnapshot = this.createLayerRasterSnapshot(activeLayer);
+            if (!baselineSnapshot?.pixels) {
+                return { ok: false, blocked: true, reason: 'layer-raster-bounds-required' };
+            }
+            const candidateDeformer = createRectControlMeshDeformer({
+                columns: 4,
+                rows: 4,
+                bindBounds: sourceBounds
+            });
+            if (!candidateDeformer?.points || candidateDeformer.points.length !== 16) {
+                return { ok: false, blocked: true, reason: 'layer-warp-entry-blocked' };
+            }
+            start = {
+                ok: true,
+                blocked: false,
+                transaction: {
+                    kind: 'layer-warp-source-transaction',
+                    target: TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE,
+                    layerId: activeLayer.layerData.id
+                },
+                points: candidateDeformer.points.map(point => ({ ...point })),
+                bindBounds: { ...sourceBounds },
+                projection: {
+                    state: 'source',
+                    label: 'SOURCE · WARP',
+                    allowAnchorEdit: false
+                }
+            };
+            this._layerWarpEditSession = {
+                kind: 'source',
+                layerId: activeLayer.layerData.id,
+                transaction: start.transaction,
+                sourceBounds,
+                bindBounds: { ...sourceBounds },
+                points: candidateDeformer.points.map(point => ({ ...point })),
+                baselinePoints: candidateDeformer.points.map(point => ({ ...point })),
+                candidateDeformer,
+                baselineSnapshot,
+                changed: false,
+                previewApplied: false,
+                animationWorkingLayer: activeLayer.layerData.isAnimationWorkingLayer === true
+            };
+        }
+        this._layerTransformSession && (this._layerTransformSession.warpProjection = start.projection || null);
+        this.transform?.setEditContextProjection?.(start.projection || null);
         this._layerWarpEditSession = {
-            layerId: activeLayer.layerData.id,
-            transaction: start.transaction,
-            sourceBounds,
-            points: (start.points || []).map(point => ({ ...point }))
+            ...(this._layerWarpEditSession || {}),
+            projection: start.projection || null
         };
         return {
             ...start,
@@ -251,30 +332,166 @@ export class LayerSystem {
 
     previewLayerWarpEditSession(points) {
         const session = this._layerWarpEditSession;
-        if (!session || !this._transformEditAdapter?.previewWarp) {
+        if (!session) {
             return { ok: false, blocked: true, reason: 'layer-warp-session-required' };
         }
-        const result = this._transformEditAdapter.previewWarp({
-            transaction: session.transaction,
-            points
-        });
-        if (result?.ok) session.points = (points || []).map(point => ({ ...point }));
+        let result;
+        if (session.kind === 'animate') {
+            result = this._transformEditAdapter.previewWarp({
+                transaction: session.transaction,
+                points
+            });
+        } else {
+            const nextPoints = Array.isArray(points)
+                ? points.map(point => ({ x: Number(point?.x), y: Number(point?.y) }))
+                : [];
+            if (nextPoints.length !== 16 || nextPoints.some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
+                return { ok: false, blocked: true, reason: 'layer-warp-points-invalid' };
+            }
+            const deformer = structuredClone(session.candidateDeformer);
+            deformer.points = nextPoints.map(point => ({ ...point }));
+            const changed = nextPoints.some((point, index) => (
+                Math.abs(point.x - session.baselinePoints[index].x) > 1e-8
+                || Math.abs(point.y - session.baselinePoints[index].y) > 1e-8
+            ));
+            if (!changed) {
+                if (session.previewApplied) {
+                    this.restoreLayerRasterSnapshot(session.baselineSnapshot, { restorePathCollections: false });
+                    session.previewApplied = false;
+                }
+                session.candidateDeformer = structuredClone(session.candidateDeformer);
+                session.candidateDeformer.points = session.baselinePoints.map(point => ({ ...point }));
+                session.changed = false;
+                result = { ok: true, blocked: false, action: 'preview-layer-warp-noop', changed: false };
+            } else {
+                try {
+                    const warped = warpRgbaWithGrid({
+                        deformer,
+                        sourceBounds: session.baselineSnapshot.rasterBounds,
+                        width: session.baselineSnapshot.width,
+                        height: session.baselineSnapshot.height,
+                        pixels: session.baselineSnapshot.pixels
+                    });
+                    const restored = this.restoreLayerRasterSnapshot({
+                        ...session.baselineSnapshot,
+                        width: warped.width,
+                        height: warped.height,
+                        rasterBounds: warped.bounds,
+                        pixels: warped.pixels
+                    }, { restorePathCollections: false });
+                    if (!restored) {
+                        return { ok: false, blocked: true, reason: 'layer-warp-preview-failed' };
+                    }
+                    session.candidateDeformer = deformer;
+                    session.points = nextPoints.map(point => ({ ...point }));
+                    session.changed = true;
+                    session.previewApplied = true;
+                    this.refreshClippingMasks();
+                    this.eventBus?.emit('layer:content-changed', {
+                        layerId: session.layerId,
+                        source: 'layer-warp-preview'
+                    });
+                    result = { ok: true, blocked: false, action: 'preview-layer-warp', changed: true };
+                } catch (error) {
+                    return { ok: false, blocked: true, reason: 'layer-warp-preview-failed', error };
+                }
+            }
+        }
+        if (result?.ok) {
+            session.points = (points || session.points).map(point => ({ ...point }));
+            session.changed = result.changed === true;
+            session.previewApplied = session.kind === 'animate'
+                ? result.action !== 'preview-layer-warp-noop'
+                : session.previewApplied;
+            this._layerTransformSession && (this._layerTransformSession.warpProjection = result.projection || session.projection || null);
+            this.transform?.setEditContextProjection?.(result.projection || session.projection || null);
+        }
         return result;
+    }
+
+    resetLayerWarpEditSession() {
+        const session = this._layerWarpEditSession;
+        if (!session) return { ok: false, blocked: true, reason: 'layer-warp-session-required' };
+        return this.previewLayerWarpEditSession(
+            session.kind === 'animate'
+                ? session.transaction.baselinePoints
+                : session.baselineSnapshot
+                    ? session.baselinePoints
+                    : session.points
+        );
     }
 
     finishLayerWarpEditSession(options = {}) {
         const session = this._layerWarpEditSession;
-        if (!session || !this._transformEditAdapter?.finishWarp) {
+        if (!session) {
             return { ok: false, blocked: true, reason: 'layer-warp-session-required', commit: false };
         }
         let result;
         try {
-            result = this._transformEditAdapter.finishWarp({
-                transaction: session.transaction,
-                cancelled: options.cancelled === true
-            });
+            if (session.kind === 'animate') {
+                result = this._transformEditAdapter.finishWarp({
+                    transaction: session.transaction,
+                    cancelled: options.cancelled === true
+                }) || { ok: false, blocked: true, reason: 'layer-warp-finish-unavailable', commit: false };
+            } else {
+                const cancelled = options.cancelled === true;
+                const layer = this.getLayers().find(candidate => candidate.layerData?.id === session.layerId);
+                if (cancelled || session.changed !== true) {
+                    if (session.previewApplied) {
+                        this.restoreLayerRasterSnapshot(session.baselineSnapshot, { restorePathCollections: false });
+                    }
+                    result = {
+                        ok: true,
+                        blocked: false,
+                        commit: false,
+                        changed: false,
+                        reason: cancelled ? 'cancelled' : 'no-change',
+                        target: TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE
+                    };
+                } else {
+                    const beforeSnapshot = session.baselineSnapshot;
+                    const afterSnapshot = layer ? this.createLayerRasterSnapshot(layer) : null;
+                    if (!afterSnapshot) {
+                        this.restoreLayerRasterSnapshot(beforeSnapshot, { restorePathCollections: false });
+                        result = { ok: false, blocked: true, reason: 'layer-warp-finish-failed', commit: false };
+                    } else {
+                        const isWorkingLayer = session.animationWorkingLayer === true;
+                        if (!isWorkingLayer && historyManager && !historyManager.isApplying) {
+                            const restore = snapshot => {
+                                this.restoreLayerRasterSnapshot(snapshot, { restorePathCollections: false });
+                                this.refreshClippingMasks();
+                                this.eventBus?.emit('layer:content-changed', {
+                                    layerId: session.layerId,
+                                    source: 'layer-warp-history'
+                                });
+                            };
+                            historyManager.record({
+                                name: 'layer-warp',
+                                do: () => restore(afterSnapshot),
+                                undo: () => restore(beforeSnapshot),
+                                meta: {
+                                    layerId: session.layerId,
+                                    type: 'warp',
+                                    columns: 4,
+                                    rows: 4
+                                },
+                                byteSize: estimateRasterHistoryPairBytes(beforeSnapshot, afterSnapshot).estimatedBytes
+                            });
+                        }
+                        this.refreshClippingMasks();
+                        result = {
+                            ok: true,
+                            blocked: false,
+                            commit: true,
+                            changed: true,
+                            target: TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE
+                        };
+                    }
+                }
+            }
         } finally {
             this._layerWarpEditSession = null;
+            this.transform?.deactivateWarpOverlay?.();
         }
         return result;
     }
@@ -285,8 +502,30 @@ export class LayerSystem {
             layerId: session.layerId,
             transaction: session.transaction,
             sourceBounds: session.sourceBounds ? { ...session.sourceBounds } : null,
+            bindBounds: session.bindBounds ? { ...session.bindBounds } : null,
+            changed: session.changed === true,
             points: session.points.map(point => ({ ...point }))
         } : null;
+    }
+
+    setLayerTransformMode(mode = 'basic') {
+        if (mode === 'warp') {
+            if (this._layerWarpEditSession) return true;
+            if (this.getLayerMoveCommitState().hasPendingTransform) return false;
+            return this.transform?.warpController?.begin?.() === true;
+        }
+        const session = this._layerWarpEditSession;
+        if (session?.changed === true) return false;
+        if (session) {
+            this.finishLayerWarpEditSession({ cancelled: true });
+        }
+        const projection = this._layerTransformSession?.projection || null;
+        this.transform?.setEditContextProjection?.(projection);
+        return true;
+    }
+
+    resetLayerTransformWarp() {
+        return this.resetLayerWarpEditSession()?.ok === true;
     }
 
     /**
@@ -3149,6 +3388,8 @@ export class LayerSystem {
         this.transform.onStepTimelineFrame = delta => {
             return this.stepLayerTransformTimelineFrame(delta);
         };
+        this.transform.onTransformModeChange = mode => this.setLayerTransformMode(mode);
+        this.transform.onWarpReset = () => this.resetLayerTransformWarp();
         this.transform.onRebuildRequired = (layer, paths) => {
             this.safeRebuildLayer(layer, paths);
         };
@@ -3252,6 +3493,11 @@ export class LayerSystem {
         if (!activeLayer?.layerData || activeLayer.layerData.isBackground) return false;
         if (activeLayer.layerData.isFolder && !this._isFolderWithRasterTargets(activeLayer)) return false;
 
+        // LayerTransform initializes the content anchor when V opens. Capture
+        // that normalized baseline before the session so anchor initialization
+        // itself is not mistaken for a pending BASIC edit and does not block
+        // the first WARP entry.
+        this.transform._initializeTransformForActiveLayer?.();
         let layerId = activeLayer.layerData.id;
         const sourceTransform = this.transform.getTransform(layerId)
             || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
@@ -3306,6 +3552,7 @@ export class LayerSystem {
             layerId,
             transform,
             transaction: adapterStart.transaction,
+            projection: adapterStart.projection || null,
             sourceBounds: isClipKey
                 ? unionRasterBounds(previewLayers.map(layer => this._getRasterTransformSourceBounds(layer)))
                 : this._resolveLayerTransformSourceBounds(activeLayer),
@@ -3614,11 +3861,14 @@ export class LayerSystem {
     exitLayerMoveMode(options = {}) {
         if (!this.transform) return;
         const cancelled = options.cancelled === true;
+        const warpTarget = this._layerWarpEditSession?.transaction?.target || null;
+        const warpWasActive = this._layerWarpEditSession != null;
         const sessionLayer = this._layerTransformSession?.layerId
             ? this.getLayers().find(layer => layer.layerData?.id === this._layerTransformSession.layerId)
             : null;
         const activeLayer = sessionLayer || this.getActiveLayer();
-        const transformTarget = this._layerTransformSession?.transaction?.target
+        const transformTarget = warpTarget
+            || this._layerTransformSession?.transaction?.target
             || TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE;
         const isClipKey = isTransformTimelineKeyTarget(transformTarget);
         if (!isClipKey && !cancelled && !options.deferredForBusyIndicator && !this._folderTransformConfirmDeferred && activeLayer?.layerData?.isFolder) {
@@ -3638,8 +3888,13 @@ export class LayerSystem {
             }
         }
         let transformConfirmed = false;
+        let warpResult = null;
 
         try {
+            if (warpWasActive) {
+                warpResult = this.finishLayerWarpEditSession({ cancelled });
+                transformConfirmed = warpResult?.commit === true;
+            }
             // 確定Bakeは元のsamplingで一度だけ行う。preview用nearestを持ち込まない。
             restoreLayerTransformPreviewSampling(this._layerTransformSession?.previewSampling);
             if (isClipKey) {
@@ -3648,11 +3903,17 @@ export class LayerSystem {
                     transaction: this._layerTransformSession?.transaction,
                     cancelled
                 });
-                transformConfirmed = result?.commit === true;
+                transformConfirmed = transformConfirmed || result?.commit === true;
             } else if (cancelled) {
                 this._restoreLayerTransformSession(activeLayer);
             } else {
-                transformConfirmed = this.confirmLayerTransform() === true;
+                if (transformConfirmed) {
+                    // WARP has already committed its own transaction. The
+                    // underlying V session is a no-op bridge and must not
+                    // create a second History entry.
+                } else {
+                    transformConfirmed = this.confirmLayerTransform() === true;
+                }
             }
         } catch (error) {
             console.error('[LayerSystem] Failed to confirm layer transform:', error);
@@ -3764,19 +4025,29 @@ export class LayerSystem {
     }
 
     getLayerMoveCommitState() {
-        const active = this.isLayerMoveMode;
-        const sessionLayerId = this._layerTransformSession?.layerId || null;
+        const active = this.isLayerMoveMode || this._layerWarpEditSession != null;
+        const sessionLayerId = this._layerWarpEditSession?.layerId
+            || this._layerTransformSession?.layerId
+            || null;
         const activeLayer = sessionLayerId
             ? this.getLayers().find(layer => layer.layerData?.id === sessionLayerId)
             : this.getActiveLayer();
         const layerId = activeLayer?.layerData?.id || null;
         const transform = layerId ? this.transform?.getTransform?.(layerId) : null;
+        const transformChanged = this._layerTransformSession
+            ? (isTransformTimelineKeyTarget(this._layerTransformSession.transaction?.target)
+                ? this._layerTransformSession.previewResult?.changed === true
+                : JSON.stringify(transform || null) !== JSON.stringify(this._layerTransformSession.transform || null))
+            : !!(transform && this.transform?._isTransformNonDefault?.(transform));
 
         return {
             active,
             layerId,
             hasPendingTransform: Boolean(
-                active && transform && this.transform?._isTransformNonDefault?.(transform)
+                active && (
+                    transformChanged
+                    || this._layerWarpEditSession?.changed === true
+                )
             )
         };
     }

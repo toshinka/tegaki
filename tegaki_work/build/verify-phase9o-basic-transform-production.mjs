@@ -265,7 +265,7 @@ assert.match(index, /styles\/components\/layer-transform-basic\.css/);
 assert.match(domBuilder, /className: 'layer-transform-mode-strip'/);
 assert.match(domBuilder, /textContent: 'BASIC'[\s\S]*?'aria-selected': 'true'/);
 assert.match(domBuilder, /textContent: 'DISTORT'[\s\S]*?disabled: ''/);
-assert.match(domBuilder, /textContent: 'WARP'[\s\S]*?disabled: ''/);
+assert.match(domBuilder, /textContent: 'WARP'[\s\S]*?'data-transform-mode': 'warp'/);
 assert.match(domBuilder, /className: 'layer-transform-precise'/);
 assert.match(domBuilder, /詳細 — 数値で正確に調整/);
 assert.match(domBuilder, /中心点を編集。ダブルクリックで描画範囲の中央へ戻す/);
