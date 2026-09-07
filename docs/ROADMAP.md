@@ -12,12 +12,13 @@
 | 2 完了 | [WP-002 effect排他と解除](work/WP-002-effect-guards.md) | 操作順により保存可能な競合stateを作れる | 指定登録経路の双方向/共有Asset、解除、model往復・caller隔離検証済み。Browser未実施 |
 | 3 完了 | [WP-003 KEY継続編集](work/WP-003-key-continuation.md) | 中断したOwner要望、WARPと共有するsession導線 | 確定してpanel維持、次Frame、失敗同期、History 1 |
 | 4 完了 | [WP-006 Folder Transform KEY](work/WP-006-folder-transform-key.md) | Owner指定のFolder自身のMotion保存先を先に固定 | 子孫一括、後追加子、History/保存、CPU/Pixi評価 |
-| 5 | [WP-004 出力拒否/terminal監査](work/WP-004-output-terminal.md) | Folder Motionを含むMotion出力の欠落を固定 | unsupported拒否表、save/exportのSOURCE/ANIMATE比較 |
-| 6 | [WP-005 Simple WARP UI](work/WP-005-simple-warp.md) | 旧9q A〜Dの既存資産を完成へ接続 | normal/CAF/SOURCE/ANIMATE、16点、KEY、cancel、実画素比較 |
-| 7 | 一つの編集session境界の抽出 | 正しい振舞いを固定してから巨大Popupの責務を縮める | 互換facade、同じ入力/出力/History、対象file探索の短縮 |
-| 8 | static RIG導線の再配置 | WHAT/HOW/WHENを揃える | HD-002比較とOwner受入、保存正本不変 |
+| 5 完了 | [WP-004 出力拒否/terminal監査](work/WP-004-output-terminal.md) | Folder Motionを含むMotion出力の欠落を固定 | unsupported拒否表、save/exportのSOURCE/ANIMATE比較、HD-005 MIXED決定 |
+| 6 完了 | [WP-007 Export terminal guard](work/WP-007-export-terminal-guard.md) | 未確定Layer Transformの出力境界を明示停止へ統一 | SOURCE/CAF SOURCE/ANIMATE Layer/Folderのzero mutation、Selection維持、sequence境界 |
+| 7 | [WP-005 Simple WARP UI](work/WP-005-simple-warp.md) | 旧9q A〜Dの既存資産を完成へ接続 | WP-007完了後に再開。normal/CAF/SOURCE/ANIMATE、16点、KEY、cancel、実画素比較 |
+| 8 | 一つの編集session境界の抽出 | 正しい振舞いを固定してから巨大Popupの責務を縮める | 互換facade、同じ入力/出力/History、対象file探索の短縮 |
+| 9 | static RIG導線の再配置 | WHAT/HOW/WHENを揃える | HD-002比較とOwner受入、保存正本不変 |
 
-1〜3は既存契約の補修、4はOwner承認済みの新しいFolder Motion契約、5は監査。6は前提が通るまでBLOCKED。7は抽出設計の選定から始め、巨大classの書換えを直ちに実行しない。
+1〜3は既存契約の補修、4はOwner承認済みの新しいFolder Motion契約、5は監査DONE、6はHD-005の限定runtime guard、7は前提が通るまでBLOCKED。8は抽出設計の選定から始め、巨大classの書換えを直ちに実行しない。
 WP-001の例外index修正へ、History全体系のrewriteやcomposite補償処理を混ぜない。
 
 ## 残作業の再分類

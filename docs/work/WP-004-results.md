@@ -1,6 +1,6 @@
 # WP-004 results — 出力拒否と未確定編集
 
-状態: AUDIT IN PROGRESS — GPT判断待ち項目あり（2026-09-07）。作業契約は[WP-004](WP-004-output-terminal.md)、現在地は[STATUS](../STATUS.md)。
+状態: DONE — audit / decision complete（2026-09-07）。作業契約は[WP-004](WP-004-output-terminal.md)、後続runtime guardは[WP-007](WP-007-export-terminal-guard.md)、現在地は[STATUS](../STATUS.md)。Owner制作操作感の受入は別途未確認。
 
 ## 確定した差
 
@@ -71,8 +71,24 @@ CPU compositorのplan assertを「Layer WARP fieldがある時だけ」から「
 - Folderは隔離画面で作成と子Layerの収納まで確認したが、Folder自身のMotion KEYを実UIで作る操作は行っていない。Folder全体の出力反映はSlice 3Aのproduction fixtureで確認した。
 - CAF SOURCE UI、連番download、Ownerの既存projectは今回の最小操作対象外。diagnosticのfixture結果と実UI結果を同一passへ混同しない。
 
-### HD-005（GPT判断待ち）
+### HD-005（Architecture Lead decision）
 
 Slice 3AではSaveがactive Layer Transformを確定し、Export/Preview直呼び出しはsessionを維持したまま現在frameを採取した。Slice 3Bの通常SOURCEでもPreview後にsessionが残った一方、ANIMATE Layerの実UIではExport toolbar clickの段階でsessionが閉じた。このためA（Export前commit）、B（一時sampling）、C（明示停止）のいずれかを製品仕様として一意に採用する根拠はまだない。今回はruntimeを変更せず、現象・差分・影響をGPT判断へ返す。追加のCAF/Folder UI総当たりや保存schema変更は`DEFERRED — token budget recovery後の追加調査候補`とする。
 
-技術的には、ready Layer/Folder Motionの実CanvasとPNG出力、unsupportedの描画前拒否はPASS。Browser確認はOwner操作感受入を意味せず、WP-004はACTIVEのまま閉じない。
+技術的には、ready Layer/Folder Motionの実CanvasとPNG出力、unsupportedの描画前拒否はPASS。Browser確認はOwner操作感受入を意味せず、WP-004は監査・判断完了としてDONEに移す。
+
+### HD-005確定 — MIXED
+
+| 状態 | Export / Preview terminal | 扱い |
+|---|---|---|
+| Selection Transform | 既存auto commit | 変更しない |
+| SOURCE Layer Transform | 未確定なら明示停止 | WP-007でguard |
+| CAF SOURCE Layer Transform | 未確定なら明示停止 | WP-007でguard |
+| ANIMATE Layer Transform | 未確定なら明示停止 | WP-007でguard |
+| ANIMATE Folder Transform | 未確定なら明示停止 | WP-007でguard |
+
+明示停止はsessionを維持し、confirm / cancel / exit / bridge finish / KEY / History / model / preview candidate / frame / selectionを変更しない。ユーザーがVで確定、またはEscでキャンセルした後に再度Exportする。Project Saveの既存確定terminalとPreview一時samplingは変更・採用しない。
+
+## 2026-09-07 Closure handoff
+
+WP-004の監査証拠とLead判断を完了として固定した。未確定Layer Transformのruntime境界修正、toolbarでの先行cancel防止、sequence/downloadの迂回防止は`WP-007-export-terminal-guard.md`へ移管した。

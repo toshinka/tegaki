@@ -77,6 +77,9 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-0
 docs/work/WP-006-folder-transform-key.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-006-folder-transform-key.md
 
+docs/work/WP-007-export-terminal-guard.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-007-export-terminal-guard.md
+
 ツールコード / 開発検証入口
 詳細の依存関係・役割はdocs/ARCHITECTURE.md、領域別入口はdocs/harness.jsonを参照。
 tegaki_work/package.json

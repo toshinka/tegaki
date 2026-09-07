@@ -7,6 +7,7 @@
     "docs/ARCHITECTURE.md", "docs/VOCABULARY.md", "docs/DEVELOPMENT.md",
     "docs/ROADMAP.md", "docs/AUDIT.md", "docs/DOCUMENT_REGISTER.md",
     "docs/work/README.md",
+    "docs/work/WP-007-export-terminal-guard.md",
     "docs/legacy/PROGRESS.md", "docs/legacy/ARCHITECTURE.md",
     "docs/legacy/PHASE4Z_BOUNDARY.md", "docs/legacy/NEXT_CHAT_HANDOFF.md",
     "docs/legacy/CODEX_MULTI_MODEL_WORKFLOW.md",
@@ -44,7 +45,7 @@
     "project": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": ["tegaki_work/system/project-manager.js", "tegaki_work/system/export-manager.js", "tegaki_work/system/emergency-recovery-store.js"],
-      "patterns": ["^verify-project-", "^verify-emergency-", "^verify-bake-", "^verify-clip-bake-", "^verify-structured-bake", "^verify-folder-deformer-project", "^verify-output-terminal"]
+      "patterns": ["^verify-project-", "^verify-emergency-", "^verify-bake-", "^verify-clip-bake-", "^verify-structured-bake", "^verify-folder-deformer-project", "^verify-output-terminal", "^verify-export-pending-transform-guard"]
     },
     "ui": {
       "architecture": "docs/ARCHITECTURE.md",
@@ -62,7 +63,8 @@
     {"id":"WP-002","document":"docs/work/WP-002-effect-guards.md","status":"DONE","dependsOn":[]},
     {"id":"WP-003","document":"docs/work/WP-003-key-continuation.md","status":"DONE","dependsOn":[]},
     {"id":"WP-006","document":"docs/work/WP-006-folder-transform-key.md","status":"DONE","dependsOn":["WP-003"]},
-    {"id":"WP-004","document":"docs/work/WP-004-output-terminal.md","status":"ACTIVE","dependsOn":["WP-006"]},
-    {"id":"WP-005","document":"docs/work/WP-005-simple-warp.md","status":"BLOCKED","dependsOn":["WP-002","WP-003","WP-004"]}
+    {"id":"WP-004","document":"docs/work/WP-004-output-terminal.md","status":"DONE","dependsOn":["WP-006"]},
+    {"id":"WP-007","document":"docs/work/WP-007-export-terminal-guard.md","status":"DONE","dependsOn":["WP-004"]},
+    {"id":"WP-005","document":"docs/work/WP-005-simple-warp.md","status":"BLOCKED","dependsOn":["WP-002","WP-003","WP-004","WP-007"]}
   ]
 }

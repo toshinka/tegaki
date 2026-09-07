@@ -16,6 +16,9 @@ import * as PIXI from 'pixi.js';
 import { TegakiEventBus } from './event-bus.js';
 import { TimelineFrameCompositor } from './animation/timeline-frame-compositor.js';
 
+const PENDING_LAYER_TRANSFORM_REASON = 'pending-layer-transform';
+const PENDING_LAYER_TRANSFORM_MESSAGE = '変形を確定（V）またはキャンセル（Esc）してから出力してください';
+
 export class ExportManager {
     constructor(app, layerSystem, animationSystem = null, cameraSystem = null) {
         if (!app || !app.renderer) {
@@ -74,6 +77,7 @@ export class ExportManager {
     }
 
     async renderAnimationFrames(options = {}) {
+        this._assertExportTerminalReady();
         const timelineSource = this._getTimelineSource();
         if (timelineSource) {
             return timelineSource.compositor.renderFrames({
@@ -119,6 +123,7 @@ export class ExportManager {
      * エクスポート実行
      */
     async export(format, options = {}) {
+        this._assertExportTerminalReady();
         this._commitFloatingSelection();
         let targetFormat = format;
         let actualFormat = format;
@@ -190,6 +195,7 @@ export class ExportManager {
      * 連番PNG一括出力（ffmpeg変換用）
      */
     async exportSequencePNG(options = {}) {
+        this._assertExportTerminalReady();
         this._commitFloatingSelection();
         const frameCount = this._getFrameCount();
         if (frameCount < 2) {
@@ -311,6 +317,7 @@ export class ExportManager {
      * プレビュー生成
      */
     async generatePreview(format, options = {}) {
+        this._assertExportTerminalReady();
         this._commitFloatingSelection();
         let targetFormat = format;
         let actualFormat = format;
@@ -363,6 +370,9 @@ export class ExportManager {
             return { blob, format: actualFormat };
             
         } catch (error) {
+            if (this.isPendingLayerTransformExportError(error)) {
+                throw error;
+            }
             throw new Error(`プレビュー生成エラー: ${error.message}`);
         }
     }
@@ -380,6 +390,44 @@ export class ExportManager {
         if (!selectionApi?.getState?.()?.transformSessionActive) return false;
         return selectionApi.confirmTransform?.() === true;
     }
+
+    /**
+     * Export/Preview/Sequenceの共通terminal guard。
+     * Layer Transformのsessionを読むだけで、confirm/cancel/History/model変更を行わない。
+     */
+    getPendingLayerTransformExportGuard() {
+        const commitState = this.layerSystem?.getLayerMoveCommitState?.() || null;
+        const active = commitState?.active === true
+            || this.layerSystem?.hasActiveLayerTransformSession?.() === true;
+        if (!active) return null;
+
+        return {
+            blocked: true,
+            reason: PENDING_LAYER_TRANSFORM_REASON,
+            message: PENDING_LAYER_TRANSFORM_MESSAGE,
+            layerId: commitState?.layerId || null,
+            target: this.layerSystem?.getActiveTransformEditTarget?.() || null,
+            hasPendingTransform: commitState?.hasPendingTransform === true
+        };
+    }
+
+    isPendingLayerTransformExportError(error) {
+        return error?.code === PENDING_LAYER_TRANSFORM_REASON
+            || error?.reason === PENDING_LAYER_TRANSFORM_REASON;
+    }
+
+    _assertExportTerminalReady() {
+        const guard = this.getPendingLayerTransformExportGuard();
+        if (!guard) return true;
+
+        const error = new Error(guard.message);
+        error.code = guard.reason;
+        error.reason = guard.reason;
+        error.blocked = true;
+        error.layerId = guard.layerId;
+        error.target = guard.target;
+        throw error;
+    }
     
     _generateFilename(format, timestamp) {
         const ext = {
@@ -396,6 +444,7 @@ export class ExportManager {
     }
     
     async exportAsPNGBlob(options = {}) {
+        this._assertExportTerminalReady();
         const exporter = this.exporters['png'];
         if (!exporter?.generateBlob) {
             throw new Error('PNG exporter not available');
@@ -404,6 +453,7 @@ export class ExportManager {
     }
     
     async exportAsAPNGBlob(options = {}) {
+        this._assertExportTerminalReady();
         const exporter = this.exporters['apng'];
         if (!exporter?.generateBlob) {
             throw new Error('APNG exporter not available');
@@ -412,6 +462,7 @@ export class ExportManager {
     }
     
     async exportAsWebPBlob(options = {}) {
+        this._assertExportTerminalReady();
         if (this._shouldUseWebM()) {
             const exporter = this.exporters['webm'];
             if (!exporter?.export) {
@@ -429,6 +480,7 @@ export class ExportManager {
     }
     
     async exportAsPSDBlob(options = {}) {
+        this._assertExportTerminalReady();
         const exporter = this.exporters['psd'];
         if (!exporter?.generateBlob) {
             throw new Error('PSD exporter not available');
