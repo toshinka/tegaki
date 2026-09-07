@@ -7872,9 +7872,13 @@ export class AnimationTablePopup {
         if (!['record', 'undo', 'redo'].includes(data.action)) return;
         if (data.action === 'record' && data.meta?.type === 'draw') return;
         if ((data.action === 'undo' || data.action === 'redo')
-            && ['caf-clip-transform-layer-bridge', 'caf-clip-transform-folder-bridge'].includes(data.meta?.type)
+            && ['caf-clip-transform-layer-bridge', 'caf-clip-transform-folder-bridge', 'caf-layer-warp-transform-bridge'].includes(data.meta?.type)
             && this.isTransformPreviewSuspended) {
-            this.layerSystem?.refreshLayerTransformTimelineSessionAfterHistory?.();
+            if (data.meta?.type === 'caf-layer-warp-transform-bridge') {
+                this.layerSystem?.refreshLayerWarpTimelineSessionAfterHistory?.();
+            } else {
+                this.layerSystem?.refreshLayerTransformTimelineSessionAfterHistory?.();
+            }
             this.render();
             this._requestLayerPanelSync();
             return;
@@ -11180,7 +11184,8 @@ export class AnimationTablePopup {
             canStartWarp: request => this._projectLayerWarpBridgeStart(request),
             beginWarp: request => this._beginLayerWarpBridge(request),
             previewWarp: request => this._previewLayerWarpBridge(request),
-            finishWarp: request => this._finishLayerWarpBridge(request)
+            finishWarp: request => this._finishLayerWarpBridge(request),
+            abandonWarpAfterHistory: request => this._abandonLayerWarpBridgeAfterHistory(request)
         };
     }
 
@@ -11188,6 +11193,14 @@ export class AnimationTablePopup {
         const session = this._layerTransformBridgeSession;
         if (!session || session.transaction !== transaction || session.changed === true) return false;
         this._layerTransformBridgeSession = null;
+        this._animationPreviewKey = null;
+        return true;
+    }
+
+    _abandonLayerWarpBridgeAfterHistory({ transaction } = {}) {
+        const session = this._layerWarpBridgeSession;
+        if (!session || session.transaction !== transaction || session.changed === true) return false;
+        this._layerWarpBridgeSession = null;
         this._animationPreviewKey = null;
         return true;
     }

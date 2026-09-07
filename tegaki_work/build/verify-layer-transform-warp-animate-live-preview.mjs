@@ -125,9 +125,14 @@ assert.match(popup, /_createLayerWarpKeyGuide/);
 assert.match(popup, /transaction\.hadExplicitKey === true/);
 assert.match(popup, /KEYED · 未確定変更/);
 assert.match(popup, /layerWarpMarkerDeformer[\s\S]*?baselineLayerDeformers/);
-assert.match(layerSystem, /warpSession\.transaction\?\.kind === 'layer-warp-edit-transaction'[\s\S]*?exitLayerMoveMode\(\{ cancelled: false \}\)/,
-    'explicit confirm must reuse the V WARP terminal');
-assert.match(layerSystem, /return this\.exitLayerMoveMode\(\{ cancelled: false \}\) === true/);
-assert.match(layerSystem, /this\._hideOperationIndicator\(\);\n        \}\n        return transformConfirmed;/);
+assert.match(layerSystem, /_commitLayerWarpTimelineKeyAndContinue\(\)[\s\S]*?finishLayerWarpEditSession\(\{ cancelled: false \}\)[\s\S]*?_resumeLayerWarpTimelineSession\(\)/,
+    'explicit WARP confirm must finish the transaction and start a fresh same-Frame session');
+assert.doesNotMatch(methodSource(layerSystem, 'commitLayerTransformTimelineKeyAndContinue', 'stepLayerTransformTimelineFrame'),
+    /exitLayerMoveMode\(\{ cancelled: false \}\)/,
+    'explicit WARP confirm must not use the V terminal');
+assert.match(layerSystem, /_stepLayerWarpTimelineFrame\(delta\)[\s\S]*?finishLayerWarpEditSession\(\{ cancelled: false \}\)[\s\S]*?stepLayerTransformTimelineFrame\(direction\)[\s\S]*?_resumeLayerWarpTimelineSession\(\)/,
+    'stable WARP Frame step must release, move through WP-003, and resume WARP');
+assert.match(layerSystem, /refreshLayerWarpTimelineSessionAfterHistory\(\)[\s\S]*?abandonWarpAfterHistory[\s\S]*?_resumeLayerWarpTimelineSession\(\)/,
+    'Undo/Redo refresh must abandon the old WARP bridge before starting a fresh session');
 
 console.log('ANIMATE Layer WARP live preview/status/explicit-confirm verifier passed.');

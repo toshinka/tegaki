@@ -1,7 +1,7 @@
 # Tegaki — 再開checkpoint
 
 状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。
-更新日: 2026-09-08。現在の作業baseline HEAD: `0969a7e164695e46e387817f3ff0ca06298b32b5`。WP-005のOwner再現で判明したANIMATE WARP live preview不具合を限定修正し、実production UIでの最小確認とOwner受入境界を記録する。
+更新日: 2026-09-08。現在の作業baseline HEAD: `8d33e7e1144c220edb019ce4ba62d6e8ae2ec5de`。WP-005のOwner再現で判明したANIMATE WARP live previewと、明示KEY確定後の継続編集を限定修正し、実production UIでの最小確認とOwner受入境界を記録する。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
@@ -34,9 +34,17 @@ WP-005のFinal technical evidence sliceはlive baseline `86803e1de0d649648c079b4
 
 Owner報告のproduction再現では、CAF ANIMATE / internal Rasterの`V → WARP`中に16点グリッドだけが変形し、main canvasは元Rasterのまま残った。あわせてWARP候補が`KEYED`と表示され、WARP用の明示KEY確定controlが表示されない状態だった。原因は、WARP bridgeが既存`ClipInstance.layerDeformers`へ候補を投影しても、`isTransformPreviewSuspended`中の`render()`がworking Layer復元へ進み、既存Pixi previewを通さなかったこと、候補の`PREVIEW` actionを確定KEYと誤認していたこと、明示確定buttonが通常Layer Transform bridgeだけを扱っていたことである。
 
-今回の限定修正では、activeなANIMATE Layer WARPだけを既存`_applyVisibilityPreview({ force: true })`へ通し、同じRenderPlan / sampled layerDeformers / Pixi Mesh proxyを使ってpointermove中のcanvasへ反映する。WARP projectionへ`keyGuide`を追加し、元KEYなしは`READY → 未確定`、元KEYありは`KEYED → KEYED · 未確定変更`とする。明示buttonは既存V WARP terminal (`exitLayerMoveMode`)へ委譲し、WARP bridgeがTimeline Historyを1件だけ作ってsessionとoverlayを終了する。Timelineのinternal Raster rowは候補中baseline deformerを読むため、新規候補だけではsolid markerを出さず、元KEYは残る。保存正本、CPU compositor、Export、History schema、Pixi/CPU parity policyは変更していない。
+今回の限定修正では、activeなANIMATE Layer WARPだけを既存`_applyVisibilityPreview({ force: true })`へ通し、同じRenderPlan / sampled layerDeformers / Pixi Mesh proxyを使ってpointermove中のcanvasへ反映する。WARP projectionへ`keyGuide`を追加し、元KEYなしは`READY → 未確定`、元KEYありは`KEYED → KEYED · 未確定変更`とする。当時の明示buttonは既存V WARP terminal (`exitLayerMoveMode`)へ委譲していたが、このterminal意味論は後述の継続編集sliceで明示KEY confirmだけ変更した。Timelineのinternal Raster rowは候補中baseline deformerを読むため、新規候補だけではsolid markerを出さず、元KEYは残る。保存正本、CPU compositor、Export、History schema、Pixi/CPU parity policyは変更していない。
 
 `verify-layer-transform-warp-animate-live-preview.mjs`を追加し、候補/確定/取消、status/keyGuide、既存Pixi preview経路、明示確定terminal、marker baselineを固定した。warp 22件、transform 13件、animation 34件、project 9件、構文、harness check、Vite production build、`git diff --check`はPASS。production UI（localhost:5173、viewport `905×609`、DPR `2.025`）では、CAFを2 Frameへ延長して`V → WARP`へ入り、`ANIMATE · F1 WARP READY`と16点表示、KEY strip（`F1 · KEY未設定`、未確定時は確定buttonとなる既存control）が表示され、console error/warnは0件だった。pointer drag・実確定・download・Owner操作感はこのturnでは未受入であり、Owner acceptance pendingを維持する。
+
+### WP-005 Final Owner UX Fix — WARP KEY continuation / Frame step (2026-09-08)
+
+ANIMATE WARPの明示KEY confirmは、変更前には`exitLayerMoveMode({ cancelled: false })`へ入り、KEY commitと同時にpanel・V・WARP overlayを終了していた。今回、`LayerSystem._commitLayerWarpTimelineKeyAndContinue()`は既存`finishLayerWarpEditSession()`だけでWARP bridgeのHistoryを1件確定し、確定済み`ClipInstance.layerDeformers`をbaselineとして同Frameに新しいWARP sessionを開始する。明示confirm後はpanel、V、WARP mode、16点、Canvas結果を保持し、statusは`KEYED`、markerは確定modelだけを読む。VとEscの既存terminal意味論は変更していない。
+
+stable WARP状態のprev/next/strip wheelは、WARP sessionをmutationなしで解放して既存WP-003のFrame moverを通し、移動先FrameのmodelからWARP sessionを開始する。pending中は移動を拒否し、暗黙commit/rollbackやHistory追加を行わない。Undo/Redoでは旧WARP bridgeをfinishせず所有権だけを放棄して、復元済みmodelからfresh sessionを開始するため、古いbaselineで復元結果を上書きしない。CPU final authority、Pixi proxy、schema、Export guardは変更していない。
+
+新規`verify-layer-transform-warp-key-continuation.mjs`、更新したWARP live-preview verifierとWP-003 continuation verifierで、confirmのHistory `+1`、no-op `0`、fresh baseline、stable Frame step `0`、pending拒否、Undo/Redo refreshを固定した。harnessはwarp 23件、transform 13件、animation 34件、project 9件、harness check、構文、Vite build、`git diff --check`がPASS。実production UIでは新規3 Frame CAFで`F1 → F2 → F3 → F2 → F1`を確認し、各Frameでpanel・V・WARP選択・KEY stripを維持し、stable stateのV終了も従来どおり確認した。CUA操作にはCanvas point dragを注入する経路がないため、実Raster drag→明示confirmの全手順はOwner再確認項目として残す。WP-005は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`を維持する。
 
 ### WP-005 Pixi / CPU WARP parity root-cause slice (2026-09-07)
 
