@@ -132,6 +132,51 @@ full convergence Browser gateはChrome 152 / `680x561` / DPR `2.25` / console er
 - **Actual output:** production UIからPNGを最低1回downloadすること。
 - **Preview fidelity:** point drag中のPixi previewが制作判断を妨げるほどずれて見えないこと、V確定・再生・Exportの切替で実用上不自然な跳ねがないこと。問題があれば別WP候補として記録し、WP-005のauthority/schemaは再設計しない。
 
+### Owner acceptance gate — 本体UIでの具体操作
+
+専用diagnosticやmock UIではなく、通常のproduction相当アプリを開いて確認する。開始時にbrowser/version、viewport、DPR、console errorsを記録し、Ownerの操作感はCodexが代判定しない。
+
+1. **normal SOURCE**
+   - 隔離ProjectでL字・点・小矩形などの非対称Rasterを1つ描く。
+   - `V` → `WARP` → 16点表示を確認し、1点を大きくdrag → pointerup → 別の点をdragする。
+   - pointerupだけではsessionが閉じず、16点overlayが残ることを確認する。
+   - `Esc`で開始時へ戻り、Historyが増えないことを確認する。
+   - 別sessionで `V` → `WARP` → drag → `V`。Rasterへ確定し、Historyが`+1`、sessionが終了することを確認する。
+   - `Undo` / `Redo`で変形前後へ戻ることを確認する。
+   - Ownerは点を掴みやすいか、移動量が直感的か、previewが重くないか、V/Escが自然かを`OWNER ACCEPT`または`OWNER CONCERN`で記録する。
+
+2. **CAF SOURCE**
+   - CAFのinternal Rasterを選択し、`SOURCE · WARP` → 16点 → drag → `V`を実行する。
+   - 対象internal Rasterだけが変形し、Historyが`+1`、working LayerだけでなくCAF原画へ反映されることを確認する。
+   - Animation Tableを閉じていた場合は再open（またはCAF再選択）し、確定結果が維持されることを確認する。
+
+3. **CAF ANIMATE（最低2 Frame）**
+   - F1でinternal Rasterを選択し、`V` → `WARP`。表示が`ANIMATE · F1 READY`、16点表示になることを確認する。
+   - drag後に`ANIMATE · F1 WARP KEYED`となり、drag中も16点overlayが消えないことを確認する。
+   - `V`でHistoryが`+1`、F1 keyが確定し、Table通常状態へ戻ることを確認する。
+   - `F2` → `F1`でF1のWARP結果と単色丸markerを再現し、F1へ再入場して既存WARPを表示することを確認する。
+
+4. **Table close rollback**
+   - F1 → `WARP` → drag → Table closeを1ケース実施する。
+   - pending変更が取消され、History`+0`、overlay消失となることを確認する。
+   - 再open後、元KEYなしなら`READY`/keyなし、元KEYありなら元KEYが保持されることを確認する。
+
+5. **Export terminal**
+   - pending WARP中に `drag` → `Export`。`pending-layer-transform`で停止し、session、変形候補、History、Frameが変わらないことを確認する。
+   - confirm pathは `V` → `Export` が成功することを確認する。
+   - cancel pathは別sessionで `drag` → `Export` block → `Esc` → `Export` が成功することを確認する。
+
+6. **実PNGとpreview fidelity**
+   - production UIの通常ExportからPNGを1回downloadし、file生成・画像を開けること・Canvas内容が出ることを確認する。
+   - CAF ANIMATE WARPで変形量が分かるdragを行い、drag中Pixi previewとV確定後/F1再評価結果を見比べる。
+   - Ownerへの質問は「制作判断を妨げるほど見た目が跳ねる・ズレるか」の一つだけとし、`ACCEPT` / `CONCERN` / `NOT JUDGED`とコメントを記録する。数pxの技術値は判定基準にしない。
+
+7. **任意の追加確認**
+   - 実pen/deviceで自然なpointercancelを確認できた場合だけ`TRUSTED POINTERCANCEL VERIFIED`と記録する。確認できなければ`NOT VERIFIED`のままでよく、これだけでclosureをblockしない。
+   - UI準備が容易なら非4x4またはRIG/Mesh/Skin/clippingの代表1〜2件で、WARPへ入れず変な16点overlayが出ないことを見る。複雑なfixtureは新規作成しない。
+
+Owner ACCEPTの条件は、normal SOURCE、CAF SOURCE、CAF ANIMATE、Export block/retry、実PNG download、preview fidelityにblocking issueがないこと。機能バグ（overlay消失、V未確定、wrong layer、History`+2`、Table close残留、Export bypass、download失敗）があれば`OWNER ACCEPTANCE BLOCKED — BUG`として操作と再現を記録し、その場で大規模修正へ進まない。previewの見た目だけが問題なら`PREVIEW FIDELITY FOLLOW-UP REQUIRED`として別WP候補に止める。
+
 このclosure後はsession境界抽出、別WP、許容誤差policy、CPU continuous preview、Pixi renderer/schema変更へ進まず、GPT reviewとOwner acceptanceで停止する。
 
 ## Goal
