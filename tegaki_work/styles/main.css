@@ -6387,6 +6387,21 @@ button.anim-motion-graph-legend-item.is-primary {
     vector-effect: non-scaling-stroke;
 }
 
+.warp-grid-overlay-point-hit {
+    fill: transparent;
+    stroke: transparent;
+    pointer-events: none;
+}
+
+.warp-grid-overlay.is-interactive .warp-grid-overlay-point-hit {
+    pointer-events: all;
+    cursor: grab;
+}
+
+.warp-grid-overlay.is-interactive .warp-grid-overlay-point-hit:active {
+    cursor: grabbing;
+}
+
 .warp-grid-overlay-secondary-line {
     fill: none;
     stroke: color-mix(in srgb, var(--deformer-pose-line) 58%, transparent);

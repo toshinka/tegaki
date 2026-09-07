@@ -40,7 +40,7 @@
     "warp": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": ["tegaki_work/system/animation/clip-deformer.js", "tegaki_work/system/animation/clip-layer-deformer.js", "tegaki_work/system/animation/layer-warp-edit-transaction.js", "tegaki_work/system/animation/warp-grid-rasterizer.js"],
-      "patterns": ["^verify-warp-", "^verify-layer-warp-", "^verify-clip-layer-deformer", "^verify-folder-deformer", "^verify-radial-control-mesh"]
+      "patterns": ["^verify-warp-", "^verify-layer-warp-", "^verify-layer-transform-warp-", "^verify-clip-layer-deformer", "^verify-folder-deformer", "^verify-radial-control-mesh"]
     },
     "project": {
       "architecture": "docs/ARCHITECTURE.md",
@@ -65,6 +65,6 @@
     {"id":"WP-006","document":"docs/work/WP-006-folder-transform-key.md","status":"DONE","dependsOn":["WP-003"]},
     {"id":"WP-004","document":"docs/work/WP-004-output-terminal.md","status":"DONE","dependsOn":["WP-006"]},
     {"id":"WP-007","document":"docs/work/WP-007-export-terminal-guard.md","status":"DONE","dependsOn":["WP-004"]},
-    {"id":"WP-005","document":"docs/work/WP-005-simple-warp.md","status":"BLOCKED","dependsOn":["WP-002","WP-003","WP-004","WP-007"]}
+    {"id":"WP-005","document":"docs/work/WP-005-simple-warp.md","status":"ACTIVE","dependsOn":["WP-002","WP-003","WP-004","WP-007"]}
   ]
 }

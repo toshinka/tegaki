@@ -393,19 +393,31 @@ export const DOMBuilder = (function() {
         modeStrip.appendChild(createElement('button', {
             className: 'layer-transform-mode-btn active',
             textContent: 'BASIC',
-            attributes: { type: 'button', role: 'tab', 'aria-selected': 'true' }
+            attributes: {
+                type: 'button',
+                role: 'tab',
+                'aria-selected': 'true',
+                'data-transform-mode': 'basic'
+            }
         }));
+        // Keep the legacy DISTORT tab in the DOM for compatibility with the
+        // existing transform contract, while exposing only BASIC and WARP.
         modeStrip.appendChild(createElement('button', {
             className: 'layer-transform-mode-btn',
             textContent: 'DISTORT',
-            title: 'BASIC Transform受入後の後続Stage',
+            title: '後続Stageで提供予定',
             attributes: { type: 'button', role: 'tab', 'aria-selected': 'false', disabled: '' }
         }));
         modeStrip.appendChild(createElement('button', {
             className: 'layer-transform-mode-btn',
             textContent: 'WARP',
-            title: 'BASIC Transform受入後の後続Stage。Rig Meshとは別のLayer Warp',
-            attributes: { type: 'button', role: 'tab', 'aria-selected': 'false', disabled: '' }
+            title: 'LayerのSimple 4x4 WARPを編集',
+            attributes: {
+                type: 'button',
+                role: 'tab',
+                'aria-selected': 'false',
+                'data-transform-mode': 'warp'
+            }
         }));
         panel.appendChild(modeStrip);
 

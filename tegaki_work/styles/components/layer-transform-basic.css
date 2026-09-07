@@ -2,7 +2,7 @@
 
 .layer-transform-mode-strip {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 3px;
     padding: 3px 8px 5px;
 }
@@ -31,6 +31,10 @@
     letter-spacing: 0.03em;
 }
 
+.layer-transform-mode-btn[disabled] {
+    display: none;
+}
+
 .layer-transform-mode-btn[aria-selected="true"] {
     border-color: var(--active-border);
     background: color-mix(in srgb, var(--active-border) 74%, var(--futaba-cream));
@@ -40,6 +44,11 @@
 .layer-transform-mode-btn:disabled {
     opacity: 0.58;
     cursor: not-allowed;
+}
+
+.layer-transform-panel.is-warp-mode .layer-transform-precise {
+    opacity: 0.45;
+    pointer-events: none;
 }
 
 .layer-transform-key-strip {

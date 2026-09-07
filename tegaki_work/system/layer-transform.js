@@ -71,7 +71,11 @@ export class LayerTransform {
         this.onGetTransformSourceBounds = null;
         this.onCommitTimelineKey = null;
         this.onStepTimelineFrame = null;
+        this.onTransformModeChange = null;
+        this.onWarpReset = null;
         this._editContextProjection = null;
+        this.transformMode = 'basic';
+        this.warpController = null;
         this.basicOverlayScaleGesture = null;
         this.basicOverlayAxisScaleGesture = null;
         this.basicOverlayRotationGesture = null;
@@ -81,6 +85,11 @@ export class LayerTransform {
         this._sliderInstances = new Map();
         this._syncingLayerTransformPanel = false;
         this._syncingSelectionPanel = false;
+    }
+
+    setWarpController(controller = null) {
+        this.warpController = controller || null;
+        return this.warpController;
     }
 
     init(app, cameraSystem) {
@@ -199,6 +208,10 @@ export class LayerTransform {
                 return;
             }
             if (this.isVKeyPressed) {
+                if (this.transformMode === 'warp') {
+                    this.onWarpReset?.();
+                    return;
+                }
                 this.resetTransform();
                 this._showAnchorSite(false);
             }
@@ -257,6 +270,7 @@ export class LayerTransform {
         this._showAnchorSite(false);
         this.syncBasicOverlay();
         this._syncEditContextProjection();
+        this._syncTransformModeButtons();
     }
     
     exitMoveMode(activeLayer) {
@@ -267,6 +281,8 @@ export class LayerTransform {
         this.basicOverlayScaleGesture = null;
         this.basicOverlayAxisScaleGesture = null;
         this.basicOverlayRotationGesture = null;
+        this.warpController?.deactivate?.();
+        this.transformMode = 'basic';
         
         if (this.cameraSystem?.setVKeyPressed) {
             this.cameraSystem.setVKeyPressed(false);
@@ -275,6 +291,7 @@ export class LayerTransform {
         
         if (this.transformPanel) {
             this.transformPanel.classList.remove('show');
+            this.transformPanel.classList.remove('is-warp-mode');
         }
         transformAnchorSite.deactivate('layer-transform');
         layerTransformBasicOverlay.deactivate();
@@ -284,6 +301,7 @@ export class LayerTransform {
         contextNote?.removeAttribute('data-context-state');
         
         this._updateCursor();
+        this._syncTransformModeButtons();
     }
     
     toggleMoveMode(activeLayer) {
@@ -292,6 +310,57 @@ export class LayerTransform {
         } else {
             this.enterMoveMode();
         }
+    }
+
+    setTransformMode(mode = 'basic') {
+        const nextMode = mode === 'warp' ? 'warp' : 'basic';
+        if (nextMode === this.transformMode) return true;
+        if (!this.isVKeyPressed) {
+            this.transformMode = nextMode;
+            this._syncTransformModeButtons();
+            return true;
+        }
+        const accepted = this.onTransformModeChange?.(nextMode) !== false;
+        if (!accepted) {
+            this._syncTransformModeButtons();
+            return false;
+        }
+        this.transformMode = nextMode;
+        this.transformPanel?.classList.toggle('is-warp-mode', nextMode === 'warp');
+        if (nextMode === 'warp') {
+            transformAnchorSite.deactivate('layer-transform');
+            document.getElementById('layer-transform-anchor-btn')?.classList.remove('active');
+            layerTransformBasicOverlay.deactivate();
+        } else {
+            this.syncBasicOverlay();
+        }
+        this._syncTransformModeButtons();
+        return true;
+    }
+
+    getTransformMode() {
+        return this.transformMode;
+    }
+
+    deactivateWarpOverlay() {
+        this.warpController?.deactivate?.();
+    }
+
+    _syncTransformModeButtons() {
+        const buttons = this.transformPanel?.querySelectorAll?.('[data-transform-mode]') || [];
+        buttons.forEach(button => {
+            const selected = button.dataset.transformMode === this.transformMode;
+            button.setAttribute('aria-selected', String(selected));
+            button.classList.toggle('active', selected);
+        });
+        this.transformPanel?.classList.toggle('is-warp-mode', this.transformMode === 'warp');
+        const basicControlsDisabled = this.transformMode === 'warp';
+        ['flip-horizontal-btn', 'flip-vertical-btn', 'layer-transform-anchor-btn'].forEach(id => {
+            const button = document.getElementById(id);
+            if (!button) return;
+            if (basicControlsDisabled) button.setAttribute('disabled', '');
+            else button.removeAttribute('disabled');
+        });
     }
     
     _initializeTransformForActiveLayer() {
@@ -712,6 +781,17 @@ export class LayerTransform {
         this.transformPanel = document.getElementById('layer-transform-panel');
         
         if (!this.transformPanel) return;
+
+        // Mode switching must remain available even when the optional slider
+        // helper has not registered yet. BASIC controls may be deferred, but
+        // WARP entry is a first-level panel action.
+        this.transformPanel.querySelectorAll('[data-transform-mode]').forEach(button => {
+            button.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.setTransformMode(button.dataset.transformMode || 'basic');
+            });
+        });
         
         if (!window.TegakiUI?.SliderUtils) {
             return;
@@ -1447,6 +1527,7 @@ export class LayerTransform {
         } catch (error) {}
         this.dragPointerId = null;
         this._updateCursor();
+        this._syncTransformModeButtons();
     }
 
     _setupPanelDrag() {
