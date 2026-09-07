@@ -127,6 +127,12 @@ Layer全体とselectionの差は「対象Raster範囲とmask」であり、trans
 - app / browserのfocus移動だけではANIMATE sessionを確定しない。SOURCEの既存blur confirmは維持する。
 - TimelineのLayer Motion KEYは対象internal Layer行だけへ7px単色丸で表示する。親Clip Motionのecho、Part / Bone菱形、WARP key、click actionとは別の読み取り専用表示とする。
 
+### WP-005 preview/output boundary (2026-09-08)
+
+- ANIMATE Layer WARPの操作中previewはPixi GPU proxyを使う。CPU compositor、SOURCE bake、Export、Project canonical dataがpixel authorityであり、preview pixelを保存正本にしない。
+- Pixi proxyは同じevaluated model、topology、transform data、effect orderingを使うが、GPU/CPU rasterizer間のbyte-identical raster outputは要求しない。
+- Vはcanonical model commit、cancelはmodel/History rollback、Exportは既存WP-007のpending-layer-transform guard、Projectは既存transform terminalを維持する。
+
 ## 制約
 
 - CAF internal Layerへ接続する場合、通常Layer HistoryではなくCAF Raster履歴adapterを使う。

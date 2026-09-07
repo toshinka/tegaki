@@ -1,8 +1,8 @@
 # WP-005 — Simple 4x4 WARP UI
 
-状態: ACTIVE（2026-09-07）。現在の作業baseline HEAD: `0c93561eda44f1ebba9f2e882d916c305e1de8ab`。
+状態: ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING（2026-09-08）。現在の作業baseline HEAD: `9d1002d5fba94edc887a3a6e6dcafe1ea11d0eb1`。
 
-現時点ではLayer TransformのBASIC/WARP切替、Simple 4x4の16点pointer adapter、normal/CAF SOURCEのRaster preview/bake、CAF ANIMATEの既存`layerDeformers` bridge接続まで実装した。関連verifier・構文・Vite buildはPASSしている。normal SOURCEの実Browser操作、CAF ANIMATEの入場・preview・Esc・V確定・次Frame移動、Tableを閉じたCAF SOURCEのdrag・V確定を限定確認した。Table close rollbackとpointer terminalの本Sliceは技術PASSだが、trusted device pointercancel、実Pixi画素、保存/再open、Owner操作受入は未完了である。
+Layer TransformのBASIC/WARP切替、Simple 4x4の16点pointer adapter、normal/CAF SOURCEのRaster preview/bake、CAF ANIMATEの既存`layerDeformers` bridge接続を完了した。関連verifier・構文・Vite buildはPASSしている。normal SOURCEの実Browser操作、CAF ANIMATEの入場・preview・Esc・V確定・次Frame移動、Tableを閉じたCAF SOURCEのdrag・V確定、Table close rollback、pointer terminal、Pixi/CPU/export/save-reopenの技術証拠を確認した。trusted device pointercancelとOwner操作受入は未完了であり、Preview Equivalence Policyに従ってpackage statusはACTIVEとする。
 
 ## Progress (2026-09-07)
 
@@ -14,7 +14,7 @@
 - 技術確認: `test warp` 20/20、`test transform` 13/13、`test animation` 34/34、`test project` 9/9、専用WARP verifier 4件、harness check、構文確認、`git diff --check`をPASS。今回production JSは変更していないため、Vite production buildは前回のguard変更時PASSを継承し、再実行していない。Browser確認はOwner受入とは分離する。
 - Table close terminal: 2Frame CAF ANIMATEで、元KEYなしの`pending→close`はHistoryをduration変更分から増やさず、close後overlayを0へ戻し、再open時に`F1 · KEY未設定`／`READY`へ戻った。元KEYありでは一度`History +1`で確定したF1のpointsを基準に別位置のpendingを作り、close後に元pointsと`WARP KEYED`を再現し、追加Historyを作らなかった。狭いIABではclose buttonのEnter起動、viewport 1280x720のIABでは同じpendingと実pointerup保持を確認した。model authority直読はBrowser隔離のため、`hide()`のcancel-before-hide順序を`verify-layer-transform-warp-ui.mjs`で固定し、既存transaction verifierと分離して記録した。
 - Pointer terminal: `verify-layer-warp-pointer-terminal.mjs`でproduction `LayerTransformWarpController`をinstantiateし、Gesture Aのpointerup保持、Gesture Bのpointercancel rollback、capture loss rollback、pointerup後late loss保持、History/finish 0を固定した。`build/wp005-pointer-terminal-diagnostic.html`ではproduction `WarpGridOverlay`のDOM listenerへsynthetic `PointerEvent`をdispatchし、NORMAL SOURCE／CAF ANIMATEの両方で同じ結果をBrowser確認した。IAB診断はviewport 1280x720、DPR 2.25、console errors 0。trusted device由来のpointercancelは未検証として残す。
-- 未完了: 実Pixi/CPU/export画素一致、save/reopen、非4x4/排他対象の実画面拒否、trusted device pointercancel、Owner操作受入。CAF SOURCEのdrag→Vは確認済みだが、DrawingSnapshotのsave/reopen往復と実画素比較は未確認。
+- Owner受入待ち: trusted device pointercancel、非4x4/排他対象のOwner実画面確認、Owner操作感、production UIからの実download。CPU/export/save-reopenと非4x4/排他対象の技術検証はFinal evidenceで完了している。
 
 ## Final technical evidence slice (2026-09-07)
 
@@ -100,11 +100,39 @@ warmup 3回後30サンプル。数値は`median / p95 / max`のmsで、正式な
 
 ### Classification and stop
 
-分類は`P-B`。Motion-onlyもM1で、WARP MeshとMotion GPU sampling双方に差がある。P2 full CPU-reference surface → Pixi Spriteでgeometryは収束し、残るのは半透明upload canonicalizationである。512x512以上はCPU renderが明確に重いため`P-D risk`を併記するが、性能仕様や許容閾値は決めない。CPU-reference previewをproductionへ導入せず、現行Pixi Meshを削除せず、許容誤差policy・schema・History・Layer WARPを変更しない。次の判断は、CPU authorityを維持したCPU-reference previewの採用可否、またはGPU proxyの差を許容するpreview policyをArchitecture Leadが決めることとする。WP-005は`ACTIVE / GPT review required`で停止する。
+分類は`P-B`。Motion-onlyもM1で、WARP MeshとMotion GPU sampling双方に差がある。P2 full CPU-reference surface → Pixi Spriteでgeometryは収束し、残るのは半透明upload canonicalizationである。512x512以上はCPU renderが明確に重いため`P-D risk`を併記するが、性能仕様や許容閾値は決めない。CPU-reference previewをproductionへ導入せず、現行Pixi Meshを削除せず、許容誤差policy・schema・History・Layer WARPを変更しない。この差は2026-09-08のPreview Equivalence Policyでpreview implementation differenceとして分類し、WP-005のtechnical blockerから外す。WP-005は`TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`で停止する。
 
 ### Verification
 
 full convergence Browser gateはChrome 152 / `680x561` / DPR `2.25` / console errors `0`。新規diagnostic module parse、既存harness/warp/animation verifier、`git diff --check`を実行する。Actual App UI、Owner操作感、trusted device pointercancelは未受入。
+
+## Technical closure — Preview Equivalence Policy (2026-09-08)
+
+### Authority decision
+
+- **Pixel authority:** CPU compositor、normal/CAF SOURCE bake、Export、Projectのcanonical data。
+- **Interactive preview:** Pixi GPU proxy。CPU authorityと同じevaluated model、target/frame、control points、topology、bind bounds、Layer WARP key sample、Layer Motion sample、transform matrix、effect evaluation order、visibility、opacity/blend authorityを使う。
+- **Pixel equality:** CPU / Bake / Export / save-reopenのcanonical resultは一致させる。Pixi previewは同じmodel state・geometry・evaluation orderを使うが、GPU/CPU rasterizer、filtering、premultiplied-alpha由来のbyte差をpreview implementation differenceとして分離する。
+- **Tolerance:** 数値epsilon、最大差、差pixel数などの固定許容閾値は導入しない。
+- **Performance:** pointermove中の連続CPU final renderは採用せず、現行Pixi GPU proxyを維持する。CPU-reference prototypeは技術証拠としてのみ扱い、productionへ導入しない。
+- **Persistence/output:** preview pixelを保存正本にしない。save/reopenとExportの検証はcanonical CPU/final dataで行う。
+
+### Technical completion
+
+既存のnormal SOURCE、CAF SOURCE、CAF ANIMATE、Simple 4x4、排他zero-mutation拒否、V History `1/0`、Timeline marker、pointer terminal、Table close rollback、Project save/reopen、CPU/export consistencyの証拠を技術PASSとして扱う。Pixi byte parityはtechnical blockerとして残さず、上記policyへ分類した。production runtime、保存schema、History契約、現行Pixi Meshは変更していない。
+
+判定は`WP-005 TECHNICALLY COMPLETE`、package statusはOwner受入まで`ACTIVE`とする。trusted device由来のpointercancelはsynthetic DOM検証をtrusted PASSへ昇格せず、`NOT VERIFIED`のままOwner確認項目へ残す。
+
+### Owner acceptance checklist
+
+- **normal SOURCE:** WARP入場、16点drag、V、Undo、Redo、Esc cancel。
+- **CAF SOURCE:** `SOURCE · WARP`、drag、V、CAF close/reopen後の結果維持。
+- **CAF ANIMATE:** `READY`、drag、`KEYED`、V、F2、F1再現、Table close rollback。
+- **Export:** pending WARPからExportが`pending-layer-transform`で止まり、V確定後またはEsc後に成功すること。
+- **Actual output:** production UIからPNGを最低1回downloadすること。
+- **Preview fidelity:** point drag中のPixi previewが制作判断を妨げるほどずれて見えないこと、V確定・再生・Exportの切替で実用上不自然な跳ねがないこと。問題があれば別WP候補として記録し、WP-005のauthority/schemaは再設計しない。
+
+このclosure後はsession境界抽出、別WP、許容誤差policy、CPU continuous preview、Pixi renderer/schema変更へ進まず、GPT reviewとOwner acceptanceで停止する。
 
 ## Goal
 
@@ -120,7 +148,7 @@ READY化時に新規overlayの要否と正確なwrite範囲をleadが固定す�
 
 SOURCEはRaster bake、ANIMATEはClipInstance.layerDeformers。Simpleは4x4、非4x4を暗黙変換しない。
 入場keyなし、previewは同じbaseline、確定History 1、cancel/no-opは0。
-root/Folder WARP、Rig/Mesh/Skin/clipping排他とCPU/Pixi一致を維持する。
+root/Folder WARP、Rig/Mesh/Skin/clipping排他を維持する。CPU final authorityとPixi GPU proxyは同じevaluated model / topology / effect orderを使うが、byte parityを要求しない。
 
 ## Tasks
 
@@ -132,10 +160,14 @@ root/Folder WARP、Rig/Mesh/Skin/clipping排他とCPU/Pixi一致を維持する�
 
 ## Acceptance
 
+（technical closure: Preview Equivalence Policyに基づく受入条件）
+
 - normal SOURCE、CAF SOURCE、CAF ANIMATEの対象と保存先が一致。
 - 対象Rasterのみ変形し、旧非4x4、排他対象を明示拒否。
-- preview/CPU/Bake/exportの固定入力結果一致とUndo/Redo/save/reopenが通る。
-- 入場/無変更/取消のHistory 0、実変更確定1、丸KEY一個。
+- CPU compositor / SOURCE bake / Export / Project save-reopenのcanonical pixel resultが一致する。
+- Pixi interactive previewは同じevaluated model、topology、transform data、effect orderingを使うGPU proxyとし、GPU/CPU rasterizer間のbyte完全一致を必須にしない。
+- 入場/無変更/取消のHistory 0、実変更確定1、Timeline marker契約、terminal契約を満たす。
+- 数値epsilonや固定pixel許容閾値を受入条件に導入しない。
 
 ## Verification
 
@@ -149,4 +181,4 @@ node配線testだけでproduction完成とはしない。
 
 ## Completion
 
-上記技術検証とOwner操作受入を記録してからDONEへ更新する。旧9qを形式だけcloseしない。
+技術検証とPreview Equivalence Policyの文書化は完了し、WP-005は`TECHNICALLY COMPLETE`とする。Ownerの制作受入（通常SOURCE / CAF SOURCE / CAF ANIMATE / Export / 実download / preview fidelity）が完了するまでpackage statusは`ACTIVE`を維持する。旧9qを形式だけcloseしない。

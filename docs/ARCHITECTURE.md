@@ -72,7 +72,7 @@ ANIMATE入場だけではKEYを作らない。固定baselineからpreviewし、�
 通常Frame変更/Table closeと、KEY stripの明示的連続編集はterminalが異なるため混同しない。
 既存KEY stripの再入場失敗は未解決。Panel visibility、Keyboard V、Camera V、session identityの同期を[WP-003](work/WP-003-key-continuation.md)で検証する。
 
-WARP Simple 4x4はmodel/Project/CPU/Pixi側配線/transactionまで存在し、UIは旧9q Task Eが未完。
+WARP Simple 4x4はmodel/Project/CPU/Pixi側配線/transactionまで存在し、UIの技術作業は完了している。Ownerの制作受入は別に保留する。
 SOURCEのbakeとANIMATEのlayerDeformersを同じ保存処理へまとめない。
 
 ## Animation評価と出力
@@ -91,6 +91,7 @@ DrawingSnapshot
 上図は任意effectを同時に重ねられる宣言ではない。対象の重複/clipping/RenderIsland制約をrender planが判定する。
 Rig/Mesh/Skinは別の評価入力を持ち、同じRasterのLayer Motion/WARPと自由に合成できない。
 CPUとPixiは同じplan/evaluatorを参照するが、別consumerであり、文字列配線検査だけでは画素一致を保証しない。
+CPU compositor、SOURCE bake、Export、Project canonical dataがpixel authorityである。Interactive previewは同じevaluated model、target/frame、control points、topology、bind bounds、transform、effect evaluation order、visibility、opacity/blend authorityを使うPixi GPU proxyであり、GPU/CPU rasterizer間のRGBA byte完全一致は要求しない。PersistenceとExportの検証はpreview pixelではなくCPU/final dataを使う。
 Layer Motionだけのunsupported planの拒否がCPU側で抜ける箇所は[WP-004](work/WP-004-output-terminal.md)へ。
 
 ## Project・History・外部出力
