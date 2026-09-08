@@ -1,6 +1,6 @@
 # Tegaki — 再開checkpoint
 
-状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。
+状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — OWNER ACCEPTANCE BLOCKED。
 更新日: 2026-09-08。現在の作業baseline HEAD: `8d33e7e1144c220edb019ce4ba62d6e8ae2ec5de`。WP-005のOwner再現で判明したANIMATE WARP live previewと、明示KEY確定後の継続編集を限定修正し、実production UIでの最小確認とOwner受入境界を記録する。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
@@ -45,6 +45,16 @@ ANIMATE WARPの明示KEY confirmは、変更前には`exitLayerMoveMode({ cancel
 stable WARP状態のprev/next/strip wheelは、WARP sessionをmutationなしで解放して既存WP-003のFrame moverを通し、移動先FrameのmodelからWARP sessionを開始する。pending中は移動を拒否し、暗黙commit/rollbackやHistory追加を行わない。Undo/Redoでは旧WARP bridgeをfinishせず所有権だけを放棄して、復元済みmodelからfresh sessionを開始するため、古いbaselineで復元結果を上書きしない。CPU final authority、Pixi proxy、schema、Export guardは変更していない。
 
 新規`verify-layer-transform-warp-key-continuation.mjs`、更新したWARP live-preview verifierとWP-003 continuation verifierで、confirmのHistory `+1`、no-op `0`、fresh baseline、stable Frame step `0`、pending拒否、Undo/Redo refreshを固定した。harnessはwarp 23件、transform 13件、animation 34件、project 9件、harness check、構文、Vite build、`git diff --check`がPASS。実production UIでは新規3 Frame CAFで`F1 → F2 → F3 → F2 → F1`を確認し、各Frameでpanel・V・WARP選択・KEY stripを維持し、stable stateのV終了も従来どおり確認した。CUA操作にはCanvas point dragを注入する経路がないため、実Raster drag→明示confirmの全手順はOwner再確認項目として残す。WP-005は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`を維持する。
+
+### WP-005 Owner Acceptance Block — F1 re-entry after Esc (2026-09-08)
+
+Chromeの通常production UI（`http://localhost:5173/`）で、CAF1・Layer 1・5FのF1を使用した。F1で`V → WARP`へ入り、画面上で見えるcontrol pointをdragすると`ANIMATE · F1 WARP 未確定`になり、CanvasのRaster変形と16点overlayを確認できた。明示KEY confirm後は`ANIMATE · F1 WARP KEYED`、F1 marker、panel/V/WARP維持、History `9/500 → 10/500`を確認した。
+
+その後、別の見えるpointをdragして`ANIMATE · F1 WARP KEYED · 未確定変更`にし、Escを押した。Esc後はpanelが閉じ、Historyは`10/500`のまま、F1のWARP markerと確定visualは残った。ここまでは期待どおりだった。
+
+同じF1へ再度`V → WARP`で入場したところ、期待する`KEYED`ではなく`ANIMATE · F1 READY`、KEY stripは`F1 · KEY未設定`になった。一方、Timelineには`Layer WARP key: Frame 1` markerが残り、16点は確定後の形ではなく矩形baselineを表示した。console error/warningはこのCUA確認では取得していない。
+
+これはClosure Gateの「Esc後に直前の確定形へ戻る」「既存F1へ再入場するとKEYEDで確定WARPを再現する」に反するため、Owner Acceptanceを`ACTIVE — OWNER ACCEPTANCE BLOCKED`とする。production JS、保存schema、harness statusは変更していない。原因の追加調査・修正はGPT review待ちとし、WP-008やsession extractionへ進まない。
 
 ### WP-005 Pixi / CPU WARP parity root-cause slice (2026-09-07)
 
