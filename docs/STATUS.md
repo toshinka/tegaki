@@ -1,7 +1,7 @@
 # Tegaki — 再開checkpoint
 
-状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — OWNER ACCEPTANCE BLOCKED。
-更新日: 2026-09-08。現在の作業baseline HEAD: `8d33e7e1144c220edb019ce4ba62d6e8ae2ec5de`。WP-005のOwner再現で判明したANIMATE WARP live previewと、明示KEY確定後の継続編集を限定修正し、実production UIでの最小確認とOwner受入境界を記録する。
+状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。
+更新日: 2026-09-08。現在の作業baseline HEAD: `d7fce78abda96e550b1b03000903e9583c333582`。WP-005のF1 WARP再入場不整合を限定修正し、実production UIでの最小確認とOwner受入境界を記録する。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
@@ -55,6 +55,20 @@ Chromeの通常production UI（`http://localhost:5173/`）で、CAF1・Layer 1�
 同じF1へ再度`V → WARP`で入場したところ、期待する`KEYED`ではなく`ANIMATE · F1 READY`、KEY stripは`F1 · KEY未設定`になった。一方、Timelineには`Layer WARP key: Frame 1` markerが残り、16点は確定後の形ではなく矩形baselineを表示した。console error/warningはこのCUA確認では取得していない。
 
 これはClosure Gateの「Esc後に直前の確定形へ戻る」「既存F1へ再入場するとKEYEDで確定WARPを再現する」に反するため、Owner Acceptanceを`ACTIVE — OWNER ACCEPTANCE BLOCKED`とする。production JS、保存schema、harness statusは変更していない。原因の追加調査・修正はGPT review待ちとし、WP-008やsession extractionへ進まない。
+
+### WP-005 Re-entry Congruence Repair — 2026-09-08
+
+前項のF1再入場症状を、active working Layerを意図的に別Rasterへずらしたproduction bridge/LayerSystem fixtureでP0〜P6再現した。最初の不整合は、選択中internal RasterのIDとactive working Layerから逆引きしたIDが異なり、markerは選択ID、WARP transactionはactive逆引きIDを読む経路分岐だった。
+
+限定修正は`tegaki_work/ui/animation-table-popup.js`だけに行った。Layer TransformのANIMATE Layer開始時に選択internal Rasterからworking Layerを逆引きし、transaction target / preview target / `targetLayerIds` / active Layerを同じIDへ同期する。WARP markerとWARP bridgeのdeformer lookupは同じ`clip + internalLayerId + localFrame`経路を使用し、selectionとtransactionのIDが一致しない場合は開始を拒否する。保存schema、History、CPU/Pixi renderer、Folder/RIG/Mesh/clipping authorityは変更していない。
+
+新規`build/verify-layer-transform-warp-reentry-congruence.mjs`は実production `LayerSystem.enterLayerMoveMode()` / `beginLayerWarpEditSession()`、production bridge/context、pure transactionを接続し、P0初期KEY、P1 preview、P2 explicit confirm、P3 second preview、P4 Esc rollback、P5 full teardown/V再入場、P6 WARP再入場を確認した。結果は、確定model key・marker target・active working Layer・fresh WARP baselineが全checkpointで`internal-a`に一致、History `+1`、Esc後追加`0`、P6 `hadExplicitKey=true`、確定A points維持だった。既存warp/transform/animation suitesとharness checkもPASSした。
+
+これは隔離production verifierによる技術PASSであり、実Raster drag・実KEY操作・実PNG download・Owner操作感の受入を代替しない。WP-005は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`へ戻す。次のOwner確認は、F1でKEY確定→別drag→Esc→同じF1へ`V → WARP`再入場し、`KEYED`、marker、確定形16点を確認することから開始する。
+
+### WP-008 Design / Audit First evidence — 2026-09-08
+
+WP-008はproduction実装へ進めず、[WP-008 progressive controls audit](work/WP-008-progressive-controls-design-audit.md)と[Astra/GUI handoff draft](handoffs/WP-008-astra-progressive-controls-request.md)を追加した。現行Workspaceの可変GRID、RADIAL/FREE mesh、Bind/Cage、LENS placement、MOVE/INFLATE/PINCH/SMOOTH brushを、既存Layer Transformの4×4 `layerDeformers` authorityと分離して記録した。variable topology、cage authority、brushのLayer transaction接続、GUI Level 1/2/3は判断待ちであり、schema/history/renderer変更、Astra consultation、production UI変更は開始していない。WP-008は`PLANNED — DESIGN / AUDIT FIRST`のまま保持する。
 
 ### WP-005 Pixi / CPU WARP parity root-cause slice (2026-09-07)
 
