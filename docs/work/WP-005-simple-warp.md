@@ -242,6 +242,32 @@ WP-008のread-only成果は[progressive controls audit](WP-008-progressive-contr
 
 このclosure後はsession境界抽出、別WP、許容誤差policy、CPU continuous preview、Pixi renderer/schema変更へ進まず、GPT reviewとOwner acceptanceで停止する。
 
+## Final Interaction Safety Slice — WARP Canvas drag isolation / Anchor audit — 2026-09-09
+
+### Root cause and bounded fix
+
+WARP mode中のCanvas空白領域dragがBASIC Layer Motionを生成する症状は、`tegaki_work/system/layer-transform.js`の`_setupDragEvents()`が`isVKeyPressed`と左buttonだけでBASIC body gestureを開始していたことが原因だった。WARP pointは`LayerTransformWarpController`と`WarpGridOverlay`が別のpointer pathで処理するため、point以外のCanvas面だけがBASIC `onDragRequest`へ落ち、BASIC/WARP pendingが混在し得た。
+
+入口条件へ`this.transformMode === 'basic'`を追加する一行の修正に閉じた。これによりBASIC body dragは従来どおり動作し、WARP body dragはgesture開始・`preventDefault`・BASIC mutationを行わない。WARP pointのpreview、pointerup、pointercancel、lostpointercapture、forward/inverse Motion projection、panel/table/camera入力は変更していない。WARP body dragをBASIC Motionとして正式採用する統合仕様や、mixed History commandは今回の対象外である。
+
+### Verifier and Browser evidence
+
+新規`tegaki_work/build/verify-layer-transform-warp-body-drag-isolation.mjs`は、production `LayerTransform._setupDragEvents()`へfake Canvasだけを接続し、BASIC body dragの`onDragRequest`、WARP body dragの無起動、production `LayerTransformWarpController`のWARP point previewを確認した。WARP body経路では`dragPointerId`が設定されず、fake `getLayerMoveCommitState().hasPendingTransform`もfalseのまま、point経路はpreviewだけを実行する。結果はPASS。
+
+近隣回帰としてmotion projection（6 affine cases × 16 points）、cross-frame continuation、WARP re-entry congruence、pointer terminalもPASS。harnessはcheck `30 documents / 137 links / 25 proposals / 7 packages`、transform `13/13`、warp `26/26`、animation `34/34`、ui `45/45`、project `9/9`がPASSした。変更JS/verifierの構文確認、Vite production build、`git diff --check`も完了し、生成dist差分は残していない。
+
+Chrome production UI（localhost:5173、CUA screenshot `908×548`、DPR `2.025`、console error/warn `0`）では、CAF ANIMATEの`V → WARP`で空白body dragを行ってもRaster全体、WARP points、status、Historyは変わらなかった。その後のcontrol-point dragは`ANIMATE · F1 WARP 未確定`へ進み、明示KEYで`WARP KEYED`、Timeline WARP marker、panel/V/WARP保持、History `+1`を確認した。BASICへ戻ったbody dragはpending previewを生成し、EscapeでHistory追加なく取消した。SOURCEのanchor iconは有効表示、CAF ANIMATEでは無効表示だった。実PNG download、trusted device pointercancel、Ownerの制作操作感は未受入である。
+
+### Anchor / pivot design boundary
+
+現行ANIMATE Layer Motionの`layerTransformTracks.pivotX/pivotY`はtrack-globalで、Frame keyはx/y/scale/rotationのみを持つ。既存のframe-local pivot schemaはなく、sampler/compositorはtrack pivotを全FrameのAffine matrixへ使うため、pivot変更は既存全keyの見た目へ影響する。見た目を維持する一括rebaseは全keyのx/y等を補正する新しいtransactionが必要で、現在のLayer Motion transaction・History・再評価境界から安全に導けない。copy/paste、retime、save/loadはtrack pivotを保持する既存serializationを使うが、pivot rebase semanticsは未定義である。従ってANIMATEの`allowAnchorEdit`を有効化せず、SOURCE anchorとANIMATE pivotを同じ編集UIへ昇格しない。
+
+Ownerのpivot preset案（中心軸アイコンON時だけ`キャンバス中央` / `対象中央`を表示）はWP-008の設計材料へ移した。これはTransform全体Resetではなく中心軸だけの候補であり、BASICの対象中央はcontent bounds、WARPの対象中央はcurrent bind bounds / WARP範囲という意味差を明示する。表示位置、icon/text、open direction、narrow layoutはAstra/Owner判断待ちで、production実装は行わない。
+
+### Boundary
+
+このsliceはWARP body gestureのownershipを既存mode文法へ戻す局所修正であり、BASIC/WARP統合gesture、ANIMATE anchor、pivot schema、Layer Motion authority、WARP schema、evaluation order、CPU/Pixi renderer、History framework、WP-008 production implementationを変更していない。技術証拠はPASSだが、Owner ACCEPTED / DONEには昇格せず、WP-005は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`でGPT reviewへ返す。
+
 ## Owner Acceptance Fix Slice — ANIMATE WARP Live Preview + Explicit Confirm (2026-09-08)
 
 ### Reopen reason

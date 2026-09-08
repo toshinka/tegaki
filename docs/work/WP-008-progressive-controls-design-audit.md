@@ -151,3 +151,43 @@ These are not an authorization to implement. WP-008 remains audit-first.
 ## Audit conclusion
 
 Current evidence supports Simple 4×4 reuse and pure algorithm reuse as bounded future options. It does not support implementing variable topology, cage, or brush controls in Layer Transform yet. The next review should decide authority and UI hierarchy before any production change. No Astra consultation, schema migration, popup split, renderer change, or advanced WARP implementation was started in this slice.
+
+## Unified WARP authoring gesture candidate — deferred
+
+The WP-005 interaction-safety slice found that WARP Canvas body drag must remain inert while WARP mode owns the control-point gesture. A future unified authoring gesture may be useful, but no production choice is made here.
+
+| Candidate | Body drag | Point drag | Main tradeoff |
+| --- | --- | --- | --- |
+| U1 | BASIC Layer Motion | WARP deformation | Discoverable direct manipulation, but same-Frame confirm and History ownership must represent two candidates. |
+| U2 | Temporarily enter a BASIC submode | WARP deformation | Makes ownership explicit, but adds mode transition and pen/focus complexity. |
+| U3 | Keep body inert in WARP | WARP deformation | Safest current ownership and terminal semantics, but body movement requires returning to BASIC. |
+
+Open decisions for any future U1/U2 review are discoverability, accidental movement, BASIC/WARP status and key markers, one-versus-two History entries, Undo/Redo granularity, Escape, pending Frame movement, pen behavior, and continuous ANIMATE editing. The current production contract remains U3: `BASIC body → BASIC Motion`, `WARP body → no BASIC candidate`, `WARP point → WARP pending`.
+
+## Animation Anchor / Pivot authority audit — read-only
+
+The following answers are based on the existing Layer Motion and SOURCE implementations. They are design evidence, not permission to enable ANIMATE anchor editing.
+
+| Question | Answer |
+| --- | --- |
+| Q1. Are `pivotX/pivotY` track-global? | **Yes.** `layerTransformTracks` stores them outside the per-Frame keyframe entries. |
+| Q2. Is there a frame-local pivot schema for Layer Motion? | **No.** Layer Motion keyframes currently store x/y/scale/rotation. Generic clip transform keys with anchor fields are a separate authority and cannot be reused implicitly. |
+| Q3. Would changing a track-global pivot affect existing sampled Frames? | **Yes.** The sampler carries the track pivot into `createAffineTransformMatrix`, so all Frames using that track can render differently. |
+| Q4. Can existing keys be visually preserved by a safe rebase today? | **Not safely.** It would require transforming all compatible keyframes and declaring the pivot transaction boundary; no adopted production path exists. |
+| Q5. Could that rebase be represented as one History entry? | **Potentially in a future design**, but the current Layer Motion transaction does not own a pivot-rebase command. |
+| Q6. Do copy/paste, retime, and save/load preserve the current pivot? | **The current track-level value is cloned/serialized with `layerTransformTracks` and survives the existing paths.** Pivot-rebase semantics and a dedicated acceptance proof are not defined. |
+| Q7. Should SOURCE Anchor and ANIMATE Layer Motion pivot share one UI? | **No decision to merge them.** They have different authority, scope, and History/evaluation semantics; presenting them as identical would be misleading until Architecture approves the contract. |
+
+Current context projection deliberately sets `allowAnchorEdit: false` for CAF ANIMATE Layer Transform and for Layer WARP. SOURCE uses `TransformAnchorSite` and its existing rebase/History path. This slice records the boundary and does not change the flag, schema, evaluator, compositor, renderer, or save format.
+
+## Pivot preset UX candidate — progressive disclosure only
+
+Owner's proposal is retained as a candidate for GUI review:
+
+- Keep the compact anchor/center-axis icon as the entry point.
+- When the icon is **OFF**, do not show preset controls.
+- When the icon is **ON**, reveal two small choices: `キャンバス中央` and `対象中央`. Accessible labels may be `中心軸をキャンバス中央へ` and `中心軸を対象中央へ`.
+- The presets change the center-axis position only; they are not a Transform Reset and do not change x/y/rotation/scale or WARP points by implication.
+- `対象中央` needs mode-specific copy/semantics: BASIC candidate is the Raster/content bounds center; WARP candidate is the current WARP bind bounds / deformation range center. This distinction must be visible before implementation.
+
+Whether the compact controls sit above or below the BASIC/WARP selector, and whether icon-only or short text is best at narrow Animation Table widths, remains for Astra/Owner comparison. No production UI or ANIMATE anchor support is added in WP-008.
