@@ -14,7 +14,7 @@
 | 4 完了 | [WP-006 Folder Transform KEY](work/WP-006-folder-transform-key.md) | Owner指定のFolder自身のMotion保存先を先に固定 | 子孫一括、後追加子、History/保存、CPU/Pixi評価 |
 | 5 完了 | [WP-004 出力拒否/terminal監査](work/WP-004-output-terminal.md) | Folder Motionを含むMotion出力の欠落を固定 | unsupported拒否表、save/exportのSOURCE/ANIMATE比較、HD-005 MIXED決定 |
 | 6 完了 | [WP-007 Export terminal guard](work/WP-007-export-terminal-guard.md) | 未確定Layer Transformの出力境界を明示停止へ統一 | SOURCE/CAF SOURCE/ANIMATE Layer/Folderのzero mutation、Selection維持、sequence境界 |
-| 7 ACTIVE | [WP-005 Simple WARP UI](work/WP-005-simple-warp.md) | 旧9q A〜Dの既存資産を完成へ接続 | technical complete（CPU final authority / Pixi GPU proxy）。Owner受入を継続 |
+| 7 ACTIVE — OWNER ACCEPTANCE BLOCKED | [WP-005 Simple WARP UI](work/WP-005-simple-warp.md) | 旧9q A〜Dの既存資産を完成へ接続 | technical complete（CPU final authority / Pixi GPU proxy）。F1再入場のstatus/marker不整合をGPT review待ち |
 | 8 PLANNED | [WP-008 Layer Transform Progressive Controls](work/WP-008-layer-transform-progressive-controls.md) | WP-005 Owner受入後に進めるDesign/Audit | capability、authority、reuse、GUIの限定整理 |
 | 9 | 一つの編集session境界の抽出 | 正しい振舞いを固定してから巨大Popupの責務を縮める | 互換facade、同じ入力/出力/History、対象file探索の短縮 |
 | 10 | static RIG導線の再配置 | WHAT/HOW/WHENを揃える | HD-002比較とOwner受入、保存正本不変 |

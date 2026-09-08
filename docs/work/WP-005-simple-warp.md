@@ -1,6 +1,6 @@
 # WP-005 — Simple 4x4 WARP UI
 
-状態: ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING（2026-09-08）。現在の作業baseline HEAD: `9d1002d5fba94edc887a3a6e6dcafe1ea11d0eb1`。
+状態: ACTIVE — OWNER ACCEPTANCE BLOCKED（2026-09-08）。TECHNICALLY COMPLETEだが、F1再入場のstatus/marker不整合をGPT review待ち。現在の作業baseline HEAD: `9d1002d5fba94edc887a3a6e6dcafe1ea11d0eb1`。
 
 Layer TransformのBASIC/WARP切替、Simple 4x4の16点pointer adapter、normal/CAF SOURCEのRaster preview/bake、CAF ANIMATEの既存`layerDeformers` bridge接続を完了した。関連verifier・構文・Vite buildはPASSしている。normal SOURCEの実Browser操作、CAF ANIMATEの入場・preview・Esc・V確定・次Frame移動、Tableを閉じたCAF SOURCEのdrag・V確定、Table close rollback、pointer terminal、Pixi/CPU/export/save-reopenの技術証拠を確認した。trusted device pointercancelとOwner操作受入は未完了であり、Preview Equivalence Policyに従ってpackage statusはACTIVEとする。
 
@@ -216,6 +216,14 @@ production UI（localhost:5173、viewport `905×609`、DPR `2.025`）では、CA
 `verify-layer-transform-warp-key-continuation.mjs`は、confirm `+1` / no-op `0`、fresh baseline後のEsc、stable step `0`、pending step拒否、Undo/Redo refreshをproduction methodから隔離実行する。更新したlive-preview verifierとWP-003 continuation verifierも通過した。harnessはwarp 23件、transform 13件、animation 34件、project 9件、harness check、構文、Vite build、`git diff --check`がPASS。
 
 実production UIでは、新規3 Frame CAFで`F1 → F2 → F3 → F2 → F1`を実行し、各Frameでpanel、V、WARP選択、KEY stripを維持した。stable WARPのV終了も従来どおり確認した。CUAのBrowser入力にはCanvas point dragを注入する経路がないため、実Rasterをdragして明示KEY confirmする連続flowはOwner recheckへ残す。Owner受入前の状態は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`である。
+
+## Owner Acceptance Block — F1 re-entry after Esc (2026-09-08)
+
+Chromeの通常production UI（`http://localhost:5173/`）で、CAF1・Layer 1・5FのF1を使用した。F1で`V → WARP`へ入り、画面上で見えるcontrol pointをdragすると`ANIMATE · F1 WARP 未確定`になり、CanvasのRaster変形と16点overlayを確認できた。明示KEY confirm後は`ANIMATE · F1 WARP KEYED`、F1 marker、panel/V/WARP維持、History `9/500 → 10/500`を確認した。
+
+別の見えるpointをdragして`ANIMATE · F1 WARP KEYED · 未確定変更`にし、Escを押すと、panelが閉じ、Historyは`10/500`のまま、F1 markerと確定visualが残った。しかし同じF1へ再度`V → WARP`で入場すると、期待する`KEYED`ではなく`ANIMATE · F1 READY`、KEY stripは`F1 · KEY未設定`になった。Timelineには`Layer WARP key: Frame 1` markerが残る一方、16点は確定後の形ではなく矩形baselineを表示した。console error/warningはこのCUA確認では取得していない。
+
+これは最新確定keyの再評価・status・marker・control-point stateが分離するblocking bugである。production JS、保存schema、harness statusは変更せず、WP-005を`ACTIVE — OWNER ACCEPTANCE BLOCKED`としてGPT reviewへ返す。原因調査・修正、WP-008、session extractionはこのgateで開始しない。
 
 ## Goal
 
