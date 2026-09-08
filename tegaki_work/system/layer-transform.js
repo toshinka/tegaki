@@ -1484,7 +1484,7 @@ export class LayerTransform {
         if (!canvas) return;
         
         canvas.addEventListener('pointerdown', (e) => {
-            if (this.isVKeyPressed && e.button === 0) {
+            if (this.isVKeyPressed && this.transformMode === 'basic' && e.button === 0) {
                 if (!this.coordinateSystem) return;
                 
                 const world = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);

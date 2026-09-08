@@ -1,12 +1,21 @@
 # Tegaki — 再開checkpoint
 
-状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — OWNER ACCEPTANCE BLOCKED。
-更新日: 2026-09-09。現在の作業baseline HEAD: `7ba13ef753b8264d06759ec6ad39518187d805ef`。WP-005/WP-003のcross-frame Layer Transform continuationを限定修正し、実production UIでの最小確認とOwner受入境界を記録する。今回の追補は未コミット差分として保持する。
+状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。
+更新日: 2026-09-09。現在の実HEAD: `bab2e0e9fec9b377cbb3fe3aca3f41f3ec085826`。添付指示の想定HEADとは異なるが、reset/cleanは行わず既存履歴を継承する。今回のWARP body-drag隔離追補と設計監査は未コミット差分として保持する。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
 
 WP-005のSimple 4x4 WARP UIは既存Layer Transform transactionへの技術接続を完了した。normal/CAF SOURCEはRaster bake、CAF ANIMATEは`ClipInstance.layerDeformers`を維持し、CPU compositor / SOURCE bake / Export / Project canonical dataをpixel authority、Pixiを同じ評価modelを使うinteractive GPU proxyとする。WP-007の未確定Layer Transform Export guardとHD-005 `MIXED`は維持し、Owner受入までpackage statusはACTIVEとする。
+
+## CURRENT SLICE — WP-005 Final interaction safety / WARP body-drag isolation (2026-09-09)
+
+- 原因は`LayerTransform._setupDragEvents()`のCanvas `pointerdown`が`isVKeyPressed`だけを条件にし、`transformMode === 'warp'`でもBASIC `onDragRequest`へ入っていたこと。WARP pointはoverlayのproduction controllerが別に所有するため、body dragだけが混在pendingを作れた。
+- `tegaki_work/system/layer-transform.js`の入口条件へ既存mode stateの`this.transformMode === 'basic'`だけを追加した。WARP bodyはdrag開始・`preventDefault`・BASIC mutationを行わず、BASIC bodyとWARP pointのpointerup/cancel/lost captureは変更していない。document-wide pointer、panel/table/camera、schema、History、rendererは変更していない。
+- 新規`build/verify-layer-transform-warp-body-drag-isolation.mjs`はproduction `LayerTransform` pointer listenerでBASIC body `onDragRequest`、WARP body無起動、production `LayerTransformWarpController` point preview、WARP body中のpending falseを確認した。結果PASS。
+- 関連回帰はbody verifier、motion projection、cross-frame continuation、WARP re-entry、pointer terminal、harness check、transform `13/13`、warp `26/26`、animation `34/34`、ui `45/45`、project `9/9`がPASS。
+- 実Browser（Chrome production localhost、CUA screenshot `908×548`、DPRは既存tab計測値`2.025`、console error/warn `0`）で、CAF ANIMATE `V → WARP`の空白body dragはstatus/History/pointsを変えず、WARP point dragは`WARP 未確定`へ進み、明示KEYで`WARP KEYED`・History `+1`・panel保持を確認した。BASICへ戻ったbody dragはpending previewを生成し、EscapeでHistoryを増やさず取消した。SOURCEではanchor iconが有効、CAF ANIMATEでは無効表示だった。
+- 判定は技術`PASS`、Ownerの制作受入は未完了。実PNG download、trusted device pointercancel、全Owner操作感は自己承認せず、WP-005を`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`でGPT/Owner reviewへ返す。
 
 ## CURRENT SLICE — WP-005 BASIC/WARP authoring coordinate congruence (2026-09-09)
 

@@ -90,3 +90,13 @@ GUI案では少なくとも次を比較する。
 4. 上記open questionsのうちGUIで判断できるもの、Architectureへ返すものの仕分け。
 
 この下書きはAstra/Owner review後に正式仕様へ昇格する。現時点ではWP-008 production implementationを開始しない。
+
+## Added review material — WARP ownership and Anchor/Pivot presets (2026-09-09)
+
+WP-005の最終interaction safety sliceでは、WARP modeのCanvas body dragをBASIC Motionへ落とさない局所gateを採用した。将来の統合gesture候補は、U1（body=BASIC / point=WARP）、U2（body時だけBASIC submode）、U3（現行の完全分離）として比較対象へ残す。confirm authority、History 1/2、status/key marker、Undo/Redo、Escape、Frame移動、pen操作が未決定のため、Astraはこの候補を実装へ昇格しない。
+
+Anchor / pivotのproduction enableは保留する。現行CAF ANIMATE Layer Motionはtrack-global `pivotX/pivotY`、Frame keyはx/y/scale/rotationのみで、pivot変更は既存全FrameのAffine評価へ影響する。SOURCE AnchorとANIMATE pivotはauthorityとHistory semanticsが異なるため、同一UIとして扱わない。詳細なQ1〜Q7回答は[WP-008 audit](../work/WP-008-progressive-controls-design-audit.md)に記録した。
+
+Ownerのpreset案は、中心軸アイコンがONの時だけ`キャンバス中央` / `対象中央`を小さく表示するprogressive disclosure候補とする。`対象中央`はBASICではRaster/content bounds、WARPではcurrent bind bounds / WARP範囲という意味差を明示し、Transform ResetやWARP point変更と混同させない。selectorの上下、icon/text、narrow Animation Tableでのfootprint、WARP pointとの視覚的分離をAstra/Ownerへ確認したい。
+
+このhandoffはGUI/design review用であり、ANIMATE `allowAnchorEdit`、pivot schema、History、renderer、WARP body統合、WP-008 production codeの変更を指示しない。
