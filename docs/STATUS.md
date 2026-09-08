@@ -1,7 +1,7 @@
 # Tegaki — 再開checkpoint
 
-状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。
-更新日: 2026-09-08。現在の作業baseline HEAD: `d7fce78abda96e550b1b03000903e9583c333582`。WP-005のF1 WARP再入場不整合を限定修正し、実production UIでの最小確認とOwner受入境界を記録する。
+状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — OWNER ACCEPTANCE BLOCKED。
+更新日: 2026-09-09。現在の作業baseline HEAD: `925596b9d7fbd731290fe9869ea34a0006249130`。WP-005/WP-003のcross-frame Layer Transform continuationを限定修正し、実production UIでの最小確認とOwner受入境界を記録する。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
@@ -27,8 +27,19 @@ WP-005のSimple 4x4 WARP UIは既存Layer Transform transactionへの技術接�
 WP-001は非UI・同期例外経路を実production classで検証して完了。Browser/Owner実操作は今回未実施であり、受入済みとは記録しない。
 WP-002は指定経路の技術完了。Browser実操作・実Pixi・本番History callback全体は未確認で、全機能受入とはしない。
 WP-003はDONE。拒否時terminal、自動保存延期、Undo/Redo再同期の隔離回帰がpass。通常RasterのF1/F2継続、周期跨ぎ、History 1/0、Project保存往復をBrowser確認済み。描画直後の初回SOURCE Vも通常Recovery延期へ含め、Browserで維持を確認。Owner操作感の受入は未確認。WP-006もDONE。Folder自身のMotion schema、現行subtree評価、Folder専用V bridge、History/Undo/Redo、保存metadataと双方向effect排他を実装した。BrowserでTable展開後の2子Raster同時preview、KEY、次Frame継続を確認。CPU/export実画素とOwner受入は未確認。WP-004は監査DONE、WP-007は技術DONE、WP-005はSimple 4x4 WARP UIの技術作業を完了し、Ownerの実画面・実download・操作感受入が残る。旧9qはPAUSED。
-WP-005は、関連verifier・harness・構文・Vite buildをPASS。normal SOURCEの実Browserで4x4/16点表示、点drag、Esc取消、V確定、Undo/Redo、変更中のBASIC切替拒否を確認した。CAF ANIMATEでは、bridge preview後の共有overlay消失を修正し、2Frameの`READY→drag→KEYED`、V確定、History +1、次Frame移動を確認した。今回のterminal sliceでは、CAF ANIMATEの元KEYなし／元KEYありを対象に、pending WARP→通常Table close→overlay消失、History据え置き、元KEY保持またはKEY未設定への復帰をBrowserで確認した。close前後のcaller順序は既存production `hide()`をverifierで固定した。pointer端末はproduction controller/overlayのBrowser DOM診断で、normal SOURCE／CAF ANIMATEのpointercancel・capture lossがgesture単位でrollbackし、pointerup後のlate lossが結果を保持することを確認した。IAB実UIのconsole errorは0件。trusted OS pointercancel、Owner操作感は未受入として残るが、Pixi/CPU/export画素・save/reopen・非4x4/排他対象の技術証拠は完了し、WP-005は`TECHNICALLY COMPLETE` / `ACTIVE`を維持する。
+WP-005は、関連verifier・harness・構文・Vite buildをPASS。normal SOURCEでの4x4/16点操作、CAF ANIMATEのpreview/KEY/terminal、Table close rollback、pointer terminal、Pixi/CPU/export画素・save/reopen・非4x4/排他対象の技術証拠を完了した。今回のcross-frame修正もBASIC/WARPのproduction methodとlocalhost UIで確認した。trusted OS pointercancel、Owner操作感、実Raster制作・実PNG downloadは未受入として残るため、WP-005は技術完了を維持しつつ`ACTIVE — OWNER ACCEPTANCE BLOCKED`で停止する。
 WP-005のFinal technical evidence sliceはlive baseline `86803e1de0d649648c079b44e20389dc868981fd`から、隔離16x16非対称RasterのChrome診断（Chrome 152 / viewport `680x561` / DPR `2.25` / console errors 0）まで完走した。normal SOURCEのCPU preview/bake/exportは`0x17a134da`で一致し、Project save/reopenはPixi upload後のproduction canonical Raster `0x191a3ed6`とreload後Exportまで一致した（CPU入力`0x7de6acda`との差は半透明RGBの8bit premultiplied-alpha量子化）。CAF SOURCEはDrawingSnapshot/PNG/save-reopenが`0x17a134da`で一致。CAF ANIMATEはCPU/Export/save-reopen/F1→F2→F1が一致し、4x4/16点/target/frameのlayerDeformersも保持したが、Pixiは`0x63f4c1ac`で9px差（最大channel 102）。Layer WARP + MotionはCPU/Export `0x8525007f`、Pixi `0xf73d350c`で9px差（bboxの1px差を含む）。GPU MeshとCPU rasterizerの境界差を固定証拠として記録し、許容誤差やrenderer/schema変更は行わない。production入口guard verifierはnon-4x4/RIG/Mesh/Skin/clipping owner+sourceを全件明示拒否、effect/model mutation 0、History 0、session noneでPASS。よってこのsliceは`PARTIAL / GPT review required`で、WP-005はACTIVEのまま。Actual App UI、Owner受入、trusted device pointercancelは未確認。WP-007はproduction JS未変更のため`NOT RERUN — no relevant production change`を継承する。
+
+### WP-005 / WP-003 Cross-frame Layer Transform continuation repair — 2026-09-09
+
+- 開始HEADは`925596b9d7fbd731290fe9869ea34a0006249130`。既存差分を保持し、WP-005/WP-003の対象fileだけを追補した。
+- 原因は、Layer Transform session中のTimeline直接クリック（frame header、背景、cell、motion marker）が共通のFrame continuationを通らず、`model.setCurrentFrame()`へ直行していたこと。current Frameだけが進み、transaction、target IDs、active working Layer、panel/V/WARP stateが旧Frameへ残るため、次Frameの再編集やWARP guardの不整合を招いていた。
+- `LayerSystem.moveLayerTransformTimelineFrameTo()`を追加し、同じClip内のstable sessionだけを一Frameずつ既存resume経路へ渡す。pending transform、session divergence、clip外、invalid frameはその場で拒否し、raw model frame writeへ落とさない。Popup側はprev/next、direct Timeline、motion marker、cellの全入口をこの境界へ寄せ、active transformがない場合だけ従来の通常移動を行う。
+- `verify-layer-transform-cross-frame-continuation.mjs`は実production methodを使い、BASIC/WARPそれぞれでKEY confirm `+1`、direct F7相当のfresh rebind、既存destination key、pending navigation block、Esc後の通常移動、delta guardを確認した。結果はBASIC/WARPともPASS、frame move `+0`、pending `+0`。既存 transform 13、warp 24、animation 34、ui 45 verifier、harness check、Vite build、構文確認、`git diff --check`もPASS。
+- 実production Browser（localhost:5173、production IAB、viewport `905×546`、DPR `2.025`）では、3Frame CAFでBASIC `F1 KEYED → F2 READY → direct F3 READY`、pending F3からの直接戻り拒否、Escape解除を確認した。WARPは`F3 KEYED → F2 READY → direct F1 READY → existing F3 KEYED`、panel/V/WARP/16点の維持を確認し、WARP pending中の直接Frame移動もF2に留まった。console error/warnは0件。
+- 追加の7Frame CAFでは、実RasterのBASICを`F6 drag → explicit KEY → direct F7 drag → explicit KEY → F6/F7 revisit`で実施し、各confirmがHistory `+1`、両Frameの`KEY設定済み`、panel維持を確認した。WARPの実point dragは既存F3でのKEY確定とF3→F2→F1→F3再評価、pending blockまで確認し、F6/F7の別形状dragはOwner再確認へ残す。
+- 追加Browser操作では、F6にBASIC keyがある状態でWARP 16点previewへ入場・point dragできたが、chip/key stripがWARP表記へ切り替わらず、explicit WARP confirmもHistoryを進めなかった。この同Frame BASIC+WARP UI状態は今回のcross-frame境界外で、WARP guardを弱めず別GPT/Owner確認事項として残す。
+- これは技術Browser確認であり、Ownerの実Raster制作操作感・実PNG download・trusted pointercancelを代替しない。保存schema、History authority、CPU/Pixi renderer、WARP guard、Folder/RIG/Mesh/clippingは変更していない。WP-005は`ACTIVE — OWNER ACCEPTANCE BLOCKED`としてGPT/Owner reviewで停止する。
 
 ### WP-005 Owner Acceptance Fix Slice — ANIMATE WARP live preview (2026-09-08)
 

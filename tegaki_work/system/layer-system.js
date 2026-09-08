@@ -3879,6 +3879,67 @@ export class LayerSystem {
         return moved && resumed;
     }
 
+    /**
+     * Timelineの任意Frameクリックを、安定したLayer Transform sessionの
+     * continuationへ収束させる。pending中や同じClipの範囲外は、Timeline
+     * だけを先へ進めず、その場で拒否する。
+     *
+     * @param {number} targetFrame
+     * @param {{currentFrame?: number}} options
+     * @returns {{handled: boolean, moved: boolean, reason?: string}}
+     */
+    moveLayerTransformTimelineFrameTo(targetFrame, options = {}) {
+        const session = this._layerWarpEditSession || this._layerTransformSession;
+        const transaction = session?.transaction;
+        const isTimelineSession = isTransformTimelineKeyTarget(transaction?.target)
+            || transaction?.kind === 'layer-warp-edit-transaction'
+            || transaction?.target === 'clip-layer-deformer-key';
+        if (!session || !isTimelineSession) {
+            return { handled: false, moved: false, reason: 'timeline-transform-session-required' };
+        }
+
+        const requestedFrame = Math.round(Number(targetFrame));
+        if (!Number.isInteger(requestedFrame)) {
+            return { handled: true, moved: false, reason: 'frame-invalid' };
+        }
+
+        const currentFrame = Number.isInteger(options.currentFrame)
+            ? options.currentFrame
+            : transaction.timelineFrame;
+        if (currentFrame !== transaction.timelineFrame) {
+            return { handled: true, moved: false, reason: 'frame-session-diverged' };
+        }
+        if (requestedFrame === currentFrame) {
+            return { handled: true, moved: false, reason: 'same-frame' };
+        }
+        if (this.getLayerMoveCommitState().hasPendingTransform) {
+            return { handled: true, moved: false, reason: 'pending-transform' };
+        }
+
+        const clipStartFrame = transaction.timelineFrame - transaction.localFrame;
+        const targetLocalFrame = requestedFrame - clipStartFrame;
+        if (!Number.isInteger(transaction.duration)
+            || targetLocalFrame < 0
+            || targetLocalFrame >= transaction.duration) {
+            return { handled: true, moved: false, reason: 'frame-outside-clip' };
+        }
+
+        let frame = currentFrame;
+        while (frame !== requestedFrame) {
+            const direction = requestedFrame > frame ? 1 : -1;
+            if (!this.stepLayerTransformTimelineFrame(direction)) {
+                return { handled: true, moved: false, reason: 'frame-continuation-failed' };
+            }
+            const nextSession = this._layerWarpEditSession || this._layerTransformSession;
+            const nextFrame = nextSession?.transaction?.timelineFrame;
+            if (!Number.isInteger(nextFrame) || nextFrame === frame) {
+                return { handled: true, moved: false, reason: 'frame-continuation-diverged' };
+            }
+            frame = nextFrame;
+        }
+        return { handled: true, moved: true };
+    }
+
     _stepLayerWarpTimelineFrame(delta) {
         const direction = delta < 0 ? -1 : (delta > 0 ? 1 : 0);
         const warpSession = this._layerWarpEditSession;
