@@ -1,6 +1,6 @@
 # WP-005 — Simple 4x4 WARP UI
 
-状態: ACTIVE — OWNER ACCEPTANCE BLOCKED（2026-09-08）。TECHNICALLY COMPLETEだが、F1再入場のstatus/marker不整合をGPT review待ち。現在の作業baseline HEAD: `9d1002d5fba94edc887a3a6e6dcafe1ea11d0eb1`。
+状態: ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING（2026-09-08）。F1再入場のstatus/marker不整合は限定修正と隔離production verifierで技術確認済み。現在の作業baseline HEAD: `d7fce78abda96e550b1b03000903e9583c333582`。
 
 Layer TransformのBASIC/WARP切替、Simple 4x4の16点pointer adapter、normal/CAF SOURCEのRaster preview/bake、CAF ANIMATEの既存`layerDeformers` bridge接続を完了した。関連verifier・構文・Vite buildはPASSしている。normal SOURCEの実Browser操作、CAF ANIMATEの入場・preview・Esc・V確定・次Frame移動、Tableを閉じたCAF SOURCEのdrag・V確定、Table close rollback、pointer terminal、Pixi/CPU/export/save-reopenの技術証拠を確認した。trusted device pointercancelとOwner操作受入は未完了であり、Preview Equivalence Policyに従ってpackage statusはACTIVEとする。
 
@@ -177,6 +177,38 @@ full convergence Browser gateはChrome 152 / `680x561` / DPR `2.25` / console er
    - UI準備が容易なら非4x4またはRIG/Mesh/Skin/clippingの代表1〜2件で、WARPへ入れず変な16点overlayが出ないことを見る。複雑なfixtureは新規作成しない。
 
 Owner ACCEPTの条件は、normal SOURCE、CAF SOURCE、CAF ANIMATE、Export block/retry、実PNG download、preview fidelityにblocking issueがないこと。機能バグ（overlay消失、V未確定、wrong layer、History`+2`、Table close残留、Export bypass、download失敗）があれば`OWNER ACCEPTANCE BLOCKED — BUG`として操作と再現を記録し、その場で大規模修正へ進まない。previewの見た目だけが問題なら`PREVIEW FIDELITY FOLLOW-UP REQUIRED`として別WP候補に止める。
+
+## Re-entry Congruence Repair — 2026-09-08
+
+### Cause and bounded fix
+
+F1で一度確定したLayer WARPをEsc後に再入場すると、Timeline markerは残るのに`READY / KEY未設定`と矩形baselineになる症状を、選択internal Rasterとactive working Layerを意図的にずらしたproduction bridge fixtureで固定した。marker側は選択中internal Layer IDを読み、WARP開始側はactive working Layerから逆引きしたinternal Layer IDを読むため、同じClip / Frameでもdeformer lookupが分岐していた。
+
+`tegaki_work/ui/animation-table-popup.js`の限定修正では、ANIMATE Layer開始時に選択internal Rasterからworking Layerを逆引きし、Layer Transform transaction、preview target、`targetLayerIds`、active Layerを同じIDへ揃える。WARP markerとbridgeのdeformer lookupは同じClip、internal Layer ID、Clip-local Frameを基準にし、state/context IDが不一致なら開始を拒否する。新しい保存正本、schema migration、History framework、CPU/Pixi renderer、Folder/RIG/Mesh/clipping authorityは追加していない。
+
+### Evidence
+
+新規`tegaki_work/build/verify-layer-transform-warp-reentry-congruence.mjs`は、production `LayerSystem.enterLayerMoveMode()` / `beginLayerWarpEditSession()`、production popup bridge/context、既存pure WARP transactionを実行する。P0〜P6は次の通り。
+
+| checkpoint | 操作 | 技術結果 |
+| --- | --- | --- |
+| P0 | stale activeを残したV → WARP | selected `internal-a`へactive `working-a`を同期、既存F1 keyを読む |
+| P1 | point drag A | 同じ`internal-a`へcandidateを投影 |
+| P2 | explicit KEY confirm | History `+1`、同Frame fresh WARP、`hadExplicitKey=true` |
+| P3 | second point drag B | committed Aをbaselineにpending B |
+| P4 | Esc | B rollback、History追加`0`、A key/marker保持 |
+| P5 | full teardown → stale active再設定 → V | 再び`working-a`へ同期 |
+| P6 | WARP再入場 | `internal-a`、KEYED guide、A points baselineを再現 |
+
+Verifier outputは全checkpointでmodel keyを保持し、transaction targetとmarker targetを一致させた。既存`test warp` 24件、`test transform` 13件、`test animation` 34件、harness check、構文、Vite production build、`git diff --check`もPASSした。Vite生成distは復元し、意図した差分だけを残している。
+
+### Boundary
+
+このVerifierはproduction class/methodとisolated hostを使う技術証拠であり、実Raster drag、実ブラウザでのF1再入場、実PNG download、Ownerの操作感を代替しない。Chrome production appは通常UIの起動とLayer Transform入口の表示までを確認したが、今回の再入場手順はOwner受入へ残す。WP-005は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`を維持し、OwnerがF1 `KEYED → drag → Esc → V → WARP`で確定形を確認するまでcloseしない。
+
+## WP-008 handoff boundary
+
+WP-008のread-only成果は[progressive controls audit](WP-008-progressive-controls-design-audit.md)と[Astra/GUI handoff draft](../handoffs/WP-008-astra-progressive-controls-request.md)に分離した。可変GRID、RADIAL/FREE mesh、Bind/Cage、LENS、MOVE/INFLATE/PINCH/SMOOTH brushの現行Workspace能力と、Layer Transformへ再利用する場合のR1〜R5分類、authority、animation/export/saveの判断待ちを記録した。WP-005 Owner受入・GPT review前にWP-008 production implementationやschema変更へ進まない。
 
 このclosure後はsession境界抽出、別WP、許容誤差policy、CPU continuous preview、Pixi renderer/schema変更へ進まず、GPT reviewとOwner acceptanceで停止する。
 

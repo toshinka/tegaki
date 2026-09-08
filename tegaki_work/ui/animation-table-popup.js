@@ -290,6 +290,22 @@ const TIMELINE_ZOOM_STEPS = [10, 12, 14, 18, 22, 24, 26, 30, 36, 44];
 const SNAPSHOT_TEXTURE_CACHE_DEFAULT_MAX_ENTRIES = 96;
 const SNAPSHOT_TEXTURE_CACHE_DEFAULT_MAX_BYTES = 512 * 1024 * 1024;
 const WARP_SELECT_DRAG_THRESHOLD_PX = 3;
+
+function resolveLayerWarpDeformerAtCurrentFrame({
+    layerDeformers = null,
+    clip = null,
+    internalLayerId = null,
+    localFrame = null
+} = {}) {
+    const deformer = getClipLayerDeformer(layerDeformers || clip?.layerDeformers, internalLayerId);
+    return {
+        deformer,
+        key: deformer && Number.isInteger(localFrame)
+            ? getClipDeformerKeyAtFrame(deformer, localFrame, clip?.duration)
+            : null
+    };
+}
+
 // 240 Frame実測でcheckpoint推定1.38GBがOS全体の強いmemory pressureを起こしたため、
 // 同期Project serializationへ入る構造化Bakeはdevice heap上限より先にこの校正値で止める。
 const STRUCTURED_BAKE_CHECKPOINT_SAFE_BYTES = 1024 * 1024 * 1024;
@@ -2530,12 +2546,14 @@ export class AnimationTablePopup {
         // WARP候補は表示中だけClipInstanceへ投影されるため、Timeline markerは
         // その間baselineを読む。元KEYがあれば残し、新規候補だけはmarkerを出さない。
         const layerWarpMarkerDeformer = !isFolderTarget
-            ? getClipLayerDeformer(
-                isLayerWarpPreviewTarget
+            ? resolveLayerWarpDeformerAtCurrentFrame({
+                layerDeformers: isLayerWarpPreviewTarget
                     ? layerWarpPreviewSession.baselineLayerDeformers
                     : clip.layerDeformers,
-                context.layer.id
-            )
+                clip,
+                internalLayerId: context.layer.id,
+                localFrame: context.localFrame
+            }).deformer
             : null;
         const previewSession = this._layerTransformBridgeSession;
         const previewTransaction = previewSession?.transaction;
@@ -7710,6 +7728,14 @@ export class AnimationTablePopup {
             || null;
     }
 
+    _resolveWorkingLayerIdForInternalLayer(asset, internalLayerId) {
+        if (!asset || !internalLayerId) return null;
+        const drawableLayers = this._getDrawableInternalLayers(asset);
+        const internalIndex = drawableLayers.findIndex(layer => layer?.id === internalLayerId);
+        if (internalIndex < 0) return null;
+        return this._getRasterWorkingLayers()[internalIndex]?.layerData?.id || null;
+    }
+
     _captureDrawingLayerToSelectedClip(workingLayerId, internalLayerId) {
         if (!workingLayerId || !internalLayerId || !this.layerSystem) return false;
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
@@ -11265,7 +11291,15 @@ export class AnimationTablePopup {
     }
 
     _projectLayerTransformBridgeStart({ layerId } = {}) {
-        const context = this.getTransformEditContext(layerId);
+        const initialContext = this.getTransformEditContext();
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const asset = entry?.clip?.assetId ? this.model.getClipAsset(entry.clip.assetId) : null;
+        const canonicalLayerId = initialContext.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY
+            ? ((typeof this._resolveWorkingLayerIdForInternalLayer === 'function'
+                ? this._resolveWorkingLayerIdForInternalLayer(asset, initialContext.internalLayerId)
+                : null) || layerId)
+            : layerId;
+        const context = this.getTransformEditContext(canonicalLayerId);
         if (context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY) {
             const check = this.model.preflightClipLayerEffectTarget(context.clipId, context.internalLayerId);
             if (!check.ok) return { ...check, blocked: true };
@@ -11273,18 +11307,18 @@ export class AnimationTablePopup {
         const motionState = context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_FOLDER_TRANSFORM_KEY
             ? this._getSelectedClipFolderMotionFrame()
             : (context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY
-            ? this._getSelectedClipLayerMotionFrame(layerId)
+            ? this._getSelectedClipLayerMotionFrame(canonicalLayerId)
             : (context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY
                 ? this._getSelectedClipMotionFrame()
                 : null));
         if (motionState) {
-            if (!this.canEditSelectedWorkingLayer(layerId)) {
+            if (!this.canEditSelectedWorkingLayer(canonicalLayerId)) {
                 return { ok: false, blocked: true, reason: 'selected-clip-working-layer-required' };
             }
         }
         const transactionLayerId = context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_FOLDER_TRANSFORM_KEY
             ? motionState?.targetWorkingLayerIds?.[0] || null
-            : layerId;
+            : canonicalLayerId;
         if (!transactionLayerId) {
             return { ok: false, blocked: true, reason: 'clip-working-layers-required' };
         }
@@ -11310,7 +11344,7 @@ export class AnimationTablePopup {
             ? (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_FOLDER_TRANSFORM_KEY
                 ? motionState.targetWorkingLayerIds
                 : (transaction.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY
-                ? [layerId]
+                ? [canonicalLayerId]
                 : [...(this._getWorkingLayerIdsForClipAsset(motionState.entry.clip.assetId) || [])]))
             : [];
         if (animate && targetLayerIds.length === 0) {
@@ -11561,12 +11595,14 @@ export class AnimationTablePopup {
         const state = context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY
             ? this._getSelectedClipLayerMotionFrame(layerId)
             : null;
-        if (!state || !this.canEditSelectedWorkingLayer(layerId)) {
+        if (!state
+            || state.internalLayerId !== context.internalLayerId
+            || !this.canEditSelectedWorkingLayer(layerId)) {
             return { ok: false, blocked: true, reason: 'selected-clip-working-layer-required' };
         }
         const existingDeformer = getClipLayerDeformer(
             state.entry.clip.layerDeformers,
-            state.internalLayerId
+            context.internalLayerId
         );
         const transaction = planLayerWarpEditTransactionStart({
             context,
