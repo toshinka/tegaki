@@ -1,6 +1,6 @@
 # WP-005 — Simple 4x4 WARP UI
 
-状態: ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING（2026-09-08）。F1再入場のstatus/marker不整合は限定修正と隔離production verifierで技術確認済み。現在の作業baseline HEAD: `d7fce78abda96e550b1b03000903e9583c333582`。
+状態: ACTIVE — OWNER ACCEPTANCE BLOCKED（2026-09-09）。F1再入場とcross-frame continuationの限定修正は技術確認済み。現在の作業baseline HEAD: `925596b9d7fbd731290fe9869ea34a0006249130`。
 
 Layer TransformのBASIC/WARP切替、Simple 4x4の16点pointer adapter、normal/CAF SOURCEのRaster preview/bake、CAF ANIMATEの既存`layerDeformers` bridge接続を完了した。関連verifier・構文・Vite buildはPASSしている。normal SOURCEの実Browser操作、CAF ANIMATEの入場・preview・Esc・V確定・次Frame移動、Tableを閉じたCAF SOURCEのdrag・V確定、Table close rollback、pointer terminal、Pixi/CPU/export/save-reopenの技術証拠を確認した。trusted device pointercancelとOwner操作受入は未完了であり、Preview Equivalence Policyに従ってpackage statusはACTIVEとする。
 
@@ -256,6 +256,27 @@ Chromeの通常production UI（`http://localhost:5173/`）で、CAF1・Layer 1�
 別の見えるpointをdragして`ANIMATE · F1 WARP KEYED · 未確定変更`にし、Escを押すと、panelが閉じ、Historyは`10/500`のまま、F1 markerと確定visualが残った。しかし同じF1へ再度`V → WARP`で入場すると、期待する`KEYED`ではなく`ANIMATE · F1 READY`、KEY stripは`F1 · KEY未設定`になった。Timelineには`Layer WARP key: Frame 1` markerが残る一方、16点は確定後の形ではなく矩形baselineを表示した。console error/warningはこのCUA確認では取得していない。
 
 これは最新確定keyの再評価・status・marker・control-point stateが分離するblocking bugである。production JS、保存schema、harness statusは変更せず、WP-005を`ACTIVE — OWNER ACCEPTANCE BLOCKED`としてGPT reviewへ返す。原因調査・修正、WP-008、session extractionはこのgateで開始しない。
+
+## WP-005 / WP-003 Cross-frame continuation repair — 2026-09-09
+
+### Cause and bounded fix
+
+Layer Transform session中のTimeline直接クリックが共通のcontinuationを通らず、`model.setCurrentFrame()`だけを更新していた。current Frameとtransaction/target/working Layer/panelのFrameが分離し、KEY確定後に次Frameを編集できない、またはWARP guardが旧Frameを読む症状につながっていた。
+
+`tegaki_work/system/layer-system.js`に`moveLayerTransformTimelineFrameTo()`を追加し、同じClip内のstable BASIC/WARP sessionを一Frameずつ既存resume経路へ通す。pending transform、session divergence、clip外、invalid frameは拒否する。`tegaki_work/ui/animation-table-popup.js`ではprev/next、Timeline header/background/cell、motion markerをactive timeline transform時にこの境界へ寄せ、pending時に通常のraw frame moveへfall-throughしない。
+
+### Evidence
+
+- `tegaki_work/build/verify-layer-transform-cross-frame-continuation.mjs`は実production methodでBASIC/WARPを確認し、KEY confirm `+1`、direct destination fresh rebind、existing destination key、pending block、Esc後通常移動、frame move `0`をPASSした。
+- 関連 transform 13、warp 24、animation 34、ui 45 verifier、harness check、Vite production build、変更JS構文、`git diff --check`はPASS。生成distはHEADへ復元した。
+- 既存`verify-layer-transform-warp-reentry-congruence.mjs`はP0-P6をPASSし、project suite 9/9もPASSした。Undo/Redoのbridge refreshとProject roundtripは既存経路の回帰として確認済みだが、この限定sliceでF6/F7二keyを作った後の実save/reopen操作は追加実施していない。
+- localhost production Browser（viewport `905×546`、DPR `2.025`、console error/warn 0）では、BASICの`F1 KEYED → F2 READY → direct F3 READY`、pending direct move拒否、Escapeを確認した。WARPの`F3 KEYED → F2 READY → direct F1 READY → existing F3 KEYED`、panel/V/WARP/16点維持、WARP pending direct move拒否も確認した。
+- 追加7Frame CAFのproduction UIでは、実Raster BASICをF6/F7で別々にdrag・explicit KEY確定し、各History `+1`、F6/F7の`KEY設定済み`再訪、panel維持を確認した。WARPは既存F3の実point KEY確定とF3→F2→F1→F3再評価、pending direct move拒否まで確認し、F6/F7の別形状dragはOwner/GPT再確認へ残す。
+- 追加Browser操作では、F6にBASIC keyが既にある状態でもWARPの16点previewへ入場できたが、point drag後のchip/key stripが`ANIMATE · F6 KEYED` / `F6 · KEY確定`（WARP表記なし）のまま、WARP explicit confirmでHistoryが進まなかった。この同Frame BASIC+WARP UI状態はcross-frame修正の対象外として変更せず、別のGPT/Owner確認事項へ記録する。WARP guardを弱める対応はしていない。
+
+### Boundary
+
+今回の変更はcross-frame navigation boundaryとその限定verifierだけで、保存schema、History authority、CPU/Pixi renderer、WARP guard、Folder/RIG/Mesh/clippingを変更していない。Browser確認は技術的なproduction UI証拠であり、Ownerの実Raster制作操作感、実PNG download、trusted device pointercancelを代替しない。WP-005は`ACTIVE — OWNER ACCEPTANCE BLOCKED`のままGPT/Owner reviewへ返す。
 
 ## Goal
 

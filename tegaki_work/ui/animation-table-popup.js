@@ -16928,6 +16928,44 @@ export class AnimationTablePopup {
         return result.ok ? result.folder : null;
     }
 
+    _hasActiveTimelineTransformNavigation() {
+        if (this._layerTransformFrameNavigationInProgress) return false;
+        const commitState = this.layerSystem?.getLayerMoveCommitState?.();
+        if (commitState?.active !== true) return false;
+        const target = this.layerSystem?.getActiveTransformEditTarget?.();
+        return isTransformTimelineKeyTarget(target)
+            || target === 'clip-layer-deformer-key';
+    }
+
+    _navigateTimelineFrameTo(frameIndex, options = {}) {
+        const targetFrame = Math.max(
+            0,
+            Math.min(this.model.totalFrames - 1, Math.round(Number(frameIndex)))
+        );
+        if (!Number.isInteger(targetFrame)) return false;
+
+        if (this._hasActiveTimelineTransformNavigation()) {
+            const continuation = this.layerSystem?.moveLayerTransformTimelineFrameTo?.(
+                targetFrame,
+                { currentFrame: this.model.playback.currentFrame }
+            );
+            // An active timeline transform owns the navigation boundary. A
+            // pending or out-of-clip request must not fall through to a raw
+            // model.setCurrentFrame(), which would split the UI from the
+            // transaction's frame.
+            if (continuation?.handled === true) return continuation.moved === true;
+        }
+
+        if (targetFrame === this.model.playback.currentFrame) return false;
+        if (this.isClipEditModeActive) this.exitClipEditMode();
+        this._saveSelectedClipFromWorkingLayers();
+        this.model.setCurrentFrame(targetFrame);
+        this._syncWorkingLayersForCurrentFrame();
+        this.render();
+        this._requestLayerPanelSync();
+        return true;
+    }
+
     _createBlankClipAtLaneFrame(lane, frameIndex) {
         if (!lane || lane.type === 'folder' || lane.isBackground || lane.getCelAtFrame(frameIndex)) return null;
         const beforeState = this._captureTimelineHistoryState();
@@ -16960,6 +16998,13 @@ export class AnimationTablePopup {
         const current = this.model.playback.currentFrame;
         const nextFrame = Math.max(0, Math.min(this.model.totalFrames - 1, current + delta));
         if (nextFrame === current) return false;
+
+        if (this._hasActiveTimelineTransformNavigation()) {
+            const moved = this.layerSystem?.stepLayerTransformTimelineFrame?.(delta) === true;
+            // A stable/pending Layer Transform session owns this boundary. Do
+            // not fall through when the continuation rejects the request.
+            return moved;
+        }
 
         if (this.isClipEditModeActive) this.exitClipEditMode();
         this._saveSelectedClipFromWorkingLayers();
@@ -20861,13 +20906,7 @@ export class AnimationTablePopup {
             const unclampedFrame = Math.floor((e.clientX - rect.left) / cellWidth);
             const frameIndex = Math.max(0, Math.min(this.model.totalFrames - 1, unclampedFrame));
             if (!Number.isInteger(frameIndex)) return;
-
-            if (this.isClipEditModeActive) this.exitClipEditMode();
-            this._saveSelectedClipFromWorkingLayers();
-            this.model.setCurrentFrame(frameIndex);
-            this._syncWorkingLayersForCurrentFrame();
-            this.render();
-            this._requestLayerPanelSync();
+            this._navigateTimelineFrameTo(frameIndex, { source: 'timeline-grid-background' });
             e.preventDefault();
             e.stopPropagation();
         });
@@ -21157,6 +21196,13 @@ export class AnimationTablePopup {
                     const entry = this.model.findClipEntry(keyMarker.dataset.celId);
                     const localFrame = Number(keyMarker.dataset.keyFrame);
                     if (entry?.clip && Number.isInteger(localFrame)) {
+                        if (this._hasActiveTimelineTransformNavigation()) {
+                            this._navigateTimelineFrameTo(entry.clip.startFrame + localFrame, {
+                                source: 'timeline-key-marker'
+                            });
+                            e.preventDefault();
+                            return;
+                        }
                         this._applyMotionTimelineKeyClickSelection({
                             clipId: entry.clip.id,
                             kind: keyMarker.dataset.keyKind,
@@ -21184,18 +21230,26 @@ export class AnimationTablePopup {
                 const frameNum = e.target.closest('.anim-frame-num');
                 if (frameNum) {
                     const frameIndex = parseInt(frameNum.dataset.frameIndex, 10);
-                    if (this.isClipEditModeActive) this.exitClipEditMode();
-                    this._saveSelectedClipFromWorkingLayers();
-                    this.model.setCurrentFrame(frameIndex);
-                    this._syncWorkingLayersForCurrentFrame();
-                    this.render();
-                    this._requestLayerPanelSync();
+                    this._navigateTimelineFrameTo(frameIndex, { source: 'timeline-frame-header' });
                     return;
                 }
 
                 // セルスロットクリック
                 const slot = e.target.closest('.anim-cell-slot');
                 if (!slot) return;
+
+                // A stable/pending Layer Transform session owns direct
+                // Timeline selection as well as the prev/next controls. This
+                // prevents a raw frame write from leaving the transaction on
+                // the old Frame (or committing a pending candidate).
+                if (this._hasActiveTimelineTransformNavigation()) {
+                    this._navigateTimelineFrameTo(parseInt(slot.dataset.frameIndex, 10), {
+                        source: 'timeline-cell'
+                    });
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
 
                 if (slot.classList.contains('anim-rig-folder-cell-slot')) {
                     const frameIndex = parseInt(slot.dataset.frameIndex, 10);

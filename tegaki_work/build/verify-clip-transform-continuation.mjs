@@ -17,7 +17,7 @@ function method(name, next) {
 }
 const resume = method('_resumeLayerTransformTimelineSession', '_resumeLayerWarpTimelineSession');
 const commit = method('commitLayerTransformTimelineKeyAndContinue', 'stepLayerTransformTimelineFrame');
-const step = method('stepLayerTransformTimelineFrame', '_stepLayerWarpTimelineFrame');
+const step = method('stepLayerTransformTimelineFrame', 'moveLayerTransformTimelineFrameTo');
 const refresh = method('refreshLayerTransformTimelineSessionAfterHistory', 'refreshLayerWarpTimelineSessionAfterHistory');
 const target = TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY;
 const uiSource = readFileSync(new URL('../ui/ui-panels.js', import.meta.url), 'utf8');

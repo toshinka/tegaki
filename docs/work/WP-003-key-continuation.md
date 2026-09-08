@@ -95,3 +95,11 @@ Owner追報: 立上げ/編集中にもV自動解除が多い。Folder選択で�
 - LayerSystemのactive session有無をpublic queryにし、通常Recoveryの両capture入口でSOURCE/Timeline双方を延期する。session終了後のretryとforced/manual保存の既存terminalは維持する。
 - 実RecoveryStore verifierへSOURCEを追加し、export 0、pending保持、終了後1回保存、forced保存不変を確認する。
 - Browserの新規400×400 Projectで描画直後に初回Vを入力し、2.5秒後も`SOURCE · 原画` panelとV選択を維持。Escapeで正常終了を確認した。Owner環境での再受入は未確認。
+
+### 2026-09-09 Cross-frame continuation regression repair
+
+- 直接Timelineクリックが`model.setCurrentFrame()`へ直行し、KEY確定後のtransaction/working Layer/panelが旧Frameに残る経路を固定した。既存のprev/next/wheel continuationだけではTimeline header、背景、cell、motion markerの入口を覆えていなかった。
+- `LayerSystem.moveLayerTransformTimelineFrameTo()`を追加し、同じClipのstable BASIC/WARP sessionだけを一Frameずつ既存resumeへ通す。pending、session divergence、clip外は移動せず、raw frame writeへfall-throughしない。Popupのdirect Timelineとdelta入口はactive timeline transform時にこの境界を共有する。
+- `verify-layer-transform-cross-frame-continuation.mjs`でproduction methodを実行し、BASIC/WARPのKEY confirm `+1`、destination fresh rebind、existing key、pending block、Esc後移動、History frame move `0`をPASS。関連 transform/warp/animation/ui verifier、harness、build、構文、diff checkもPASS。
+- 既存WARP re-entry P0-P6、Undo/Redo refresh、project suite 9/9はPASSを継承した。今回のcross-frame限定Verifierはsave/reopenの新規操作を含めず、保存正本・schemaへ変更はない。
+- localhost BrowserではBASIC/WARPの複数Frame direct click、pending block、Escape、panel/V/WARP維持を確認し、console error/warnは0件。F6/F7相当のOwner実Raster操作、実download、Owner操作感は別受入として未判定。
