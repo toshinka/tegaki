@@ -1,8 +1,38 @@
 # WP-005 — Simple 4x4 WARP UI
 
-状態: ACTIVE — OWNER ACCEPTANCE BLOCKED（2026-09-09）。F1再入場とcross-frame continuationの限定修正は技術確認済み。現在の作業baseline HEAD: `925596b9d7fbd731290fe9869ea34a0006249130`。
+状態: ACTIVE — OWNER ACCEPTANCE BLOCKED（2026-09-09）。F1再入場とcross-frame continuationの限定修正は技術確認済み。現在の作業baseline HEAD: `7ba13ef753b8264d06759ec6ad39518187d805ef`。今回の追補は未コミット差分として保持する。
 
 Layer TransformのBASIC/WARP切替、Simple 4x4の16点pointer adapter、normal/CAF SOURCEのRaster preview/bake、CAF ANIMATEの既存`layerDeformers` bridge接続を完了した。関連verifier・構文・Vite buildはPASSしている。normal SOURCEの実Browser操作、CAF ANIMATEの入場・preview・Esc・V確定・次Frame移動、Tableを閉じたCAF SOURCEのdrag・V確定、Table close rollback、pointer terminal、Pixi/CPU/export/save-reopenの技術証拠を確認した。trusted device pointercancelとOwner操作受入は未完了であり、Preview Equivalence Policyに従ってpackage statusはACTIVEとする。
+
+## BASIC + WARP authoring coordinate congruence (2026-09-09)
+
+### Scope and cause
+
+Owner報告の「BASICでLayer Motionを付けた後、WARPの16点とpointer hitだけが変形前に残る」を、保存値や評価順を変えずに修正した。原因は、WARP controllerが`bindBounds`と正規化点をMotion前worldへ戻さず直接overlay/inputへ使っていたことだった。
+
+### Bounded implementation
+
+- `LayerSystem.getLayerWarpAuthoringMotion()`を追加し、ANIMATEでは現在のLayer Transform transactionを`AnimationTablePopup`のproduction adapterへ渡す。
+- adapterは現在Frameの`clip.layerTransformTracks`をsampleし、transactionのClip/internal Layer/Frameと一致しない場合は`layer-motion-frame-unavailable`を返す。古いFrameの行列へfallbackしない。
+- `LayerTransformWarpController`はproduction `createCenteredTransformMatrix` / `applyTransformMatrix` / `invertTransformMatrixPoint`を使い、forwardは`WARP normalized → bindBounds world → current Layer Motion → screen`、inverseは`screen → world → inverse Motion → normalized`とした。
+- `bindBounds`、WARP points、Motion tracks、deformers、History、保存schema、CPU/Pixi renderer、評価順、入口guardは変更していない。controllerはprojection-onlyでHistory `0`を保つ。
+
+### Evidence
+
+`build/verify-layer-transform-warp-motion-projection.mjs`はproduction controller/transform math/LayerSystemを実行し、identity、translation、rotation、scale、negative scale/flip、anchor付きcombined affineの6ケース×16点でforward/inverse roundtripをPASSした。関連production verifierは次のとおり。
+
+- `verify-layer-transform-warp-motion-projection`: PASS
+- `verify-layer-transform-warp-reentry-congruence`: PASS
+- `verify-layer-transform-cross-frame-continuation`: PASS
+- `verify-layer-transform-warp-entry-guards`: PASS
+- harness: check `30/137/25/7`、transform `13/13`、warp `25/25`、animation `34/34`、ui `45/45`、project `9/9`
+- changed JS/verifier `node --check`: PASS、Vite build: PASS、`git diff --check`: PASS。生成distはHEAD内容へ復元済み。
+
+既存CAF Browser確認はChrome production IAB、viewport `908×548`、DPR `2.0249998569488525`、console error/warn `0`で、同Frame BASIC translation/rotation/scale後のWARP overlay、visible point hit、WARP KEY、F1→F2→F1を確認した。strict current-Motion source追補後の最小再確認は、save/reopen後に空のCAF snapshotでBASIC affine表示までとなり、Rasterが無くWARP入場を完走していない。これはOwner acceptanceへ算入しない。
+
+### Boundary
+
+ANIMATE WARP ready時のkey strip表示不一致（BASIC KEYがあっても`KEY未設定`と表示される既知UI論点）、Pixi/CPU pixel差、実PNG download、trusted pointercancel、Owner操作感は今回の対象外で未受入。判定は`PARTIAL / GPT review required`、WP-005は`ACTIVE — OWNER ACCEPTANCE BLOCKED`で停止する。
 
 ## Progress (2026-09-07)
 

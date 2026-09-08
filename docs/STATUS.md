@@ -1,12 +1,23 @@
 # Tegaki — 再開checkpoint
 
 状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — OWNER ACCEPTANCE BLOCKED。
-更新日: 2026-09-09。現在の作業baseline HEAD: `925596b9d7fbd731290fe9869ea34a0006249130`。WP-005/WP-003のcross-frame Layer Transform continuationを限定修正し、実production UIでの最小確認とOwner受入境界を記録する。
+更新日: 2026-09-09。現在の作業baseline HEAD: `7ba13ef753b8264d06759ec6ad39518187d805ef`。WP-005/WP-003のcross-frame Layer Transform continuationを限定修正し、実production UIでの最小確認とOwner受入境界を記録する。今回の追補は未コミット差分として保持する。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
 
 WP-005のSimple 4x4 WARP UIは既存Layer Transform transactionへの技術接続を完了した。normal/CAF SOURCEはRaster bake、CAF ANIMATEは`ClipInstance.layerDeformers`を維持し、CPU compositor / SOURCE bake / Export / Project canonical dataをpixel authority、Pixiを同じ評価modelを使うinteractive GPU proxyとする。WP-007の未確定Layer Transform Export guardとHD-005 `MIXED`は維持し、Owner受入までpackage statusはACTIVEとする。
+
+## CURRENT SLICE — WP-005 BASIC/WARP authoring coordinate congruence (2026-09-09)
+
+- 開始HEAD / 現在HEADはともに`7ba13ef753b8264d06759ec6ad39518187d805ef`。既存のcross-frame差分を巻き戻さず、`layer-system.js`、`animation-table-popup.js`、`layer-transform-warp-controller.js`と専用verifierだけを追補した。commitは作成していない。
+- Owner報告の原因は、BASIC Layer Motion後もWARP overlayとpointer inverseがbindBoundsのMotion前座標を直接使い、現在FrameのLayer Motion affineを投影へ含めていなかったこと。結果としてRasterは移動/回転/拡縮後、16点と入力判定は変形前位置に残った。
+- 修正はprojection境界だけに限定した。`LayerSystem.getLayerWarpAuthoringMotion()`がANIMATEでは現Frameの`clip.layerTransformTracks`をproduction adapter経由で取得し、transactionのClip/internal Layer/Frameが一致しない場合は古い行列を再利用せず`unavailable`を返す。controllerは`createCenteredTransformMatrix`でbindBounds world pointへforward affineを適用し、pointerは`screenClientToWorld → invertTransformMatrixPoint → bindBounds正規化`でMotion前WARP座標へ戻す。normal SOURCEは既存Layer Transform session/identity fallbackを維持する。
+- `bindBounds`、WARP `points`、`layerTransformTracks`、`layerDeformers`はprojection中に変更しない。評価順`DrawingSnapshot → Layer WARP → Layer Motion`、既存authority、保存schema、CPU compositor、Pixi renderer、WARP entry guardは変更していない。projection-only Historyは`0`。
+- 新規`build/verify-layer-transform-warp-motion-projection.mjs`はproduction controller / transform math / LayerSystemを実行し、identity、translation、rotation、scale、negative scale/flip、anchor付きcombined affineの6ケース×16点をforward/inverse roundtripで確認した。`verify-layer-transform-warp-motion-projection`、`verify-layer-transform-warp-reentry-congruence`、`verify-layer-transform-cross-frame-continuation`、`verify-layer-transform-warp-entry-guards`はPASS。
+- 関連harnessはcheck `30 documents / 137 links / 25 proposals / 7 packages`、transform `13/13`、warp `25/25`、animation `34/34`、ui `45/45`、project `9/9`がPASS。変更fileの`node --check`、Vite build、`git diff --check`もPASS。build生成distはHEAD内容へ復元し、差分へ残していない。
+- 実Browserの既存CAF確認では、viewport `908×548`、DPR `2.0249998569488525`、console error/warn `0`。同Frame BASIC translation/rotation/scale後のWARP overlayとvisible point hit、WARP KEY、F1→F2→F1を確認済み。今回のstrict current-Motion source追補後の最小再確認は、save/reopenした空のCAF snapshotでBASIC affine表示まで確認したが、Rasterが無くWARP入場を完走できなかったため、Owner受入の証拠には数えない。
+- 既知の別論点として、ANIMATE WARP ready時のkey stripがBASIC KEYの存在と一致しない表示（`KEY未設定`）は今回直していない。Pixi/CPU pixel差、実PNG download、trusted pointercancel、Owner操作感も未受入である。判定は`PARTIAL / GPT review required`、WP-005は`ACTIVE — OWNER ACCEPTANCE BLOCKED`で停止する。
 
 ## COMPLETED
 

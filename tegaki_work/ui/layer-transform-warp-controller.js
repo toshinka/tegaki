@@ -7,8 +7,21 @@
 
 import { showFeedbackToast } from './feedback-toast.js';
 import { warpGridOverlay } from './warp-grid-overlay.js';
+import {
+    applyTransformMatrix,
+    createCenteredTransformMatrix,
+    invertTransformMatrixPoint
+} from '../system/transform-math.js';
 
 const POINT_COUNT = 16;
+const IDENTITY_MATRIX = Object.freeze({
+    a: 1,
+    b: 0,
+    c: 0,
+    d: 1,
+    tx: 0,
+    ty: 0
+});
 
 const REASON_MESSAGES = Object.freeze({
     'advanced-layer-warp-required': '既存WARPがSimple 4x4ではないため、高度なWARPが必要です',
@@ -22,6 +35,17 @@ function clonePoints(points) {
     return Array.isArray(points)
         ? points.map(point => ({ x: Number(point?.x) || 0, y: Number(point?.y) || 0 }))
         : [];
+}
+
+function isFiniteMatrix(matrix) {
+    return !!matrix && [
+        matrix.a,
+        matrix.b,
+        matrix.c,
+        matrix.d,
+        matrix.tx,
+        matrix.ty
+    ].every(Number.isFinite);
 }
 
 export class LayerTransformWarpController {
@@ -98,10 +122,27 @@ export class LayerTransformWarpController {
         const bounds = session?.bindBounds || session?.transaction?.bindBounds;
         const points = session?.points || [];
         if (!bounds || points.length !== POINT_COUNT) return [];
+        const motionMatrix = this._getCurrentLayerMotionMatrix();
+        if (!motionMatrix) return [];
         return points.map(point => ({
-            x: bounds.x + point.x * bounds.width,
-            y: bounds.y + point.y * bounds.height
+            ...applyTransformMatrix(
+                motionMatrix,
+                bounds.x + point.x * bounds.width,
+                bounds.y + point.y * bounds.height
+            )
         }));
+    }
+
+    /**
+     * WARPの正本点はMotion前のProject座標へ保持し、表示時だけ現Frameの
+     * Layer Motionを適用する。Motionの評価はLayerSystem側のproduction
+     * boundaryから受け取り、このcontrollerで保存値を書き換えない。
+     */
+    _getCurrentLayerMotionMatrix() {
+        const projection = this.layerSystem?.getLayerWarpAuthoringMotion?.();
+        if (projection?.ok === false) return null;
+        if (isFiniteMatrix(projection?.matrix)) return projection.matrix;
+        return IDENTITY_MATRIX;
     }
 
     _screenToNormalized(event) {
@@ -110,9 +151,21 @@ export class LayerTransformWarpController {
         if (!bounds || !this.coordinateSystem?.screenClientToWorld) return null;
         const world = this.coordinateSystem.screenClientToWorld(event.clientX, event.clientY);
         if (!Number.isFinite(world?.worldX) || !Number.isFinite(world?.worldY)) return null;
+        const motionMatrix = this._getCurrentLayerMotionMatrix();
+        if (!motionMatrix) return null;
+        const motionWorld = invertTransformMatrixPoint(
+            motionMatrix,
+            world.worldX,
+            world.worldY
+        );
+        if (!motionWorld) return null;
+        if (!Number.isFinite(bounds.width) || !Number.isFinite(bounds.height)
+            || Math.abs(bounds.width) < 1e-8 || Math.abs(bounds.height) < 1e-8) {
+            return null;
+        }
         return {
-            x: (world.worldX - bounds.x) / bounds.width,
-            y: (world.worldY - bounds.y) / bounds.height
+            x: (motionWorld.x - bounds.x) / bounds.width,
+            y: (motionWorld.y - bounds.y) / bounds.height
         };
     }
 

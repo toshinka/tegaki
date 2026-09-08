@@ -508,6 +508,62 @@ export class LayerSystem {
         } : null;
     }
 
+    /**
+     * Layer WARP authoring用の現Frame Motion projectionを返す。
+     * WARPのbindBounds / pointsはMotion前の正本座標として維持し、overlayと
+     * pointer adapterだけがこのaffineをforward / inverseで利用する。
+     */
+    getLayerWarpAuthoringMotion() {
+        const warpSession = this._layerWarpEditSession;
+        const transformSession = this._layerTransformSession;
+        // The WARP transaction identifies the deformer being edited. The
+        // current Layer Motion is owned by the still-live BASIC/Timeline
+        // transform session, so pass that transaction to the evaluator first.
+        const motionTransaction = transformSession?.transaction || null;
+        const transaction = motionTransaction || warpSession?.transaction || null;
+        const adapterMotion = this._transformEditAdapter?.getWarpAuthoringMotion?.({
+            transaction,
+            layerId: warpSession?.layerId || transformSession?.layerId || null
+        });
+        const canvasWidth = Math.max(1, Number(this.config?.canvas?.width) || 1);
+        const canvasHeight = Math.max(1, Number(this.config?.canvas?.height) || 1);
+        if (adapterMotion && adapterMotion.ok !== true) {
+            return {
+                ok: false,
+                source: 'unavailable',
+                matrix: null,
+                transform: null,
+                clipId: motionTransaction?.clipId || warpSession?.transaction?.clipId || null,
+                internalLayerId: motionTransaction?.internalLayerId || warpSession?.transaction?.internalLayerId || null,
+                timelineFrame: motionTransaction?.timelineFrame
+                    ?? warpSession?.transaction?.timelineFrame
+                    ?? null,
+                reason: adapterMotion.reason || 'layer-motion-unavailable'
+            };
+        }
+        const transform = adapterMotion?.ok === true
+            ? adapterMotion.transform
+            : (this.transform?.getTransform?.(transformSession?.layerId)
+                || transformSession?.transform
+                || null);
+        const matrix = createCenteredTransformMatrix(
+            transform || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
+            canvasWidth / 2,
+            canvasHeight / 2
+        );
+        return {
+            ok: true,
+            source: adapterMotion?.ok === true
+                ? adapterMotion.source
+                : (transform ? 'layer-transform-session' : 'identity'),
+            matrix,
+            transform: transform ? { ...transform } : null,
+            clipId: adapterMotion?.clipId || transaction?.clipId || null,
+            internalLayerId: adapterMotion?.internalLayerId || transaction?.internalLayerId || null,
+            timelineFrame: adapterMotion?.timelineFrame ?? transaction?.timelineFrame ?? null
+        };
+    }
+
     setLayerTransformMode(mode = 'basic') {
         if (mode === 'warp') {
             if (this._layerWarpEditSession) return true;

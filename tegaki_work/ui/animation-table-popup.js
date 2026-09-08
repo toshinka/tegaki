@@ -11207,6 +11207,7 @@ export class AnimationTablePopup {
             finish: request => this._finishLayerTransformBridge(request),
             abandonAfterHistory: request => this._abandonLayerTransformBridgeAfterHistory(request),
             moveFrame: request => this._moveLayerTransformBridgeFrame(request),
+            getWarpAuthoringMotion: request => this._getLayerWarpAuthoringMotion(request),
             canStartWarp: request => this._projectLayerWarpBridgeStart(request),
             beginWarp: request => this._beginLayerWarpBridge(request),
             previewWarp: request => this._previewLayerWarpBridge(request),
@@ -11787,6 +11788,39 @@ export class AnimationTablePopup {
 
     updateClipDeformerFromExternal(clipId, deformer = null, options = {}) {
         return this._updateClipMotionMetadataFromExternal('deformer', clipId, deformer, options);
+    }
+
+    /**
+     * Layer WARPのauthoring表示へ渡す、現在FrameのLayer Motion評価値。
+     * WARP points/bindBoundsはMotion前座標のまま保持し、投影側だけがこの
+     * sampled transformを使う。LayerSystemのtransactionが保持するClip/Frame
+     * identityと一致しない場合は、古いFrameの行列を再利用しない。
+     */
+    _getLayerWarpAuthoringMotion({ transaction, layerId } = {}) {
+        if (transaction?.target !== TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY) {
+            return null;
+        }
+        const state = this._getSelectedClipLayerMotionFrame(layerId);
+        const currentFrame = this.model?.playback?.currentFrame;
+        if (!state
+            || state.entry?.clip?.id !== transaction.clipId
+            || state.internalLayerId !== transaction.internalLayerId
+            || currentFrame !== transaction.timelineFrame) {
+            return {
+                ok: false,
+                reason: 'layer-motion-frame-unavailable'
+            };
+        }
+        return {
+            ok: true,
+            source: 'clip.layerTransformTracks',
+            clipId: transaction.clipId,
+            internalLayerId: transaction.internalLayerId,
+            timelineFrame: transaction.timelineFrame,
+            transform: { ...state.sampled },
+            pivotX: state.pivotX,
+            pivotY: state.pivotY
+        };
     }
 
     _getSelectedClipMotionFrame() {
