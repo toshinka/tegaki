@@ -1,10 +1,18 @@
 # Tegaki — 再開checkpoint
 
-状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。
-更新日: 2026-09-09。現在の実HEAD: `bab2e0e9fec9b377cbb3fe3aca3f41f3ec085826`。添付指示の想定HEADとは異なるが、reset/cleanは行わず既存履歴を継承する。今回のWARP body-drag隔離追補と設計監査は未コミット差分として保持する。
+状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。WP-009 ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。
+更新日: 2026-09-09。現在の実HEAD: `09ab1c08ccc0f0defa457f1f228896949997fc9`。添付指示の想定HEADとは異なるが、reset/cleanは行わず既存履歴を継承する。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
+
+## CURRENT SLICE — WP-009 Layer Transform KEY management (2026-09-09)
+
+- 開始時の実HEADは`09ab1c08ccc0f0defa457f1f228896949997fc9`で、作業開始時worktreeはcleanだった。添付指示の想定`33796efb...`とは異なるため、履歴を巻き戻さず現在HEADへ追補している。
+- 新規`WP-009`として、保存schemaを増やさず既存`layerTransformTracks` / `layerDeformers`からBASIC/WARP bundleを導出するpure helper、panel component projection、Timeline square marker、空Frame限定のbundle D&Dを実装した。
+- pending candidate中の削除/D&Dは暗黙confirm/cancelせず拒否する。stable panel deleteは既存History refresh/rebindへ接続し、Timeline D&Dはactive Layer Transform sessionでは安全側で拒否する。
+- 新規verifierはmodel/panel/delete/D&Dを追加し、model/panel/D&D PASS。既存Transform 16/16、WARP 26/26、Animation 34/34、UI 45/45、Project 9/9、全harness 167 selected / 0 failed、`verify-github-url-index` 54 unique local targets、harness check、構文、Vite build、diff checkもPASSした。実Browserはmarker、component rows、stable D&D、active拒否、BASIC削除→WARP-only、Undo/Redo→BASIC+WARP復元まで確認済み。Owner操作感、Pixi/CPU画素、console/DPRの独立計測は未完了。
+- WP-005の技術完了／Owner受入待ち状態、WP-003 cross-frame continuation、WP-007 terminal、既存Pixi/CPU preview policyは変更しない。
 
 WP-005のSimple 4x4 WARP UIは既存Layer Transform transactionへの技術接続を完了した。normal/CAF SOURCEはRaster bake、CAF ANIMATEは`ClipInstance.layerDeformers`を維持し、CPU compositor / SOURCE bake / Export / Project canonical dataをpixel authority、Pixiを同じ評価modelを使うinteractive GPU proxyとする。WP-007の未確定Layer Transform Export guardとHD-005 `MIXED`は維持し、Owner受入までpackage statusはACTIVEとする。
 

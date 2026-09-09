@@ -5510,6 +5510,45 @@ button.anim-motion-graph-legend-item.is-primary {
     color: var(--futaba-maroon);
 }
 
+/* Layer Transform bundle keys use a square family: BASIC-only is outlined,
+   while any WARP presence is filled. The descriptor/ARIA text remains the
+   authority for assistive technology and future components. */
+.anim-layer-transform-key-projection {
+    display: block;
+    width: 8px;
+    height: 8px;
+    margin: auto;
+    border: 1.5px solid var(--futaba-maroon);
+    border-radius: 1px;
+    background: transparent;
+    pointer-events: auto;
+    cursor: grab;
+}
+
+.anim-layer-transform-key-projection.is-warp-present {
+    background: var(--futaba-maroon);
+}
+
+.anim-layer-transform-key-projection.is-provisional {
+    opacity: .48;
+}
+
+.anim-layer-transform-key-projection.is-dragging {
+    opacity: .38;
+    cursor: grabbing;
+}
+
+.anim-layer-transform-key-projection.key-drop-target {
+    outline: 2px solid color-mix(in srgb, var(--active-border) 72%, transparent);
+    outline-offset: 2px;
+}
+
+.anim-layer-transform-key-projection.key-drop-blocked {
+    border-color: var(--futaba-medium);
+    background: color-mix(in srgb, var(--futaba-medium) 28%, transparent);
+    cursor: not-allowed;
+}
+
 .animation-table-panel .anim-part-track-item.is-selected {
     box-shadow: inset 3px 0 0 var(--active-border);
     background: color-mix(in srgb, var(--futaba-background) 72%, var(--futaba-light-medium) 28%);
