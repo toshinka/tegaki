@@ -119,7 +119,9 @@ const cancel = planLayerWarpEditTransactionFinish({
 });
 assert.equal(cancel.commit, false);
 
-assert.match(popup, /isAnimateLayerWarpPreview[\s\S]*?_applyVisibilityPreview\(\)/,
+assert.match(popup, /_shouldRenderCanonicalTransformPreview/,
+    'active ANIMATE WARP must participate in the canonical preview decision');
+assert.match(popup, /shouldRenderCanonicalTransformPreview[\s\S]*?_applyVisibilityPreview\(\{\s*force:\s*true\s*\}\)/,
     'active ANIMATE WARP must use the existing Pixi preview path');
 assert.match(popup, /_createLayerWarpKeyGuide/);
 assert.match(popup, /transaction\.hadExplicitKey === true/);

@@ -1140,6 +1140,21 @@ export class AnimationTablePopup {
         this.render();
     }
 
+    /**
+     * ANIMATE Layer Transformの再入場は、編集開始ではなく現Frameの
+     * canonical evaluated visualを表示proxyへ戻す境界である。
+     * SOURCEのworking Layer表示や、未開始の別editorへこの分岐を広げない。
+     */
+    _shouldRenderCanonicalTransformPreview(layerWarpEditSession = this.layerSystem?.getLayerWarpEditSession?.()) {
+        if (!this.isTransformPreviewSuspended) return false;
+        const animateAuthority = this._transformPreviewAuthority === TRANSFORM_EDIT_AUTHORITY.CLIP_TRANSFORM_KEY
+            || this._transformPreviewAuthority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY
+            || this._transformPreviewAuthority === TRANSFORM_EDIT_AUTHORITY.CLIP_FOLDER_TRANSFORM_KEY;
+        const animateWarpSession = layerWarpEditSession?.transaction?.kind
+            === 'layer-warp-edit-transaction';
+        return animateAuthority || animateWarpSession;
+    }
+
     _exitTransformEditPreviewMode() {
         if (!this.isTransformPreviewSuspended) {
             this._clearInternalFolderTransformContext();
@@ -18822,8 +18837,9 @@ export class AnimationTablePopup {
 
         // プレビューの適用判定
         const layerWarpEditSession = this.layerSystem?.getLayerWarpEditSession?.();
-        const isAnimateLayerWarpPreview = layerWarpEditSession?.transaction?.kind
-            === 'layer-warp-edit-transaction';
+        const shouldRenderCanonicalTransformPreview = this._shouldRenderCanonicalTransformPreview(
+            layerWarpEditSession
+        );
         if (this.isLaneOnlySelected) {
             this._restoreVisibility();
         } else if (this.isDrawingPreviewSuspended) {
@@ -18833,11 +18849,10 @@ export class AnimationTablePopup {
                 this.isDrawingPreviewSuspended = false;
                 this._restoreVisibility();
             }
-        } else if (isAnimateLayerWarpPreview
-            && this.isTransformPreviewSuspended) {
-            // ANIMATE Layer WARPはcandidate deformerをClipInstanceへ投影する。
-            // V編集中も同じproduction Pixi previewを通し、working Rasterへ戻して
-            // 候補だけが見えなくなることを防ぐ。確定/保存のauthorityは変えない。
+        } else if (shouldRenderCanonicalTransformPreview) {
+            // ANIMATEの再入場・BASIC/WARP編集中も同じproduction Pixi previewを通す。
+            // working Rasterへ戻すと、既存Layer WARPが表示から落ちる。
+            // 確定/保存のauthorityと評価順は変えない。
             this._applyVisibilityPreview({ force: true });
         } else if (this.isClipEditModeActive || this.isTransformPreviewSuspended) {
             // EDIT/変形中は合成を停止し、実レイヤー表示を優先する。
