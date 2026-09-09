@@ -12,8 +12,20 @@ import {
     createCenteredTransformMatrix,
     invertTransformMatrixPoint
 } from '../system/transform-math.js';
+import {
+    calculateWarpGridBrushWeights,
+    inflateWarpGridBrushPoints,
+    translateWarpGridBrushPoints
+} from '../system/animation/warp-grid-brush.js';
 
 const POINT_COUNT = 16;
+const WARP_INTERACTION_TOOLS = Object.freeze({ POINT: 'point', BRUSH: 'brush' });
+const WARP_BRUSH_TYPES = Object.freeze({ MOVE: 'move', INFLATE: 'inflate', PINCH: 'pinch' });
+const DEFAULT_BRUSH_SETTINGS = Object.freeze({
+    radius: 72,
+    strength: 0.45,
+    hardness: 0.55
+});
 const IDENTITY_MATRIX = Object.freeze({
     a: 1,
     b: 0,
@@ -58,6 +70,70 @@ export class LayerTransformWarpController {
         this.onTrace = typeof onTrace === 'function' ? onTrace : null;
         this.modeActive = false;
         this.gesture = null;
+        this.brushGesture = null;
+        this.interactionTool = WARP_INTERACTION_TOOLS.POINT;
+        this.brushType = WARP_BRUSH_TYPES.MOVE;
+        this.brushSettings = { ...DEFAULT_BRUSH_SETTINGS };
+        this.brushCursor = null;
+    }
+
+    setInteractionTool(tool = WARP_INTERACTION_TOOLS.POINT) {
+        const next = Object.values(WARP_INTERACTION_TOOLS).includes(tool)
+            ? tool
+            : WARP_INTERACTION_TOOLS.POINT;
+        if (this.gesture || this.brushGesture) return false;
+        this.interactionTool = next;
+        if (next !== WARP_INTERACTION_TOOLS.BRUSH) this.brushCursor = null;
+        this.overlay?._update?.();
+        this.layerSystem?.transform?._updateCursor?.();
+        return true;
+    }
+
+    getInteractionTool() {
+        return this.interactionTool;
+    }
+
+    setBrushType(type = WARP_BRUSH_TYPES.MOVE) {
+        const next = Object.values(WARP_BRUSH_TYPES).includes(type)
+            ? type
+            : WARP_BRUSH_TYPES.MOVE;
+        if (this.gesture || this.brushGesture) return false;
+        this.brushType = next;
+        return true;
+    }
+
+    getBrushType() {
+        return this.brushType;
+    }
+
+    setBrushSettings(settings = {}) {
+        const next = { ...this.brushSettings };
+        ['radius', 'strength', 'hardness'].forEach(key => {
+            if (Number.isFinite(Number(settings[key]))) next[key] = Number(settings[key]);
+        });
+        next.radius = Math.max(12, Math.min(160, next.radius));
+        next.strength = Math.max(0.05, Math.min(1, next.strength));
+        next.hardness = Math.max(0, Math.min(1, next.hardness));
+        this.brushSettings = next;
+        this.brushCursor = this.brushCursor
+            ? this._createBrushCursor(this.brushCursor.x, this.brushCursor.y)
+            : null;
+        this.overlay?._update?.();
+        return { ...this.brushSettings };
+    }
+
+    getBrushSettings() {
+        return { ...this.brushSettings };
+    }
+
+    getBrushPreview() {
+        if (this.interactionTool !== WARP_INTERACTION_TOOLS.BRUSH || !this.brushCursor) {
+            return null;
+        }
+        return {
+            ...this.brushCursor,
+            visible: this.modeActive === true
+        };
     }
 
     begin() {
@@ -83,6 +159,7 @@ export class LayerTransformWarpController {
             interactive: true,
             getWorldPoints: () => this._getWorldPoints(),
             getSelectedPointIndices: () => this.gesture ? [this.gesture.pointIndex] : [],
+            getBrushPreview: () => this.getBrushPreview(),
             // Keep the grid alive for the whole WARP transaction. The
             // animation bridge may briefly reproject the V session while a
             // point preview is being rendered; the transaction itself is the
@@ -109,6 +186,7 @@ export class LayerTransformWarpController {
     deactivate() {
         this._releaseGesture({ rollback: false });
         this.modeActive = false;
+        this.brushCursor = null;
         this.overlay?.deactivate?.();
     }
 
@@ -170,6 +248,198 @@ export class LayerTransformWarpController {
             x: (motionWorld.x - bounds.x) / bounds.width,
             y: (motionWorld.y - bounds.y) / bounds.height
         };
+    }
+
+    _worldToScreen(point) {
+        const screen = this.coordinateSystem?.worldToScreenImmediate?.(point.x, point.y)
+            || this.coordinateSystem?.worldToScreen?.(point.x, point.y);
+        return screen && Number.isFinite(screen.clientX) && Number.isFinite(screen.clientY)
+            ? { x: screen.clientX, y: screen.clientY }
+            : null;
+    }
+
+    _getScreenPoints(points = null) {
+        const session = this.layerSystem?.getLayerWarpEditSession?.();
+        const source = Array.isArray(points) ? points : session?.points;
+        const bounds = session?.bindBounds || session?.transaction?.bindBounds;
+        if (!Array.isArray(source) || source.length !== POINT_COUNT || !bounds) return null;
+        const motionMatrix = this._getCurrentLayerMotionMatrix();
+        if (!motionMatrix) return null;
+        return source.map(point => this._worldToScreen(applyTransformMatrix(
+            motionMatrix,
+            bounds.x + point.x * bounds.width,
+            bounds.y + point.y * bounds.height
+        )));
+    }
+
+    _createBrushCursor(x, y) {
+        const screenPoints = this._getScreenPoints();
+        const weights = screenPoints
+            ? calculateWarpGridBrushWeights(screenPoints, {
+                center: { x, y },
+                radius: this.brushSettings.radius,
+                hardness: this.brushSettings.hardness
+            })
+            : [];
+        return {
+            x,
+            y,
+            radius: this.brushSettings.radius,
+            strength: this.brushSettings.strength,
+            weights: weights || []
+        };
+    }
+
+    _updateBrushCursor(event) {
+        if (this.interactionTool !== WARP_INTERACTION_TOOLS.BRUSH
+            || !Number.isFinite(event?.clientX)
+            || !Number.isFinite(event?.clientY)) {
+            this.brushCursor = null;
+            return null;
+        }
+        this.brushCursor = this._createBrushCursor(event.clientX, event.clientY);
+        this.overlay?._update?.();
+        return this.brushCursor;
+    }
+
+    _calculateBrushPoints(event) {
+        const gesture = this.brushGesture;
+        if (!gesture) return null;
+        const center = { x: Number(event?.clientX), y: Number(event?.clientY) };
+        if (!Number.isFinite(center.x) || !Number.isFinite(center.y)) return null;
+        const weights = calculateWarpGridBrushWeights(gesture.startScreenPoints, {
+            center,
+            radius: this.brushSettings.radius,
+            hardness: this.brushSettings.hardness
+        });
+        if (!weights) return null;
+
+        let screenPoints = null;
+        if (this.brushType === WARP_BRUSH_TYPES.MOVE) {
+            screenPoints = translateWarpGridBrushPoints(
+                gesture.startScreenPoints,
+                weights,
+                {
+                    x: center.x - gesture.startClient.x,
+                    y: center.y - gesture.startClient.y
+                }
+            );
+        } else {
+            const sign = this.brushType === WARP_BRUSH_TYPES.PINCH ? -1 : 1;
+            screenPoints = inflateWarpGridBrushPoints(
+                gesture.startScreenPoints,
+                weights,
+                {
+                    pivot: center,
+                    amount: sign * this.brushSettings.radius * this.brushSettings.strength * 0.45
+                }
+            );
+        }
+        if (!Array.isArray(screenPoints) || screenPoints.length !== POINT_COUNT) return null;
+        return screenPoints.map(point => this._screenToNormalized({
+            clientX: point.x,
+            clientY: point.y
+        }));
+    }
+
+    handleCanvasPointerDown(event) {
+        if (!this.modeActive
+            || this.interactionTool !== WARP_INTERACTION_TOOLS.BRUSH
+            || this.brushGesture
+            || this.gesture
+            || (event?.button !== undefined && event.button !== 0)) {
+            return false;
+        }
+        const session = this.layerSystem?.getLayerWarpEditSession?.();
+        const points = session?.points;
+        const startScreenPoints = this._getScreenPoints(points);
+        if (!Array.isArray(points) || points.length !== POINT_COUNT
+            || !Array.isArray(startScreenPoints) || startScreenPoints.some(point => !point)) {
+            return false;
+        }
+        this.brushGesture = {
+            pointerId: event.pointerId,
+            startPoints: clonePoints(points),
+            startScreenPoints,
+            startClient: { x: event.clientX, y: event.clientY },
+            target: event.currentTarget,
+            ignoreLost: false
+        };
+        this._updateBrushCursor(event);
+        let capture = 'unavailable';
+        try {
+            if (typeof event.currentTarget?.setPointerCapture === 'function') capture = 'success';
+            event.currentTarget?.setPointerCapture?.(event.pointerId);
+        } catch {
+            capture = 'failure';
+        }
+        this._traceEvent('brush-pointerdown', event, { capture });
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        return true;
+    }
+
+    handleCanvasPointerMove(event) {
+        if (!this.modeActive || this.interactionTool !== WARP_INTERACTION_TOOLS.BRUSH) return false;
+        this._updateBrushCursor(event);
+        const gesture = this.brushGesture;
+        if (!gesture || gesture.pointerId !== event.pointerId) return false;
+        const nextPoints = this._calculateBrushPoints(event);
+        if (!nextPoints || nextPoints.some(point => !point)) return false;
+        const result = this.layerSystem?.previewLayerWarpEditSession?.(nextPoints);
+        this._traceEvent('brush-pointermove', event, { result });
+        if (result?.ok !== true) {
+            this._rollbackBrushGesture();
+            this._showBlockedReason(result?.reason);
+            return true;
+        }
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        return true;
+    }
+
+    handleCanvasPointerUp(event) {
+        const gesture = this.brushGesture;
+        if (!gesture || gesture.pointerId !== event.pointerId) return false;
+        gesture.ignoreLost = true;
+        try {
+            gesture.target?.releasePointerCapture?.(gesture.pointerId);
+        } catch {}
+        this.brushGesture = null;
+        this._updateBrushCursor(event);
+        this._traceEvent('brush-pointerup', event, { terminal: 'retained' });
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        return true;
+    }
+
+    handleCanvasPointerCancel(event) {
+        const gesture = this.brushGesture;
+        if (!gesture || gesture.pointerId !== event.pointerId) return false;
+        this._rollbackBrushGesture();
+        this._traceEvent('brush-pointercancel', event, { terminal: 'rollback' });
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        return true;
+    }
+
+    handleCanvasLostPointerCapture(event) {
+        const gesture = this.brushGesture;
+        if (!gesture || gesture.pointerId !== event.pointerId || gesture.ignoreLost) return false;
+        this._rollbackBrushGesture();
+        this._traceEvent('brush-lostpointercapture', event, { terminal: 'rollback' });
+        return true;
+    }
+
+    _rollbackBrushGesture() {
+        const gesture = this.brushGesture;
+        if (!gesture) return false;
+        this.layerSystem?.previewLayerWarpEditSession?.(gesture.startPoints);
+        try {
+            gesture.target?.releasePointerCapture?.(gesture.pointerId);
+        } catch {}
+        this.brushGesture = null;
+        return true;
     }
 
     _onPointerDown(pointIndex, event) {
@@ -281,13 +551,29 @@ export class LayerTransformWarpController {
     }
 
     _releaseGesture({ rollback = true } = {}) {
-        if (rollback) this._rollbackGesture();
-        else this.gesture = null;
+        if (rollback) {
+            this._rollbackGesture();
+            this._rollbackBrushGesture();
+            return;
+        }
+        const brushGesture = this.brushGesture;
+        const pointGesture = this.gesture;
+        this.brushGesture = null;
+        this.gesture = null;
+        [brushGesture, pointGesture].forEach(gesture => {
+            if (!gesture) return;
+            try {
+                gesture.target?.releasePointerCapture?.(gesture.pointerId);
+            } catch {
+                // Ignore capture that the browser already released.
+            }
+        });
     }
 
     _traceEvent(type, event, extra = {}) {
         if (!this.onTrace) return;
-        const target = this.gesture?.target || event?.currentTarget || null;
+        const activeGesture = this.gesture || this.brushGesture;
+        const target = activeGesture?.target || event?.currentTarget || null;
         const session = this.layerSystem?.getLayerWarpEditSession?.() || null;
         const transaction = session?.transaction || this.layerSystem?._layerTransformSession?.transaction || null;
         let hasCapture = null;
@@ -312,6 +598,8 @@ export class LayerTransformWarpController {
                 targetConnected: target?.isConnected ?? null,
                 hasPointerCapture: hasCapture,
                 pointIndex: Number.isInteger(extra.pointIndex) ? extra.pointIndex : null,
+                interactionTool: this.interactionTool,
+                brushType: this.brushType,
                 normalized: extra.normalized ? { ...extra.normalized } : null,
                 preview: extra.result
                     ? { ok: extra.result.ok === true, reason: extra.result.reason || null }
@@ -338,3 +626,4 @@ export class LayerTransformWarpController {
 }
 
 export const LAYER_WARP_SIMPLE_POINT_COUNT = POINT_COUNT;
+export { WARP_INTERACTION_TOOLS, WARP_BRUSH_TYPES };

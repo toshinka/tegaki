@@ -11,7 +11,7 @@ READYは委任可能という意味で、現在の製品実装停止を解除す
 | WP-004 | unsupported出力とsave/export terminalの比較・判断材料（監査DONE） | [Output terminal audit](WP-004-output-terminal.md) |
 | WP-007 | 未確定Layer TransformのExport terminal guard | [Export terminal guard](WP-007-export-terminal-guard.md) |
 | WP-005 | Drawing WARP Simple UIを既存transactionへ接続（ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING） | [Simple WARP](WP-005-simple-warp.md) |
-| WP-008 | Layer Transform Progressive Controls（PLANNED / DESIGN-AUDIT FIRST） | [Progressive controls](WP-008-layer-transform-progressive-controls.md) |
+| WP-008 | Layer Transform Progressive Controls（ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW） | [Progressive controls](WP-008-layer-transform-progressive-controls.md) |
 | WP-009 | Layer Transform KEY bundle D&D / component delete（ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING） | [KEY management](WP-009-layer-transform-key-management.md) |
 
 先の機能すべてへ未確定の詳細カードを作らない。新カードはGoal / Scope / Contract / Tasks / Acceptance / Verification / Stop / Completionを持ち、同じ概念の第二正本を作らない。

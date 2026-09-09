@@ -1,10 +1,24 @@
 # Tegaki — 再開checkpoint
 
-状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。WP-009 ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。
-更新日: 2026-09-09。現在の実HEAD: `4e9a2ee0f9790504008b4f9f00a7ec1fb67ebb79`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `0bd2e08a9...`とは一致しなかったため、現在のHEADへ追補した。既存差分をreset/clean/stashせず保持した。
+状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。WP-009 ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。WP-008 ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW。
+更新日: 2026-09-09。現在の実HEAD: `8b776abb7acebdfeb7369ef315e8276457cc127d`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `b44e74a46d4f42c0e04c61b6c4e8faac627a3af6`とは一致しなかったため、履歴を巻き戻さず現在のHEADへ追補した。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
-## CURRENT OBJECTIVE
+## CURRENT OBJECTIVE — WP-008 ROUGH PRODUCT PASS
+
+Owner-authorized reversible prototypeとして、Layer TransformのBASIC/WARP progressive shell、既存BASIC detail整理、同一Simple 4×4 WARP sessionへ接続したPOINT/BRUSH最小操作を実装し、GPT/Ownerが実物を批評できる状態へ進める。Project schema、History、SOURCE/ANIMATE authority、CPU/Pixi evaluation order、WP-003/007/009 terminal semanticsは変更しない。
+
+## CURRENT SLICE — WP-008 progressive controls / WARP brush prototype (2026-09-09)
+
+- 開始HEADは`8b776abb7acebdfeb7369ef315e8276457cc127d`、開始時worktreeはclean。package想定HEADとの差は既存履歴として保持し、reset/clean/stash/revertは行っていない。現在の意図した差分は`layer-transform.js`、`dom-builder.js`、`layer-transform-warp-controller.js`、progressive controls CSS、WP-008 verifier 2本、docs/harness/外部route記録である。Vite生成`dist`は内容をHEADへ戻してあり、`git diff --exit-code HEAD -- tegaki_work/dist`は`0`。GitHub Desktopの稼働中`.git/index.lock`により`git status`ではdist 5件が一時的にM表示されるため、lockを触らずOwnerへ引き継ぐ。
+- Level 1の既存BASIC/WARP/status/KEY strip/component rowsを維持し、runtime-onlyのLevel 2 extension toggleを追加した。BASIC extensionは既存X/Y/rotation/scale controlsを再配置し、WARP extensionはPOINT/BRUSH selectorを表示する。非選択modeと非選択BRUSH controlsはhiddenへ戻る。
+- BRUSHは新しいdeformer/model stateを持たず、同じLayer WARP sessionの16点へ`previewLayerWarpEditSession()`を適用する。`warp-grid-brush.js`のMOVE/INFLATE/PINCHを再利用し、radius/strength/hardnessだけをruntime UI stateとして提供する。pointermoveはHistory 0、pointerupはcandidate保持、cancel/lostはgesture baseline rollback、明示KEYは既存terminalへ委譲する。
+- Canvas bodyはWARP BRUSH時だけcontrollerが所有し、POINT時は従来どおりinert。既存overlayのbrush cursor/weight visualizationを再利用し、BASIC body drag、WARP point gesture、Motion projection、WP-003 continuation、WP-009 bundle semanticsを別の正本へ分けていない。
+- `verify-layer-transform-progressive-controls.mjs`、`verify-layer-transform-warp-brush.mjs`、全verifier `172 selected / 0 failed`、harness check `34 documents / 140 local links / 25 proposals / 9 packages`はPASS。変更JS/MJSの`node --check`、Vite production build、`git diff --check`もPASSし、build後の`tegaki_work/dist`内容差分はHEADと0である。
+- Production BrowserのS1 BASIC simple、S2 BASIC expanded、S3 POINT、S4 BRUSH MOVE、S5 INFLATE/PINCH→Esc rollbackを確認した。glassの実効値はsurface `rgba(255, 255, 238, 0.72)` / backdrop `blur(3px)`、console error/warnは`0`だった。S6はAnimation Tableとglass単独表示までは確認したが、通常Raster fixtureでは既存のTable開閉境界がV sessionを終了するため、Table+Layer Transformの同時表示は受入に数えず`PARTIAL / GPT review required`として残す。既存のsave/export、ANIMATE continuation、WP-009 bundle semantics、V/Esc/KEY terminalは変更していない。
+- 技術evidenceは揃ったが、Owner操作感、Astra review、実PNG download、S6の同時表示は未受入である。WP-008は`ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW`のままGPT/Owner product reviewへ停止し、WP-005/009のOwner acceptance状態も変更しない。
+
+## PRIOR CONTEXT — WP-005 re-entry visual hydration
 
 WP-005のOWNER BLOCKERである「確定済みWARPのあるFrameへVで再入場すると、WARP visualが一度SOURCEへ戻る」症状を、既存canonical previewの再水和だけで限定修正する。保存schema、History、WARP transaction、評価順、renderer、Owner受入判定は変更しない。
 
@@ -140,7 +154,7 @@ Chromeの通常production UI（`http://localhost:5173/`）で、CAF1・Layer 1�
 
 ### WP-008 Design / Audit First evidence — 2026-09-08
 
-WP-008はproduction実装へ進めず、[WP-008 progressive controls audit](work/WP-008-progressive-controls-design-audit.md)と[Astra/GUI handoff draft](handoffs/WP-008-astra-progressive-controls-request.md)を追加した。現行Workspaceの可変GRID、RADIAL/FREE mesh、Bind/Cage、LENS placement、MOVE/INFLATE/PINCH/SMOOTH brushを、既存Layer Transformの4×4 `layerDeformers` authorityと分離して記録した。variable topology、cage authority、brushのLayer transaction接続、GUI Level 1/2/3は判断待ちであり、schema/history/renderer変更、Astra consultation、production UI変更は開始していない。WP-008は`PLANNED — DESIGN / AUDIT FIRST`のまま保持する。
+（履歴）この時点ではWP-008をproduction実装へ進めず、[WP-008 progressive controls audit](work/WP-008-progressive-controls-design-audit.md)と[Astra/GUI handoff draft](handoffs/WP-008-astra-progressive-controls-request.md)を追加した。現行Workspaceの可変GRID、RADIAL/FREE mesh、Bind/Cage、LENS placement、MOVE/INFLATE/PINCH/SMOOTH brushを、既存Layer Transformの4×4 `layerDeformers` authorityと分離して記録した。その後、Owner許可を受けた限定rough passをSTATUS先頭のCURRENT SLICEとして実施している。schema/history/renderer authorityは変更していない。
 
 ### WP-005 Pixi / CPU WARP parity root-cause slice (2026-09-07)
 

@@ -77,6 +77,9 @@ export class LayerTransform {
         this._editContextProjection = null;
         this.transformMode = 'basic';
         this.warpController = null;
+        // Progressive Controls are runtime-only presentation state. They do
+        // not participate in Layer/Clip/History or Project serialization.
+        this.progressiveExtensionOpen = false;
         this.basicOverlayScaleGesture = null;
         this.basicOverlayAxisScaleGesture = null;
         this.basicOverlayRotationGesture = null;
@@ -302,6 +305,7 @@ export class LayerTransform {
         if (this.isVKeyPressed) return;
         
         this.isVKeyPressed = true;
+        this.progressiveExtensionOpen = false;
         
         if (this.cameraSystem?.setVKeyPressed) {
             this.cameraSystem.setVKeyPressed(true);
@@ -318,12 +322,14 @@ export class LayerTransform {
         this.syncBasicOverlay();
         this._syncEditContextProjection();
         this._syncTransformModeButtons();
+        this._syncProgressiveExtensionControls();
     }
     
     exitMoveMode(activeLayer) {
         if (!this.isVKeyPressed) return;
         
         this.isVKeyPressed = false;
+        this.progressiveExtensionOpen = false;
         this.isDragging = false;
         this.basicOverlayScaleGesture = null;
         this.basicOverlayAxisScaleGesture = null;
@@ -349,6 +355,7 @@ export class LayerTransform {
         
         this._updateCursor();
         this._syncTransformModeButtons();
+        this._syncProgressiveExtensionControls();
     }
     
     toggleMoveMode(activeLayer) {
@@ -365,6 +372,7 @@ export class LayerTransform {
         if (!this.isVKeyPressed) {
             this.transformMode = nextMode;
             this._syncTransformModeButtons();
+            this._syncProgressiveExtensionControls();
             return true;
         }
         const accepted = this.onTransformModeChange?.(nextMode) !== false;
@@ -373,6 +381,7 @@ export class LayerTransform {
             return false;
         }
         this.transformMode = nextMode;
+        this.progressiveExtensionOpen = false;
         this.transformPanel?.classList.toggle('is-warp-mode', nextMode === 'warp');
         if (nextMode === 'warp') {
             transformAnchorSite.deactivate('layer-transform');
@@ -382,6 +391,7 @@ export class LayerTransform {
             this.syncBasicOverlay();
         }
         this._syncTransformModeButtons();
+        this._syncProgressiveExtensionControls();
         return true;
     }
 
@@ -408,6 +418,7 @@ export class LayerTransform {
             if (basicControlsDisabled) button.setAttribute('disabled', '');
             else button.removeAttribute('disabled');
         });
+        this._syncProgressiveExtensionControls();
     }
     
     _initializeTransformForActiveLayer() {
@@ -839,6 +850,12 @@ export class LayerTransform {
                 this.setTransformMode(button.dataset.transformMode || 'basic');
             });
         });
+
+        // Progressive controls are runtime-only and do not depend on the
+        // optional numeric slider helper. Bind them before the legacy slider
+        // setup can return early so WARP POINT/BRUSH remains usable in the
+        // lightweight harness and in deferred UI initialization.
+        this._setupProgressiveExtensionControls();
         
         if (!window.TegakiUI?.SliderUtils) {
             return;
@@ -915,8 +932,104 @@ export class LayerTransform {
             if (stepButton?.disabled) return;
             this.onStepTimelineFrame?.(event.deltaY < 0 ? -1 : 1);
         }, { passive: false });
-        
+
         this._setupPanelDrag();
+    }
+
+    _setupProgressiveExtensionControls() {
+        const toggle = document.getElementById('layer-transform-extension-toggle');
+        const basicExtension = document.getElementById('layer-transform-basic-extension');
+        const warpExtension = document.getElementById('layer-transform-warp-extension');
+        const brushControls = document.getElementById('layer-transform-warp-brush-controls');
+        if (!toggle || !basicExtension || !warpExtension) return;
+
+        toggle.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.progressiveExtensionOpen = !this.progressiveExtensionOpen;
+            this._syncProgressiveExtensionControls();
+        });
+
+        this.transformPanel?.querySelectorAll?.('[data-warp-tool]').forEach(button => {
+            button.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (this.warpController?.setInteractionTool?.(button.dataset.warpTool) === false) return;
+                this._syncProgressiveExtensionControls();
+                this._updateCursor();
+            });
+        });
+
+        this.transformPanel?.querySelectorAll?.('[data-warp-brush-type]').forEach(button => {
+            button.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (this.warpController?.setBrushType?.(button.dataset.warpBrushType) === false) return;
+                this._syncProgressiveExtensionControls();
+            });
+        });
+
+        const rangeBindings = [
+            ['layer-transform-warp-brush-radius', 'radius', value => `${Math.round(value)}px`],
+            ['layer-transform-warp-brush-strength', 'strength', value => Number(value).toFixed(2)],
+            ['layer-transform-warp-brush-hardness', 'hardness', value => Number(value).toFixed(2)]
+        ];
+        rangeBindings.forEach(([id, property, format]) => {
+            const input = document.getElementById(id);
+            if (!input) return;
+            input.addEventListener('input', event => {
+                const value = Number(event.currentTarget.value);
+                this.warpController?.setBrushSettings?.({ [property]: value });
+                const output = event.currentTarget.parentElement?.querySelector('output');
+                if (output) output.textContent = format(value);
+            });
+        });
+
+        // Keep the initial range output readable even before the first input.
+        if (brushControls) {
+            brushControls.querySelectorAll('input[type="range"]').forEach(input => {
+                const output = input.parentElement?.querySelector('output');
+                if (output && !output.textContent) output.textContent = input.value;
+            });
+        }
+        this._syncProgressiveExtensionControls();
+    }
+
+    _syncProgressiveExtensionControls() {
+        const toggle = document.getElementById('layer-transform-extension-toggle');
+        const basicExtension = document.getElementById('layer-transform-basic-extension');
+        const warpExtension = document.getElementById('layer-transform-warp-extension');
+        const brushControls = document.getElementById('layer-transform-warp-brush-controls');
+        if (!toggle || !basicExtension || !warpExtension) return;
+
+        const isWarp = this.transformMode === 'warp';
+        const tool = this.warpController?.getInteractionTool?.() || 'point';
+        const brushType = this.warpController?.getBrushType?.() || 'move';
+        const open = this.progressiveExtensionOpen === true;
+
+        toggle.textContent = isWarp ? 'WARP ツール' : 'BASIC 詳細';
+        toggle.title = isWarp ? 'WARPのPOINT / BRUSHを表示' : 'BASICの数値調整を表示';
+        toggle.setAttribute('aria-expanded', String(open));
+        toggle.setAttribute('aria-controls', isWarp
+            ? 'layer-transform-warp-extension'
+            : 'layer-transform-basic-extension');
+        toggle.dataset.extensionMode = isWarp ? 'warp' : 'basic';
+
+        basicExtension.hidden = isWarp || !open;
+        warpExtension.hidden = !isWarp || !open;
+        if (!isWarp) basicExtension.open = open;
+        if (isWarp && brushControls) brushControls.hidden = tool !== 'brush';
+
+        this.transformPanel?.querySelectorAll?.('[data-warp-tool]').forEach(button => {
+            const selected = button.dataset.warpTool === tool;
+            button.classList.toggle('is-selected', selected);
+            button.setAttribute('aria-pressed', String(selected));
+        });
+        this.transformPanel?.querySelectorAll?.('[data-warp-brush-type]').forEach(button => {
+            const selected = button.dataset.warpBrushType === brushType;
+            button.classList.toggle('is-selected', selected);
+            button.setAttribute('aria-pressed', String(selected));
+        });
     }
 
     _toggleAnchorSite() {
@@ -1531,6 +1644,10 @@ export class LayerTransform {
         if (!canvas) return;
         
         canvas.addEventListener('pointerdown', (e) => {
+            if (this.isVKeyPressed && this.transformMode === 'warp') {
+                this.warpController?.handleCanvasPointerDown?.(e);
+                return;
+            }
             if (this.isVKeyPressed && this.transformMode === 'basic' && e.button === 0) {
                 if (!this.coordinateSystem) return;
                 
@@ -1551,17 +1668,35 @@ export class LayerTransform {
         
         canvas.addEventListener('pointermove', (e) => {
             if (this.dragPointerId !== null && e.pointerId !== this.dragPointerId) return;
+            if (this.isVKeyPressed && this.transformMode === 'warp') {
+                this.warpController?.handleCanvasPointerMove?.(e);
+                return;
+            }
             if (this.isDragging && this.isVKeyPressed) {
                 this._handleDrag(e);
             }
         });
-        
+
         canvas.addEventListener('pointerup', (e) => {
+            if (this.isVKeyPressed && this.transformMode === 'warp') {
+                this.warpController?.handleCanvasPointerUp?.(e);
+                return;
+            }
             this._finishCanvasDrag(canvas, e.pointerId);
         });
 
         canvas.addEventListener('pointercancel', (e) => {
+            if (this.isVKeyPressed && this.transformMode === 'warp') {
+                this.warpController?.handleCanvasPointerCancel?.(e);
+                return;
+            }
             this._finishCanvasDrag(canvas, e.pointerId);
+        });
+
+        canvas.addEventListener('lostpointercapture', (e) => {
+            if (this.isVKeyPressed && this.transformMode === 'warp') {
+                this.warpController?.handleCanvasLostPointerCapture?.(e);
+            }
         });
     }
 
@@ -1931,7 +2066,12 @@ export class LayerTransform {
         const canvas = this._getSafeCanvas();
         if (!canvas) return;
         
-        if (this.isVKeyPressed && !this.isDragging) {
+        if (this.isVKeyPressed
+            && this.transformMode === 'warp'
+            && this.warpController?.getInteractionTool?.() === 'brush'
+            && !this.isDragging) {
+            canvas.style.cursor = 'crosshair';
+        } else if (this.isVKeyPressed && !this.isDragging) {
             canvas.style.cursor = 'move';
         } else if (this.isDragging) {
             canvas.style.cursor = 'grabbing';

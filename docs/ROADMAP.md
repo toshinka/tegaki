@@ -1,6 +1,6 @@
 # 再構成ロードマップ
 
-状態: CURRENT。旧Phaseの時系列を、現在の依存関係へ並べ直した。製品実装はSTATUSで再開を指定するまで停止。
+状態: CURRENT。旧Phaseの時系列を、現在の依存関係へ並べ直した。製品実装の現在地はSTATUSと各ACTIVE work packageが所有する。
 作業カード状態は[harness.json](harness.json)、調査根拠は[AUDIT](AUDIT.md)。
 
 ## 直近の順序
@@ -15,12 +15,12 @@
 | 5 完了 | [WP-004 出力拒否/terminal監査](work/WP-004-output-terminal.md) | Folder Motionを含むMotion出力の欠落を固定 | unsupported拒否表、save/exportのSOURCE/ANIMATE比較、HD-005 MIXED決定 |
 | 6 完了 | [WP-007 Export terminal guard](work/WP-007-export-terminal-guard.md) | 未確定Layer Transformの出力境界を明示停止へ統一 | SOURCE/CAF SOURCE/ANIMATE Layer/Folderのzero mutation、Selection維持、sequence境界 |
 | 7 ACTIVE — OWNER ACCEPTANCE BLOCKED | [WP-005 Simple WARP UI](work/WP-005-simple-warp.md) | 旧9q A〜Dの既存資産を完成へ接続 | technical complete（CPU final authority / Pixi GPU proxy）。F1再入場のstatus/marker不整合をGPT review待ち |
-| 8 PLANNED | [WP-008 Layer Transform Progressive Controls](work/WP-008-layer-transform-progressive-controls.md) | WP-005 Owner受入後に進めるDesign/Audit | capability、authority、reuse、GUIの限定整理 |
+| 8 ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW | [WP-008 Layer Transform Progressive Controls](work/WP-008-layer-transform-progressive-controls.md) | Ownerが許可した可逆prototypeで実装済み画面を評価可能にする | progressive shell、既存BASIC detail、Simple WARP POINT/BRUSH、限定verifier、Owner/Astra review |
 | 8a ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING | [WP-009 Layer Transform KEY management](work/WP-009-layer-transform-key-management.md) | 既存BASIC/WARP KEYをTimeline bundleとpanel componentへ限定接続 | pure helper、History 1/0、Browser最小受入 |
 | 9 | 一つの編集session境界の抽出 | 正しい振舞いを固定してから巨大Popupの責務を縮める | 互換facade、同じ入力/出力/History、対象file探索の短縮 |
 | 10 | static RIG導線の再配置 | WHAT/HOW/WHENを揃える | HD-002比較とOwner受入、保存正本不変 |
 
-1〜3は既存契約の補修、4はOwner承認済みの新しいFolder Motion契約、5は監査DONE、6はHD-005の限定runtime guard、7はSimple 4x4 WARP UIの技術作業を完了しOwner受入を継続中。WP-005 preview parity decisionはGPU preview proxy / CPU final authorityとし、数値epsilonは導入しない。8はWP-005 Owner受入後のProgressive Controls Design/Auditであり、production実装は含めない。その後の9は抽出設計の選定から始め、巨大classの書換えを直ちに実行しない。
+1〜3は既存契約の補修、4はOwner承認済みの新しいFolder Motion契約、5は監査DONE、6はHD-005の限定runtime guard、7はSimple 4x4 WARP UIの技術作業を完了しOwner受入を継続中。WP-005 preview parity decisionはGPU preview proxy / CPU final authorityとし、数値epsilonは導入しない。8はOwner許可によりarchitecture hard floorを固定したまま可逆rough product passへ移行し、BASIC/WARPのmode-local controlsと同一WARP sessionのBRUSH最小実装を実物で評価する段階である。WP-005/009のOwner受入待ちは維持する。その後の9は抽出設計の選定から始め、巨大classの書換えを直ちに実行しない。
 WP-001の例外index修正へ、History全体系のrewriteやcomposite補償処理を混ぜない。
 
 ## 残作業の再分類

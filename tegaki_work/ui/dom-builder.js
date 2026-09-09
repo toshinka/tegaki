@@ -476,8 +476,29 @@ export const DOMBuilder = (function() {
             }
         }));
 
+        // Progressive Controls: Level 1 keeps the BASIC/WARP surface light;
+        // the active mode exposes one runtime-only Level 2 entry point.
+        panel.appendChild(createElement('div', {
+            className: 'layer-transform-extension-shell',
+            id: 'layer-transform-extension-shell'
+        }));
+        const extensionToggle = createElement('button', {
+            className: 'layer-transform-extension-toggle',
+            id: 'layer-transform-extension-toggle',
+            textContent: 'BASIC 詳細',
+            title: '現在の変形モードの詳細を表示',
+            attributes: {
+                type: 'button',
+                'aria-expanded': 'false',
+                'aria-controls': 'layer-transform-basic-extension'
+            }
+        });
+        panel.querySelector('#layer-transform-extension-shell')?.appendChild(extensionToggle);
+
         const preciseDetails = createElement('details', {
-            className: 'layer-transform-precise'
+            className: 'layer-transform-precise',
+            id: 'layer-transform-basic-extension',
+            attributes: { 'data-transform-extension': 'basic', hidden: '' }
         });
         preciseDetails.appendChild(createElement('summary', {
             textContent: '詳細 — 数値で正確に調整'
@@ -534,6 +555,107 @@ export const DOMBuilder = (function() {
 
         preciseDetails.appendChild(sections);
         panel.appendChild(preciseDetails);
+
+        const warpExtension = createElement('div', {
+            className: 'layer-transform-warp-extension',
+            id: 'layer-transform-warp-extension',
+            attributes: {
+                'data-transform-extension': 'warp',
+                hidden: '',
+                role: 'region',
+                'aria-label': 'WARPツール'
+            }
+        });
+        const warpToolStrip = createElement('div', {
+            className: 'layer-transform-warp-tool-strip',
+            attributes: { role: 'group', 'aria-label': 'WARP操作ツール' }
+        });
+        warpToolStrip.appendChild(createElement('button', {
+            className: 'layer-transform-warp-tool-btn is-selected',
+            textContent: 'POINT',
+            title: '16点を直接編集',
+            attributes: {
+                type: 'button',
+                'aria-pressed': 'true',
+                'data-warp-tool': 'point'
+            }
+        }));
+        warpToolStrip.appendChild(createElement('button', {
+            className: 'layer-transform-warp-tool-btn',
+            textContent: 'BRUSH',
+            title: 'ブラシで16点を変形',
+            attributes: {
+                type: 'button',
+                'aria-pressed': 'false',
+                'data-warp-tool': 'brush'
+            }
+        }));
+        warpExtension.appendChild(warpToolStrip);
+
+        const brushControls = createElement('div', {
+            className: 'layer-transform-warp-brush-controls',
+            id: 'layer-transform-warp-brush-controls',
+            attributes: { hidden: '', role: 'group', 'aria-label': 'WARPブラシ設定' }
+        });
+        const brushTypeStrip = createElement('div', {
+            className: 'layer-transform-warp-brush-type-strip',
+            attributes: { role: 'group', 'aria-label': 'ブラシ種類' }
+        });
+        [
+            ['move', 'MOVE'],
+            ['inflate', 'INFLATE'],
+            ['pinch', 'PINCH']
+        ].forEach(([value, label], index) => {
+            brushTypeStrip.appendChild(createElement('button', {
+                className: `layer-transform-warp-brush-type-btn${index === 0 ? ' is-selected' : ''}`,
+                textContent: label,
+                title: `${label}ブラシ`,
+                attributes: {
+                    type: 'button',
+                    'aria-pressed': index === 0 ? 'true' : 'false',
+                    'data-warp-brush-type': value
+                }
+            }));
+        });
+        brushControls.appendChild(brushTypeStrip);
+
+        const createBrushRange = (id, label, min, max, step, value, output) => {
+            const row = createElement('label', {
+                className: 'layer-transform-warp-brush-range',
+                attributes: { for: id }
+            });
+            row.appendChild(createElement('span', {
+                className: 'layer-transform-warp-brush-range-label',
+                textContent: label
+            }));
+            row.appendChild(createElement('input', {
+                id,
+                attributes: {
+                    type: 'range',
+                    min: String(min),
+                    max: String(max),
+                    step: String(step),
+                    value: String(value)
+                }
+            }));
+            row.appendChild(createElement('output', {
+                className: 'layer-transform-warp-brush-range-value',
+                id: output,
+                textContent: String(value)
+            }));
+            return row;
+        };
+        brushControls.appendChild(createBrushRange(
+            'layer-transform-warp-brush-radius', '半径', 12, 160, 1, 72, 'layer-transform-warp-brush-radius-value'
+        ));
+        brushControls.appendChild(createBrushRange(
+            'layer-transform-warp-brush-strength', '強さ', 0.05, 1, 0.05, 0.45, 'layer-transform-warp-brush-strength-value'
+        ));
+        brushControls.appendChild(createBrushRange(
+            'layer-transform-warp-brush-hardness', '硬さ', 0, 1, 0.05, 0.55, 'layer-transform-warp-brush-hardness-value'
+        ));
+        warpExtension.appendChild(brushControls);
+        panel.appendChild(warpExtension);
         return panel;
     }
 

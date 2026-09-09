@@ -8,6 +8,11 @@
     "docs/ROADMAP.md", "docs/AUDIT.md", "docs/DOCUMENT_REGISTER.md",
     "docs/work/README.md",
     "docs/work/WP-007-export-terminal-guard.md",
+    "docs/work/WP-003-key-continuation.md",
+    "docs/work/WP-005-simple-warp.md",
+    "docs/work/WP-008-layer-transform-progressive-controls.md",
+    "docs/work/WP-008-progressive-controls-design-audit.md",
+    "docs/handoffs/WP-008-astra-progressive-controls-request.md",
     "docs/work/WP-009-layer-transform-key-management.md",
     "docs/legacy/PROGRESS.md", "docs/legacy/ARCHITECTURE.md",
     "docs/legacy/PHASE4Z_BOUNDARY.md", "docs/legacy/NEXT_CHAT_HANDOFF.md",
@@ -31,7 +36,7 @@
     "transform": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": ["tegaki_work/system/layer-system.js", "tegaki_work/system/layer-transform.js", "tegaki_work/system/animation/transform-edit-context.js", "tegaki_work/system/animation/transform-edit-transaction.js", "tegaki_work/ui/animation-table-popup.js"],
-      "patterns": ["^verify-phase9[op]-", "^verify-clip-transform-", "^verify-clip-layer-transform", "^verify-layer-transform-key-", "^verify-layer-transform-basic-warp-envelope", "^verify-timeline-wheel-routing"]
+      "patterns": ["^verify-phase9[op]-", "^verify-clip-transform-", "^verify-clip-layer-transform", "^verify-layer-transform-key-", "^verify-layer-transform-basic-warp-envelope", "^verify-layer-transform-progressive-controls", "^verify-timeline-wheel-routing"]
     },
     "animation": {
       "architecture": "docs/ARCHITECTURE.md",
@@ -67,6 +72,7 @@
     {"id":"WP-004","document":"docs/work/WP-004-output-terminal.md","status":"DONE","dependsOn":["WP-006"]},
     {"id":"WP-007","document":"docs/work/WP-007-export-terminal-guard.md","status":"DONE","dependsOn":["WP-004"]},
     {"id":"WP-005","document":"docs/work/WP-005-simple-warp.md","status":"ACTIVE","dependsOn":["WP-002","WP-003","WP-004","WP-007"]},
-    {"id":"WP-009","document":"docs/work/WP-009-layer-transform-key-management.md","status":"ACTIVE","dependsOn":["WP-003","WP-007"]}
+    {"id":"WP-009","document":"docs/work/WP-009-layer-transform-key-management.md","status":"ACTIVE","dependsOn":["WP-003","WP-007"]},
+    {"id":"WP-008","document":"docs/work/WP-008-layer-transform-progressive-controls.md","status":"ACTIVE","dependsOn":["WP-003","WP-007"]}
   ]
 }

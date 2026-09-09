@@ -1,7 +1,13 @@
 # WP-008 — Astra / GUI Requirements Handoff Draft
 
-状態: **DRAFT — ARCHITECTURE REVIEW REQUIRED**  
-この資料はGUI相談へ渡すための下書きであり、production implementation instructionではない。
+状態: **DRAFT — ACTUAL PRODUCT REVIEW REQUEST**
+この資料は、Owner許可で実装したWP-008 rough product passの画面をAstra/Ownerが批評するための下書きであり、追加実装のblank-slate instructionではない。
+
+## Review target update — 2026-09-09
+
+実装済みのLayer Transformを対象に、次を画面上で確認する。Level 1のBASIC/WARP/status/KEY strip、BASIC extensionの既存numeric controls、WARP POINT/BRUSH、MOVE/INFLATE/PINCH、radius/strength/hardness、既存glass `.72` / `blur(3px)`、Animation Table併用時のfootprintとfocus lensである。Astraは「何を追加すべきか」ではなく「何が煩雑で、何を削り、どの入口位置が自然か」を批評する。
+
+レビュー結果として、(1)BASIC/WARP分離の有効性、(2)extension入口の位置と閉じた時の軽さ、(3)POINT/BRUSH切替の自然さ、(4)brush fine controlsをLayer Transform内に置く妥当性、(5)4×4 brushのworkflow価値、(6)glassとCanvas視認性、(7)narrow Animation Tableでの操作面を記録する。改善方向は最大3案までとし、variable topology、Cage、pivot schema、RIG/MOTION、renderer/session rewriteを提案段階でproductionへ昇格させない。
 
 ## Background
 
@@ -89,7 +95,13 @@ GUI案では少なくとも次を比較する。
 3. WARP詳細の最小到達手数とkeyboard/pen操作の比較。
 4. 上記open questionsのうちGUIで判断できるもの、Architectureへ返すものの仕分け。
 
-この下書きはAstra/Owner review後に正式仕様へ昇格する。現時点ではWP-008 production implementationを開始しない。
+この下書きはAstra/Owner review後に正式仕様へ昇格する。現時点では実装済みrough passの画面を対象にレビューし、最終GUI採用や追加production設計へ自動進行しない。
+
+## Actual review evidence — 2026-09-09
+
+- Production BrowserではBASIC simple/expanded、WARP POINT、BRUSH MOVE/INFLATE/PINCH、Esc rollbackを確認し、console error/warnは`0`だった。glassはsurface alpha `.72`、backdrop `blur(3px)`の実効値を確認した。
+- Animation Table単独のglass表示は確認したが、通常Raster fixtureでは既存Table開閉境界がV sessionを終了するため、TableとLayer Transformの同時表示は未受入である。これはWP-008でterminal境界を変更せず、`PARTIAL / GPT review required`としてレビュー対象に残す。
+- 技術回帰は全verifier `172 selected / 0 failed`、harness check `34 documents / 140 local links / 25 proposals / 9 packages`。Owner操作感、実PNG、最終GUI採用は未判定である。
 
 ## Added review material — WARP ownership and Anchor/Pivot presets (2026-09-09)
 

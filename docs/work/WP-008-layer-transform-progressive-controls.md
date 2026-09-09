@@ -1,8 +1,59 @@
 # WP-008 — Layer Transform Progressive Controls
 
-状態: **PLANNED — DESIGN / AUDIT FIRST**  
-Production実装: **未開始**  
+状態: **ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW**
+Production実装: **可逆prototype実装済み・Owner/Astra review待ち**
 作成時参照HEAD: `8d33e7e1144c220edb019ce4ba62d6e8ae2ec5de`
+今回開始HEAD: `8b776abb7acebdfeb7369ef315e8276457cc127d`（package想定`b44e74a46d4f42c0e04c61b6c4e8faac627a3af6`とは不一致。既存履歴を巻き戻していない）
+
+> **2026-09-09 process update:** Ownerの継続確認に基づき、WP-005をDONEへ変更せず、architecture hard floorを固定したままWP-008の可逆production rough passを開始した。下記の設計監査は境界の正本として保持し、旧来の「production実装未開始」はこの追補で置き換える。
+
+## Current rough product pass — implemented slice
+
+- Level 1は既存`BASIC | WARP`、status、KEY strip、component rowsを維持し、Level 2の入口をruntime-only extension toggleとして追加した。BASICでは既存X/Y/rotation/scale controlsを`details` extensionへ収納し、WARPではPOINT/BRUSHをmode-localに表示する。非選択modeのextensionとBRUSH controlsはhiddenへ戻る。
+- WARP POINTは既存`LayerTransformWarpController`の16点gestureをそのまま使用する。BRUSHは同じcurrent Layer WARP session、同じ16点、同じ`previewLayerWarpEditSession()`を使い、`warp-grid-brush.js`のMOVE/INFLATE/PINCH pure algorithmだけを再利用する。新しいdeformer、Project metadata、History pathは追加していない。
+- BRUSH pointermoveはpreview、pointerupはcandidate保持、cancel/lost captureはgesture baseline rollback。V / explicit KEY / Esc / Frame continuation / WP-009 bundle semanticsは既存terminalへ委譲する。POINT↔BRUSH、MOVE↔INFLATE/PINCHの切替はruntime tool stateのみでHistory/modelを変更しない。
+- Brush controlsはradius/strength/hardnessの最小3項目とし、pressure/falloff/grid density/cage/pivot/SMOOTHは追加していない。既存overlayのcursor/weight visualizationを再利用し、Canvas bodyはBRUSH時だけcontrollerが所有する。
+- 追加verifierは`verify-layer-transform-progressive-controls.mjs`と`verify-layer-transform-warp-brush.mjs`。実production Browser/Owner acceptanceは別ゲートであり、技術PASSだけでWP-008やWP-005/009を閉じない。
+
+### Current review questions
+
+Owner/Astraには、実装済み画面についてBASIC/WARPのfocus lens、extension入口の位置、POINT/BRUSH切替、BRUSH controlsの情報量、4×4 brushの価値、glass `.72` / `blur(3px)`との共存を評価してもらう。ANIMATE pivot、variable topology、Cage、RIG/MOTION、session extractionはこのWPのrough pass範囲外である。
+
+### Actual evidence — 2026-09-09
+
+- 開始HEAD/最終HEADはともに`8b776abb7acebdfeb7369ef315e8276457cc127d`。package想定HEAD`b44e74a46d4f42c0e04c61b6c4e8faac627a3af6`との差は既存履歴として保持し、reset/clean/stash/revert/commit/pushは行っていない。生成`tegaki_work/dist`の内容差分はHEADと`0`である。
+- 技術側は、harness check `34 documents / 140 local links / 25 proposals / 9 packages`、全verifier `172 selected / 0 failed`、transform `18/18`、warp `29/29`、animation `34/34`、ui `45/45`、project `9/9`、progressive/brush専用verifierをPASSした。変更JS/MJSの`node --check`、Vite production build、`git diff --check`もPASSした。
+- BASIC shell/simple面、BASIC既存detailの展開、POINT面、BRUSH MOVE/INFLATE/PINCH、pointerup候補保持、Esc rollbackをProduction Browserで確認した。BRUSHは同一current Layer WARP sessionの16点と同一explicit KEYへ接続し、pointermoveはHistory`0`、explicit KEYは既存terminalへ委譲する。既存ANIMATE continuation、WP-009 marker/delete/D&D、save/export pathは変更していない。
+- Browser S1〜S5はPASS。glassの実効値はsurface `rgba(255, 255, 238, 0.72)` / backdrop `blur(3px)`、console error/warnは`0`だった。S6はAnimation Tableとglass単独表示まで確認したが、通常Raster fixtureでは既存Table開閉境界がV sessionを終了するため、Table+Layer Transform同時表示は`PARTIAL / GPT review required`とする。WP-008でterminal境界を変更しない。
+- Owner/Astra reviewでは、閉じたSimple面の軽さ、BASIC/WARPのfocus、extension入口、POINT/BRUSH切替、radius/strength/hardnessの情報量、4×4 brushの実用価値、glassとCanvas視認性、Animation Table併用時のfootprintを判断する。技術PASSをOwner ACCEPTEDへ昇格せず、WP-008は`ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW`で停止する。
+
+## Contract
+
+Level 1のBASIC/WARPと既存KEY terminalを維持し、Level 2/3はruntime-onlyのmode-local controlsとする。POINT/BRUSHは同一Simple 4×4 Layer WARP session、同一16点、同一History/KEY境界を共有する。新しい保存正本、deformer、renderer、evaluation order、ANIMATE pivot authorityは追加しない。
+
+## Tasks
+
+- progressive extension shellとBASIC既存detailの整理
+- WARP POINT/BRUSH selector、MOVE/INFLATE/PINCH、radius/strength/hardnessの最小UI
+- 既存brush algorithmとLayer WARP preview transactionの限定adapter
+- progressive shell / brush adapter verifier、関連回帰、Browser review準備
+- STATUS、ROADMAP、harness、Astra handoffの更新
+
+## Acceptance
+
+技術側はinactive extension hiding、Simple surfaceへの復帰、POINT body inert、BRUSH body ownership、pointerup candidate保持、cancel rollback、explicit KEY History +1、POINT↔BRUSH same-keyを固定する。Browser/Owner側はS1〜S6の実Raster操作とfocus lens・可読性を別途判断し、CodexはOwner ACCEPTEDを宣言しない。
+
+## Verification
+
+`verify-layer-transform-progressive-controls.mjs`、`verify-layer-transform-warp-brush.mjs`、既存transform/warp/animation/ui/project suite、harness check、変更JS/MJSの構文確認、Vite production build、`git diff --check`、build後の`tegaki_work/dist`差分0を実施する。
+
+## Stop
+
+variable topology、grid density、Cage、pivot schema、RIG/MOTION/BONE/Hierarchy、brush Project metadata、History framework、renderer core、session rewriteが必要になった場合は、そのfeatureだけHOLDしてGPT/Architecture判断へ返す。WP-004、WP-007、F-007、ComfyUIPortable、Backup/PastFilesへ展開しない。
+
+## Completion
+
+本rough passは技術evidenceと実Browser確認を記録したうえで、`ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW`のままGPT/Owner reviewへ停止する。最終GUI採用、Owner受入、次WPへの自動進行は行わない。
 
 ## Goal
 
@@ -165,7 +216,7 @@ UIが再利用不能でもalgorithmが再利用可能な場合がある。
 
 ---
 
-# Scope
+## Scope
 
 ## A. Mode-local Progressive Disclosure
 
@@ -722,11 +773,13 @@ Design/Audit Sliceの完了条件:
 
 # Status Transition
 
+以下は設計段階からの履歴を保持した遷移表である。2026-09-09のOwner-authorized reversible rough passはこの表の後段に追加された現行状態を使う。
+
 現在:
 
 ```text
-PLANNED — DESIGN / AUDIT FIRST
-NO PRODUCTION IMPLEMENTATION
+ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW
+LIMITED REVERSIBLE PROTOTYPE
 ```
 
 Design/Audit開始時:
@@ -759,8 +812,7 @@ DONE
 
 開始条件:
 
-- WP-005 Owner acceptanceが完了していること
-- WP-005のSimple WARP authorityを再オープンしないこと
+- WP-005のSimple WARP authorityを再オープンしないこと。Ownerが限定rough passを明示許可していること
 - WP-003のKEY継続編集契約が維持されていること
 - WP-007 Export terminal guardが維持されていること
 
