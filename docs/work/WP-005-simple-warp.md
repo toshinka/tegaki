@@ -1,8 +1,32 @@
 # WP-005 — Simple 4x4 WARP UI
 
-状態: ACTIVE — OWNER ACCEPTANCE BLOCKED（2026-09-09）。F1再入場とcross-frame continuationの限定修正は技術確認済み。現在の作業baseline HEAD: `7ba13ef753b8264d06759ec6ad39518187d805ef`。今回の追補は未コミット差分として保持する。
+状態: ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING（2026-09-09）。今回のOwner Acceptance Continuation（WARP gesture retention / post-WARP BASIC envelope / reversible glass prototype）の技術sliceを完了した。開始HEAD: `2d6e461bf13a8bbc1d6b76cf2041b8684a63fb06`。
 
 Layer TransformのBASIC/WARP切替、Simple 4x4の16点pointer adapter、normal/CAF SOURCEのRaster preview/bake、CAF ANIMATEの既存`layerDeformers` bridge接続を完了した。関連verifier・構文・Vite buildはPASSしている。normal SOURCEの実Browser操作、CAF ANIMATEの入場・preview・Esc・V確定・次Frame移動、Tableを閉じたCAF SOURCEのdrag・V確定、Table close rollback、pointer terminal、Pixi/CPU/export/save-reopenの技術証拠を確認した。trusted device pointercancelとOwner操作受入は未完了であり、Preview Equivalence Policyに従ってpackage statusはACTIVEとする。
+
+## Owner Acceptance Continuation — gesture retention / BASIC envelope / glass prototype (2026-09-09)
+
+### A. WARP gesture retention
+
+`LayerTransformWarpController`へproductionの通常経路では無効な任意`onTrace` hookを追加した。hookはpointer identity、capture成否、normalized point、preview `ok/reason`、session point/change、overlay・transform session、Frame/internal Layerを受け取り、常時consoleへ出力しない。`pointerup`は最後のpreviewを保持し、`pointercancel`とpointerup前の`lostpointercapture`はgesture開始点へ戻し、pointerup後のlate lostは無視する既存契約を固定した。preview failureもrollback原因として残している。
+
+interactive WARP overlayとpoint hit targetへだけ`touch-action:none`を追加した。document/bodyやCanvas全体のpointer policyは変更していない。`build/verify-layer-warp-gesture-retention.mjs`はdown→move A→move B→up、cancel/lost rollback、late lost retention、preview failure、trace順序、overlay再生成なし、CSS scopeを確認する。trusted physical pen/pointercancelの実頻度とOwnerの20 gesture受入はBrowser/Owner確認待ちであり、terminal semanticsを変更する判断はしていない。
+
+### B. Post-WARP BASIC authoring envelope
+
+`system/animation/layer-warp-authoring-envelope.js`のpure helperが、current evaluated Simple 4×4 WARPの`bindBounds`と16点をProject座標へ展開し、全点のmin/maxから表示用envelopeを作る。`LayerSystem._getLayerTransformWorldCorners()`はANIMATE Layer targetだけを`AnimationTablePopup` adapterへ問い合わせ、current Clip/internal Layer/local Frameを一致検証してからこのenvelopeを使う。WARPなし、unsupported、current sample不在、component delete後は従来source boundsへfallbackし、BASIC Motionは同じenvelopeへ従来どおりforward適用する。
+
+`bindBounds`、WARP points、`layerTransformTracks`、`layerDeformers`、pivot、DrawingSnapshot、Project schema、CPU/Pixi rendererのauthorityは変更しない。`build/verify-layer-transform-basic-warp-envelope.mjs`でno-WARP、expanded、compressed、interior protrusion、translation/rotation/scale/flip、delete/restoreを確認する。
+
+### C. Reversible glass surface prototype
+
+既存themeのalpha surfaceを再利用する`--ui-panel-glass-surface`（alpha `.82`）と`--ui-panel-glass-backdrop`（`blur(3px)`）を追加し、Layer Transform outer surfaceとAnimation Table main surfaceへ限定適用した。Animation Tableのcanvas-context時にheader/viewport全体へ掛かっていた`opacity:.72`は除去し、foreground controlはopacity 1のまま保持する。配置、縮小、dock、auto-collapse、Timeline構造、z-index、pointer ownershipは変更していない。Browser G1/G2/G3、Canvas可視性、Timeline/KEY読解性、drag/preview/scroll性能、backdrop fallbackは技術確認とOwner受入を分離して記録する。
+
+### Technical checkpoint / Browser boundary
+
+- New verifiers: `verify-layer-warp-gesture-retention` PASS、`verify-layer-transform-basic-warp-envelope` PASS（production `LayerSystem` adapter boundary、16点 envelope、Motion corners、delete fallbackを含む）。
+- Regression: harness check `31 documents / 139 local links / 25 proposals / 8 packages`; transform `17/17`; warp `27/27`; animation `34/34`; UI `45/45`; project `9/9`; all `169 selected / 0 failed`。Changed JS/MJS `node --check`、Vite production build、`git diff --check` PASS。Vite生成物はHEAD内容へ戻し、dist diffは0。
+- Browser minimum: Chrome production `localhost:5173`, screenshot viewport `908×548`。G1 Layer Transform、G2 Animation Tableの配置維持、semi-transparent surface、foreground control/Timelineの可読性を確認した。現fixtureは空Rasterで、Layer TransformとAnimation Tableの同時表示（G3）、実WARP 20 gesture、BASIC envelope実制作、trusted physical pen/pointercancel、独立console計測は未確認。これらはOwner受入へ残し、technical passをOwner ACCEPTEDへ繰り上げない。
 
 ## BASIC + WARP authoring coordinate congruence (2026-09-09)
 

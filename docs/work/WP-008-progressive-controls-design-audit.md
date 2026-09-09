@@ -7,9 +7,20 @@ Production実装: **未開始**
 
 ## Scope and stop boundary
 
-この資料は、既存WARP Workspaceの能力とLayer Transformへ接続する場合の境界を、現行production sourceからread-onlyで整理したものです。今回のWP-005再入場修正は`animation-table-popup.js`と限定Verifierに閉じており、WP-008のproduction code、保存schema、History、renderer、UI構造は変更していません。
+この資料は、既存WARP Workspaceの能力とLayer Transformへ接続する場合の境界を、現行production sourceからread-onlyで整理したものです。WP-008のprogressive controls production code、保存schema、History、renderer、UI構造は変更していません。WP-005の可逆glass CSS prototypeだけは下記の別枠へ記録します。
 
-WP-005はこの監査資料によってOwner受入済みにはなりません。WP-005の技術状態は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`を維持します。
+WP-005はこの監査資料によってOwner受入済みにはなりません。今回のglass実験中は`ACTIVE — OWNER ACCEPTANCE BLOCKED`、A/B technical pass後は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`へ戻す。WP-008自身は`PLANNED — DESIGN / AUDIT FIRST`を維持します。
+
+## Owner-authorized reversible visual prototype — glass surface (2026-09-09)
+
+Ownerの「Canvasを見ながら長時間使うLayer Transform / Animation Tableが大きく遮蔽する」という観察に対し、配置を変える前に視覚遮蔽だけを切り分けるため、半透明surfaceのprototypeをWP-005限定で実施した。これはWP-008のprogressive controls本体、Level 2/3、mode hierarchy、popup placementの実装開始ではない。
+
+- Existing Futaba UI glass languageを再利用し、`--ui-panel-glass-surface`（alpha `.82`）と`--ui-panel-glass-backdrop`（`blur(3px)`）だけを追加した。
+- Layer Transform outer panelとAnimation Table main/header/viewportのbackground treatmentへ限定適用し、whole-panel `opacity`、配置変更、縮小、dock、auto-collapse、new settingは使わない。
+- BASIC/WARP selector、KEY strip、Timeline numbers、markers、buttons、handles、feedbackはforeground opacity `1`と既存opaque control surfaceを維持する。backdrop-filter非対応時もsemi-transparent backgroundだけで成立する。
+- BrowserでG1 Layer Transform、G2 Animation Table、G3 bothを同じCanvas fixtureで比較し、Canvas輪郭の認識、control/Timeline legibility、visual noise、drag/preview/scroll performanceを記録する。blurが負荷または可読性を損なう場合は`blur(0–2px)`へ下げる。
+
+現時点の採用判断はBrowser/Owner比較後に行う。候補はKEEP / TUNE / REJECTであり、WP-008のvariable grid、Cage、Brush、pivot、schema、renderer authorityへ展開しない。
 
 ## Live source inventory
 

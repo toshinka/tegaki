@@ -41,6 +41,7 @@ import {
 import { createTransformBoundsWorldCorners } from './transform-overlay-geometry.js';
 import { createRectControlMeshDeformer } from './animation/control-mesh-deformer.js';
 import { warpRgbaWithGrid } from './animation/warp-grid-rasterizer.js';
+import { createWarpAuthoringEnvelopeBounds } from './animation/layer-warp-authoring-envelope.js';
 import {
     captureLayerTransformPreviewSampling,
     restoreLayerTransformPreviewSampling,
@@ -3660,16 +3661,41 @@ export class LayerSystem {
 
     _getLayerTransformWorldCorners() {
         const session = this._layerTransformSession;
-        if (!session?.sourceBounds || !session.layerId) return [];
+        const bounds = this._getLayerTransformAuthoringBounds();
+        if (!bounds || !session?.layerId) return [];
         const transform = this.transform?.getTransform?.(session.layerId) || session.transform;
         return createTransformBoundsWorldCorners(
-            session.sourceBounds,
+            bounds,
             transform,
             {
                 width: this.config?.canvas?.width,
                 height: this.config?.canvas?.height
             }
         );
+    }
+
+    /**
+     * BASIC overlayだけに渡す、現在FrameのLayer WARP authoring envelope。
+     * WARPの保存正本へ触れず、ANIMATE Layer targetだけをadapter境界で評価する。
+     */
+    _getLayerTransformAuthoringBounds() {
+        const session = this._layerTransformSession;
+        const fallback = session?.sourceBounds || null;
+        const transaction = session?.transaction;
+        if (transaction?.target !== TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY) {
+            return fallback;
+        }
+        const projection = this._transformEditAdapter?.getWarpAuthoringBounds?.({
+            transaction,
+            layerId: session.layerId,
+            fallbackBounds: fallback
+        });
+        if (projection?.ok !== true) return fallback;
+        return createWarpAuthoringEnvelopeBounds({
+            bindBounds: projection.bindBounds,
+            points: projection.points,
+            fallbackBounds: fallback
+        });
     }
 
     _isFolderWithRasterTargets(folderLayer) {

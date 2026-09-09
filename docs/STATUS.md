@@ -1,10 +1,20 @@
 # Tegaki — 再開checkpoint
 
 状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。WP-009 ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。
-更新日: 2026-09-09。現在の実HEAD: `09ab1c08ccc0f0defa457f1f228896949997fc9`。添付指示の想定HEADとは異なるが、reset/cleanは行わず既存履歴を継承する。
+更新日: 2026-09-09。現在の実HEAD: `2d6e461bf13a8bbc1d6b76cf2041b8684a63fb06`。開始時worktreeはclean。reset/clean/stashは行わず既存履歴を継承する。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
+
+WP-005 Owner Acceptance ContinuationのA/B/Cを限定実施する。WARP gestureのrollback原因をdiagnostic traceとverifierで固定し、current evaluated Simple 4×4 WARPをBASIC authoring envelopeへ投影し、Layer Transform / Animation Tableへ可逆的なglass surface prototypeを適用する。WP-009の保存・History・KEY semantics、renderer、schema、Owner受入判定は変更しない。
+
+## CURRENT SLICE — WP-005 Owner Acceptance Continuation (2026-09-09)
+
+- 開始HEADは`2d6e461bf13a8bbc1d6b76cf2041b8684a63fb06`、開始時worktreeはclean。既存WP-009成果を保持して今回のWP-005限定差分を追補している。
+- Aでは`LayerTransformWarpController`へ常時console出力を持たない任意trace hookを追加し、pointerdown/capture、各preview、pointerup/cancel/lost capture、session/frame/target状態をdiagnosticから観測できるようにした。normal gestureの最終preview保持、cancel/lostのgesture-local rollback、pointerup後のlate lost無効化、preview failure rollbackを`verify-layer-warp-gesture-retention.mjs`へ固定した。interactive WARP SVGとpoint hit targetだけへ`touch-action:none`を追加し、document/bodyへは広げていない。trusted physical pointercancelの頻度はBrowser/Owner確認待ちであり、terminal semanticsは維持する。
+- Bでは保存正本を変更せず、current Clip/internal Layer/local Frameの`clip.layerDeformers`をsampleし、16点を`bindBounds`上へ展開したpure `layer-warp-authoring-envelope.js`をBASIC overlay boundsだけに接続した。current Simple 4×4が無い、unsupported、削除済みの場合はsource boundsへfallbackし、Motionは従来どおりenvelope後にforward適用する。`verify-layer-transform-basic-warp-envelope.mjs`でexpanded/compressed/interior protrusion/delete-restoreとtranslation/rotation/scale/flipを固定する。
+- Cでは既存themeのalpha surfaceを再利用する小さなCSS token（surface alpha `.82`、backdrop `blur(3px)`）をLayer Transform outer panelとAnimation Tableへ適用し、子controlのopacityは1へ戻した。配置・縮小・dock・collapse、z-index、pointer ownership、schemaは変更しない。Browser G1/G2/G3と操作性能は後段で最小確認し、Owner判断へ分離する。
+- A/Bの技術verifier、関連regression、harness、Vite buildはPASSしたため、WP-005を`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`へ戻した。全harnessは`169 selected / 0 failed`、transform `17/17`、warp `27/27`、animation `34/34`、ui `45/45`、project `9/9`、harness check `31 documents / 139 local links / 25 proposals / 8 packages`。distはbuild後にHEAD内容へ戻し、`git diff --exit-code -- tegaki_work/dist`は0。BrowserではChrome production `908×548`でG1 Layer TransformとG2 Animation Tableのglass surface・既存control可読性を確認した。空Raster fixtureのためG3同時表示、20 gesture、BASIC envelope実制作、trusted pointercancel/pen、console計測はOwner受入待ちであり、Owner ACCEPTED/DONEにはしない。WP-009は`ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING`を維持する。
 
 ## CURRENT SLICE — WP-009 Layer Transform KEY management (2026-09-09)
 

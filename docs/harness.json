@@ -31,7 +31,7 @@
     "transform": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": ["tegaki_work/system/layer-system.js", "tegaki_work/system/layer-transform.js", "tegaki_work/system/animation/transform-edit-context.js", "tegaki_work/system/animation/transform-edit-transaction.js", "tegaki_work/ui/animation-table-popup.js"],
-      "patterns": ["^verify-phase9[op]-", "^verify-clip-transform-", "^verify-clip-layer-transform", "^verify-layer-transform-key-", "^verify-timeline-wheel-routing"]
+      "patterns": ["^verify-phase9[op]-", "^verify-clip-transform-", "^verify-clip-layer-transform", "^verify-layer-transform-key-", "^verify-layer-transform-basic-warp-envelope", "^verify-timeline-wheel-routing"]
     },
     "animation": {
       "architecture": "docs/ARCHITECTURE.md",
