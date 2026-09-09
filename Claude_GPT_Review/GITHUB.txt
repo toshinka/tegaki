@@ -80,6 +80,9 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-0
 docs/work/WP-007-export-terminal-guard.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-007-export-terminal-guard.md
 
+docs/work/WP-008-layer-transform-progressive-controls.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-008-layer-transform-progressive-controls.md
+
 docs/work/WP-009-layer-transform-key-management.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-009-layer-transform-key-management.md
 

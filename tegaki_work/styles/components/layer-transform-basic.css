@@ -228,6 +228,119 @@
     background: color-mix(in srgb, var(--active-border) 14%, transparent);
 }
 
+/* WP-008 rough product pass: the first level stays compact and the active
+   mode owns one lightweight extension surface. These controls are runtime
+   state only; they do not introduce another transform authority. */
+.layer-transform-extension-shell {
+    display: grid;
+    margin: 0 8px 5px;
+}
+
+.layer-transform-extension-toggle {
+    min-height: 24px;
+    padding: 4px 8px;
+    border: 1px solid color-mix(in srgb, var(--active-border) 28%, transparent);
+    border-radius: var(--ui-radius-control);
+    background: color-mix(in srgb, var(--futaba-cream) 62%, transparent);
+    color: var(--futaba-maroon);
+    font-size: 9px;
+    font-weight: 700;
+    text-align: left;
+}
+
+.layer-transform-extension-toggle:hover,
+.layer-transform-extension-toggle:focus-visible,
+.layer-transform-extension-toggle[aria-expanded="true"] {
+    border-color: color-mix(in srgb, var(--active-border) 68%, transparent);
+    background: color-mix(in srgb, var(--active-border) 16%, var(--futaba-background));
+    outline: none;
+}
+
+.layer-transform-warp-extension {
+    display: grid;
+    gap: 5px;
+    margin: 0 8px 6px;
+    padding: 6px;
+    border-radius: var(--ui-radius-control);
+    background: color-mix(in srgb, var(--futaba-cream) 62%, transparent);
+}
+
+.layer-transform-warp-tool-strip,
+.layer-transform-warp-brush-type-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px;
+}
+
+.layer-transform-warp-brush-type-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.layer-transform-warp-tool-btn,
+.layer-transform-warp-brush-type-btn {
+    min-height: 24px;
+    padding: 3px 5px;
+    border: 1px solid transparent;
+    border-radius: calc(var(--ui-radius-control) - 1px);
+    background: color-mix(in srgb, var(--futaba-background) 58%, transparent);
+    color: var(--text-secondary);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: .04em;
+}
+
+.layer-transform-warp-tool-btn:hover,
+.layer-transform-warp-tool-btn:focus-visible,
+.layer-transform-warp-tool-btn.is-selected,
+.layer-transform-warp-brush-type-btn:hover,
+.layer-transform-warp-brush-type-btn:focus-visible,
+.layer-transform-warp-brush-type-btn.is-selected {
+    border-color: color-mix(in srgb, var(--active-border) 68%, transparent);
+    background: color-mix(in srgb, var(--active-border) 24%, var(--futaba-background));
+    color: var(--futaba-maroon);
+    outline: none;
+}
+
+.layer-transform-warp-brush-controls {
+    display: grid;
+    gap: 5px;
+    padding-top: 2px;
+}
+
+.layer-transform-warp-brush-range {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) 36px;
+    align-items: center;
+    gap: 5px;
+    color: var(--futaba-maroon);
+    font-size: 8px;
+}
+
+.layer-transform-warp-brush-range input[type="range"] {
+    width: 100%;
+    min-width: 0;
+    accent-color: var(--active-border);
+}
+
+.layer-transform-warp-brush-range-value {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.layer-transform-warp-extension[hidden],
+.layer-transform-warp-brush-controls[hidden],
+.layer-transform-basic-extension[hidden] {
+    display: none;
+}
+
+/* The outer extension toggle is the single Level 2 entry point. Keep the
+   legacy details summary in the DOM for compatibility, but do not expose a
+   second collapsible control that could drift from runtime open state. */
+#layer-transform-basic-extension > summary {
+    display: none;
+}
+
 .layer-transform-precise .panel-sections {
     min-width: calc(var(--ui-transform-panel-width) - 16px);
     padding: 2px 7px 6px;
@@ -357,7 +470,10 @@
     .layer-transform-mode-btn,
     .layer-transform-precise > summary,
     .layer-transform-key-step-btn,
-    .layer-transform-key-commit-btn {
+    .layer-transform-key-commit-btn,
+    .layer-transform-extension-toggle,
+    .layer-transform-warp-tool-btn,
+    .layer-transform-warp-brush-type-btn {
         min-height: 38px;
         font-size: 10px;
     }

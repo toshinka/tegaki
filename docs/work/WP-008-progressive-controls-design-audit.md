@@ -1,15 +1,24 @@
 # WP-008 — Progressive Controls Design / Audit Evidence
 
-状態: **PLANNED — DESIGN / AUDIT FIRST**  
-Production実装: **未開始**  
+状態: **ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW**
+Production実装: **限定rough prototype実装済み（最終GUI/Owner受入は未確定）**
 監査baseline: `d7fce78abda96e550b1b03000903e9583c333582`  
 監査日: 2026-09-08
 
+## Latest implementation addendum — 2026-09-09
+
+Owner-authorized process changeにより、旧監査の「production codeは変更しない」という時点判断を、architecture hard floorを固定した可逆rough product passへ更新した。focus lens仮説（BASIC＝placement/affine、WARP＝shape deformation）は維持し、BASIC/WARPを統合して比較不能にする変更は行っていない。
+
+- BASIC Level 2は既存numeric/detail controlsのruntime整理だけ。ANIMATE pivot/anchor authorityは引き続きdisabled。
+- WARP Level 2はPOINT/BRUSH。BRUSHは既存`warp-grid-brush.js`のMOVE/INFLATE/PINCHを同じSimple 4×4 Layer WARP transactionへ接続し、pointerup/explicit KEY/Escの境界はWP-003/WP-005へ委譲する。これはR2 pure algorithm reuse + R1 Layer session adapterの限定実装であり、Workspace UIやroot/Folder WARPの移植ではない。
+- future MOTION/RIG staging、shared manipulator（BASIC bbox / WARP grid / RIG boneをmodeごとに交換する仮説）、BASIC default → WARP augmentationの仮説はdocsだけに保持する。保存schema、topology、cage、renderer、Historyの再設計は行わない。
+- actual rough implementation resultは、progressive shell、inactive extension hiding、same-session tool switching、brush cursor/weight preview、MOVE/INFLATE/PINCHの技術verifier PASSまで。実Browser/Owner/Astraの最終判断は未実施であり、旧監査のUNDEFINED/decision holdを上書きしない。
+
 ## Scope and stop boundary
 
-この資料は、既存WARP Workspaceの能力とLayer Transformへ接続する場合の境界を、現行production sourceからread-onlyで整理したものです。WP-008のprogressive controls production code、保存schema、History、renderer、UI構造は変更していません。WP-005の可逆glass CSS prototypeだけは下記の別枠へ記録します。
+この資料は、既存WARP Workspaceの能力とLayer Transformへ接続する場合の境界を、現行production sourceからread-onlyで整理したものです。ここに記録した境界・保存schema・History・rendererの判断は維持し、WP-008カードの後続rough passが限定production UIを追加しても、この監査資料を新しい正本へ置き換えません。WP-005の可逆glass CSS prototypeは下記の別枠へ記録します。
 
-WP-005はこの監査資料によってOwner受入済みにはなりません。今回のglass実験中は`ACTIVE — OWNER ACCEPTANCE BLOCKED`、A/B technical pass後は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`へ戻す。WP-008自身は`PLANNED — DESIGN / AUDIT FIRST`を維持します。
+WP-005はこの監査資料によってOwner受入済みにはなりません。今回のglass実験中は`ACTIVE — OWNER ACCEPTANCE BLOCKED`、A/B technical pass後は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`へ戻す。WP-008は後続のOwner-authorized rough passを実施したため、現在は`ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW`である。
 
 ## Owner-authorized reversible visual prototype — glass surface (2026-09-09)
 
@@ -26,7 +35,7 @@ Ownerの「Canvasを見ながら長時間使うLayer Transform / Animation Table
 
 - Owner指定の追加透過としてalpha `.82 → .72`を実Browserで比較し、backdrop `blur(3px)`は維持した。Chrome `152.0.7977.83` / `908×548` / DPR `2.0249998569488525`、console errors/warnings `0`。
 - G1 Layer Transform、G2 Animation Table、G3 Bothの全てでCanvasの輪郭・位置・変形方向がpanel越しに認識でき、Layer Transform controls、Animation Table controls、Timeline marker、KEY rows、trashの可読性を保った。visual noiseは低く、WARP/BASIC/Timeline操作で明らかなlag/stutterは見なかった。
-- 最終推奨alphaは`.72`、blurは`3px`、recommendationは`KEEP`。これはOwnerの「約10ポイント追加透過」を反映したCSS tokenの調整であり、progressive-controls production開始、opacity setting、placement redesignではない。WP-008は`PLANNED — DESIGN / AUDIT FIRST`を維持する。
+- 最終推奨alphaは`.72`、blurは`3px`、recommendationは`KEEP`。これはOwnerの「約10ポイント追加透過」を反映したCSS tokenの調整であり、opacity settingやplacement redesignではない。現在のWP-008 rough passはこのtokenを再利用するが、variable grid、Cage、pivot、schema、renderer authorityへ展開しない。
 
 ## Live source inventory
 
