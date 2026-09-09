@@ -16,6 +16,7 @@
 | 6 完了 | [WP-007 Export terminal guard](work/WP-007-export-terminal-guard.md) | 未確定Layer Transformの出力境界を明示停止へ統一 | SOURCE/CAF SOURCE/ANIMATE Layer/Folderのzero mutation、Selection維持、sequence境界 |
 | 7 ACTIVE — OWNER ACCEPTANCE BLOCKED | [WP-005 Simple WARP UI](work/WP-005-simple-warp.md) | 旧9q A〜Dの既存資産を完成へ接続 | technical complete（CPU final authority / Pixi GPU proxy）。F1再入場のstatus/marker不整合をGPT review待ち |
 | 8 PLANNED | [WP-008 Layer Transform Progressive Controls](work/WP-008-layer-transform-progressive-controls.md) | WP-005 Owner受入後に進めるDesign/Audit | capability、authority、reuse、GUIの限定整理 |
+| 8a ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING | [WP-009 Layer Transform KEY management](work/WP-009-layer-transform-key-management.md) | 既存BASIC/WARP KEYをTimeline bundleとpanel componentへ限定接続 | pure helper、History 1/0、Browser最小受入 |
 | 9 | 一つの編集session境界の抽出 | 正しい振舞いを固定してから巨大Popupの責務を縮める | 互換facade、同じ入力/出力/History、対象file探索の短縮 |
 | 10 | static RIG導線の再配置 | WHAT/HOW/WHENを揃える | HD-002比較とOwner受入、保存正本不変 |
 

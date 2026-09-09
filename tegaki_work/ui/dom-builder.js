@@ -462,6 +462,20 @@ export const DOMBuilder = (function() {
         }));
         panel.appendChild(keyStrip);
 
+        // Layer Transform KEY component management is intentionally below the
+        // bundle-level strip. Rows are populated only when the current Frame
+        // has committed BASIC/WARP components; the Timeline keeps no delete
+        // affordance of its own.
+        panel.appendChild(createElement('div', {
+            className: 'layer-transform-key-components',
+            id: 'layer-transform-key-components',
+            attributes: {
+                role: 'group',
+                'aria-label': '現在FrameのLayer Transform KEY components',
+                hidden: ''
+            }
+        }));
+
         const preciseDetails = createElement('details', {
             className: 'layer-transform-precise'
         });

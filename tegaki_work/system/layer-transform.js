@@ -71,6 +71,7 @@ export class LayerTransform {
         this.onGetTransformSourceBounds = null;
         this.onCommitTimelineKey = null;
         this.onStepTimelineFrame = null;
+        this.onDeleteLayerTransformComponent = null;
         this.onTransformModeChange = null;
         this.onWarpReset = null;
         this._editContextProjection = null;
@@ -134,6 +135,50 @@ export class LayerTransform {
         this._syncTimelineKeyStrip(projection?.keyGuide || null);
     }
 
+    _syncTimelineKeyComponents(keyGuide = null, frameLabel = '') {
+        const panel = typeof document !== 'undefined'
+            ? document.getElementById('layer-transform-key-components')
+            : null;
+        if (!panel) return;
+        const components = Array.isArray(keyGuide?.components)
+            ? keyGuide.components.filter(item => item?.key && item?.component)
+            : [];
+        const visible = this.isVKeyPressed && components.length > 0;
+        panel.hidden = !visible;
+        panel.replaceChildren();
+        if (!visible) return;
+        const pending = keyGuide?.pending === true;
+        const rejectTitle = '先にKEYを確定または取消してください';
+        components.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'layer-transform-key-component-row';
+            row.dataset.component = item.component;
+            const name = document.createElement('span');
+            name.className = 'layer-transform-key-component-name';
+            name.textContent = String(item.component).toUpperCase();
+            const status = document.createElement('span');
+            status.className = 'layer-transform-key-component-status';
+            status.textContent = '設定済';
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'layer-transform-key-component-delete';
+            remove.dataset.component = item.component;
+            const label = `${frameLabel}の${String(item.component).toUpperCase()} KEYを削除`;
+            remove.setAttribute('aria-label', label);
+            remove.title = pending ? rejectTitle : label;
+            remove.disabled = pending;
+            remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="m9 7 .7-2h4.6l.7 2"/><path d="M7 7l1 13h8l1-13"/></svg>';
+            remove.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (remove.disabled) return;
+                this.onDeleteLayerTransformComponent?.(item.component);
+            });
+            row.append(name, status, remove);
+            panel.appendChild(row);
+        });
+    }
+
     _syncTimelineKeyStrip(keyGuide = null) {
         const strip = typeof document !== 'undefined'
             ? document.getElementById('layer-transform-key-strip')
@@ -143,6 +188,7 @@ export class LayerTransform {
         strip.hidden = !visible;
         if (!visible) {
             strip.removeAttribute('data-key-state');
+            this._syncTimelineKeyComponents(null, '');
             return;
         }
 
@@ -158,6 +204,7 @@ export class LayerTransform {
                 ? `${frameLabel} · KEY確定`
                 : `${frameLabel} · ${keyed ? 'KEY設定済' : 'KEY未設定'}`;
         }
+        this._syncTimelineKeyComponents(keyGuide, frameLabel);
 
         const commitButton = document.getElementById('layer-transform-key-commit-btn');
         if (commitButton) {

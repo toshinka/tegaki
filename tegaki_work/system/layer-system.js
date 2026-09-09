@@ -3444,6 +3444,9 @@ export class LayerSystem {
         this.transform.onStepTimelineFrame = delta => {
             return this.stepLayerTransformTimelineFrame(delta);
         };
+        this.transform.onDeleteLayerTransformComponent = component => {
+            return this._transformEditAdapter?.deleteComponent?.(component) === true;
+        };
         this.transform.onTransformModeChange = mode => this.setLayerTransformMode(mode);
         this.transform.onWarpReset = () => this.resetLayerTransformWarp();
         this.transform.onRebuildRequired = (layer, paths) => {

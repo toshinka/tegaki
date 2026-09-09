@@ -78,6 +78,11 @@ import {
     sampleClipLayerTransform
 } from '../system/animation/clip-layer-transform.js';
 import {
+    inspectLayerTransformKeyBundle,
+    moveLayerTransformKeyBundle,
+    removeLayerTransformComponentKey
+} from '../system/animation/clip-layer-key-bundle.js';
+import {
     getClipFolderTransformTrack,
     remapClipFolderTransformTracks,
     retimeClipFolderTransformTracks,
@@ -629,6 +634,8 @@ export class AnimationTablePopup {
         this._motionKeyDrag = null;
         this._motionKeyClickSuppressed = false;
         this._motionKeyPendingClick = null;
+        this._layerTransformKeyBundleDrag = null;
+        this._layerTransformKeyClickSuppressed = false;
         // Ctrl/Cmd複数KEY選択はruntime UI状態。保存正本は各ClipInstanceの
         // transformKeyframes / deformer / rigMotionだけとし、第2のMotion正本を作らない。
         this._motionTimelineKeySelection = new Map();
@@ -2543,20 +2550,28 @@ export class AnimationTablePopup {
             && layerWarpPreviewTransaction?.kind === 'layer-warp-edit-transaction'
             && layerWarpPreviewTransaction.clipId === clip.id
             && layerWarpPreviewTransaction.internalLayerId === context.layer.id;
-        // WARP候補は表示中だけClipInstanceへ投影されるため、Timeline markerは
-        // その間baselineを読む。元KEYがあれば残し、新規候補だけはmarkerを出さない。
-        const layerWarpMarkerDeformer = !isFolderTarget
-            ? resolveLayerWarpDeformerAtCurrentFrame({
-                layerDeformers: isLayerWarpPreviewTarget
-                    ? layerWarpPreviewSession.baselineLayerDeformers
-                    : clip.layerDeformers,
-                clip,
-                internalLayerId: context.layer.id,
-                localFrame: context.localFrame
-            }).deformer
-            : null;
         const previewSession = this._layerTransformBridgeSession;
         const previewTransaction = previewSession?.transaction;
+        // WARP候補は表示中だけClipInstanceへ投影されるため、Timeline
+        // markerのWARP presenceはcandidateではなくbaselineを読む。
+        const markerLayerDeformers = !isFolderTarget && isLayerWarpPreviewTarget
+            ? layerWarpPreviewSession.baselineLayerDeformers
+            : clip.layerDeformers;
+        // Keep a named projection descriptor for diagnostics and existing
+        // WARP marker audits; the bundle marker below consumes its collection.
+        const layerWarpMarkerDeformer = !isFolderTarget
+            ? {
+                layerDeformers: markerLayerDeformers,
+                baselineLayerDeformers: isLayerWarpPreviewTarget
+                    ? layerWarpPreviewSession.baselineLayerDeformers
+                    : null
+            }
+            : null;
+        // BASIC's existing bridge has historically exposed a faint
+        // provisional marker while a candidate is previewed; preserve that
+        // visual cue. WARP candidates remain baseline-only above because the
+        // deformer bridge owns its own overlay/key terminal.
+        const markerLayerTransformTracks = clip.layerTransformTracks;
         let html = `<div class="anim-timeline-row anim-rig-folder-timeline-row${selectedClass}"
             data-clip-id="${clip.id}" data-folder-id="${context.layer.id}">`;
         for (let frame = 0; frame < totalFrames; frame++) {
@@ -2576,29 +2591,44 @@ export class AnimationTablePopup {
                     ? previewTransaction.folderLayerId === context.layer.id
                     : previewTransaction.internalLayerId === context.layer.id)
                 && previewTransaction.localFrame === localFrame;
-            const hasLayerWarpKey = isSelected
-                && isInside
-                && (layerWarpMarkerDeformer?.keyframes || []).some(key => key?.frame === localFrame);
-            const layerWarpKeySelected = hasLayerWarpKey && this._isMotionTimelineKeySelected({
-                clipId: clip.id,
-                kind: 'warp',
-                targetId: context.layer.id,
-                frame: localFrame
-            });
+            const bundle = !isFolderTarget && isSelected && isInside
+                ? inspectLayerTransformKeyBundle({
+                    layerTransformTracks: markerLayerTransformTracks,
+                    layerDeformers: markerLayerDeformers,
+                    internalLayerId: context.layer.id,
+                    localFrame
+                })
+                : null;
+            const hasLayerTransformBundle = bundle?.components?.length > 0;
+            const bundleHasWarp = bundle?.hasWarp === true;
+            const bundleLabel = bundleHasWarp
+                ? (bundle.hasBasic ? 'BASIC + WARP' : 'WARP')
+                : (bundle?.hasBasic ? 'BASIC' : '');
+            const isProvisionalBundle = hasLayerTransformBundle
+                && previewSession?.previewApplied === true
+                && previewSession.changed === true
+                && previewTransaction?.target === TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY
+                && previewTransaction.clipId === clip.id
+                && previewTransaction.internalLayerId === context.layer.id
+                && previewTransaction.localFrame === localFrame;
             html += `<div class="anim-cell-slot anim-rig-folder-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}"
                 data-track-id="${context.entry.lane.id}"
                 data-clip-id="${clip.id}"
                 data-folder-id="${context.layer.id}"
                 data-frame-index="${frame}">
-                ${hasLayerMotionKey ? `<span class="anim-caf-motion-key-projection${isProvisionalLayerMotionKey ? ' is-provisional' : ''}"
+                ${isFolderTarget && hasLayerMotionKey ? `<span class="anim-caf-motion-key-projection${isProvisionalLayerMotionKey ? ' is-provisional' : ''}"
                     data-layer-motion-key-frame="${localFrame}"
                     role="img"
                     aria-label="${isFolderTarget ? 'Folder' : 'Layer'} Motion key${isProvisionalLayerMotionKey ? ' preview' : ''}: Frame ${frame + 1}"
                     title="${isFolderTarget ? 'Folder' : 'Layer'} Motion key${isProvisionalLayerMotionKey ? ' preview · 未確定' : ''} · F${frame + 1}"></span>` : ''}
-                ${hasLayerWarpKey ? `<span class="anim-caf-warp-key-projection${layerWarpKeySelected ? ' is-key-selected' : ''}"
+                ${!isFolderTarget && hasLayerTransformBundle ? `<span class="anim-layer-transform-key-projection${bundleHasWarp ? ' is-warp-present' : ' is-basic-only'}${isProvisionalBundle ? ' is-provisional' : ''}"
+                    data-layer-transform-key-marker="bundle"
+                    data-layer-transform-key-frame="${localFrame}"
+                    data-layer-transform-key-clip-id="${clip.id}"
+                    data-layer-transform-key-internal-layer-id="${context.layer.id}"
                     role="img"
-                    aria-label="Layer WARP key: Frame ${frame + 1}"
-                    title="Layer WARP key · F${frame + 1}">◆</span>` : ''}
+                    aria-label="F${frame + 1} Layer Transform KEY — ${bundleLabel}"
+                    title="F${frame + 1} Layer Transform KEY — ${bundleLabel}${isProvisionalBundle ? ' · 未確定' : ''}"></span>` : ''}
             </div>`;
         }
         return `${html}</div>`;
@@ -7897,6 +7927,19 @@ export class AnimationTablePopup {
         if (!this.isVisible || !this.selectedCelId) return;
         if (!['record', 'undo', 'redo'].includes(data.action)) return;
         if (data.action === 'record' && data.meta?.type === 'draw') return;
+        if (data.action === 'record'
+            && data.meta?.type === 'caf-layer-transform-key-component-delete') {
+            return;
+        }
+        if ((data.action === 'undo' || data.action === 'redo')
+            && data.meta?.type === 'caf-layer-transform-key-component-delete'
+        ) {
+            this.layerSystem?.refreshLayerTransformTimelineSessionAfterHistory?.();
+            this.layerSystem?.refreshLayerWarpTimelineSessionAfterHistory?.();
+            this.render();
+            this._requestLayerPanelSync();
+            return;
+        }
         if ((data.action === 'undo' || data.action === 'redo')
             && ['caf-clip-transform-layer-bridge', 'caf-clip-transform-folder-bridge', 'caf-layer-warp-transform-bridge'].includes(data.meta?.type)
             && this.isTransformPreviewSuspended) {
@@ -11212,8 +11255,76 @@ export class AnimationTablePopup {
             beginWarp: request => this._beginLayerWarpBridge(request),
             previewWarp: request => this._previewLayerWarpBridge(request),
             finishWarp: request => this._finishLayerWarpBridge(request),
-            abandonWarpAfterHistory: request => this._abandonLayerWarpBridgeAfterHistory(request)
+            abandonWarpAfterHistory: request => this._abandonLayerWarpBridgeAfterHistory(request),
+            deleteComponent: component => this.deleteLayerTransformComponent(component)
         };
+    }
+
+    /**
+     * Delete one committed Layer Transform component at the current Clip
+     * localFrame. Pending candidates are never implicitly confirmed or
+     * cancelled. A stable active session is refreshed through the existing
+     * history rebind boundary after the single Timeline History entry.
+     */
+    deleteLayerTransformComponent(component) {
+        if (component !== 'basic' && component !== 'warp') return false;
+        const commitState = this.layerSystem?.getLayerMoveCommitState?.() || null;
+        if (!commitState?.active) {
+            showFeedbackToast('Layer Transformを開いてからKEY componentを削除してください');
+            return false;
+        }
+        if (commitState.hasPendingTransform) {
+            showFeedbackToast('先にKEYを確定または取消してください');
+            return false;
+        }
+        const session = this.layerSystem?._layerWarpEditSession
+            || this.layerSystem?._layerTransformSession;
+        const transaction = session?.transaction;
+        if (!transaction?.clipId || !transaction.internalLayerId
+            || !Number.isInteger(transaction.localFrame)
+            || !Number.isInteger(transaction.duration)) {
+            showFeedbackToast('現在のLayer Transform KEYを削除できません');
+            return false;
+        }
+        const entry = this.model.findClipEntry(transaction.clipId);
+        if (!entry?.clip || entry.clip.id !== this.selectedCelId) return false;
+        const beforeState = this._captureTimelineHistoryState();
+        const result = removeLayerTransformComponentKey({
+            layerTransformTracks: entry.clip.layerTransformTracks,
+            layerDeformers: entry.clip.layerDeformers,
+            internalLayerId: transaction.internalLayerId,
+            localFrame: transaction.localFrame,
+            duration: transaction.duration,
+            component
+        });
+        if (!result.ok) {
+            if (result.reason === 'layer-transform-component-key-missing') {
+                showFeedbackToast('現在FrameにそのKEYはありません');
+            }
+            return false;
+        }
+        entry.clip.layerTransformTracks = result.tracks;
+        entry.clip.layerDeformers = result.layerDeformers;
+        this._animationPreviewKey = null;
+        this._syncWorkingLayersForCurrentFrame();
+        this.render();
+        this._requestLayerPanelSync();
+        const afterState = this._captureTimelineHistoryState();
+        this._recordTimelineHistory(beforeState, afterState, 'caf-layer-transform-key-component-delete', {
+            type: 'caf-layer-transform-key-component-delete',
+            clipId: transaction.clipId,
+            internalLayerId: transaction.internalLayerId,
+            localFrame: transaction.localFrame,
+            component
+        });
+        // The existing refresh boundary abandons the stable transaction and
+        // starts a fresh one from the post-delete model. This keeps WARP
+        // overlays and BASIC projection from retaining stale key presence.
+        this.layerSystem?.refreshLayerTransformTimelineSessionAfterHistory?.();
+        this.layerSystem?.refreshLayerWarpTimelineSessionAfterHistory?.();
+        this.render();
+        this._requestLayerPanelSync();
+        return true;
     }
 
     _abandonLayerTransformBridgeAfterHistory({ transaction } = {}) {
@@ -11232,7 +11343,7 @@ export class AnimationTablePopup {
         return true;
     }
 
-    _createLayerTransformKeyGuide({ transaction, hasExplicitKey = false, pending = false } = {}) {
+    _createLayerTransformKeyGuide({ transaction, hasExplicitKey = false, pending = false, bundle = null } = {}) {
         const localFrame = transaction?.localFrame;
         const duration = transaction?.duration;
         if (!isTransformTimelineKeyTarget(transaction?.target)
@@ -11242,18 +11353,34 @@ export class AnimationTablePopup {
             || duration <= 1) {
             return null;
         }
-        return {
+        const resolvedBundle = bundle
+            || (typeof this._getLayerTransformKeyBundleForTransaction === 'function'
+                ? this._getLayerTransformKeyBundleForTransaction(transaction)
+                : {});
+        const componentNames = Array.isArray(resolvedBundle.components)
+            ? resolvedBundle.components
+            : [];
+        const guide = {
             visible: true,
             timelineFrame: transaction.timelineFrame,
             localFrame,
-            hasExplicitKey: hasExplicitKey === true,
+            // Strip state is a bundle summary. The mode-local context chip
+            // remains responsible for BASIC/WARP READY/KEYED wording.
+            hasExplicitKey: componentNames.length > 0 || hasExplicitKey === true,
             pending: pending === true,
             canMovePrevious: pending !== true && localFrame > 0,
             canMoveNext: pending !== true && localFrame < duration - 1
         };
+        if (Array.isArray(resolvedBundle.components)) {
+            guide.components = resolvedBundle.components.map(component => ({
+                component,
+                key: true
+            }));
+        }
+        return guide;
     }
 
-    _createLayerWarpKeyGuide({ transaction, hasExplicitKey = false, pending = false } = {}) {
+    _createLayerWarpKeyGuide({ transaction, hasExplicitKey = false, pending = false, bundle = null } = {}) {
         const localFrame = transaction?.localFrame;
         const duration = transaction?.duration;
         if (transaction?.kind !== 'layer-warp-edit-transaction'
@@ -11263,18 +11390,32 @@ export class AnimationTablePopup {
             || duration <= 1) {
             return null;
         }
-        return {
+        const resolvedBundle = bundle
+            || (typeof this._getLayerTransformKeyBundleForTransaction === 'function'
+                ? this._getLayerTransformKeyBundleForTransaction(transaction)
+                : {});
+        const componentNames = Array.isArray(resolvedBundle.components)
+            ? resolvedBundle.components
+            : [];
+        const guide = {
             visible: true,
             timelineFrame: transaction.timelineFrame,
             localFrame,
-            hasExplicitKey: hasExplicitKey === true,
+            hasExplicitKey: componentNames.length > 0 || hasExplicitKey === true,
             pending: pending === true,
             canMovePrevious: pending !== true && localFrame > 0,
             canMoveNext: pending !== true && localFrame < duration - 1
         };
+        if (Array.isArray(resolvedBundle.components)) {
+            guide.components = resolvedBundle.components.map(component => ({
+                component,
+                key: true
+            }));
+        }
+        return guide;
     }
 
-    _createLayerWarpProjection({ transaction, hasExplicitKey = false, pending = false } = {}) {
+    _createLayerWarpProjection({ transaction, hasExplicitKey = false, pending = false, bundle = null } = {}) {
         const keyed = hasExplicitKey === true;
         const labelState = pending
             ? (keyed ? 'KEYED · 未確定変更' : '未確定')
@@ -11286,7 +11427,8 @@ export class AnimationTablePopup {
             keyGuide: this._createLayerWarpKeyGuide({
                 transaction,
                 hasExplicitKey: keyed,
-                pending
+                pending,
+                bundle
             })
         };
     }
@@ -11372,7 +11514,10 @@ export class AnimationTablePopup {
                 keyGuide: animate
                     ? this._createLayerTransformKeyGuide({
                         transaction,
-                        hasExplicitKey: context.hasExplicitKey
+                        hasExplicitKey: context.hasExplicitKey,
+                        bundle: typeof this._getLayerTransformKeyBundleForTransaction === 'function'
+                            ? this._getLayerTransformKeyBundleForTransaction(transaction)
+                            : null
                     })
                     : null
             }
@@ -11518,7 +11663,10 @@ export class AnimationTablePopup {
                 keyGuide: this._createLayerTransformKeyGuide({
                     transaction,
                     hasExplicitKey: transaction.hadExplicitKey,
-                    pending: plan.changed === true
+                    pending: plan.changed === true,
+                    bundle: typeof this._getLayerTransformKeyBundleForTransaction === 'function'
+                        ? this._getLayerTransformKeyBundleForTransaction(transaction)
+                        : null
                 })
             }
         };
@@ -16962,6 +17110,170 @@ export class AnimationTablePopup {
         return result.ok ? result.folder : null;
     }
 
+    _selectLayerTransformKeyMarker(marker) {
+        const clipId = marker?.dataset?.layerTransformKeyClipId;
+        const internalLayerId = marker?.dataset?.layerTransformKeyInternalLayerId;
+        const localFrame = Number(marker?.dataset?.layerTransformKeyFrame);
+        const entry = clipId ? this.model.findClipEntry(clipId) : null;
+        if (!entry?.clip || entry.clip.id !== this.selectedCelId
+            || entry.clip.assetId == null || !Number.isInteger(localFrame)) return false;
+        const targetFrame = entry.clip.startFrame + localFrame;
+        if (this._hasActiveTimelineTransformNavigation()) {
+            return this._navigateTimelineFrameTo(targetFrame, { source: 'layer-transform-key-marker' });
+        }
+        if (targetFrame !== this.model.playback.currentFrame) {
+            this._saveSelectedClipFromWorkingLayers();
+            this.model.setCurrentFrame(targetFrame);
+            this._syncWorkingLayersForCurrentFrame();
+        }
+        // Keep the selected internal Layer identity stable when the marker row
+        // is clicked through a narrow pen/touch hit target.
+        if (internalLayerId) this.selectedInternalLayerId = internalLayerId;
+        this.render();
+        this._requestLayerPanelSync();
+        return true;
+    }
+
+    _moveLayerTransformKeyBundle(descriptor, destinationLocalFrame, beforeState = null) {
+        const entry = this.model.findClipEntry(descriptor?.clipId);
+        if (!entry?.clip || entry.clip.id !== this.selectedCelId) {
+            showFeedbackToast('Layer Transform KEYの対象Clipが変わっています');
+            return false;
+        }
+        const plan = moveLayerTransformKeyBundle({
+            layerTransformTracks: entry.clip.layerTransformTracks,
+            layerDeformers: entry.clip.layerDeformers,
+            internalLayerId: descriptor.internalLayerId,
+            sourceLocalFrame: descriptor.sourceLocalFrame,
+            destinationLocalFrame,
+            duration: entry.clip.duration
+        });
+        if (!plan.ok) {
+            const message = plan.reason === 'layer-transform-destination-occupied'
+                ? '移動先には既にKEYがあります'
+                : plan.reason === 'layer-transform-same-frame'
+                    ? ''
+                    : 'Layer Transform KEYを移動できません';
+            if (message) showFeedbackToast(message);
+            return false;
+        }
+        const historyBefore = beforeState || this._captureTimelineHistoryState();
+        entry.clip.layerTransformTracks = plan.tracks;
+        entry.clip.layerDeformers = plan.layerDeformers;
+        this._animationPreviewKey = null;
+        this._syncWorkingLayersForCurrentFrame();
+        this.render();
+        this._requestLayerPanelSync();
+        this._recordTimelineHistory(historyBefore, this._captureTimelineHistoryState(), 'caf-layer-transform-key-bundle-move', {
+            type: 'caf-layer-transform-key-bundle-move',
+            clipId: descriptor.clipId,
+            internalLayerId: descriptor.internalLayerId,
+            sourceLocalFrame: descriptor.sourceLocalFrame,
+            destinationLocalFrame,
+            hasBasic: plan.hasBasic,
+            hasWarp: plan.hasWarp
+        });
+        return true;
+    }
+
+    _beginLayerTransformKeyBundleDrag(event, marker) {
+        const commitState = this.layerSystem?.getLayerMoveCommitState?.() || null;
+        const blockedReason = commitState?.active
+            ? (commitState.hasPendingTransform
+                ? '先にKEYを確定または取消してください'
+                : 'Layer Transformを終了してからKEYを移動してください')
+            : null;
+        const clipId = marker.dataset.layerTransformKeyClipId;
+        const internalLayerId = marker.dataset.layerTransformKeyInternalLayerId;
+        const sourceLocalFrame = Number(marker.dataset.layerTransformKeyFrame);
+        const entry = this.model.findClipEntry(clipId);
+        const row = marker.closest('.anim-rig-folder-timeline-row');
+        if (!entry?.clip || entry.clip.id !== this.selectedCelId
+            || !internalLayerId || !Number.isInteger(sourceLocalFrame)
+            || !row || sourceLocalFrame < 0 || sourceLocalFrame >= entry.clip.duration) {
+            return true;
+        }
+        const descriptor = { clipId, internalLayerId, sourceLocalFrame };
+        const gesture = {
+            pointerId: event.pointerId,
+            marker,
+            row,
+            descriptor,
+            startX: event.clientX,
+            targetLocalFrame: sourceLocalFrame,
+            moved: false,
+            blockedReason,
+            feedbackShown: false,
+            beforeState: this._captureTimelineHistoryState()
+        };
+        this._layerTransformKeyBundleDrag = gesture;
+        const clearTargetStyle = () => {
+            row.querySelectorAll('.key-drop-target, .key-drop-blocked')
+                .forEach(slot => slot.classList.remove('key-drop-target', 'key-drop-blocked'));
+            marker.classList.remove('is-dragging');
+        };
+        const onMove = moveEvent => {
+            if (moveEvent.pointerId !== gesture.pointerId) return;
+            const delta = moveEvent.clientX - gesture.startX;
+            if (Math.abs(delta) >= 4) gesture.moved = true;
+            if (!gesture.moved) return;
+            if (gesture.blockedReason) {
+                if (!gesture.feedbackShown) {
+                    showFeedbackToast(gesture.blockedReason);
+                    gesture.feedbackShown = true;
+                }
+                moveEvent.preventDefault();
+                return;
+            }
+            const duration = Math.max(1, entry.clip.duration || 1);
+            gesture.targetLocalFrame = Math.round(
+                gesture.descriptor.sourceLocalFrame + delta / Math.max(1, this.timelineCellWidth)
+            );
+            const targetSlot = [...row.querySelectorAll('.anim-cell-slot')].find(slot => (
+                Number(slot.dataset.frameIndex) === entry.clip.startFrame + gesture.targetLocalFrame
+            ));
+            clearTargetStyle();
+            const plan = moveLayerTransformKeyBundle({
+                layerTransformTracks: entry.clip.layerTransformTracks,
+                layerDeformers: entry.clip.layerDeformers,
+                internalLayerId,
+                sourceLocalFrame: gesture.descriptor.sourceLocalFrame,
+                destinationLocalFrame: gesture.targetLocalFrame,
+                duration
+            });
+            targetSlot?.classList.add(plan.ok ? 'key-drop-target' : 'key-drop-blocked');
+            marker.classList.add('is-dragging');
+            moveEvent.preventDefault();
+        };
+        const onEnd = endEvent => {
+            if (endEvent.pointerId !== gesture.pointerId) return;
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onEnd);
+            document.removeEventListener('pointercancel', onEnd);
+            clearTargetStyle();
+            this._layerTransformKeyBundleDrag = null;
+            if (gesture.moved && endEvent.type === 'pointerup' && !gesture.blockedReason) {
+                this._moveLayerTransformKeyBundle(
+                    gesture.descriptor,
+                    gesture.targetLocalFrame,
+                    gesture.beforeState
+                );
+                this._layerTransformKeyClickSuppressed = true;
+            } else if (gesture.moved && endEvent.type === 'pointerup') {
+                this._layerTransformKeyClickSuppressed = true;
+            } else if (!gesture.moved && endEvent.type === 'pointerup') {
+                this._selectLayerTransformKeyMarker(marker);
+                this._layerTransformKeyClickSuppressed = true;
+            }
+        };
+        document.addEventListener('pointermove', onMove, { passive: false });
+        document.addEventListener('pointerup', onEnd);
+        document.addEventListener('pointercancel', onEnd);
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+    }
+
     _hasActiveTimelineTransformNavigation() {
         if (this._layerTransformFrameNavigationInProgress) return false;
         const commitState = this.layerSystem?.getLayerMoveCommitState?.();
@@ -21225,6 +21537,19 @@ export class AnimationTablePopup {
                     return;
                 }
 
+                if (this._layerTransformKeyClickSuppressed) {
+                    this._layerTransformKeyClickSuppressed = false;
+                    return;
+                }
+
+                const layerTransformMarker = e.target.closest('.anim-layer-transform-key-projection');
+                if (layerTransformMarker) {
+                    this._selectLayerTransformKeyMarker(layerTransformMarker);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+
                 const keyMarker = e.target.closest('.anim-motion-key-marker, .anim-warp-key-marker');
                 if (keyMarker && this._isMotionTimelineKeyEditing()) {
                     const entry = this.model.findClipEntry(keyMarker.dataset.celId);
@@ -21458,6 +21783,13 @@ export class AnimationTablePopup {
                 // 前回clickが発火しなかった場合も、次の操作へ抑止を持ち越さない。
                 this._clipSelectionClickSuppressed = false;
                 this._motionKeyClickSuppressed = false;
+                this._layerTransformKeyClickSuppressed = false;
+
+                const layerTransformMarker = e.target.closest('.anim-layer-transform-key-projection');
+                if (layerTransformMarker) {
+                    this._beginLayerTransformKeyBundleDrag(e, layerTransformMarker);
+                    return;
+                }
 
                 const rigKeySlot = e.target.closest(
                     '.anim-bone-cell-slot.has-part-key, .anim-part-cell-slot.has-part-key'
@@ -24742,6 +25074,36 @@ export class AnimationTablePopup {
                 '"': '&quot;',
                 "'": '&#39;'
             }[m];
+        });
+    }
+
+    _getLayerTransformKeyBundleForTransaction(transaction = null) {
+        if (!transaction?.clipId || !Number.isInteger(transaction.localFrame)
+            || !transaction.internalLayerId) {
+            return { hasBasic: false, hasWarp: false, components: [], valid: false };
+        }
+        const entry = this.model.findClipEntry(transaction.clipId);
+        let layerTransformTracks = entry?.clip?.layerTransformTracks;
+        let layerDeformers = entry?.clip?.layerDeformers;
+        // During a preview the existing production bridge temporarily writes
+        // the candidate into the Clip. The component panel represents
+        // committed keys, so inspect the transaction baseline while pending.
+        if (this._layerTransformBridgeSession?.transaction === transaction) {
+            layerTransformTracks = transaction.baselineLayerTransformTracks || [];
+        }
+        if (this._layerWarpBridgeSession?.transaction === transaction) {
+            layerDeformers = transaction.baselineDeformer
+                ? { version: 1, targets: [{
+                    internalLayerId: transaction.internalLayerId,
+                    deformer: transaction.baselineDeformer
+                }] }
+                : null;
+        }
+        return inspectLayerTransformKeyBundle({
+            layerTransformTracks,
+            layerDeformers,
+            internalLayerId: transaction.internalLayerId,
+            localFrame: transaction.localFrame
         });
     }
 }

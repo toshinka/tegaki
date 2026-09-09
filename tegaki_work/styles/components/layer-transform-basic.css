@@ -136,6 +136,71 @@
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--active-border) 52%, transparent);
 }
 
+.layer-transform-key-components {
+    display: grid;
+    gap: 2px;
+    margin: 0 8px 5px;
+    padding: 2px 4px;
+    border-radius: var(--ui-radius-control);
+    background: color-mix(in srgb, var(--futaba-cream) 54%, transparent);
+}
+
+.layer-transform-key-components[hidden] {
+    display: none;
+}
+
+.layer-transform-key-component-row {
+    display: grid;
+    grid-template-columns: minmax(46px, auto) 1fr 28px;
+    align-items: center;
+    min-height: 25px;
+    gap: 5px;
+    padding: 1px 2px 1px 5px;
+    border-radius: calc(var(--ui-radius-control) - 1px);
+    color: var(--futaba-maroon);
+    font-size: 9px;
+}
+
+.layer-transform-key-component-name {
+    font-weight: 700;
+    letter-spacing: .04em;
+}
+
+.layer-transform-key-component-status {
+    color: var(--text-secondary);
+    font-size: 8px;
+}
+
+.layer-transform-key-component-delete {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 24px;
+    padding: 4px;
+    border: 0;
+    border-radius: var(--ui-radius-control);
+    background: transparent;
+    color: var(--futaba-medium);
+}
+
+.layer-transform-key-component-delete svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.layer-transform-key-component-delete:hover:not(:disabled),
+.layer-transform-key-component-delete:focus-visible {
+    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--active-border) 18%, var(--futaba-background));
+    outline: 1px solid color-mix(in srgb, var(--active-border) 68%, transparent);
+    outline-offset: -1px;
+}
+
 .layer-transform-key-step-btn:disabled,
 .layer-transform-key-commit-btn:disabled {
     opacity: var(--ui-opacity-disabled);
