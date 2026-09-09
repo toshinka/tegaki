@@ -1,12 +1,23 @@
 # Tegaki — 再開checkpoint
 
 状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。WP-009 ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。
-更新日: 2026-09-09。現在の実HEAD: `2d6e461bf13a8bbc1d6b76cf2041b8684a63fb06`。開始時worktreeはclean。reset/clean/stashは行わず既存履歴を継承する。
+更新日: 2026-09-09。現在の実HEAD: `9b13a2e02f3b7e4324ac4042cdd7874ee26dee11`。今回の開始時worktreeには既存の意図したalpha差分があり、reset/clean/stashは行わず保持した。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
 
 WP-005 Owner Acceptance ContinuationのA/B/Cを限定実施する。WARP gestureのrollback原因をdiagnostic traceとverifierで固定し、current evaluated Simple 4×4 WARPをBASIC authoring envelopeへ投影し、Layer Transform / Animation Tableへ可逆的なglass surface prototypeを適用する。WP-009の保存・History・KEY semantics、renderer、schema、Owner受入判定は変更しない。
+
+## CURRENT SLICE — WP-005 / WP-009 glass alpha and actual interaction closure (2026-09-09)
+
+- 開始HEADは`9b13a2e02f3b7e4324ac4042cdd7874ee26dee11`。worktreeの既存差分は`tegaki_work/styles/main.css`と`tegaki_work/ui/animation-table-popup.js`のglass alpha fallbackだけで、今回もそれ以外を巻き戻していない。
+- Owner指定どおり`--ui-panel-glass-surface`を`.82`から`.72`へ変更し、`--ui-panel-glass-backdrop`の`blur(3px)`は維持した。Layer Transform outer surfaceとAnimation Table main surfaceだけを対象とし、foreground controlのopacity、配置、z-index、pointer ownership、schema、History、rendererは変更していない。Production DOMの実効値はsurface `rgba(255, 255, 238, 0.72)`、backdrop `blur(3px)`だった。
+- 同じ非対称Raster fixtureでG1 Layer Transform、G2 Animation Table、G3 BothをChrome productionで確認した。Canvasの輪郭・変形方向はpanel越しに認識でき、Layer Transform controls、Animation Table controls、Timeline marker、KEY component row、trashの可読性と操作対象を維持した。visual noiseは低く、WARP/BASIC drag・Timeline D&Dで明らかなlag/stutterは見なかった。実測環境はChrome `152.0.7977.83`、viewport `908×548`、DPR `2.0249998569488525`、console errors `0` / warnings `0`。
+- CAF ANIMATE実RasterでWARPをcorner/edge/interiorへ20 gesture実施し、保持`20/20`、unexpected baseline rollback `0`。trusted physical penのpointercancel頻度、lost capture、preview failureはこのrunでは独立カウントせず、production terminal verifierの合成契約PASSを別証拠として扱う。WARP KEY確定はHistory `+1`、marker/panelを保持し、F1→F2→F1でF1形状を復元した（fixtureのF2は独立WARP KEYなし）。
+- Escapeはpending WARP/BASICともHistoryを増やさずrollbackした。WARP後のBASIC envelopeは大変形全体を包み、Move/Rotate/Scale/Axis Scaleを実操作で確認した。WARP削除→通常bounds、Undo→WARPとexpanded envelope復元、Redo→削除を確認した。
+- Stable `BASIC + WARP` bundleの通常CAF clip D&DはF1からF3へ移動し、destinationでWARP形状、BASIC envelope、marker、component rowを確認した。UndoでF1、RedoでF3へ戻った。Layer Transform KEY markerのpending D&Dは`先にKEYを確定または取消してください`で拒否され、History/modelを増やさなかった。通常CAF clip blockの移動は別の既存clip D&D経路であり、今回のKEY marker guard証拠と混同しない。
+- 今回のalpha変更後にharness check、transform `17/17`、warp `27/27`、animation `34/34`、ui `45/45`、project `9/9`、gesture/envelope/body/motion/cross-frame/re-entry/pointer-terminal、WP-009 model/panel/D&D verifierを再実行してPASS。変更JS/MJSの`node --check`、Vite build、`git diff --check` PASS、build後の`tegaki_work/dist`差分は0。
+- 技術/Browser evidenceはPASSだが、trusted pen、Ownerの最終制作受入、実PNG downloadは自己承認しない。WP-005は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`、WP-009は`ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING`、WP-008は`PLANNED — DESIGN / AUDIT FIRST`を維持し、次はGPT/Owner reviewへ返す。
 
 ## CURRENT SLICE — WP-005 Owner Acceptance Continuation (2026-09-09)
 

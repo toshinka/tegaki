@@ -23878,7 +23878,7 @@ export class AnimationTablePopup {
                 border-right: 1px solid var(--futaba-light-medium);
                 display: flex;
                 flex-direction: column;
-                background: var(--ui-panel-glass-surface, rgba(255, 255, 238, 0.82));
+                background: var(--ui-panel-glass-surface, rgba(255, 255, 238, 0.72));
                 position: sticky;
                 left: 0;
                 z-index: 20;

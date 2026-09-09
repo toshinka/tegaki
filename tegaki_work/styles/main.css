@@ -47,7 +47,7 @@
     --ui-backdrop-rail: blur(6px);
     --ui-backdrop-float: blur(10px) saturate(1.12);
     /* WP-005 reversible glass prototype: surface alpha keeps controls opaque. */
-    --ui-panel-glass-surface: rgba(255, 255, 238, 0.82);
+    --ui-panel-glass-surface: rgba(255, 255, 238, 0.72);
     --ui-panel-glass-backdrop: blur(3px);
     --ui-opacity-disabled: 0.5;
     /* Phase 9j Layer Panel bridge; only its detached operation rail joins Phase 9k. */
