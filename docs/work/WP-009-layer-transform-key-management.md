@@ -2,6 +2,13 @@
 
 状態: ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING（2026-09-09）。WP-005 Simple WARPのOwner受入状態は変更しない。
 
+## Owner acceptance closure evidence — actual bundle / pending guard (2026-09-09)
+
+- Chrome production `152.0.7977.83`、viewport `908×548`、DPR `2.0249998569488525`、console errors/warnings `0`で、非対称Rasterの`BASIC + WARP` marker、component rows、WARP trash、Timelineを確認した。
+- Stable bundleの通常CAF clip D&DはF1→F3でWARP shape、BASIC envelope、filled marker、component rowをdestinationへ保持し、UndoでF1、RedoでF3へ戻った。
+- Layer Transform KEY markerのpending D&Dは`先にKEYを確定または取消してください`で拒否し、History/modelを変更しなかった。marker guardのmodel/panel/D&D verifierもPASS。通常CAF clip block D&Dは別のclip move経路のため、KEY marker pending guardの証拠とは分離している。
+- WARP component delete→normal bounds、Undo→BASIC+WARP、Redo→WARP-only/削除のBrowser確認は前段fixtureから継承し、今回のalpha調整はKEY authority・schema・History semanticsを変更していない。Owner ACCEPTED判定は行わない。
+
 ## Goal
 
 既存の`layerTransformTracks`（BASIC）と`layerDeformers`（WARP）から導出する同一Clip・internal Layer・local FrameのKEY bundleを、Animation Tableでは一単位で移動し、Layer Transform panelではcomponent単位で削除できるようにする。Timeline markerはBASIC-onlyをoutline square、WARPを含むbundleをfilled squareで表示し、アクセシビリティ文言にもcomponentを含める。

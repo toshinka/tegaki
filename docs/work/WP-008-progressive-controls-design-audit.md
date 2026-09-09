@@ -22,6 +22,12 @@ Ownerの「Canvasを見ながら長時間使うLayer Transform / Animation Table
 
 現時点の採用判断はBrowser/Owner比較後に行う。候補はKEEP / TUNE / REJECTであり、WP-008のvariable grid、Cage、Brush、pivot、schema、renderer authorityへ展開しない。
 
+### Glass comparison result — Owner closure slice (2026-09-09)
+
+- Owner指定の追加透過としてalpha `.82 → .72`を実Browserで比較し、backdrop `blur(3px)`は維持した。Chrome `152.0.7977.83` / `908×548` / DPR `2.0249998569488525`、console errors/warnings `0`。
+- G1 Layer Transform、G2 Animation Table、G3 Bothの全てでCanvasの輪郭・位置・変形方向がpanel越しに認識でき、Layer Transform controls、Animation Table controls、Timeline marker、KEY rows、trashの可読性を保った。visual noiseは低く、WARP/BASIC/Timeline操作で明らかなlag/stutterは見なかった。
+- 最終推奨alphaは`.72`、blurは`3px`、recommendationは`KEEP`。これはOwnerの「約10ポイント追加透過」を反映したCSS tokenの調整であり、progressive-controls production開始、opacity setting、placement redesignではない。WP-008は`PLANNED — DESIGN / AUDIT FIRST`を維持する。
+
 ## Live source inventory
 
 | 責務 | 現行source | 読み取れた境界 |

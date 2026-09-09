@@ -4,6 +4,32 @@
 
 Layer TransformのBASIC/WARP切替、Simple 4x4の16点pointer adapter、normal/CAF SOURCEのRaster preview/bake、CAF ANIMATEの既存`layerDeformers` bridge接続を完了した。関連verifier・構文・Vite buildはPASSしている。normal SOURCEの実Browser操作、CAF ANIMATEの入場・preview・Esc・V確定・次Frame移動、Tableを閉じたCAF SOURCEのdrag・V確定、Table close rollback、pointer terminal、Pixi/CPU/export/save-reopenの技術証拠を確認した。trusted device pointercancelとOwner操作受入は未完了であり、Preview Equivalence Policyに従ってpackage statusはACTIVEとする。
 
+## Final Owner Acceptance closure slice — glass alpha `.72` / actual interaction stress (2026-09-09)
+
+今回のproduction Browser確認は、前段で作成した非対称Raster fixtureを再利用した。開始HEADは`9b13a2e02f3b7e4324ac4042cdd7874ee26dee11`で、既存差分を保持したまま、glass surface tokenとAnimation Table fallbackだけを`.82`から`.72`へ変更した。backdrop blurは`3px`のまま、foreground controlはopaque、対象はLayer Transform outer surfaceとAnimation Table main surfaceに限定した。
+
+### Glass G1/G2/G3
+
+- G1 Layer Transform、G2 Animation Table、G3 BothでCanvasの大きな輪郭・位置・変形方向を認識できた。Layer Transform control、Animation Table control、Timeline marker、KEY component row、trashは読み取り可能で、visual noiseは低い。配置、dock、collapse、z-index、pointer-eventsは変更していない。
+- 実効CSSはsurface `rgba(255, 255, 238, 0.72)` / backdrop `blur(3px)`。Chrome `152.0.7977.83`、viewport `908×548`、DPR `2.0249998569488525`、console errors `0`、warnings `0`。WARP/BASIC drag、Timeline D&Dに明らかなlag/stutterは見なかった。
+- Glass判定は`KEEP`（Ownerの「約10ポイント追加透過」に対する`.72`を採用）。opacity設定、slider、new settingは追加していない。
+
+### Actual WARP/BASIC/KEY evidence
+
+- CAF ANIMATE `V → WARP`でcorner/edge/interiorを混ぜた20 gestureを実施し、保持`20/20`、unexpected rollback `0`。trusted physical penのpointercancel、実lost capture、preview failureはこのmouse/synthetic runでは独立カウントしていない。terminal verifierは合成pointerup/cancel/lost/preview-failure契約をPASSした。
+- 複数point後のKEY確定はHistory `+1`、WARP key、Timeline marker、panelを保持。F1→F2→F1でF1のWARP形状を復元した。F2はこのfixtureでは独立WARP KEYを持たないため、別形状F2 KEYの証拠とはしない。EscapeはpendingをrollbackしHistoryを増やさなかった。
+- WARP後のBASIC envelopeはvisible WARP shape全体を包み、Move / Rotate / Scale / Axis Scaleを実操作で確認した。WARP deleteでnormal boundsへ戻り、UndoでWARPとexpanded envelopeを復元し、Redoで再削除した。
+- Stable `BASIC + WARP` CAF clipはF1からF3へ通常clip D&Dでき、destinationでshape/envelope/marker/component rowを確認した。Undo/RedoでF1/F3を往復した。Layer Transform KEY markerのpending D&Dはtoast `先にKEYを確定または取消してください`で拒否され、History/modelは増えなかった。通常CAF clip block D&Dは別経路であり、KEY marker guardとは分離して記録する。
+
+### Automated closure evidence
+
+- harness check `31 documents / 139 local links / 25 proposals / 8 packages`。
+- transform `17/17`、warp `27/27`、animation `34/34`、ui `45/45`、project `9/9`。
+- `verify-layer-warp-gesture-retention`、`verify-layer-transform-basic-warp-envelope`、body isolation、motion projection、cross-frame continuation、WARP re-entry、pointer terminal、WP-009 bundle model/panel/D&D verifier: PASS。
+- Changed JS/MJS `node --check`、Vite production build、`git diff --check`: PASS。生成`dist`差分: `0`。
+
+技術およびBrowser証拠はPASSだが、Owner ACCEPTED/DONEへは進めない。trusted pen、実PNG download、Ownerの最終制作受入はGPT/Owner reviewへ残す。
+
 ## Owner Acceptance Continuation — gesture retention / BASIC envelope / glass prototype (2026-09-09)
 
 ### A. WARP gesture retention
