@@ -49,10 +49,13 @@ function isFiniteMatrix(matrix) {
 }
 
 export class LayerTransformWarpController {
-    constructor({ layerSystem, coordinateSystem, overlay = warpGridOverlay } = {}) {
+    constructor({ layerSystem, coordinateSystem, overlay = warpGridOverlay, onTrace = null } = {}) {
         this.layerSystem = layerSystem || null;
         this.coordinateSystem = coordinateSystem || null;
         this.overlay = overlay;
+        // Diagnostic-only hook. Production does not pass it, so normal use has
+        // no console output or retained event history.
+        this.onTrace = typeof onTrace === 'function' ? onTrace : null;
         this.modeActive = false;
         this.gesture = null;
     }
@@ -182,11 +185,21 @@ export class LayerTransformWarpController {
             target: event.currentTarget,
             ignoreLost: false
         };
+        let capture = 'unavailable';
         try {
+            if (typeof event.currentTarget?.setPointerCapture === 'function') {
+                capture = 'success';
+            }
             event.currentTarget?.setPointerCapture?.(event.pointerId);
         } catch {
+            capture = 'failure';
             // Pointer capture is best effort; lost capture still follows rollback semantics.
         }
+        this._traceEvent('pointerdown', event, {
+            pointIndex,
+            capture,
+            normalized: this.gesture.startPoints[pointIndex]
+        });
         event.preventDefault?.();
         event.stopPropagation?.();
     }
@@ -195,10 +208,23 @@ export class LayerTransformWarpController {
         const gesture = this.gesture;
         if (!gesture || gesture.pointerId !== event.pointerId || gesture.pointIndex !== pointIndex) return;
         const point = this._screenToNormalized(event);
-        if (!point) return;
+        if (!point) {
+            this._traceEvent('pointermove', event, {
+                pointIndex,
+                normalized: null,
+                result: { ok: false, reason: 'screen-to-normalized-failed' }
+            });
+            return;
+        }
         const nextPoints = clonePoints(gesture.startPoints);
         nextPoints[pointIndex] = point;
         const result = this.layerSystem?.previewLayerWarpEditSession?.(nextPoints);
+        this._traceEvent('pointermove', event, {
+            pointIndex,
+            normalized: point,
+            result,
+            sessionChanged: this.layerSystem?.getLayerWarpEditSession?.()?.changed === true
+        });
         if (result?.ok !== true) {
             this._rollbackGesture();
             this._showBlockedReason(result?.reason);
@@ -218,6 +244,7 @@ export class LayerTransformWarpController {
             // The browser may release capture before pointerup.
         }
         this.gesture = null;
+        this._traceEvent('pointerup', event, { pointIndex, terminal: 'retained' });
         event.preventDefault?.();
         event.stopPropagation?.();
     }
@@ -226,6 +253,7 @@ export class LayerTransformWarpController {
         const gesture = this.gesture;
         if (!gesture || gesture.pointerId !== event.pointerId || gesture.pointIndex !== pointIndex) return;
         this._rollbackGesture();
+        this._traceEvent('pointercancel', event, { pointIndex, terminal: 'rollback' });
         event.preventDefault?.();
         event.stopPropagation?.();
     }
@@ -233,7 +261,10 @@ export class LayerTransformWarpController {
     _onLostPointerCapture(pointIndex, event) {
         const gesture = this.gesture;
         if (!gesture || gesture.pointerId !== event.pointerId || gesture.pointIndex !== pointIndex) return;
-        if (!gesture.ignoreLost) this._rollbackGesture();
+        if (!gesture.ignoreLost) {
+            this._rollbackGesture();
+            this._traceEvent('lostpointercapture', event, { pointIndex, terminal: 'rollback' });
+        }
     }
 
     _rollbackGesture() {
@@ -252,6 +283,52 @@ export class LayerTransformWarpController {
     _releaseGesture({ rollback = true } = {}) {
         if (rollback) this._rollbackGesture();
         else this.gesture = null;
+    }
+
+    _traceEvent(type, event, extra = {}) {
+        if (!this.onTrace) return;
+        const target = this.gesture?.target || event?.currentTarget || null;
+        const session = this.layerSystem?.getLayerWarpEditSession?.() || null;
+        const transaction = session?.transaction || this.layerSystem?._layerTransformSession?.transaction || null;
+        let hasCapture = null;
+        try {
+            hasCapture = typeof target?.hasPointerCapture === 'function'
+                ? target.hasPointerCapture(event?.pointerId)
+                : null;
+        } catch {
+            hasCapture = false;
+        }
+        const point = Number.isInteger(extra.pointIndex) && Array.isArray(session?.points)
+            ? session.points[extra.pointIndex]
+            : null;
+        try {
+            this.onTrace({
+                type,
+                pointerId: event?.pointerId ?? null,
+                pointerType: event?.pointerType || null,
+                button: event?.button ?? null,
+                buttons: event?.buttons ?? null,
+                isPrimary: event?.isPrimary ?? null,
+                targetConnected: target?.isConnected ?? null,
+                hasPointerCapture: hasCapture,
+                pointIndex: Number.isInteger(extra.pointIndex) ? extra.pointIndex : null,
+                normalized: extra.normalized ? { ...extra.normalized } : null,
+                preview: extra.result
+                    ? { ok: extra.result.ok === true, reason: extra.result.reason || null }
+                    : null,
+                sessionChanged: extra.sessionChanged ?? session?.changed === true,
+                sessionPoint: point ? { x: point.x, y: point.y } : null,
+                capture: extra.capture || null,
+                terminal: extra.terminal || null,
+                overlayActive: this.overlay?.isActive?.() === true,
+                modeActive: this.modeActive === true,
+                transformSession: !!this.layerSystem?._layerTransformSession,
+                currentFrame: transaction?.timelineFrame ?? null,
+                internalLayerId: transaction?.internalLayerId ?? null
+            });
+        } catch {
+            // Diagnostics must never change the pointer terminal outcome.
+        }
     }
 
     _showBlockedReason(reason) {

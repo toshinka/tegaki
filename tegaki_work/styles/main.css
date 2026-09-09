@@ -46,6 +46,9 @@
     --ui-radius-control: 5px;
     --ui-backdrop-rail: blur(6px);
     --ui-backdrop-float: blur(10px) saturate(1.12);
+    /* WP-005 reversible glass prototype: surface alpha keeps controls opaque. */
+    --ui-panel-glass-surface: rgba(255, 255, 238, 0.82);
+    --ui-panel-glass-backdrop: blur(3px);
     --ui-opacity-disabled: 0.5;
     /* Phase 9j Layer Panel bridge; only its detached operation rail joins Phase 9k. */
     --ui-layer-surface-rail: var(--ui-rail-surface-dark);
@@ -2890,6 +2893,13 @@ canvas {
     background: color-mix(in srgb, var(--futaba-cream) 94%, transparent);
     box-shadow: 0 4px 14px color-mix(in srgb, var(--futaba-maroon) 18%, transparent);
     backdrop-filter: blur(8px);
+}
+
+/* WP-005 glass prototype is limited to the main Layer Transform surface. */
+.layer-transform-panel.transform-popup-shell {
+    background: var(--ui-panel-glass-surface);
+    backdrop-filter: var(--ui-panel-glass-backdrop);
+    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
 }
 
 .transform-popup-header {
@@ -6449,6 +6459,13 @@ button.anim-motion-graph-legend-item.is-primary {
 .warp-grid-overlay.is-interactive .warp-grid-overlay-point-hit {
     pointer-events: all;
     cursor: grab;
+    touch-action: none;
+    -ms-touch-action: none;
+}
+
+.warp-grid-overlay.is-interactive {
+    touch-action: none;
+    -ms-touch-action: none;
 }
 
 .warp-grid-overlay.is-interactive .warp-grid-overlay-point-hit:active {

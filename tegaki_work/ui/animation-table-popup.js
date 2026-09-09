@@ -11251,6 +11251,7 @@ export class AnimationTablePopup {
             abandonAfterHistory: request => this._abandonLayerTransformBridgeAfterHistory(request),
             moveFrame: request => this._moveLayerTransformBridgeFrame(request),
             getWarpAuthoringMotion: request => this._getLayerWarpAuthoringMotion(request),
+            getWarpAuthoringBounds: request => this._getLayerWarpAuthoringBounds(request),
             canStartWarp: request => this._projectLayerWarpBridgeStart(request),
             beginWarp: request => this._beginLayerWarpBridge(request),
             previewWarp: request => this._previewLayerWarpBridge(request),
@@ -11968,6 +11969,57 @@ export class AnimationTablePopup {
             transform: { ...state.sampled },
             pivotX: state.pivotX,
             pivotY: state.pivotY
+        };
+    }
+
+    /**
+     * Layer Transform BASIC overlay用に、現在Frameで評価済みのSimple WARP形状を返す。
+     * 保存schemaやdeformerを変更せず、current Clip/internal Layer/local Frameだけを読む。
+     */
+    _getLayerWarpAuthoringBounds({ transaction, layerId } = {}) {
+        if (transaction?.target !== TRANSFORM_EDIT_TRANSACTION_TARGET.CLIP_LAYER_TRANSFORM_KEY) {
+            return { ok: false, reason: 'layer-warp-envelope-target-required' };
+        }
+        const state = this._getSelectedClipLayerMotionFrame(layerId);
+        const currentFrame = this.model?.playback?.currentFrame;
+        if (!state
+            || state.entry?.clip?.id !== transaction.clipId
+            || state.internalLayerId !== transaction.internalLayerId
+            || currentFrame !== transaction.timelineFrame) {
+            return { ok: false, reason: 'layer-warp-envelope-frame-unavailable' };
+        }
+        const deformer = getClipLayerDeformer(
+            state.entry.clip.layerDeformers,
+            transaction.internalLayerId
+        );
+        if (!deformer
+            || deformer.type !== 'control-mesh'
+            || deformer.columns !== 4
+            || deformer.rows !== 4
+            || !Array.isArray(deformer.bindPoints)
+            || deformer.bindPoints.length !== 16) {
+            return { ok: false, reason: 'simple-layer-warp-envelope-unavailable' };
+        }
+        const sampled = sampleClipDeformer(
+            deformer,
+            transaction.localFrame,
+            transaction.duration || state.entry.clip.duration
+        );
+        const bindBounds = sampled?.bindBounds || deformer.bindBounds || transaction.sourceBounds;
+        if (!bindBounds
+            || !Array.isArray(sampled?.points)
+            || sampled.points.length !== 16) {
+            return { ok: false, reason: 'layer-warp-envelope-sample-unavailable' };
+        }
+        return {
+            ok: true,
+            source: 'clip.layerDeformers',
+            clipId: transaction.clipId,
+            internalLayerId: transaction.internalLayerId,
+            timelineFrame: transaction.timelineFrame,
+            localFrame: transaction.localFrame,
+            bindBounds: { ...bindBounds },
+            points: sampled.points.map(point => ({ x: point.x, y: point.y }))
         };
     }
 
@@ -22963,11 +23015,14 @@ export class AnimationTablePopup {
                 display: flex;
                 flex-direction: column;
                 background: var(--ui-surface-float);
+                background: var(--ui-panel-glass-surface, var(--ui-surface-float));
                 border: 2px solid rgba(128, 0, 0, 0.75);
                 border-radius: 8px;
                 box-shadow: 0 10px 28px rgba(128, 0, 0, 0.14);
                 backdrop-filter: var(--ui-backdrop-float);
+                backdrop-filter: var(--ui-panel-glass-backdrop, var(--ui-backdrop-float));
                 -webkit-backdrop-filter: var(--ui-backdrop-float);
+                -webkit-backdrop-filter: var(--ui-panel-glass-backdrop, var(--ui-backdrop-float));
                 overflow: hidden;
             }
 
@@ -22995,7 +23050,7 @@ export class AnimationTablePopup {
 
             html[data-tegaki-shortcut-context="canvas"] .animation-table-panel .anim-table-header,
             html[data-tegaki-shortcut-context="canvas"] .animation-table-panel .anim-table-viewport {
-                opacity: 0.72;
+                opacity: 1;
             }
 
             .anim-table-header-row {
@@ -23379,7 +23434,7 @@ export class AnimationTablePopup {
             .anim-table-viewport {
                 flex: 1;
                 overflow: auto;
-                background: rgba(128, 0, 0, 0.02);
+                background: color-mix(in srgb, var(--futaba-background) 62%, transparent);
             }
 
             .animation-table-panel.timeline-pan-dragging .anim-table-viewport {
@@ -23823,7 +23878,7 @@ export class AnimationTablePopup {
                 border-right: 1px solid var(--futaba-light-medium);
                 display: flex;
                 flex-direction: column;
-                background: rgba(255, 255, 238, 0.9);
+                background: var(--ui-panel-glass-surface, rgba(255, 255, 238, 0.82));
                 position: sticky;
                 left: 0;
                 z-index: 20;
@@ -23918,7 +23973,7 @@ export class AnimationTablePopup {
                 display: flex;
                 align-items: center;
                 gap: 4px;
-                background: rgba(255, 255, 238, 0.6);
+                background: rgba(255, 255, 238, 0.66);
                 cursor: pointer;
             }
 
