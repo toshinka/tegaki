@@ -4,6 +4,41 @@
 
 Layer TransformのBASIC/WARP切替、Simple 4x4の16点pointer adapter、normal/CAF SOURCEのRaster preview/bake、CAF ANIMATEの既存`layerDeformers` bridge接続を完了した。関連verifier・構文・Vite buildはPASSしている。normal SOURCEの実Browser操作、CAF ANIMATEの入場・preview・Esc・V確定・次Frame移動、Tableを閉じたCAF SOURCEのdrag・V確定、Table close rollback、pointer terminal、Pixi/CPU/export/save-reopenの技術証拠を確認した。trusted device pointercancelとOwner操作受入は未完了であり、Preview Equivalence Policyに従ってpackage statusはACTIVEとする。
 
+## OWNER BLOCKER — committed WARP re-entry visual hydration / preview congruence (2026-09-09)
+
+### Scope and contract
+
+開始HEADは`4e9a2ee0f9790504008b4f9f00a7ec1fb67ebb79`、開始時worktreeはcleanだった。添付packageの想定HEADとは異なるため、既存履歴と差分を保持して現行HEADへ追補した。対象は、確定済みLayer WARPがあるANIMATE FrameへVで再入場した際に、最初の表示だけSOURCEへ戻るOWNER BLOCKERである。V入場は編集確定ではなくview/editor hydrationとして扱い、`History 0 / key 0 / model 0`、P0 canonical visualとの一致、P1〜P7の同Frame連続を契約にした。
+
+### Root cause and bounded fix
+
+- generic ANIMATE V入場でactive WARP transactionが無いと、`isTransformPreviewSuspended`から`_restoreVisibility()`へ進み、working Rasterを表示していた。確定WARPはClipのcanonical evaluated planに残るため、overlay開始前だけvisualがSOURCEへ落ちていた。
+- `AnimationTablePopup._shouldRenderCanonicalTransformPreview()`を追加し、既存のANIMATE Clip/Layer/Folder Transform KEY authority、またはactive Layer WARP transactionだけをcanonical preview対象にした。対象時は既存production `_applyVisibilityPreview({ force: true })`を通し、SOURCE/closed/non-ANIMATEは従来のrestore経路を維持した。
+- 新しいevaluator、WARP begin、model setter、History command、保存schema、CPU/Pixi renderer、評価順`DrawingSnapshot → Layer WARP → Motion`は追加・変更していない。既存live-preview verifierはこのforce preview境界を検査するよう最小更新した。
+
+### Technical verifier and component matrix
+
+新規`build/verify-layer-transform-warp-visual-reentry.mjs`はproduction `createFolderEffectRenderPlan`、Layer deformer sample、Layer Motion sample、entry decisionを同じfixtureへ接続した。
+
+- R1 WARP-only: committed `layerDeformers` pointsがcurrent Frame planへsampleされる。
+- R2 BASIC+WARP: 同じplanでWARPとLayer Motion matrixが共存し、評価順を維持する。
+- R3 Clip/Folder authorityのentry/tab switchはClipとruntime Historyを変更しない。
+- R4 active WARP transactionはcanonical routeを維持する。
+- R5 SOURCE、closed、source-WARP/unsupported stateはcanonical routeへ漏れない。
+
+結果はPASS。関連`verify-layer-transform-warp-reentry-congruence`、cross-frame continuation、basic envelope、body isolation、motion projection、entry guards、gesture retention、pointer terminal、KEY continuationもPASS。harness checkは`31 documents / 139 local links / 25 proposals / 8 packages`、transform `17/17`、warp `28/28`、animation `34/34`、ui `45/45`、project `9/9`。変更JS/MJSの`node --check`、Vite build、`git diff --check`、build後のdist差分`0`を確認した。
+
+### Actual Raster Browser evidence
+
+Chrome `152.0.7977.83`、production `http://localhost:5173/`、viewport約`908×548`、非対称L字Raster fixtureで確認した。P0 closed canonical、P1 V open、P2 BASIC、P3 WARP begin、P4 16点、P5 idle、P6 pointerdown、P7 preview moveを追跡した。
+
+- WARP-onlyでdrag→explicit KEY（History `+1`）→close→reopenを行い、BASICからの再入場でも確定WARP visualとWARP 16点を保持した。
+- pending drag→Escはpanelを閉じて確定形へ戻り、Historyは不変。pending drag→confirmはHistory `+1`、marker、panelを保持した。
+- 同じFrameへBASIC KEYを追加した`BASIC + WARP` bundleもclose/reopen後にcombined visualを保持した。F1へ戻したno-key frameではstale F3 transformを表示しなかった。
+- 同一FrameのV open/closeは5回×2 loop（計10回）を完走し、open AX panel `10/10`、close `10/10`、source rollbackは観測しなかった。console error/warnは`0`。Browser終了時はVを閉じた。
+
+今回のsliceではWP-009 delete/Undo、Project save/reopen、Export/PNG download、独立F2 WARP KEY、trusted pen/pointercancelは未実施であり、Owner acceptanceへ算入しない。glass alpha `.72`、blur `3px`、WP-009 schema/History、Folder自身KEYは変更していない。技術判定はPASSだが、Owner ACCEPTED/DONEには進めず、WP-005は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`としてGPT/Owner reviewへ返す。
+
 ## Final Owner Acceptance closure slice — glass alpha `.72` / actual interaction stress (2026-09-09)
 
 今回のproduction Browser確認は、前段で作成した非対称Raster fixtureを再利用した。開始HEADは`9b13a2e02f3b7e4324ac4042cdd7874ee26dee11`で、既存差分を保持したまま、glass surface tokenとAnimation Table fallbackだけを`.82`から`.72`へ変更した。backdrop blurは`3px`のまま、foreground controlはopaque、対象はLayer Transform outer surfaceとAnimation Table main surfaceに限定した。

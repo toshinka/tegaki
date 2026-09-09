@@ -1,12 +1,24 @@
 # Tegaki — 再開checkpoint
 
 状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。WP-009 ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。
-更新日: 2026-09-09。現在の実HEAD: `9b13a2e02f3b7e4324ac4042cdd7874ee26dee11`。今回の開始時worktreeには既存の意図したalpha差分があり、reset/clean/stashは行わず保持した。
+更新日: 2026-09-09。現在の実HEAD: `4e9a2ee0f9790504008b4f9f00a7ec1fb67ebb79`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `0bd2e08a9...`とは一致しなかったため、現在のHEADへ追補した。既存差分をreset/clean/stashせず保持した。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ## CURRENT OBJECTIVE
 
-WP-005 Owner Acceptance ContinuationのA/B/Cを限定実施する。WARP gestureのrollback原因をdiagnostic traceとverifierで固定し、current evaluated Simple 4×4 WARPをBASIC authoring envelopeへ投影し、Layer Transform / Animation Tableへ可逆的なglass surface prototypeを適用する。WP-009の保存・History・KEY semantics、renderer、schema、Owner受入判定は変更しない。
+WP-005のOWNER BLOCKERである「確定済みWARPのあるFrameへVで再入場すると、WARP visualが一度SOURCEへ戻る」症状を、既存canonical previewの再水和だけで限定修正する。保存schema、History、WARP transaction、評価順、renderer、Owner受入判定は変更しない。
+
+## CURRENT SLICE — WP-005 committed WARP re-entry visual hydration (2026-09-09)
+
+- 開始HEADは`4e9a2ee0f9790504008b4f9f00a7ec1fb67ebb79`、開始時worktreeはclean。添付packageの想定HEADとは異なるため、履歴を巻き戻さず現行HEADへ追補した。最終HEADは同じで、最終worktreeは`animation-table-popup.js`、2つのverifier、STATUS/WP記録だけの意図した差分（生成`dist`差分`0`）になっている。
+- P0〜P7を実Rasterで確認した。P0 closed canonical correct、P1 V open before tab、P2 BASIC overlay、P3 WARP begin、P4 committed WARP 16-point overlay、P5 idle、P6 pointerdown、P7 preview moveを追跡し、WARP-onlyとBASIC+WARPの両方で再入場前後のvisualが連続した。ANIMATE F3でWARPを明示KEY（History `+1`）し、close後も確定形を保持、再open時にBASICから入っても確定WARP形状とWARP tabの16点を復元した。BASICを追加KEYしたbundleもclose/reopenでcombined visualを保持した。
+- 根本原因は、generic ANIMATE V入場でactive WARP transactionがまだ無い場合、`isTransformPreviewSuspended`から既存`_restoreVisibility()`へ進み、working Rasterへ戻していたこと。確定WARPはClipのcanonical evaluated plan側にあるため、表示だけがSOURCEへ落ちていた（H1）。
+- `AnimationTablePopup._shouldRenderCanonicalTransformPreview()`を追加し、既存ANIMATE authority（Clip / Layer / Folder Transform KEY）またはactive Layer WARP transactionのときだけ、既存production `_applyVisibilityPreview({ force: true })`へルーティングした。SOURCE、closed、non-ANIMATEは従来のworking-layer restoreを維持する。新しいevaluator、model mutation、WARP begin、History terminal、保存schema、CPU/Pixi評価順は追加・変更していない。
+- Canonical component matrixはR1 WARP-only（committed `layerDeformers` pointsをsample）、R2 BASIC+WARP（同じplanでLayer Motion matrixもsample）、R3 entry/tab switch no-op（Clip/History不変）、R4 active WARP session、R5 SOURCE/closed guardで固定した。`verify-layer-transform-warp-visual-reentry.mjs`はPASSし、旧`verify-layer-transform-warp-animate-live-preview.mjs`も現行force preview境界を検査するよう最小更新した。
+- Automated evidence: harness check `31 documents / 139 local links / 25 proposals / 8 packages`; transform `17/17`; warp `28/28`; animation `34/34`; ui `45/45`; project `9/9`; 専用visual re-entry、re-entry congruence、cross-frame continuation、basic envelope、body isolation、motion projection、entry guards、gesture retention、pointer terminal、KEY continuation verifierはPASS。変更JS/MJS `node --check`、Vite production build、`git diff --check`、build後の`tegaki_work/dist`差分`0`も確認した。
+- Actual BrowserはChrome `152.0.7977.83`、production `http://localhost:5173/`、viewport約`908×548`、既存Raster L字fixture、console error/warn `0`。WARP-onlyのdrag→KEY→close→reopen、drag→Esc（History不変）、drag→confirm（History `+1`）、BASIC+WARP close/reopen、F1 no-keyのstale visual無しを確認した。同一FrameのV open/closeは5回×2 loop（計10回）で、open AX panel `10/10`、close `10/10`、source rollbackは観測しなかった。最後はV終了状態へ戻した。
+- 今回のBrowser sliceではWP-009のdelete/Undo、Project save/reopen、Export/PNG download、独立F2 WARP KEY、trusted pen/pointercancelは実施していない。既存の技術証拠・Owner checklistを代替せず、別の受入確認として残す。glass alpha `.72`、blur `3px`、既存panel構造、Folder自身KEY、WP-009保存/HISTORY semanticsは変更していない。
+- 判定は技術および今回のBrowser blocker修正`PASS`。Ownerの最終制作受入は自己承認しないため、WP-005は`ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING`、WP-009は従来どおり`ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING`を維持する。次はGPT/Owner reviewで、実RasterのF1/F2操作・Export/PNG・trusted inputを確認する。
 
 ## CURRENT SLICE — WP-005 / WP-009 glass alpha and actual interaction closure (2026-09-09)
 
