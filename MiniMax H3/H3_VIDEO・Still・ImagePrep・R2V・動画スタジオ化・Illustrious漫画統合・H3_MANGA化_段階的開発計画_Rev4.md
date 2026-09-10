@@ -22,7 +22,9 @@ LoRA移動、Manga変更を含まない。
 - VP2C implementation: `PUBLISHED ON MAIN` at `56ad30afa128ef4120f962b6c114fc0e7526aae8`
 - VP2C closeout: `PUBLISHED ON MAIN` at `1a869125fa95ef4c7b1e94b0ccedab39fc52b4be`
 - Rev.4 publication: `PUBLISHED ON MAIN` at `3880534af0e26b970a8fd0a1ba564af6bc88c15e`
-- Current `origin/main`: later Manga-only descendant `df0ad3b389db5149e1b6ab1edb24c568c147a10e`
+- IP1 implementation/evidence package: `PUBLISHED ON MAIN` at `d8b1a7ca070db1fe78b6d07ef0db01500e88c828`（この履歴コミットには同時期のManga変更も含まれる）
+- IP1 H3 closeout: `PUBLISHED ON MAIN` at `35e49859f3beb3bd0b4b1b2d2dd793897dc6b479`（`d8b1a7ca` に対するH3-only update）
+- Current `origin/main` at IP1 reconciliation: later Manga-only descendant `b5c79b85ed2fdeec1bf30254945db569666ecfa4`
 - Owner acceptance: `PENDING`
 
 公開状態、技術検証、Browser検証、視覚レビュー、Owner受入は別の状態として
@@ -830,10 +832,15 @@ Validation:
 IP1 Native audit/runtime/contract/full-H3-Python/compileall/JSON/diff-check PASS; Browser not run
 
 Implementation/docs commit:
-d8b1a7ca (H3 IP1 package present; concurrent Manga-only changes are in the same auto-created commit)
+d8b1a7ca (H3 IP1 package is present in published history; concurrent Manga-only changes are also in this historical commit)
+
+IP1 H3 closeout:
+35e49859 (H3-only closeout update relative to d8b1a7ca)
 
 Publication:
-LOCAL IP1 package — Owner push and remote verification pending
+PUBLISHED ON MAIN at 35e49859f3beb3bd0b4b1b2d2dd793897dc6b479
+Current main at reconciliation:
+b5c79b85ed2fdeec1bf30254945db569666ecfa4 (later Manga-only descendant)
 
 Owner acceptance:
 PENDING
