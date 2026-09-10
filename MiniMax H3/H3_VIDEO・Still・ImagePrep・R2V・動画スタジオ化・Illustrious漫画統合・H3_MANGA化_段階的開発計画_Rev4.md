@@ -204,8 +204,10 @@ Studioで使う参照素材を準備するための補助トラックである�
 IP1は小さなNative-only feasibility sliceであり、Browser Prep/Edit UIを実装する
 前に、12GB環境で有用性、再現性、VRAM、処理時間、参照役割の限界を確かめる。
 
-IP1はRev.4の次の実装Gateとして記録する。現在のIP1 CardはNative-only
-feasibilityに限定し、Browser Prep/Edit UIは実装しない。
+IP1はRev.4の次の実装Gateとして記録され、現在のIP1 CardでNative-only
+feasibilityを完了した。最終分類は `FEASIBLE WITH LIMITS` であり、Browser
+Prep/Edit UIは実装しない。次の推奨候補は `IP2 Browser Prep/Edit lens` だが、
+このCardでは開始しない。
 
 ### 5.3 IP1 candidate tests
 
@@ -762,7 +764,7 @@ H3とIllustrious Mangaの入口、runtime、workflow、受入状態を相互に�
 [x] Canonical pointers updated to Rev.4
 [x] Runtime / Manga / model changes excluded
 [x] Docs-only validation completed
-[ ] Publication checked against the actual remote after push
+[x] Publication checked against the actual remote after push
 [ ] Owner acceptance
 ```
 
@@ -777,7 +779,7 @@ H3 ROADMAP REV.4:
 PASS
 
 Remote base:
-1a869125fa95ef4c7b1e94b0ccedab39fc52b4be
+df0ad3b389db5149e1b6ab1edb24c568c147a10e
 
 VP2C closeout:
 PUBLISHED ON MAIN
@@ -792,10 +794,10 @@ Current master roadmap:
 REV.4
 
 Immediate next gate:
-IP1 — Native Image Prep / Reference Edit Feasibility
+IP2 Browser Prep/Edit lens (recommended; not started)
 
 Image Prep track:
-RECORDED / NOT IMPLEMENTED
+IP1 FEASIBLE WITH LIMITS / BROWSER PREP-EDIT NOT IMPLEMENTED
 
 R2V practicalization:
 RECORDED
@@ -825,13 +827,13 @@ Runtime changes:
 NONE
 
 Validation:
-DOCS-ONLY — links/path/Rev.3 preservation/diff-check PASS; remote verification PENDING
+IP1 Native audit/runtime/contract/full-H3-Python/compileall/JSON/diff-check PASS; Browser not run
 
 Implementation/docs commit:
-<R4 commit after local commit>
+d8b1a7ca (H3 IP1 package present; concurrent Manga-only changes are in the same auto-created commit)
 
 Publication:
-LOCAL MAIN / PUSH PENDING
+LOCAL IP1 package — Owner push and remote verification pending
 
 Owner acceptance:
 PENDING
