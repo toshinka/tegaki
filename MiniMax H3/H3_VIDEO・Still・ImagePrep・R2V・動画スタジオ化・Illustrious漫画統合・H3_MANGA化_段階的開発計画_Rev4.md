@@ -3,7 +3,7 @@
 更新日: 2026-09-11
 版: Rev.4 — R2V Practicalization / Image Prep / LoRA / Semantic Reference Reordering
 
-状態: **CURRENT MASTER ROADMAP / DOCS-ONLY PUBLICATION**
+状態: **CURRENT MASTER ROADMAP / DOCS-ONLY / PUBLISHED ON MAIN**
 
 Rev.3は歴史的な設計・開発計画として保持し、本書で上書きしない。Rev.4は、
 H3 Video、H3 Still、Native Ref2VA、Browser Reference Video、History handoff
@@ -21,6 +21,8 @@ LoRA移動、Manga変更を含まない。
 - Rev.3: `HISTORICAL / SUPERSEDED BY REV.4`。削除・改名・上書きしない
 - VP2C implementation: `PUBLISHED ON MAIN` at `56ad30afa128ef4120f962b6c114fc0e7526aae8`
 - VP2C closeout: `PUBLISHED ON MAIN` at `1a869125fa95ef4c7b1e94b0ccedab39fc52b4be`
+- Rev.4 publication: `PUBLISHED ON MAIN` at `3880534af0e26b970a8fd0a1ba564af6bc88c15e`
+- Current `origin/main`: later Manga-only descendant `df0ad3b389db5149e1b6ab1edb24c568c147a10e`
 - Owner acceptance: `PENDING`
 
 公開状態、技術検証、Browser検証、視覚レビュー、Owner受入は別の状態として
@@ -202,7 +204,8 @@ Studioで使う参照素材を準備するための補助トラックである�
 IP1は小さなNative-only feasibility sliceであり、Browser Prep/Edit UIを実装する
 前に、12GB環境で有用性、再現性、VRAM、処理時間、参照役割の限界を確かめる。
 
-IP1はRev.4の次の実装Gateとして記録するが、本Cardでは開始しない。
+IP1はRev.4の次の実装Gateとして記録する。現在のIP1 CardはNative-only
+feasibilityに限定し、Browser Prep/Edit UIは実装しない。
 
 ### 5.3 IP1 candidate tests
 
