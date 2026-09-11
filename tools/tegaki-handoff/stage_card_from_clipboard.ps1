@@ -57,7 +57,7 @@ function Get-CardPayload {
 
     if ($beginMatches.Count -eq 0 -and $endMatches.Count -eq 0) {
         $lines = [regex]::Split($Text, "\r\n|\n|\r")
-        if ($lines.Count -gt 0 -and $lines[0].TrimStart([char]0xFEFF) -ceq 'TEGAKI_CARD_V1') {
+        if ($lines.Count -gt 0 -and $lines[0].TrimStart([char]0xFEFF).Trim() -match '^TEGAKI_CARD_V[12]$') {
             return $Text
         }
         throw "CARD NOT FOUND`nCopy a TEGAKI Card and try again."
@@ -90,8 +90,8 @@ function Get-CardPayload {
     }
 
     $payloadLines = [regex]::Split($payload, "\r\n|\n|\r")
-    if ($payloadLines.Count -eq 0 -or $payloadLines[0].TrimStart([char]0xFEFF) -cne 'TEGAKI_CARD_V1') {
-        throw "CARD NOT FOUND`nThe wrapped block does not start with TEGAKI_CARD_V1."
+    if ($payloadLines.Count -eq 0 -or $payloadLines[0].TrimStart([char]0xFEFF).Trim() -notmatch '^TEGAKI_CARD_V[12]$') {
+        throw "CARD NOT FOUND`nThe wrapped block does not start with TEGAKI_CARD_V1 or TEGAKI_CARD_V2."
     }
     return $payload
 }
@@ -103,14 +103,14 @@ function Get-EnvelopeFields {
     )
 
     $lines = [regex]::Split($Text, "\r\n|\n|\r")
-    if ($lines.Count -eq 0 -or $lines[0].TrimStart([char]0xFEFF).Trim() -cne 'TEGAKI_CARD_V1') {
-        throw "Invalid $Kind envelope: first line must be TEGAKI_CARD_V1."
+    if ($lines.Count -eq 0 -or $lines[0].TrimStart([char]0xFEFF).Trim() -notmatch '^TEGAKI_CARD_V[12]$') {
+        throw "Invalid $Kind envelope: first line must be TEGAKI_CARD_V1 or TEGAKI_CARD_V2."
     }
 
     $fields = @{}
     $limit = [Math]::Min($lines.Count, 40)
     for ($index = 0; $index -lt $limit; $index++) {
-        if ($lines[$index] -cmatch '^\s*(CARD_ID|TARGET|BASE_SHA|EXECUTION|PUSH|AUTO_RUN)\s*:\s*(.*?)\s*$') {
+        if ($lines[$index] -cmatch '^\s*(CHANNEL|CARD_ID|TARGET|BASE_SHA|EXECUTION|PUSH|AUTO_RUN)\s*:\s*(.*?)\s*$') {
             $name = $matches[1]
             if ($fields.ContainsKey($name)) {
                 throw "Duplicate $name field in $Kind envelope."
@@ -119,11 +119,17 @@ function Get-EnvelopeFields {
         }
     }
 
+    $version = $lines[0].TrimStart([char]0xFEFF).Trim()
     foreach ($required in @('CARD_ID', 'TARGET', 'BASE_SHA', 'EXECUTION', 'PUSH', 'AUTO_RUN')) {
         if (-not $fields.ContainsKey($required) -or [string]::IsNullOrWhiteSpace($fields[$required])) {
             throw "Missing required $required field in $Kind envelope."
         }
     }
+
+    if ($version -eq 'TEGAKI_CARD_V2' -and (-not $fields.ContainsKey('CHANNEL') -or [string]::IsNullOrWhiteSpace($fields['CHANNEL']))) {
+        throw 'Missing required CHANNEL field in Card envelope.'
+    }
+    $fields['_CARD_VERSION'] = $version
 
     return $fields
 }
@@ -186,6 +192,15 @@ try {
     $clipboardText = Read-ClipboardText
     $cardText = Get-CardPayload -Text $clipboardText
     $fields = Get-EnvelopeFields -Text $cardText -Kind 'Card'
+
+    if ($fields['_CARD_VERSION'] -eq 'TEGAKI_CARD_V2') {
+        if ($fields['CHANNEL'] -cne 'H3') {
+            throw 'H3 Card V2 CHANNEL must be exactly H3.'
+        }
+        if ($fields['CARD_ID'] -notmatch '^(H3-|TEGAKI-HANDOFF-)') {
+            throw 'H3 Card V2 CARD_ID must start with H3- or TEGAKI-HANDOFF-.'
+        }
+    }
 
     if ($fields['TARGET'] -cne 'LUNA') {
         throw 'Card TARGET must be exactly LUNA.'
