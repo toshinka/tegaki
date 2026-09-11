@@ -1,47 +1,89 @@
-# TEGAKI Local Handoff GUI V1
+# TEGAKI Local Handoff GUI V1A
 
-`TEGAKI-HANDOFF-GUI-V1` is a small, local-only Card/Report palette around the
-existing Handoff V0.1 path. It has two visually separate, independently stored
-lanes:
-
-```text
-H3 / CODEX    [H3 -> CODEX]     [H3 -> WEBGPT]
-MANGA / GEMINI [MANGA -> GEMINI] [MANGA -> WEBGPT]
-```
-
-The GUI is deliberately manual:
+`TEGAKI-HANDOFF-GUI-V1A` is a small, local-only Owner palette around the
+existing Handoff V0.1 Card/Report path. It deliberately keeps H3 and Manga
+independent:
 
 ```text
-CONSULTATION != CARD
-CARD = explicit envelope + explicit user staging + explicit LUNA start
+H3 / CODEX       [H3 -> CODEX]       [H3 -> WEBGPT]
+MANGA / GEMINI   [MANGA -> GEMINI]   [MANGA -> WEBGPT]
 ```
 
-The tools do not watch conversations, start agents, run Card text, call a
-localhost service, press Enter, navigate a browser, or push Git refs. A button
-press may prepare clipboard text. Optional `Focus + paste` performs only a
-fail-closed window-title match and explicit Ctrl+V; it never sends Enter or
-Ctrl+Enter. Card and Report files are local plaintext and must not contain
-secrets.
+There is no clipboard watcher, auto-poll, agent execution, browser automation,
+Enter/Ctrl+Enter, Send-button click, localhost service, Chrome extension, or
+push. An explicit route button prepares the clipboard and may foreground one
+uniquely matched configured window for Ctrl+V only. Missing or ambiguous targets
+leave the valid text on the clipboard and require manual paste.
 
-## Owner flow
+## Normal Owner flow
 
-1. Double-click `tools/tegaki-handoff/TEGAKI_HANDOFF_GUI.cmd`.
-2. Select the intended lane and press its explicit `Stage ... Card` button.
-3. In the intended agent say `handoffを読んで実行`.
-4. Use `Copy ... Report` or `Paste Return` only when the report is ready.
-5. Paste into the intended WebGPT window manually.
+H3:
 
-The older console menu remains available at
-`tools/tegaki-handoff/TEGAKI_HANDOFF.cmd` for V0.1-compatible operation.
+1. Cardをコピー
+2. `カードを取り込む`
+3. `Codexへ実行指示`
+4. Ownerが手動で送信
+5. Agent完了後に `H3 WebGPTへ報告`
+6. Ownerが手動で送信
 
-Copying surrounding SOL prose is safe only when the Card uses the explicit
-`<<<TEGAKI_CARD_BEGIN>>>` / `<<<TEGAKI_CARD_END>>>` wrapper. A pure Card
-clipboard remains supported, but surrounding prose without that wrapper is
-rejected.
+Manga:
+
+1. Cardをコピー
+2. `カードを取り込む`
+3. `Geminiへ実行指示`
+4. Ownerが手動で送信
+5. Agent完了後に `Manga WebGPTへ報告`
+6. Ownerが手動で送信
+
+明示的な操作以外でクリップボードは変更されません。`NO AUTO SEND` は
+常時の安全条件です。
+
+## GUI
+
+Double-click:
+
+```text
+tools/tegaki-handoff/TEGAKI_HANDOFF_GUI.cmd
+```
+
+The normal palette exposes exactly three actions per lane. `接続先設定...`
+opens the four simple window-title substring settings:
+
+```text
+Codexウィンドウ
+H3 WebGPTウィンドウ
+Geminiウィンドウ
+Manga WebGPTウィンドウ
+```
+
+The palette is a normal movable, minimizable, closable window. `常に手前に
+表示` defaults to ON and can be toggled immediately. The repository root is
+visible and `変更...` accepts only a path validated by `git rev-parse
+--show-toplevel`.
+
+Settings are stored outside Git at
+`%LOCALAPPDATA%\TEGAKI-Handoff\settings.json`. Only the repository root,
+window position, TopMost state, and non-secret title tokens are stored.
+
+## Safe transfer contracts
+
+Run transfers include the route prefix and explicit safety text. H3 uses only
+the current validated H3 Card, does not infer from earlier chat, does not run
+Manga work, does not push, and requires human send. Manga uses only the current
+validated Manga Card, does not resume older Manga Cards, retains
+`M3B_PRODUCTION_CLOSED` as authoritative unless the current Card changes it,
+does not run H3 work, does not push, and requires human send.
+
+Return transfers retain the complete validated Report text and append a route
+specific audit instruction. H3 asks WebGPT to confirm GitHub/main when
+publication is expected and independently audit diff, implementation,
+evidence, limitations, and scope. Manga asks for an independent GitHub/main
+and Manga SSOT/boundary review, keeps product implementation HOLD unless
+explicitly authorized, and does not resume unrelated history.
 
 ## Runtime layout
 
-The tools create this ignored runtime directory at the repository root:
+The tools create this ignored local directory at the repository root:
 
 ```text
 .tegaki-handoff/
@@ -58,28 +100,16 @@ The tools create this ignored runtime directory at the repository root:
     state.json
 ```
 
-The H3 lane preserves the existing V0.1 storage and validation. Manga accepts
-only a valid `TEGAKI_CARD_V2` with `CHANNEL: MANGA`, `TARGET: GEMINI`, and a
-`MANGA-` Card ID. Only one current Card and one latest Report are active per
-lane. Older material is archived when a new valid Card is staged.
-`.tegaki-handoff/` is ignored and is never a tracked IPC or product-source
-change.
+H3 preserves the V0.1 paths and accepts both `TEGAKI_CARD_V1` with
+`TARGET: LUNA` and `TEGAKI_CARD_V2` with `CHANNEL: H3`, `TARGET: LUNA`. Manga
+accepts only V2 with `CHANNEL: MANGA`, `TARGET: GEMINI`, and a `MANGA-` Card ID.
+Each lane validates its own BASE_SHA and archives only its own prior state.
 
-GUI settings are persisted outside the repository at
-`%LOCALAPPDATA%\TEGAKI-Handoff\settings.json`. They contain only the selected
-repo root, window position, Always-on-top state, and four non-secret target
-window title tokens.
+## Tracked tools and verification
 
-## Tracked tools
-
-The normal Owner entry point is the double-clickable palette:
-
-```text
-tools/tegaki-handoff/TEGAKI_HANDOFF_GUI.cmd
-```
-
-The underlying V0.1 helpers can still be run from the repository root with
-Windows PowerShell or PowerShell:
+The older console menu remains available at
+`tools/tegaki-handoff/TEGAKI_HANDOFF.cmd` for V0.1-compatible manual use. The
+underlying helpers are:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/tegaki-handoff/init_handoff.ps1
@@ -88,95 +118,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/tegaki-handoff/show_ha
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/tegaki-handoff/copy_report_to_clipboard.ps1
 ```
 
-`-RepoRoot <path>` is available for a controlled local test repository. The
-default resolves the Git root from the tool location.
-
-`init_handoff.ps1` is idempotent. It creates directories and an `IDLE` state
-only when no current Card or Report exists; it never overwrites active state.
-`show_handoff_status.ps1` is read-only and warns when the current HEAD differs
-from the Card BASE_SHA.
-
-The deterministic GUI verifier is:
+The deterministic verifier exercises generated Run/Return strings and actual
+isolated H3 V1, H3 V2, and Manga V2 staging:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -STA -File tools/tegaki-handoff/verify_handoff_gui.ps1
 ```
 
-## Card envelope
-
-The staging helper accepts only a Card whose first line and near-top fields are
-all present:
-
-```text
-TEGAKI_CARD_V1
-CARD_ID: EXAMPLE-001
-TARGET: LUNA
-BASE_SHA: <full 40-character SHA>
-EXECUTION: EXPLICIT_HUMAN_START
-PUSH: FORBIDDEN
-AUTO_RUN: FORBIDDEN
-
-Card body follows here as text only.
-```
-
-It rejects consultation text, missing or duplicate fields, non-LUNA targets,
-non-human execution, AUTO_RUN enabled, non-forbidden PUSH, malformed BASE_SHA,
-and a BASE_SHA that does not exactly match the current repository HEAD. It
-fails closed before replacing the current Card and never rebase/pull/reset or
-interprets embedded commands.
-
-The manual LUNA start phrase is:
-
-```text
-handoffを読んで実行
-```
-
-Its meaning is to read only `.tegaki-handoff/to_luna/current_card.md`, verify
-the envelope, Card ID, BASE_SHA, `READY` state, and current repository safety,
-then execute only that Card. Do not execute archive files or infer work from
-earlier conversation text.
-
-## Report return contract
-
-After executing a staged Card, LUNA preserves the normal bounded completion
-report in chat and also writes:
-
-```text
-.tegaki-handoff/from_luna/latest_report.md
-```
-
-The Report begins with:
-
-```text
-TEGAKI_REPORT_V1
-CARD_ID: <same Card ID>
-RESULT: PASS | PASS WITH LIMIT | BLOCKED | FAILED
-```
-
-LUNA updates `state.json` to `REPORTED`. The copy helper validates the Report
-envelope, allowed result, and exact CARD_ID match with state, then copies the
-whole Report to the Owner clipboard without deleting it. A mismatch is
-rejected.
-
-## Human workflow
-
-Handoff intentionally still requires the Owner to:
-
-1. copy an explicitly issued SOL Card;
-2. stage it in the matching GUI lane;
-3. tell LUNA `handoffを読んで実行`;
-4. after completion, prepare the matching report transfer;
-5. paste the Report into SOL.
-
-This removes repetitive long-form transfer work but does not remove human
-authorization. LUNA may edit files, run tests, and create one local commit
-after successful validation. LUNA must not push, update remote refs, create a
-PR, or force push. The Owner reviews and pushes manually.
-
-## Safety and scope
-
-This GUI V1 has no workflow engine, queue, daemon, clipboard watcher, localhost
-HTTP service, native messaging, Chrome extension, tray app, or automatic Codex
-execution. It does not modify H3, Manga, workflows, runtime/backend/model
-files, or output directories. `PUSH NOT PERFORMED — OWNER ACTION REQUIRED` is
-the required publication statement for the completion report.
+`PUSH NOT PERFORMED — OWNER ACTION REQUIRED` is the required publication
+statement for a Handoff completion report. Owner reviews and pushes manually.

@@ -368,6 +368,35 @@ function Assert-GuiCard {
     return $result
 }
 
+function Get-GuiCurrentLaneCard {
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane,
+        [Parameter(Mandatory = $true)][string]$RepoRoot
+    )
+    $definition = Get-GuiLaneDefinition -Lane $Lane -RepoRoot $RepoRoot
+    if (-not (Test-Path -LiteralPath $definition.StatePath -PathType Leaf)) {
+        throw "$Lane handoff state not found."
+    }
+    if (-not (Test-Path -LiteralPath $definition.CardPath -PathType Leaf)) {
+        throw "$Lane current Card not found."
+    }
+    $state = [IO.File]::ReadAllText($definition.StatePath) | ConvertFrom-Json
+    if ([string]::IsNullOrWhiteSpace([string]$state.card_id)) {
+        throw "$Lane handoff state has no active Card ID."
+    }
+    $cardText = [IO.File]::ReadAllText($definition.CardPath)
+    $check = Assert-GuiCard -Text $cardText -Lane $Lane -ExpectedBaseSha (Get-GuiCurrentHead $RepoRoot)
+    if ($check.Fields['CARD_ID'] -cne [string]$state.card_id) {
+        throw "$Lane state/Card ID mismatch."
+    }
+    return [pscustomobject]@{
+        CardId = [string]$check.Fields['CARD_ID']
+        CardText = $cardText
+        Fields = $check.Fields
+        Version = $check.Version
+    }
+}
+
 function Get-GuiSafeArchiveToken {
     param([string]$Value)
     $token = [regex]::Replace([string]$Value, '[^A-Za-z0-9._-]', '_')
@@ -529,9 +558,38 @@ function Get-GuiRoutePrefix {
 }
 
 function New-GuiRunTransferText {
-    param([Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane)
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane,
+        [Parameter(Mandatory = $true)][string]$RepoRoot
+    )
     $route = if ($Lane -eq 'H3') { 'H3_AGENT' } else { 'MANGA_AGENT' }
-    return "$(Get-GuiRoutePrefix $route)`r`nhandoffを読んで実行"
+    $current = Get-GuiCurrentLaneCard -Lane $Lane -RepoRoot $RepoRoot
+    if ($Lane -eq 'H3') {
+        $lines = @(
+            (Get-GuiRoutePrefix $route)
+            ''
+            'TEGAKI H3 handoffを読んで実行。'
+            "Use only the current validated H3 Card: $($current.CardId)."
+            'Do not infer work from earlier chat history.'
+            'Do not execute Manga work.'
+            'Do not push.'
+            'Human send is required.'
+        )
+    }
+    else {
+        $lines = @(
+            (Get-GuiRoutePrefix $route)
+            ''
+            'TEGAKI MANGA handoffを読んで実行。'
+            "Use only the current validated MANGA Card: $($current.CardId)."
+            'Do not infer or resume older Manga Cards from chat history.'
+            'M3B_PRODUCTION_CLOSED remains authoritative unless the current Card explicitly changes scope.'
+            'Do not execute H3 work.'
+            'Do not push.'
+            'Human send is required.'
+        )
+    }
+    return ($lines -join "`r`n")
 }
 
 function New-GuiReturnTransferText {
@@ -546,7 +604,30 @@ function New-GuiReturnTransferText {
     if (-not (Test-Path -LiteralPath $definition.ReportPath -PathType Leaf)) { throw "$Lane latest Report not found." }
     $reportText = [IO.File]::ReadAllText($definition.ReportPath)
     $null = Assert-GuiReport -ReportText $reportText -ExpectedCardId ([string]$state.card_id)
-    return "$(Get-GuiRoutePrefix $definition.WebRoute)`r`n$reportText"
+    if ($Lane -eq 'H3') {
+        $instruction = @(
+            'H3 RETURN INSTRUCTION:'
+            ''
+            'Confirm current GitHub main / publication state when publication is expected.'
+            'Independently audit actual GitHub diff, implementation, evidence, limitations, and scope.'
+            'Do not accept the agent Report blindly.'
+            'Do not resume or modify Manga work from this return.'
+            'Issue another Card only when development progression requires one.'
+            'Do not invent publication status.'
+        ) -join "`r`n"
+    }
+    else {
+        $instruction = @(
+            'MANGA RETURN INSTRUCTION:'
+            ''
+            'Independently review the result against current GitHub/main and Manga SSOT/boundary.'
+            'Do not resume unrelated historical Manga Cards.'
+            'Do not modify H3 work from this return.'
+            'Keep Manga product implementation HOLD unless explicitly authorized.'
+            'Issue the next Manga Card only when explicitly appropriate.'
+        ) -join "`r`n"
+    }
+    return "$(Get-GuiRoutePrefix $definition.WebRoute)`r`n$reportText`r`n`r`n$instruction"
 }
 
 function Resolve-GuiTargetWindow {
@@ -576,6 +657,15 @@ function Get-GuiDesktopWindows {
     return $windows
 }
 
+function Invoke-GuiWindowPaste {
+    param([Parameter(Mandatory = $true)]$Window)
+    $shell = New-Object -ComObject WScript.Shell
+    if (-not $shell.AppActivate([int]$Window.Id)) { throw 'TARGET ACTIVATION FAILED' }
+    Start-Sleep -Milliseconds 150
+    [System.Windows.Forms.SendKeys]::SendWait('^v')
+    return [string]$Window.Title
+}
+
 function Invoke-GuiFocusPaste {
     param(
         [Parameter(Mandatory = $true)][string]$Text,
@@ -585,9 +675,5 @@ function Invoke-GuiFocusPaste {
     $resolution = Resolve-GuiTargetWindow -Windows (Get-GuiDesktopWindows) -Token $TargetToken
     if ($resolution.Status -ne 'TARGET FOUND') { throw $resolution.Status }
     Set-GuiClipboardText -Text $Text
-    $shell = New-Object -ComObject WScript.Shell
-    if (-not $shell.AppActivate([int]$resolution.Matches[0].Id)) { throw 'TARGET ACTIVATION FAILED' }
-    Start-Sleep -Milliseconds 150
-    [System.Windows.Forms.SendKeys]::SendWait('^v')
-    return $resolution.Matches[0].Title
+    return Invoke-GuiWindowPaste -Window $resolution.Matches[0]
 }
