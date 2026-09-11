@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$RepoRoot
+    [string]$RepoRoot,
+    [switch]$FriendlyErrors
 )
 
 $ErrorActionPreference = 'Stop'
@@ -128,6 +129,11 @@ try {
     Write-Output ("Result: {0}" -f $fields['RESULT'])
 }
 catch {
-    Write-Error $_.Exception.Message
+    if ($FriendlyErrors) {
+        Write-Output ("ERROR: {0}" -f $_.Exception.Message)
+    }
+    else {
+        Write-Error $_.Exception.Message
+    }
     exit 1
 }
