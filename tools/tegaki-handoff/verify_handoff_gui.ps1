@@ -40,13 +40,19 @@ function Invoke-FixtureStage {
     return [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
 }
 function Invoke-GuiRuntimeSmoke {
-    param([string]$Root)
+    param([string]$Root, [string]$LastReturnedDigest)
     $oldPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File $guiPath -RepoRoot $Root -SmokeTest 2>&1 | Out-String
+    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', $guiPath, '-RepoRoot', $Root, '-SmokeTest')
+    if ($PSBoundParameters.ContainsKey('LastReturnedDigest')) { $arguments += @('-SmokeLastReturnedDigest', $LastReturnedDigest) }
+    $output = & powershell.exe @arguments 2>&1 | Out-String
     $exitCode = $LASTEXITCODE
     $ErrorActionPreference = $oldPreference
     return [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
+}
+function New-FixtureReport {
+    param([string]$CardId, [string]$Result, [string]$Body = 'Fixture report.')
+    return "TEGAKI_REPORT_V1`r`nCARD_ID: $CardId`r`nRESULT: $Result`r`n`r`n$Body`r`n"
 }
 function New-FixtureCard {
     param(
@@ -86,14 +92,12 @@ Fixture Card body.
 $launcherPath = Join-Path $toolRoot 'TEGAKI_HANDOFF_GUI.cmd'
 $guiPath = Join-Path $toolRoot 'TEGAKI_HANDOFF_GUI.ps1'
 $corePath = Join-Path $toolRoot 'handoff_gui_core.ps1'
-$stagePath = Join-Path $toolRoot 'stage_card_from_clipboard.ps1'
 $launcherText = [IO.File]::ReadAllText($launcherPath)
 $guiText = [IO.File]::ReadAllText($guiPath)
 $coreText = [IO.File]::ReadAllText($corePath)
-$stageText = [IO.File]::ReadAllText($stagePath)
 $head = Get-GuiCurrentHead $repoRoot
 
-# A-H: launcher, repository, settings, and window contract.
+# A-H: launcher, repository, settings, and compact return-only window contract.
 Assert-GuiTest ($launcherText -match '%~dp0' -and $launcherText -match 'REPO_ROOT') 'A launcher resolves own tool path'
 Assert-GuiTest ((Resolve-GuiRepositoryRoot) -ceq $repoRoot) 'B repo root auto-detection'
 Assert-GuiTest ((Resolve-GuiRepositoryRoot -RequestedRoot $repoRoot) -ceq $repoRoot) 'C manual root validation'
@@ -101,125 +105,129 @@ $invalidRoot = Join-Path ([IO.Path]::GetTempPath()) ('tegaki-handoff-invalid-' +
 Assert-GuiThrows { Resolve-GuiRepositoryRoot -RequestedRoot $invalidRoot } 'D invalid root rejected'
 $settingsPath = Get-GuiSettingsPath
 Assert-GuiTest (-not ([IO.Path]::GetFullPath($settingsPath).StartsWith(($repoRoot + [IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase))) 'E settings outside repo'
-Assert-GuiTest ([bool](Get-GuiDefaultSettings).always_on_top) 'F TopMost default ON'
-Assert-GuiTest ($guiText -match '常に手前に表示' -and $guiText -match 'Add_CheckedChanged' -and $guiText -match '\$form\.TopMost = \[bool\]\$alwaysOnTop\.Checked') 'G TopMost toggle immediate'
-Assert-GuiTest ($guiText -match 'MinimizeBox = \$true' -and $guiText -match 'ShowInTaskbar = \$true' -and $guiText -match 'ClientSize = New-GuiSize 570 650') 'H compact movable window'
+$defaults = Get-GuiDefaultSettings
+Assert-GuiTest ([bool]$defaults.always_on_top -and $defaults.target_tokens.Keys.Count -eq 2 -and $defaults.target_tokens.Contains('H3_WEBGPT') -and $defaults.target_tokens.Contains('MANGA_WEBGPT')) 'F return target settings only'
+Assert-GuiTest ($defaults.Contains('last_returned_h3_report_sha256') -and $defaults.Contains('last_returned_manga_report_sha256')) 'G return digest settings present'
+Assert-GuiTest ($guiText -match '常に手前に表示' -and $guiText -match 'Add_CheckedChanged' -and $guiText -match '\$form\.TopMost = \[bool\]\$alwaysOnTop\.Checked' -and $guiText -match 'ClientSize = New-GuiSize 520 460') 'H TopMost and compact window'
 
-# I-P: H3 implementation contract and cross-lane validation.
-Assert-GuiTest ($guiText -match 'stage_card_from_clipboard\.ps1' -and $stageText -match 'TEGAKI_CARD_V2' -and $stageText -match "CHANNEL.*H3") 'I H3 actual V0.1-compatible staging path'
-$h3v1 = New-FixtureCard -Version TEGAKI_CARD_V1 -CardId H3-GUI-TEST-001 -BaseSha $head
-$h3v2 = New-FixtureCard -Version TEGAKI_CARD_V2 -CardId H3-GUI-TEST-002 -BaseSha $head
-$manga = New-FixtureCard -Version TEGAKI_CARD_V2 -CardId MANGA-GUI-TEST-001 -BaseSha $head -Channel MANGA -Target GEMINI
-Assert-GuiTest ((Test-GuiCard -Text $h3v1 -Lane H3 -ExpectedBaseSha $head).Valid) 'J H3 V1 compatible'
-Assert-GuiTest ((Test-GuiCard -Text $h3v2 -Lane H3 -ExpectedBaseSha $head).Valid) 'K H3 V2 accepted'
-Assert-GuiTest (-not (Test-GuiCard -Text $manga -Lane H3 -ExpectedBaseSha $head).Valid -and -not (Test-GuiCard -Text $h3v1 -Lane MANGA -ExpectedBaseSha $head).Valid) 'L H3/MANGA channel mismatch rejected'
-Assert-GuiTest ((Test-GuiCard -Text $manga -Lane MANGA -ExpectedBaseSha $head).Valid) 'M valid Manga V2 accepted'
-Assert-GuiTest (-not (Test-GuiCard -Text ($manga -replace 'CARD_ID: MANGA-GUI-TEST-001', 'CARD_ID: H3-GUI-TEST-003') -Lane MANGA -ExpectedBaseSha $head).Valid) 'N Manga with H3 ID rejected'
-Assert-GuiTest (-not (Test-GuiCard -Text ($h3v1 -replace 'CARD_ID: H3-GUI-TEST-001', 'CARD_ID: MANGA-GUI-TEST-002') -Lane H3 -ExpectedBaseSha $head).Valid) 'O H3 with MANGA ID rejected'
-$wrongSha = ('0' * 40)
-Assert-GuiTest (-not (Test-GuiCard -Text ($h3v1 -replace [regex]::Escape("BASE_SHA: $head"), "BASE_SHA: $wrongSha") -Lane H3 -ExpectedBaseSha $head).Valid) 'P BASE_SHA mismatch rejected'
+# I-P: the GUI has one return action per lane and no forward mediation.
+$returnButtons = [regex]::Matches($guiText, 'New-GuiLaneGroup -Lane H3|New-GuiLaneGroup -Lane MANGA')
+Assert-GuiTest ($returnButtons.Count -eq 2 -and $guiText -match 'ReturnButtonText' -and $guiText -match '結果をH3 WebGPTへ戻す' -and $guiText -match '結果をManga WebGPTへ戻す') 'I one return button per lane'
+Assert-GuiTest ($guiText -notmatch 'カードを取り込む|Codexへ渡す|Geminiへ渡す|New-GuiRunTransferText|stage_card_from_clipboard\.ps1|\$RunButtonText') 'J no normal forward workflow'
+Assert-GuiTest ($guiText -match '最新結果' -and $guiText -match "'Card'" -and $guiText -match '\.Return\.Enabled') 'K result status and enablement controls'
+Assert-GuiTest ($guiText -notmatch 'H3_AGENT|MANGA_AGENT' -and $guiText -match 'H3_WEBGPT|MANGA_WEBGPT') 'L only WebGPT targets in primary GUI'
+Assert-GuiTest ($coreText -match 'Get-GuiReportDigest' -and $coreText -match 'REPORT ALREADY RETURNED' -and $coreText -match 'Set-GuiLastReturnedReport') 'M digest duplicate guard'
+Assert-GuiTest ($coreText -match 'Get-GuiReportCandidate' -and $coreText -match '新しい結果あり' -and $coreText -match '返却済み' -and $coreText -match '報告ファイル不正') 'N readiness states'
+Assert-GuiTest ($coreText -match 'Get-GuiLaneSnapshot' -and $coreText -match 'LastReturnedDigest' -and $coreText -notmatch 'New-GuiReturnTransferText[\s\S]{0,500}StatePath') 'O no active-card dependency in return path'
+Assert-GuiTest ($guiText -match 'WINFORMS_RETURN_ONLY_SMOKE' -and $guiText -notmatch 'Add_.*Timer|ClipboardWatcher|Clipboard.*watch|watch.*Clipboard|poll') 'P native smoke and no watcher'
 
-# Q: exercise the actual staging writers in an isolated temporary Git repo.
+# Q: return-only matrix in an isolated temporary Git repository with no live handoff state.
 $fixtureBase = 'C:\Users\MAX\.codex\visualizations\2026\09\08\01a07f09-0de3-7e92-a8bb-f365b3648ed8'
-$fixtureRoot = Join-Path $fixtureBase ('.tmp-handoff-gui-v1a-' + [Guid]::NewGuid().ToString('N'))
-$originalClipboard = $null
-$hadOriginalClipboard = $false
+$fixtureRoot = Join-Path $fixtureBase ('.tmp-handoff-gui-v1c-' + [Guid]::NewGuid().ToString('N'))
 try {
-    try {
-        if ([System.Windows.Forms.Clipboard]::ContainsText()) { $originalClipboard = [System.Windows.Forms.Clipboard]::GetText(); $hadOriginalClipboard = $true }
-    }
-    catch { }
     $null = New-Item -ItemType Directory -Path $fixtureRoot -Force
     Invoke-FixtureGit -Root $fixtureRoot -Arguments @('init', '--quiet')
     [IO.File]::WriteAllText((Join-Path $fixtureRoot 'fixture.txt'), 'fixture')
     Invoke-FixtureGit -Root $fixtureRoot -Arguments @('add', 'fixture.txt')
     Invoke-FixtureGit -Root $fixtureRoot -Arguments @('-c', 'user.name=TEGAKI Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'fixture')
     $fixtureHead = Get-GuiCurrentHead $fixtureRoot
-    $stageV1 = Invoke-FixtureStage -Root $fixtureRoot -CardText (New-FixtureCard -Version TEGAKI_CARD_V1 -CardId H3-FIXTURE-V1 -BaseSha $fixtureHead)
-    $statePath = Join-Path $fixtureRoot '.tegaki-handoff\state.json'
-    Assert-GuiTest ($stageV1.ExitCode -eq 0 -and (Get-Content -Raw $statePath | ConvertFrom-Json).status -eq 'READY') 'Q1 H3 V1 actual staging READY'
-    $stageV2 = Invoke-FixtureStage -Root $fixtureRoot -CardText (New-FixtureCard -Version TEGAKI_CARD_V2 -CardId H3-FIXTURE-V2 -BaseSha $fixtureHead)
-    $stateAfterV2 = Get-Content -Raw $statePath | ConvertFrom-Json
-    Assert-GuiTest ($stageV2.ExitCode -eq 0 -and $stateAfterV2.status -eq 'READY' -and $stateAfterV2.card_id -ceq 'H3-FIXTURE-V2') 'Q2 H3 V2 actual staging READY'
-    $badChannel = New-FixtureCard -Version TEGAKI_CARD_V2 -CardId H3-FIXTURE-BAD-CHANNEL -BaseSha $fixtureHead -Channel MANGA
-    $badTarget = New-FixtureCard -Version TEGAKI_CARD_V2 -CardId H3-FIXTURE-BAD-TARGET -BaseSha $fixtureHead -Target GEMINI
-    $badPrefix = New-FixtureCard -Version TEGAKI_CARD_V2 -CardId BAD-FIXTURE-001 -BaseSha $fixtureHead
-    $badBase = New-FixtureCard -Version TEGAKI_CARD_V2 -CardId H3-FIXTURE-BAD-BASE -BaseSha ('0' * 40)
-    Assert-GuiTest ((Invoke-FixtureStage -Root $fixtureRoot -CardText $badChannel).ExitCode -ne 0) 'Q3 H3 V2 wrong CHANNEL rejected'
-    Assert-GuiTest ((Invoke-FixtureStage -Root $fixtureRoot -CardText $badTarget).ExitCode -ne 0) 'Q4 H3 V2 wrong TARGET rejected'
-    Assert-GuiTest ((Invoke-FixtureStage -Root $fixtureRoot -CardText $badPrefix).ExitCode -ne 0) 'Q5 H3 V2 wrong prefix rejected'
-    Assert-GuiTest ((Invoke-FixtureStage -Root $fixtureRoot -CardText $badBase).ExitCode -ne 0) 'Q6 BASE mismatch rejected'
-    $mangaStage = Stage-GuiMangaCard -RepoRoot $fixtureRoot -CardText (New-FixtureCard -Version TEGAKI_CARD_V2 -CardId MANGA-FIXTURE-V2 -BaseSha $fixtureHead -Channel MANGA -Target GEMINI)
-    $mangaStatePath = Join-Path $fixtureRoot '.tegaki-handoff\manga\state.json'
-    $h3StateCheck = Get-Content -Raw $statePath | ConvertFrom-Json
-    $mangaStateCheck = Get-Content -Raw $mangaStatePath | ConvertFrom-Json
-    Assert-GuiTest ($mangaStage.Status -eq 'READY' -and $mangaStateCheck.card_id -ceq 'MANGA-FIXTURE-V2') 'Q7 Manga V2 actual staging READY'
-    Assert-GuiTest ($h3StateCheck.card_id -ceq 'H3-FIXTURE-V2' -and $statePath -ne $mangaStatePath) 'Q8 H3 and Manga state independent'
+    $h3Definition = Get-GuiLaneDefinition -Lane H3 -RepoRoot $fixtureRoot
+    $mangaDefinition = Get-GuiLaneDefinition -Lane MANGA -RepoRoot $fixtureRoot
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $h3Definition.ReportPath) -Force
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $mangaDefinition.ReportPath) -Force
+    $h3Settings = Get-GuiDefaultSettings
+    $mangaSettings = Get-GuiDefaultSettings
 
-    # R/S: reports and generated transfer strings are exercised against fixture files.
-    $h3Report = "TEGAKI_REPORT_V1`r`nCARD_ID: H3-FIXTURE-V2`r`nRESULT: PASS`r`n`r`nH3 fixture report.`r`n"
-    $mangaReport = "TEGAKI_REPORT_V1`r`nCARD_ID: MANGA-FIXTURE-V2`r`nRESULT: PASS WITH LIMIT`r`n`r`nManga fixture report.`r`n"
-    [IO.File]::WriteAllText((Join-Path $fixtureRoot '.tegaki-handoff\from_luna\latest_report.md'), $h3Report)
-    [IO.File]::WriteAllText((Join-Path $fixtureRoot '.tegaki-handoff\manga\from_gemini\latest_report.md'), $mangaReport)
-    $runH3 = New-GuiRunTransferText -Lane H3 -RepoRoot $fixtureRoot
-    $runManga = New-GuiRunTransferText -Lane MANGA -RepoRoot $fixtureRoot
-    Assert-GuiTest ($runH3 -match '\[H3 -> CODEX\]' -and $runH3 -match 'current validated H3 Card' -and $runH3 -match 'earlier chat history' -and $runH3 -match 'Manga work' -and $runH3 -match 'Do not push' -and $runH3 -match 'Human send is required') 'R H3 Run safety text'
-    Assert-GuiTest ($runManga -match '\[MANGA -> GEMINI\]' -and $runManga -match 'current validated MANGA Card' -and $runManga -match 'older Manga Cards' -and $runManga -match 'M3B_PRODUCTION_CLOSED' -and $runManga -match 'H3 work' -and $runManga -match 'Do not push' -and $runManga -match 'Human send is required') 'S Manga Run safety text'
-    $returnH3 = New-GuiReturnTransferText -Lane H3 -RepoRoot $fixtureRoot
-    $returnManga = New-GuiReturnTransferText -Lane MANGA -RepoRoot $fixtureRoot
-    $h3ReportIndex = $returnH3.IndexOf($h3Report)
-    $mangaReportIndex = $returnManga.IndexOf($mangaReport)
-    Assert-GuiTest ($returnH3.StartsWith('[H3 -> WEBGPT]') -and $h3ReportIndex -ge 0 -and $returnH3.Substring($h3ReportIndex, $h3Report.Length) -ceq $h3Report -and $returnH3 -match 'current GitHub main' -and $returnH3 -match 'Independently audit' -and $returnH3 -match 'Do not accept the agent Report blindly' -and $returnH3 -match 'Manga work') 'T H3 Return audit instruction'
-    Assert-GuiTest ($returnManga.StartsWith('[MANGA -> WEBGPT]') -and $mangaReportIndex -ge 0 -and $returnManga.Substring($mangaReportIndex, $mangaReport.Length) -ceq $mangaReport -and $returnManga -match 'GitHub/main and Manga SSOT/boundary' -and $returnManga -match 'historical Manga Cards' -and $returnManga -match 'H3 work' -and $returnManga -match 'implementation HOLD') 'U Manga Return audit instruction'
-    Assert-GuiThrows { Assert-GuiReport -ReportText ($h3Report -replace 'H3-FIXTURE-V2', 'H3-OTHER') -ExpectedCardId 'H3-FIXTURE-V2' } 'V H3 report Card-ID mismatch rejected'
-    Assert-GuiThrows { Assert-GuiReport -ReportText ($mangaReport -replace 'MANGA-FIXTURE-V2', 'MANGA-OTHER') -ExpectedCardId 'MANGA-FIXTURE-V2' } 'W Manga report Card-ID mismatch rejected'
+    $h3NoResult = Get-GuiLaneSnapshot -Lane H3 -RepoRoot $fixtureRoot -LastReturnedDigest ''
+    $mangaNoResult = Get-GuiLaneSnapshot -Lane MANGA -RepoRoot $fixtureRoot -LastReturnedDigest ''
+    Assert-GuiTest ($h3NoResult.Status -ceq '結果なし' -and -not $h3NoResult.ReturnEnabled) 'Q1 H3 no-result disabled'
+    Assert-GuiTest ($mangaNoResult.Status -ceq '結果なし' -and -not $mangaNoResult.ReturnEnabled) 'Q2 Manga no-result disabled'
+
+    $h3Report = New-FixtureReport -CardId 'H3-FIXTURE-V1C' -Result 'PASS' -Body 'H3 first result.'
+    [IO.File]::WriteAllText($h3Definition.ReportPath, $h3Report)
+    $h3Candidate = Get-GuiReportCandidate -Lane H3 -RepoRoot $fixtureRoot
+    $h3New = Get-GuiLaneSnapshot -Lane H3 -RepoRoot $fixtureRoot -LastReturnedDigest ''
+    $mangaStillEmpty = Get-GuiLaneSnapshot -Lane MANGA -RepoRoot $fixtureRoot -LastReturnedDigest ''
+    Assert-GuiTest ($h3Candidate.Valid -and $h3Candidate.CardId -ceq 'H3-FIXTURE-V1C' -and $h3New.Status -ceq '新しい結果あり' -and $h3New.ReturnEnabled) 'Q3 H3 valid new Report detected'
+    Assert-GuiTest ($mangaStillEmpty.Status -ceq '結果なし' -and -not $mangaStillEmpty.ReturnEnabled) 'Q4 H3 report does not affect Manga'
+
+    $h3Return = New-GuiReturnTransferText -Lane H3 -RepoRoot $fixtureRoot -LastReturnedDigest ''
+    Assert-GuiTest ($h3Return.StartsWith('[H3 -> WEBGPT]') -and $h3Return.IndexOf($h3Report) -ge 0 -and $h3Return -match 'H3 RETURN INSTRUCTION') 'Q5 H3 Return payload complete'
+    $h3Digest = $h3Candidate.Digest
+    Set-GuiLastReturnedReport -Settings $h3Settings -Lane H3 -Digest $h3Digest -CardId $h3Candidate.CardId
+    $h3Returned = Get-GuiLaneSnapshot -Lane H3 -RepoRoot $fixtureRoot -LastReturnedDigest (Get-GuiLastReturnedDigest -Settings $h3Settings -Lane H3)
+    Assert-GuiTest ($h3Returned.Status -ceq '返却済み' -and -not $h3Returned.ReturnEnabled) 'Q6 explicit return digest tracked'
+    $duplicateMessage = ''
+    try { $null = New-GuiReturnTransferText -Lane H3 -RepoRoot $fixtureRoot -LastReturnedDigest $h3Digest } catch { $duplicateMessage = $_.Exception.Message }
+    Assert-GuiTest ($duplicateMessage -ceq 'REPORT ALREADY RETURNED') 'Q7 duplicate old Report blocked'
+
+    $sameCardChangedReport = New-FixtureReport -CardId 'H3-FIXTURE-V1C' -Result 'PASS' -Body 'H3 corrected result.'
+    [IO.File]::WriteAllText($h3Definition.ReportPath, $sameCardChangedReport)
+    $changedCandidate = Get-GuiReportCandidate -Lane H3 -RepoRoot $fixtureRoot
+    $changedSnapshot = Get-GuiLaneSnapshot -Lane H3 -RepoRoot $fixtureRoot -LastReturnedDigest $h3Digest
+    Assert-GuiTest ($changedCandidate.Digest -cne $h3Digest -and $changedCandidate.CardId -ceq 'H3-FIXTURE-V1C' -and $changedSnapshot.Status -ceq '新しい結果あり' -and $changedSnapshot.ReturnEnabled) 'Q8 same Card changed Report is new'
+
+    [IO.File]::WriteAllText($h3Definition.ReportPath, 'not a report')
+    $malformed = Get-GuiLaneSnapshot -Lane H3 -RepoRoot $fixtureRoot -LastReturnedDigest $h3Digest
+    Assert-GuiTest ($malformed.Status -ceq '報告ファイル不正' -and -not $malformed.ReturnEnabled) 'Q9 malformed Report blocked'
+    [IO.File]::WriteAllText($h3Definition.ReportPath, (New-FixtureReport -CardId 'H3-FIXTURE-V1C' -Result 'INVALID' -Body 'invalid result.'))
+    $invalidResult = Get-GuiLaneSnapshot -Lane H3 -RepoRoot $fixtureRoot -LastReturnedDigest $h3Digest
+    Assert-GuiTest ($invalidResult.Status -ceq '報告ファイル不正' -and -not $invalidResult.ReturnEnabled) 'Q10 invalid RESULT blocked'
+    Remove-Item -LiteralPath $h3Definition.ReportPath -Force
+    $h3EmptyAgain = Get-GuiLaneSnapshot -Lane H3 -RepoRoot $fixtureRoot -LastReturnedDigest $h3Digest
+    Assert-GuiTest ($h3EmptyAgain.Status -ceq '結果なし' -and -not $h3EmptyAgain.ReturnEnabled) 'Q11 report removal is no-result'
+
+    $h3FinalReport = New-FixtureReport -CardId 'H3-FIXTURE-FINAL' -Result 'PASS WITH LIMIT' -Body 'H3 final result.'
+    $mangaReport = New-FixtureReport -CardId 'MANGA-FIXTURE-V1C' -Result 'PASS' -Body 'Manga result.'
+    [IO.File]::WriteAllText($h3Definition.ReportPath, $h3FinalReport)
+    [IO.File]::WriteAllText($mangaDefinition.ReportPath, $mangaReport)
+    $h3FinalCandidate = Get-GuiReportCandidate -Lane H3 -RepoRoot $fixtureRoot
+    $mangaCandidate = Get-GuiReportCandidate -Lane MANGA -RepoRoot $fixtureRoot
+    $mangaReturn = New-GuiReturnTransferText -Lane MANGA -RepoRoot $fixtureRoot -LastReturnedDigest ''
+    Assert-GuiTest ($mangaCandidate.Valid -and $mangaCandidate.CardId -ceq 'MANGA-FIXTURE-V1C' -and $mangaReturn.StartsWith('[MANGA -> WEBGPT]') -and $mangaReturn.IndexOf($mangaReport) -ge 0 -and $mangaReturn -match 'MANGA RETURN INSTRUCTION') 'Q12 Manga valid Return payload'
+    $h3Only = Get-GuiLaneSnapshot -Lane H3 -RepoRoot $fixtureRoot -LastReturnedDigest ''
+    $mangaOnly = Get-GuiLaneSnapshot -Lane MANGA -RepoRoot $fixtureRoot -LastReturnedDigest ''
+    Assert-GuiTest ($h3Only.Status -ceq '新しい結果あり' -and $mangaOnly.Status -ceq '新しい結果あり') 'Q13 H3 and Manga lane isolation'
+
+    $mockClipboard = [pscustomobject]@{ Text = ''; Fail = $false }
+    $statusMessages = [System.Collections.Generic.List[string]]::new()
+    $mockWriter = { param([string]$Value) if ($mockClipboard.Fail) { throw 'clipboard fixture failure' }; $mockClipboard.Text = $Value }
+    $mockStatus = { param([string]$Message) $statusMessages.Add($Message) }
+    $noTarget = { @([pscustomobject]@{ Title = 'unrelated window' }) }
+    $manualTransfer = Invoke-GuiReturnTransfer -Text $h3FinalReport -Route '[H3 -> WEBGPT]' -TargetToken 'WebGPT' -SetStatus $mockStatus -ClipboardWriter $mockWriter -WindowProvider $noTarget
+    Assert-GuiTest ($manualTransfer.PayloadReady -and $mockClipboard.Text -ceq $h3FinalReport -and $manualTransfer.Message -match '手動で貼り付け') 'Q14 target not found manual fallback'
+    $fallbackSettings = Get-GuiDefaultSettings
+    Set-GuiLastReturnedReport -Settings $fallbackSettings -Lane H3 -Digest $h3FinalCandidate.Digest -CardId $h3FinalCandidate.CardId
+    Assert-GuiTest ((Get-GuiLaneSnapshot -Lane H3 -RepoRoot $fixtureRoot -LastReturnedDigest (Get-GuiLastReturnedDigest -Settings $fallbackSettings -Lane H3)).Status -ceq '返却済み') 'Q15 manual fallback may mark returned'
+    $mockClipboard.Fail = $true
+    $failureSettings = Get-GuiDefaultSettings
+    $failedTransfer = Invoke-GuiReturnTransfer -Text $h3FinalReport -Route '[H3 -> WEBGPT]' -TargetToken 'WebGPT' -SetStatus $mockStatus -ClipboardWriter $mockWriter -WindowProvider $noTarget
+    Assert-GuiTest (-not $failedTransfer.PayloadReady -and [string]::IsNullOrWhiteSpace((Get-GuiLastReturnedDigest -Settings $failureSettings -Lane H3)) -and (Get-GuiLaneSnapshot -Lane H3 -RepoRoot $fixtureRoot -LastReturnedDigest '').Status -ceq '新しい結果あり') 'Q16 clipboard failure does not mark returned'
 
     $runtimeSmoke = Invoke-GuiRuntimeSmoke -Root $fixtureRoot
-    Assert-GuiTest ($runtimeSmoke.ExitCode -eq 0 -and $runtimeSmoke.Output -match 'WINFORMS_RUNTIME_SMOKE PASS') 'Q9 native WinForms runtime smoke'
-
-    [IO.File]::WriteAllText((Join-Path $fixtureRoot 'after-stage.txt'), 'HEAD drift fixture')
-    Invoke-FixtureGit -Root $fixtureRoot -Arguments @('add', 'after-stage.txt')
-    Invoke-FixtureGit -Root $fixtureRoot -Arguments @('-c', 'user.name=TEGAKI Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'head drift')
-    $driftReturn = New-GuiReturnTransferText -Lane H3 -RepoRoot $fixtureRoot
-    $staleRunBlocked = $false
-    try { $null = New-GuiRunTransferText -Lane H3 -RepoRoot $fixtureRoot } catch { $staleRunBlocked = $true }
-    Assert-GuiTest ($driftReturn -match '\[H3 -> WEBGPT\]' -and $driftReturn -match 'H3 RETURN INSTRUCTION') 'X completed Report allowed after HEAD drift'
-    Assert-GuiTest $staleRunBlocked 'Y stale Card re-execution blocked'
+    Assert-GuiTest ($runtimeSmoke.ExitCode -eq 0 -and $runtimeSmoke.Output -match 'WINFORMS_RETURN_ONLY_SMOKE PASS') 'Q17 native WinForms return-only smoke'
 }
 finally {
-    if ($hadOriginalClipboard) { try { Set-GuiClipboardText -Text $originalClipboard } catch { } }
-    else { try { [System.Windows.Forms.Clipboard]::Clear() } catch { } }
     if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
-# Z-AB: GUI contract, localization, and transfer safety.
-Assert-GuiTest ((Get-GuiRoutePrefix H3_AGENT) -ceq '[H3 -> CODEX]' -and (Get-GuiRoutePrefix H3_WEBGPT) -ceq '[H3 -> WEBGPT]' -and (Get-GuiRoutePrefix MANGA_AGENT) -ceq '[MANGA -> GEMINI]' -and (Get-GuiRoutePrefix MANGA_WEBGPT) -ceq '[MANGA -> WEBGPT]') 'Z prefixes exact'
-$mainButtons = [regex]::Matches($guiText, '\$stage = New-GuiButton|\$run = New-GuiButton|\$report = New-GuiButton')
-Assert-GuiTest ($mainButtons.Count -eq 3 -and $guiText -match 'カードを取り込む' -and $guiText -match 'Codexへ渡す' -and $guiText -match '結果をH3 WebGPTへ戻す' -and $guiText -match 'Geminiへ渡す' -and $guiText -match '結果をManga WebGPTへ戻す' -and $guiText -notmatch 'Copy H3 Report|Paste Return|Focus \+ paste') 'AA three daily actions per lane'
-$japaneseLabels = @('リポジトリ', '変更...', '常に手前に表示', '状態を更新', "'状態'", "'カード'", "'最新報告'", '接続先設定')
-$labelsPass = $true
-foreach ($label in $japaneseLabels) { if ($guiText -notmatch [regex]::Escape($label)) { $labelsPass = $false } }
-Assert-GuiTest ($labelsPass -and $guiText -notmatch '\$ReportLabel|\$reportLabel') 'AB Japanese labels and collision fixed'
-
-# AC-AH: explicit paste guard and no auto-send/browser automation.
-$zero = Resolve-GuiTargetWindow -Windows @([pscustomobject]@{ Title = 'unrelated window' }) -Token 'Codex'
-$multiple = Resolve-GuiTargetWindow -Windows @([pscustomobject]@{ Title = 'Codex one' }, [pscustomobject]@{ Title = 'Codex two' }) -Token 'Codex'
-Assert-GuiTest ($zero.Status -ceq 'TARGET NOT FOUND' -and $multiple.Status -ceq 'TARGET AMBIGUOUS') 'AC target missing/ambiguous fail-closed'
-Assert-GuiTest ($coreText -match "SendWait\('\^v'\)" -and $coreText -notmatch '\{ENTER\}|\^~|Send button' -and $guiText -notmatch 'Add_.*Timer|ClipboardWatcher|Document\.getElementById|chrome\.') 'AD Ctrl+V only / no browser automation'
-Assert-GuiTest ($guiText -notmatch 'Add_Shown[\s\S]{0,800}Set-GuiClipboardText' -and $guiText -notmatch 'Clipboard.*watch|watch.*Clipboard|poll') 'AE clipboard changes only from explicit actions'
+# R-Z: transfer safety, source contract, syntax, and diff checks.
+Assert-GuiTest ((Get-GuiRoutePrefix H3_WEBGPT) -ceq '[H3 -> WEBGPT]' -and (Get-GuiRoutePrefix MANGA_WEBGPT) -ceq '[MANGA -> WEBGPT]') 'R prefixes exact'
+Assert-GuiTest ($coreText -match "SendWait\('\^v'\)" -and $coreText -notmatch '\{ENTER\}|\^~|Send button' -and $guiText -notmatch 'Add_.*Timer|ClipboardWatcher|Document\.getElementById|chrome\.') 'S Ctrl+V only / no browser automation'
+Assert-GuiTest ($guiText -notmatch 'Add_Shown[\s\S]{0,800}Set-GuiClipboardText' -and $guiText -notmatch 'Clipboard.*watch|watch.*Clipboard|poll') 'T clipboard changes only from explicit actions'
 $ignoreText = [IO.File]::ReadAllText((Join-Path $repoRoot '.gitignore'))
-Assert-GuiTest ($ignoreText -match '(?m)^/\.tegaki-handoff/$') 'AF .tegaki-handoff ignored'
+Assert-GuiTest ($ignoreText -match '(?m)^/\.tegaki-handoff/$') 'U .tegaki-handoff ignored'
 $parseErrors = @()
 foreach ($file in @(Get-ChildItem -LiteralPath $toolRoot -Filter '*.ps1' -File -Recurse)) {
     $tokens = $null; $errors = $null
     [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
     $parseErrors += @($errors)
 }
-Assert-GuiTest ($parseErrors.Count -eq 0) 'AG PowerShell syntax'
+Assert-GuiTest ($parseErrors.Count -eq 0) 'V PowerShell syntax'
 $oldPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
 $diffOutput = & git -C $repoRoot diff --check -- tools/tegaki-handoff 2>&1
 $diffExit = $LASTEXITCODE
 $ErrorActionPreference = $oldPreference
-Assert-GuiTest ($diffExit -eq 0) 'AH git diff check'
+Assert-GuiTest ($diffExit -eq 0) 'W git diff check'
 
-Write-Output "GUI V1B VERIFIER PASS ($passed checks)"
+Write-Output "GUI V1C VERIFIER PASS ($passed checks)"

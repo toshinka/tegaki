@@ -1,4 +1,4 @@
-# Shared, fail-closed helpers for TEGAKI-HANDOFF-GUI-V1.
+# Shared, fail-closed helpers for TEGAKI-HANDOFF-GUI-V1C.
 # This file has no entry-point side effects. The GUI and verifier dot-source it.
 
 $ErrorActionPreference = 'Stop'
@@ -18,11 +18,13 @@ function Get-GuiDefaultSettings {
         window_x = 80
         window_y = 80
         target_tokens = [ordered]@{
-            H3_AGENT = 'Codex'
             H3_WEBGPT = 'WebGPT'
-            MANGA_AGENT = 'Gemini'
             MANGA_WEBGPT = 'WebGPT'
         }
+        last_returned_h3_report_sha256 = ''
+        last_returned_h3_card_id = ''
+        last_returned_manga_report_sha256 = ''
+        last_returned_manga_card_id = ''
     }
 }
 
@@ -48,11 +50,14 @@ function Get-GuiSettings {
             $defaults.window_y = [int]$stored.window_y
         }
         if ($stored.PSObject.Properties['target_tokens'] -and $null -ne $stored.target_tokens) {
-            foreach ($route in @('H3_AGENT', 'H3_WEBGPT', 'MANGA_AGENT', 'MANGA_WEBGPT')) {
+            foreach ($route in @('H3_WEBGPT', 'MANGA_WEBGPT')) {
                 if ($stored.target_tokens.PSObject.Properties[$route]) {
                     $defaults.target_tokens[$route] = [string]$stored.target_tokens.$route
                 }
             }
+        }
+        foreach ($field in @('last_returned_h3_report_sha256', 'last_returned_h3_card_id', 'last_returned_manga_report_sha256', 'last_returned_manga_card_id')) {
+            if ($stored.PSObject.Properties[$field]) { $defaults[$field] = [string]$stored.$field }
         }
     }
     catch {
@@ -93,8 +98,12 @@ function Save-GuiSettings {
         window_x = [int]$Settings.window_x
         window_y = [int]$Settings.window_y
         target_tokens = [ordered]@{}
+        last_returned_h3_report_sha256 = [string]$Settings.last_returned_h3_report_sha256
+        last_returned_h3_card_id = [string]$Settings.last_returned_h3_card_id
+        last_returned_manga_report_sha256 = [string]$Settings.last_returned_manga_report_sha256
+        last_returned_manga_card_id = [string]$Settings.last_returned_manga_card_id
     }
-    foreach ($route in @('H3_AGENT', 'H3_WEBGPT', 'MANGA_AGENT', 'MANGA_WEBGPT')) {
+    foreach ($route in @('H3_WEBGPT', 'MANGA_WEBGPT')) {
         $value = ''
         if ($Settings.target_tokens -and $Settings.target_tokens.PSObject.Properties[$route]) {
             $value = [string]$Settings.target_tokens.$route
@@ -107,6 +116,96 @@ function Save-GuiSettings {
 
     $json = $safe | ConvertTo-Json -Depth 5
     Write-GuiTextAtomically -Path (Get-GuiSettingsPath) -Text ($json + [Environment]::NewLine)
+}
+
+function Get-GuiReportDigest {
+    param([Parameter(Mandatory = $true)][string]$ReportText)
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($ReportText)
+        $hash = $sha256.ComputeHash($bytes)
+        return ([BitConverter]::ToString($hash) -replace '-', '').ToLowerInvariant()
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+
+function Get-GuiReturnTrackingFieldNames {
+    param([Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane)
+
+    if ($Lane -eq 'H3') {
+        return [pscustomobject]@{ Digest = 'last_returned_h3_report_sha256'; CardId = 'last_returned_h3_card_id' }
+    }
+    return [pscustomobject]@{ Digest = 'last_returned_manga_report_sha256'; CardId = 'last_returned_manga_card_id' }
+}
+
+function Get-GuiLastReturnedDigest {
+    param(
+        [Parameter(Mandatory = $true)]$Settings,
+        [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane
+    )
+
+    $fieldNames = Get-GuiReturnTrackingFieldNames -Lane $Lane
+    if ($Settings -is [System.Collections.IDictionary] -and $Settings.Contains($fieldNames.Digest)) {
+        return [string]$Settings[$fieldNames.Digest]
+    }
+    if ($Settings.PSObject.Properties[$fieldNames.Digest]) { return [string]$Settings.$($fieldNames.Digest) }
+    return ''
+}
+
+function Set-GuiLastReturnedReport {
+    param(
+        [Parameter(Mandatory = $true)]$Settings,
+        [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane,
+        [Parameter(Mandatory = $true)][string]$Digest,
+        [Parameter(Mandatory = $true)][string]$CardId
+    )
+
+    $fieldNames = Get-GuiReturnTrackingFieldNames -Lane $Lane
+    if ($Settings -is [System.Collections.IDictionary]) {
+        $Settings[$fieldNames.Digest] = $Digest
+        $Settings[$fieldNames.CardId] = $CardId
+        return
+    }
+    $Settings | Add-Member -NotePropertyName $fieldNames.Digest -NotePropertyValue $Digest -Force
+    $Settings | Add-Member -NotePropertyName $fieldNames.CardId -NotePropertyValue $CardId -Force
+}
+
+function Invoke-GuiReturnTransfer {
+    param(
+        [Parameter(Mandatory = $true)][string]$Text,
+        [Parameter(Mandatory = $true)][string]$Route,
+        [Parameter(Mandatory = $true)][string]$TargetToken,
+        [Parameter(Mandatory = $true)][scriptblock]$SetStatus,
+        [scriptblock]$ClipboardWriter = { param([string]$Value) Set-GuiClipboardText -Text $Value },
+        [scriptblock]$WindowProvider = { Get-GuiDesktopWindows },
+        [scriptblock]$WindowPaster = { param($Window) Invoke-GuiWindowPaste -Window $Window }
+    )
+
+    try { & $ClipboardWriter $Text }
+    catch {
+        $message = "返却準備に失敗しました。クリップボードは変更していません。($($_.Exception.Message))"
+        & $SetStatus $message
+        return [pscustomobject]@{ PayloadReady = $false; Message = $message }
+    }
+
+    $resolution = Resolve-GuiTargetWindow -Windows @(& $WindowProvider) -Token $TargetToken
+    if ($resolution.Status -eq 'TARGET FOUND') {
+        try {
+            $null = & $WindowPaster $resolution.Matches[0]
+            $message = "$Route を貼り付けました。送信はOwnerが手動で行います。"
+        }
+        catch {
+            $message = "$Route の貼り付けに失敗しました。クリップボードから手動で貼り付けてください。送信はOwnerが手動で行います。($($_.Exception.Message))"
+        }
+    }
+    else {
+        $message = "返却内容をクリップボードに用意しました。対象が見つからないため手動で貼り付けてください。($($resolution.Status))"
+    }
+    & $SetStatus $message
+    return [pscustomobject]@{ PayloadReady = $true; Message = $message }
 }
 
 function Resolve-GuiRepositoryRoot {
@@ -517,10 +616,61 @@ function Assert-GuiReport {
     return $envelope.Fields
 }
 
-function Get-GuiLaneSnapshot {
+function Get-GuiReportCandidate {
     param(
         [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane,
         [Parameter(Mandatory = $true)][string]$RepoRoot
+    )
+
+    $definition = Get-GuiLaneDefinition -Lane $Lane -RepoRoot $RepoRoot
+    if (-not (Test-Path -LiteralPath $definition.ReportPath -PathType Leaf)) {
+        return [pscustomobject]@{
+            Exists = $false
+            Valid = $false
+            Readiness = '結果なし'
+            CardId = ''
+            Digest = ''
+            ReportText = ''
+            Error = ''
+            ReportPath = $definition.ReportRelativePath
+        }
+    }
+
+    $reportText = [IO.File]::ReadAllText($definition.ReportPath)
+    try {
+        $fields = Assert-GuiReport -ReportText $reportText -ExpectedCardId ([string](Get-GuiEmbeddedCardId -Path $definition.ReportPath -Fallback ''))
+        $cardId = [string]$fields['CARD_ID']
+        $digest = Get-GuiReportDigest -ReportText $reportText
+        return [pscustomobject]@{
+            Exists = $true
+            Valid = $true
+            Readiness = '新しい結果あり'
+            CardId = $cardId
+            Digest = $digest
+            ReportText = $reportText
+            Error = ''
+            ReportPath = $definition.ReportRelativePath
+        }
+    }
+    catch {
+        return [pscustomobject]@{
+            Exists = $true
+            Valid = $false
+            Readiness = '報告ファイル不正'
+            CardId = ''
+            Digest = ''
+            ReportText = $reportText
+            Error = $_.Exception.Message
+            ReportPath = $definition.ReportRelativePath
+        }
+    }
+}
+
+function Get-GuiLaneSnapshot {
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [string]$LastReturnedDigest = ''
     )
     $definition = Get-GuiLaneDefinition -Lane $Lane -RepoRoot $RepoRoot
     $head = Get-GuiCurrentHead $RepoRoot
@@ -528,20 +678,30 @@ function Get-GuiLaneSnapshot {
     if (Test-Path -LiteralPath $definition.StatePath -PathType Leaf) {
         try { $state = [IO.File]::ReadAllText($definition.StatePath) | ConvertFrom-Json } catch { $state = $null }
     }
-    $cardId = if ($state) { [string]$state.card_id } else { '' }
-    $status = if ($state) { [string]$state.status } else { 'UNINITIALIZED' }
+    $report = Get-GuiReportCandidate -Lane $Lane -RepoRoot $RepoRoot
+    $readiness = $report.Readiness
+    if ($report.Valid -and -not [string]::IsNullOrWhiteSpace($LastReturnedDigest) -and $report.Digest -ceq $LastReturnedDigest) {
+        $readiness = '返却済み'
+    }
+    $cardId = if ($report.Valid) { $report.CardId } else { '' }
+    $status = if ($state) { [string]$state.status } else { '' }
     $baseSha = if ($state) { [string]$state.base_sha } else { '' }
-    $reportPresent = Test-Path -LiteralPath $definition.ReportPath -PathType Leaf
+    $reportPresent = $report.Exists
     $headMatch = (-not [string]::IsNullOrWhiteSpace($baseSha) -and $baseSha -ceq $head)
     return [pscustomobject]@{
         Lane = $Lane
         CardId = $cardId
-        Status = $status
+        Status = $readiness
+        LegacyStatus = $status
         BaseSha = $baseSha
         BaseShaShort = if ($baseSha.Length -ge 8) { $baseSha.Substring(0, 8) } else { $baseSha }
         Head = $head
         HeadMatchesBase = $headMatch
         ReportPresent = $reportPresent
+        ReportValid = $report.Valid
+        ReportDigest = $report.Digest
+        ReportError = $report.Error
+        ReturnEnabled = ($readiness -eq '新しい結果あり')
         CardPath = $definition.CardRelativePath
         ReportPath = $definition.ReportRelativePath
     }
@@ -595,15 +755,21 @@ function New-GuiRunTransferText {
 function New-GuiReturnTransferText {
     param(
         [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane,
-        [Parameter(Mandatory = $true)][string]$RepoRoot
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [string]$LastReturnedDigest
     )
     $definition = Get-GuiLaneDefinition -Lane $Lane -RepoRoot $RepoRoot
-    if (-not (Test-Path -LiteralPath $definition.StatePath -PathType Leaf)) { throw "$Lane handoff state not found." }
-    $state = [IO.File]::ReadAllText($definition.StatePath) | ConvertFrom-Json
-    if ([string]::IsNullOrWhiteSpace([string]$state.card_id)) { throw "$Lane handoff state has no active Card ID." }
-    if (-not (Test-Path -LiteralPath $definition.ReportPath -PathType Leaf)) { throw "$Lane latest Report not found." }
-    $reportText = [IO.File]::ReadAllText($definition.ReportPath)
-    $null = Assert-GuiReport -ReportText $reportText -ExpectedCardId ([string]$state.card_id)
+    $candidate = Get-GuiReportCandidate -Lane $Lane -RepoRoot $RepoRoot
+    if (-not $candidate.Exists) { throw "$Lane latest Report not found." }
+    if (-not $candidate.Valid) { throw "$Lane latest Report is invalid: $($candidate.Error)" }
+    $effectiveLastDigest = $LastReturnedDigest
+    if (-not $PSBoundParameters.ContainsKey('LastReturnedDigest')) {
+        $effectiveLastDigest = Get-GuiLastReturnedDigest -Settings (Get-GuiSettings) -Lane $Lane
+    }
+    if (-not [string]::IsNullOrWhiteSpace($effectiveLastDigest) -and $candidate.Digest -ceq $effectiveLastDigest) {
+        throw 'REPORT ALREADY RETURNED'
+    }
+    $reportText = $candidate.ReportText
     if ($Lane -eq 'H3') {
         $instruction = @(
             'H3 RETURN INSTRUCTION:'

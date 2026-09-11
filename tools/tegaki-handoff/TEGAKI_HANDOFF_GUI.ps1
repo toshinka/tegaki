@@ -59,24 +59,22 @@ function Show-GuiTargetSettingsDialog {
     $dialog.MinimizeBox = $false
     $dialog.MaximizeBox = $false
     $dialog.ShowInTaskbar = $false
-    $dialog.ClientSize = New-GuiSize 420 245
+    $dialog.ClientSize = New-GuiSize 420 180
     $dialog.Padding = New-Object System.Windows.Forms.Padding(10)
 
-    $note = New-GuiLabel 'ウィンドウタイトルの一部だけを指定してください。' 390 30
+    $note = New-GuiLabel '返却先WebGPTウィンドウのタイトル一部を指定してください。' 390 30
     $note.ForeColor = [System.Drawing.Color]::DimGray
     $dialog.Controls.Add($note)
     $grid = New-Object System.Windows.Forms.TableLayoutPanel
     $grid.Location = New-GuiPoint 10 38
-    $grid.Size = New-GuiSize 390 140
+    $grid.Size = New-GuiSize 390 72
     $grid.ColumnCount = 2
-    $grid.RowCount = 4
+    $grid.RowCount = 2
     [void]$grid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 155)))
     [void]$grid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
-    for ($row = 0; $row -lt 4; $row++) { [void]$grid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 32))) }
+    for ($row = 0; $row -lt 2; $row++) { [void]$grid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 32))) }
     $routes = @(
-        [pscustomobject]@{ Key = 'H3_AGENT'; Label = 'Codexウィンドウ' }
         [pscustomobject]@{ Key = 'H3_WEBGPT'; Label = 'H3 WebGPTウィンドウ' }
-        [pscustomobject]@{ Key = 'MANGA_AGENT'; Label = 'Geminiウィンドウ' }
         [pscustomobject]@{ Key = 'MANGA_WEBGPT'; Label = 'Manga WebGPTウィンドウ' }
     )
     $fields = @{}
@@ -93,10 +91,10 @@ function Show-GuiTargetSettingsDialog {
 
     $ok = New-GuiButton '保存' 90 30
     $ok.DialogResult = [System.Windows.Forms.DialogResult]::OK
-    $ok.Location = New-GuiPoint 205 195
+    $ok.Location = New-GuiPoint 205 130
     $cancel = New-GuiButton 'キャンセル' 100 30
     $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
-    $cancel.Location = New-GuiPoint 300 195
+    $cancel.Location = New-GuiPoint 300 130
     $dialog.Controls.Add($ok)
     $dialog.Controls.Add($cancel)
     $dialog.AcceptButton = $ok
@@ -108,47 +106,6 @@ function Show-GuiTargetSettingsDialog {
         return $true
     }
     return $false
-}
-
-function Get-GuiStatusText {
-    param([Parameter(Mandatory = $true)]$Snapshot)
-    $status = switch ($Snapshot.Status) {
-        'PRESENT' { 'あり' }
-        'UNINITIALIZED' { '未開始' }
-        'READY' { '準備済み' }
-        'REPORTED' { '報告済み' }
-        default { $Snapshot.Status }
-    }
-    return $status
-}
-
-function Invoke-GuiRouteTransfer {
-    param(
-        [Parameter(Mandatory = $true)][string]$Text,
-        [Parameter(Mandatory = $true)][string]$Route,
-        [Parameter(Mandatory = $true)][string]$TargetToken,
-        [Parameter(Mandatory = $true)][scriptblock]$SetStatus
-    )
-    try {
-        Set-GuiClipboardText -Text $Text
-        $resolution = Resolve-GuiTargetWindow -Windows (Get-GuiDesktopWindows) -Token $TargetToken
-        if ($resolution.Status -eq 'TARGET NOT FOUND') {
-            & $SetStatus '対象が見つかりません。クリップボードにコピーしました。'
-            return
-        }
-        if ($resolution.Status -eq 'TARGET AMBIGUOUS') {
-            & $SetStatus '対象を一意に判定できません。クリップボードにコピーしました。'
-            return
-        }
-        try {
-            $title = Invoke-GuiWindowPaste -Window $resolution.Matches[0]
-            & $SetStatus "$Route を貼り付けました。送信はOwnerが手動で行います。"
-        }
-        catch {
-            & $SetStatus "貼り付けを実行できません。クリップボードにコピーしました。($($_.Exception.Message))"
-        }
-    }
-    catch { & $SetStatus "転送準備に失敗しました。$($_.Exception.Message)" }
 }
 
 try {
@@ -184,8 +141,8 @@ $form.MaximizeBox = $false
 $form.ShowInTaskbar = $true
 $form.TopMost = [bool]$settings.always_on_top
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
-$form.ClientSize = New-GuiSize 570 650
-$form.MinimumSize = New-GuiSize 570 600
+$form.ClientSize = New-GuiSize 520 460
+$form.MinimumSize = New-GuiSize 520 430
 $form.BackColor = [System.Drawing.Color]::WhiteSmoke
 $form.Padding = New-Object System.Windows.Forms.Padding(8)
 
@@ -205,28 +162,28 @@ $outer.Padding = New-Object System.Windows.Forms.Padding(2)
 $outer.BackColor = [System.Drawing.Color]::WhiteSmoke
 [void]$form.Controls.Add($outer)
 
-$title = New-GuiLabel 'TEGAKI Handoff — 明示操作のローカルパレット' 535 28 -Bold
+$title = New-GuiLabel 'TEGAKI Handoff — 結果返却パレット' 490 28 -Bold
 $title.Font = New-Object System.Drawing.Font($title.Font.FontFamily, 10, [System.Drawing.FontStyle]::Bold)
 [void]$outer.Controls.Add($title)
 
 $rootPanel = New-Object System.Windows.Forms.Panel
-$rootPanel.Size = New-GuiSize 535 42
+$rootPanel.Size = New-GuiSize 490 42
 $rootLabel = New-GuiLabel 'リポジトリ' 78 27 -Bold
 $rootLabel.Location = New-GuiPoint 0 4
 [void]$rootPanel.Controls.Add($rootLabel)
 $rootText = New-Object System.Windows.Forms.TextBox
 $rootText.ReadOnly = $true
-$rootText.Size = New-GuiSize 360 27
+$rootText.Size = New-GuiSize 325 27
 $rootText.Location = New-GuiPoint 82 3
 $rootText.Text = $guiState.RepoRoot
 [void]$rootPanel.Controls.Add($rootText)
-$changeRootButton = New-GuiButton '変更...' 82 27
-$changeRootButton.Location = New-GuiPoint 447 3
+$changeRootButton = New-GuiButton '変更...' 78 27
+$changeRootButton.Location = New-GuiPoint 407 3
 [void]$rootPanel.Controls.Add($changeRootButton)
 [void]$outer.Controls.Add($rootPanel)
 
 $optionsPanel = New-Object System.Windows.Forms.FlowLayoutPanel
-$optionsPanel.Size = New-GuiSize 535 34
+$optionsPanel.Size = New-GuiSize 490 34
 $optionsPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::LeftToRight
 $optionsPanel.WrapContents = $false
 $alwaysOnTop = New-Object System.Windows.Forms.CheckBox
@@ -239,12 +196,12 @@ $settingsButton = New-GuiButton '接続先設定...' 110 27
 [void]$optionsPanel.Controls.Add($settingsButton)
 $refreshButton = New-GuiButton '状態を更新' 100 27
 [void]$optionsPanel.Controls.Add($refreshButton)
-$safetyLabel = New-GuiLabel '監視なし ・ 自動送信なし ・ Pushなし' 240 27
+$safetyLabel = New-GuiLabel '監視なし ・ 自動送信なし ・ Pushなし' 200 27
 $safetyLabel.ForeColor = [System.Drawing.Color]::DimGray
 [void]$optionsPanel.Controls.Add($safetyLabel)
 [void]$outer.Controls.Add($optionsPanel)
 
-$statusLabel = New-GuiLabel '準備完了' 535 30
+$statusLabel = New-GuiLabel '準備完了' 490 30
 $statusLabel.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
 $statusLabel.BackColor = [System.Drawing.Color]::White
 $statusLabel.ForeColor = [System.Drawing.Color]::DarkSlateGray
@@ -264,18 +221,34 @@ $saveCurrentSettings = {
     Save-GuiSettings -Settings $settings
 }.GetNewClosure()
 
+$trackingDigestOverride = $null
+if ($SmokeTest -and $PSBoundParameters.ContainsKey('SmokeLastReturnedDigest')) { $trackingDigestOverride = $SmokeLastReturnedDigest }
+
+function Set-GuiLaneControlsFromSnapshot {
+    param(
+        [Parameter(Mandatory = $true)]$Controls,
+        [Parameter(Mandatory = $true)]$Snapshot
+    )
+    $Controls.State.Text = [string]$Snapshot.Status
+    $Controls.Card.Text = if ([string]::IsNullOrWhiteSpace([string]$Snapshot.CardId)) { '—' } else { [string]$Snapshot.CardId }
+    $Controls.Return.Enabled = [bool]$Snapshot.ReturnEnabled
+    $Controls.State.ForeColor = if ($Snapshot.Status -eq '報告ファイル不正') { [System.Drawing.Color]::Firebrick } else { [System.Drawing.SystemColors]::ControlText }
+}
+
 $refreshAll = {
     foreach ($lane in @('H3', 'MANGA')) {
+        $controls = $laneControls[$lane]
         try {
-            $snapshot = Get-GuiLaneSnapshot -Lane $lane -RepoRoot (Get-GuiUsableRepoRoot -GuiState $guiState)
-            $controls = $laneControls[$lane]
-            $controls.State.Text = "$(Get-GuiStatusText $snapshot)  |  $($snapshot.CardPath)"
-            $controls.Card.Text = if ([string]::IsNullOrWhiteSpace($snapshot.CardId)) { '—' } else { $snapshot.CardId }
-            $headStatus = if ($snapshot.HeadMatchesBase) { 'HEAD一致' } elseif ([string]::IsNullOrWhiteSpace($snapshot.BaseSha)) { 'BASEなし' } else { 'HEAD差異あり' }
-            $controls.Base.Text = "$($snapshot.BaseShaShort)  |  $headStatus"
-            $controls.Report.Text = if ($snapshot.ReportPresent) { "あり  |  $($snapshot.ReportPath)" } else { 'なし' }
+            $lastDigest = if ($null -ne $trackingDigestOverride) { $trackingDigestOverride } else { Get-GuiLastReturnedDigest -Settings $settings -Lane $lane }
+            $snapshot = Get-GuiLaneSnapshot -Lane $lane -RepoRoot (Get-GuiUsableRepoRoot -GuiState $guiState) -LastReturnedDigest $lastDigest
+            Set-GuiLaneControlsFromSnapshot -Controls $controls -Snapshot $snapshot
         }
-        catch { $laneControls[$lane].State.Text = "読み取り停止: $($_.Exception.Message)" }
+        catch {
+            $controls.State.Text = '報告ファイル不正'
+            $controls.Card.Text = '—'
+            $controls.Return.Enabled = $false
+            $controls.State.ForeColor = [System.Drawing.Color]::Firebrick
+        }
     }
     $rootText.Text = $guiState.RepoRoot
 }.GetNewClosure()
@@ -285,107 +258,69 @@ function New-GuiLaneGroup {
         [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane,
         [Parameter(Mandatory = $true)][string]$Title,
         [Parameter(Mandatory = $true)][System.Drawing.Color]$BackColor,
-        [Parameter(Mandatory = $true)][string]$RunButtonText,
         [Parameter(Mandatory = $true)][string]$ReturnButtonText
     )
 
     $group = New-Object System.Windows.Forms.GroupBox
     $group.Text = $Title
-    $group.Size = New-GuiSize 535 222
+    $group.Size = New-GuiSize 490 118
     $group.Margin = New-Object System.Windows.Forms.Padding(3, 5, 3, 5)
     $group.Padding = New-Object System.Windows.Forms.Padding(8)
     $group.BackColor = $BackColor
 
-    $grid = New-Object System.Windows.Forms.TableLayoutPanel
-    $grid.Location = New-GuiPoint 8 23
-    $grid.Size = New-GuiSize 510 100
-    $grid.ColumnCount = 2
-    $grid.RowCount = 4
-    [void]$grid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 122)))
-    [void]$grid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
-    for ($row = 0; $row -lt 4; $row++) { [void]$grid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 24))) }
-    [void]$group.Controls.Add($grid)
+    $latestLabel = New-GuiLabel '最新結果' 92 24 -Bold
+    $latestLabel.Location = New-GuiPoint 10 23
+    $stateValueLabel = New-GuiLabel '結果なし' 360 24
+    $stateValueLabel.Location = New-GuiPoint 108 23
+    $cardLabel = New-GuiLabel 'Card' 92 24
+    $cardLabel.Location = New-GuiPoint 10 49
+    $cardValueLabel = New-GuiLabel '—' 360 24
+    $cardValueLabel.Location = New-GuiPoint 108 49
+    [void]$group.Controls.Add($latestLabel)
+    [void]$group.Controls.Add($stateValueLabel)
+    [void]$group.Controls.Add($cardLabel)
+    [void]$group.Controls.Add($cardValueLabel)
 
-    $stateValueLabel = New-GuiLabel '—' 360 22
-    $cardValueLabel = New-GuiLabel '—' 360 22
-    $baseValueLabel = New-GuiLabel '—' 360 22
-    $latestReportValueLabel = New-GuiLabel '—' 360 22
-    [void]$grid.Controls.Add((New-GuiLabel '状態' 115 22 -Bold), 0, 0)
-    [void]$grid.Controls.Add($stateValueLabel, 1, 0)
-    [void]$grid.Controls.Add((New-GuiLabel 'カード' 115 22), 0, 1)
-    [void]$grid.Controls.Add($cardValueLabel, 1, 1)
-    [void]$grid.Controls.Add((New-GuiLabel 'BASE / HEAD' 115 22), 0, 2)
-    [void]$grid.Controls.Add($baseValueLabel, 1, 2)
-    [void]$grid.Controls.Add((New-GuiLabel '最新報告' 115 22), 0, 3)
-    [void]$grid.Controls.Add($latestReportValueLabel, 1, 3)
+    $returnButton = New-GuiButton $ReturnButtonText 340 34
+    $returnButton.Location = New-GuiPoint 108 76
+    [void]$group.Controls.Add($returnButton)
 
-    $hint = New-GuiLabel "明示操作のみ  |  $((Get-GuiRoutePrefix $(if ($Lane -eq 'H3') { 'H3_AGENT' } else { 'MANGA_AGENT' })))" 510 24
-    $hint.Location = New-GuiPoint 10 126
-    $hint.ForeColor = [System.Drawing.Color]::DimGray
-    [void]$group.Controls.Add($hint)
-
-    $buttons = New-Object System.Windows.Forms.FlowLayoutPanel
-    $buttons.Location = New-GuiPoint 8 153
-    $buttons.Size = New-GuiSize 510 55
-    $buttons.FlowDirection = [System.Windows.Forms.FlowDirection]::LeftToRight
-    $buttons.WrapContents = $false
-    [void]$group.Controls.Add($buttons)
-
-    $stage = New-GuiButton 'カードを取り込む' 160 34
-    $run = New-GuiButton $RunButtonText 160 34
-    $report = New-GuiButton $ReturnButtonText 160 34
-    foreach ($button in @($stage, $run, $report)) { [void]$buttons.Controls.Add($button) }
-
-    foreach ($control in @($stateValueLabel, $cardValueLabel, $baseValueLabel, $latestReportValueLabel)) {
-        if ($control -isnot [System.Windows.Forms.Label]) { throw 'Lane value control invariant failed.' }
+    foreach ($control in @($stateValueLabel, $cardValueLabel)) {
+        if ($control -isnot [System.Windows.Forms.Label]) { throw 'Lane result control invariant failed.' }
     }
-    foreach ($control in @($stage, $run, $report)) {
-        if ($control -isnot [System.Windows.Forms.Button]) { throw 'Lane action control invariant failed.' }
-    }
-    $registry = [pscustomobject]@{ Group = $group; State = $stateValueLabel; Card = $cardValueLabel; Base = $baseValueLabel; Report = $latestReportValueLabel; Stage = $stage; Run = $run; Return = $report }
+    if ($returnButton -isnot [System.Windows.Forms.Button]) { throw 'Lane return control invariant failed.' }
+    $registry = [pscustomobject]@{ Group = $group; State = $stateValueLabel; Card = $cardValueLabel; Return = $returnButton }
     $script:laneControls[$Lane] = $registry
 
-    $stage.Add_Click(({
+    $returnButton.Add_Click(({
         try {
-            $cardText = Get-GuiClipboardText
-            if ($Lane -eq 'H3') {
-                $stageScript = Join-Path $PSScriptRoot 'stage_card_from_clipboard.ps1'
-                $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File $stageScript -RepoRoot (Get-GuiUsableRepoRoot -GuiState $guiState) -FriendlyErrors 2>&1 | Out-String
-                if ($LASTEXITCODE -ne 0) { throw $output.Trim() }
-                & $setStatus 'H3カードを取り込みました。実行はしていません。'
+            $usableRoot = Get-GuiUsableRepoRoot -GuiState $guiState
+            $candidate = Get-GuiReportCandidate -Lane $Lane -RepoRoot $usableRoot
+            $lastDigest = Get-GuiLastReturnedDigest -Settings $settings -Lane $Lane
+            $text = New-GuiReturnTransferText -Lane $Lane -RepoRoot $usableRoot -LastReturnedDigest $lastDigest
+            $route = if ($Lane -eq 'H3') { 'H3_WEBGPT' } else { 'MANGA_WEBGPT' }
+            $transfer = Invoke-GuiReturnTransfer -Text $text -Route (Get-GuiRoutePrefix $route) -TargetToken ([string]$settings.target_tokens[$route]) -SetStatus $setStatus
+            if ($transfer.PayloadReady) {
+                Set-GuiLastReturnedReport -Settings $settings -Lane $Lane -Digest $candidate.Digest -CardId $candidate.CardId
+                & $saveCurrentSettings
+                & $refreshAll
+            }
+        }
+        catch {
+            if ($_.Exception.Message -eq 'REPORT ALREADY RETURNED') {
+                & $setStatus '新しい結果はまだありません。この結果は返却済みです。'
             }
             else {
-                $result = Stage-GuiMangaCard -RepoRoot (Get-GuiUsableRepoRoot -GuiState $guiState) -CardText $cardText
-                & $setStatus "Mangaカードを取り込みました: $($result.CardId)"
+                & $setStatus "返却を準備できません: $($_.Exception.Message)"
             }
-            & $refreshAll
         }
-        catch { & $setStatus "カードを取り込めません: $($_.Exception.Message)" }
-    }.GetNewClosure()))
-
-    $run.Add_Click(({
-        try {
-            $text = New-GuiRunTransferText -Lane $Lane -RepoRoot (Get-GuiUsableRepoRoot -GuiState $guiState)
-            $route = if ($Lane -eq 'H3') { 'H3_AGENT' } else { 'MANGA_AGENT' }
-            Invoke-GuiRouteTransfer -Text $text -Route (Get-GuiRoutePrefix $route) -TargetToken ([string]$settings.target_tokens[$route]) -SetStatus $setStatus
-        }
-        catch { & $setStatus "実行指示を準備できません: $($_.Exception.Message)" }
-    }.GetNewClosure()))
-
-    $report.Add_Click(({
-        try {
-            $text = New-GuiReturnTransferText -Lane $Lane -RepoRoot (Get-GuiUsableRepoRoot -GuiState $guiState)
-            $route = if ($Lane -eq 'H3') { 'H3_WEBGPT' } else { 'MANGA_WEBGPT' }
-            Invoke-GuiRouteTransfer -Text $text -Route (Get-GuiRoutePrefix $route) -TargetToken ([string]$settings.target_tokens[$route]) -SetStatus $setStatus
-        }
-        catch { & $setStatus "報告を準備できません: $($_.Exception.Message)" }
     }.GetNewClosure()))
 
     return $group
 }
 
-$h3Group = New-GuiLaneGroup -Lane H3 -Title 'H3 / CODEX' -BackColor ([System.Drawing.Color]::AliceBlue) -RunButtonText 'Codexへ渡す' -ReturnButtonText '結果をH3 WebGPTへ戻す'
-$mangaGroup = New-GuiLaneGroup -Lane MANGA -Title 'MANGA / GEMINI' -BackColor ([System.Drawing.Color]::Honeydew) -RunButtonText 'Geminiへ渡す' -ReturnButtonText '結果をManga WebGPTへ戻す'
+$h3Group = New-GuiLaneGroup -Lane H3 -Title 'H3 / CODEX' -BackColor ([System.Drawing.Color]::AliceBlue) -ReturnButtonText '結果をH3 WebGPTへ戻す'
+$mangaGroup = New-GuiLaneGroup -Lane MANGA -Title 'MANGA / GEMINI' -BackColor ([System.Drawing.Color]::Honeydew) -ReturnButtonText '結果をManga WebGPTへ戻す'
 [void]$outer.Controls.Add([System.Windows.Forms.Control]$h3Group)
 [void]$outer.Controls.Add([System.Windows.Forms.Control]$mangaGroup)
 
@@ -410,7 +345,7 @@ $changeRootButton.Add_Click(({
     $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
     $dialog.Description = 'Gitリポジトリのルートを選択'
     $dialog.SelectedPath = $guiState.RepoRoot
-    if ($dialog.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK) { return }
+    if ($dialog.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK) { $dialog.Dispose(); return }
     try {
         $guiState.RepoRoot = Resolve-GuiRepositoryRoot -RequestedRoot $dialog.SelectedPath
         & $saveCurrentSettings
@@ -428,7 +363,7 @@ $form.Add_FormClosing(({
 }.GetNewClosure()))
 $form.Add_Shown(({
     & $refreshAll
-    & $setStatus '準備完了 — 3つの明示操作から選択してください。'
+    & $setStatus '準備完了 — 新しい結果があるときだけ返却できます。'
 }.GetNewClosure()))
 
 if ($SmokeTest) {
@@ -436,19 +371,27 @@ if ($SmokeTest) {
     & $refreshAll
     foreach ($lane in @('H3', 'MANGA')) {
         $controls = $laneControls[$lane]
-        foreach ($valueControl in @($controls.State, $controls.Card, $controls.Base, $controls.Report)) {
-            if ($valueControl -isnot [System.Windows.Forms.Label]) { throw "WinForms smoke: $lane value control is not a Label." }
-            if ($null -eq $valueControl.Text) { throw "WinForms smoke: $lane value control has no Text." }
+        foreach ($valueControl in @($controls.State, $controls.Card)) {
+            if ($valueControl -isnot [System.Windows.Forms.Label]) { throw "WinForms smoke: $lane result control is not a Label." }
+            if ($null -eq $valueControl.Text) { throw "WinForms smoke: $lane result control has no Text." }
         }
-        foreach ($actionControl in @($controls.Stage, $controls.Run, $controls.Return)) {
-            if ($actionControl -isnot [System.Windows.Forms.Button]) { throw "WinForms smoke: $lane action control is not a Button." }
-            if ([string]::IsNullOrWhiteSpace($actionControl.Text)) { throw "WinForms smoke: $lane action control has empty text." }
-        }
-        if ($controls.State.Text -like '読み取り停止:*') { throw "WinForms smoke: $lane refresh failed." }
+        if ($controls.Return -isnot [System.Windows.Forms.Button]) { throw "WinForms smoke: $lane return control is not a Button." }
+        if ([string]::IsNullOrWhiteSpace($controls.Return.Text)) { throw "WinForms smoke: $lane return button has empty text." }
+        if ($controls.PSObject.Properties['Stage'] -or $controls.PSObject.Properties['Run']) { throw "WinForms smoke: $lane has a forward action." }
     }
-    $null = New-GuiReturnTransferText -Lane H3 -RepoRoot $usableRoot
-    $null = New-GuiReturnTransferText -Lane MANGA -RepoRoot $usableRoot
-    Write-Output 'WINFORMS_RUNTIME_SMOKE PASS'
+    $noResult = [pscustomobject]@{ Status = '結果なし'; CardId = ''; ReturnEnabled = $false }
+    $newResult = [pscustomobject]@{ Status = '新しい結果あり'; CardId = 'SMOKE-NEW'; ReturnEnabled = $true }
+    $returnedResult = [pscustomobject]@{ Status = '返却済み'; CardId = 'SMOKE-RETURNED'; ReturnEnabled = $false }
+    Set-GuiLaneControlsFromSnapshot -Controls $laneControls.H3 -Snapshot $noResult
+    if ($laneControls.H3.Return.Enabled) { throw 'WinForms smoke: no-result return button enabled.' }
+    Set-GuiLaneControlsFromSnapshot -Controls $laneControls.H3 -Snapshot $newResult
+    if (-not $laneControls.H3.Return.Enabled) { throw 'WinForms smoke: new-result return button disabled.' }
+    Set-GuiLaneControlsFromSnapshot -Controls $laneControls.H3 -Snapshot $returnedResult
+    if ($laneControls.H3.Return.Enabled) { throw 'WinForms smoke: returned-result return button enabled.' }
+    & $refreshAll
+    $null = New-GuiReturnTransferText -Lane H3 -RepoRoot $usableRoot -LastReturnedDigest $trackingDigestOverride
+    $null = New-GuiReturnTransferText -Lane MANGA -RepoRoot $usableRoot -LastReturnedDigest $trackingDigestOverride
+    Write-Output 'WINFORMS_RETURN_ONLY_SMOKE PASS'
     $form.Dispose()
     exit 0
 }
