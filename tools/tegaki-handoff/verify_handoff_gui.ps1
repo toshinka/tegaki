@@ -39,6 +39,15 @@ function Invoke-FixtureStage {
     $ErrorActionPreference = $oldPreference
     return [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
 }
+function Invoke-GuiRuntimeSmoke {
+    param([string]$Root)
+    $oldPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File $guiPath -RepoRoot $Root -SmokeTest 2>&1 | Out-String
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $oldPreference
+    return [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
+}
 function New-FixtureCard {
     param(
         [string]$Version,
@@ -164,6 +173,18 @@ try {
     Assert-GuiTest ($returnManga.StartsWith('[MANGA -> WEBGPT]') -and $mangaReportIndex -ge 0 -and $returnManga.Substring($mangaReportIndex, $mangaReport.Length) -ceq $mangaReport -and $returnManga -match 'GitHub/main and Manga SSOT/boundary' -and $returnManga -match 'historical Manga Cards' -and $returnManga -match 'H3 work' -and $returnManga -match 'implementation HOLD') 'U Manga Return audit instruction'
     Assert-GuiThrows { Assert-GuiReport -ReportText ($h3Report -replace 'H3-FIXTURE-V2', 'H3-OTHER') -ExpectedCardId 'H3-FIXTURE-V2' } 'V H3 report Card-ID mismatch rejected'
     Assert-GuiThrows { Assert-GuiReport -ReportText ($mangaReport -replace 'MANGA-FIXTURE-V2', 'MANGA-OTHER') -ExpectedCardId 'MANGA-FIXTURE-V2' } 'W Manga report Card-ID mismatch rejected'
+
+    $runtimeSmoke = Invoke-GuiRuntimeSmoke -Root $fixtureRoot
+    Assert-GuiTest ($runtimeSmoke.ExitCode -eq 0 -and $runtimeSmoke.Output -match 'WINFORMS_RUNTIME_SMOKE PASS') 'Q9 native WinForms runtime smoke'
+
+    [IO.File]::WriteAllText((Join-Path $fixtureRoot 'after-stage.txt'), 'HEAD drift fixture')
+    Invoke-FixtureGit -Root $fixtureRoot -Arguments @('add', 'after-stage.txt')
+    Invoke-FixtureGit -Root $fixtureRoot -Arguments @('-c', 'user.name=TEGAKI Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'head drift')
+    $driftReturn = New-GuiReturnTransferText -Lane H3 -RepoRoot $fixtureRoot
+    $staleRunBlocked = $false
+    try { $null = New-GuiRunTransferText -Lane H3 -RepoRoot $fixtureRoot } catch { $staleRunBlocked = $true }
+    Assert-GuiTest ($driftReturn -match '\[H3 -> WEBGPT\]' -and $driftReturn -match 'H3 RETURN INSTRUCTION') 'X completed Report allowed after HEAD drift'
+    Assert-GuiTest $staleRunBlocked 'Y stale Card re-execution blocked'
 }
 finally {
     if ($hadOriginalClipboard) { try { Set-GuiClipboardText -Text $originalClipboard } catch { } }
@@ -171,34 +192,34 @@ finally {
     if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
-# X-Z: GUI contract, localization, and transfer safety.
-Assert-GuiTest ((Get-GuiRoutePrefix H3_AGENT) -ceq '[H3 -> CODEX]' -and (Get-GuiRoutePrefix H3_WEBGPT) -ceq '[H3 -> WEBGPT]' -and (Get-GuiRoutePrefix MANGA_AGENT) -ceq '[MANGA -> GEMINI]' -and (Get-GuiRoutePrefix MANGA_WEBGPT) -ceq '[MANGA -> WEBGPT]') 'X prefixes exact'
+# Z-AB: GUI contract, localization, and transfer safety.
+Assert-GuiTest ((Get-GuiRoutePrefix H3_AGENT) -ceq '[H3 -> CODEX]' -and (Get-GuiRoutePrefix H3_WEBGPT) -ceq '[H3 -> WEBGPT]' -and (Get-GuiRoutePrefix MANGA_AGENT) -ceq '[MANGA -> GEMINI]' -and (Get-GuiRoutePrefix MANGA_WEBGPT) -ceq '[MANGA -> WEBGPT]') 'Z prefixes exact'
 $mainButtons = [regex]::Matches($guiText, '\$stage = New-GuiButton|\$run = New-GuiButton|\$report = New-GuiButton')
-Assert-GuiTest ($mainButtons.Count -eq 3 -and $guiText -match 'カードを取り込む' -and $guiText -match 'Codexへ実行指示' -and $guiText -match 'H3 WebGPTへ報告' -and $guiText -match 'Geminiへ実行指示' -and $guiText -match 'Manga WebGPTへ報告' -and $guiText -notmatch 'Copy H3 Report|Paste Return|Focus \+ paste') 'Y three daily actions per lane'
+Assert-GuiTest ($mainButtons.Count -eq 3 -and $guiText -match 'カードを取り込む' -and $guiText -match 'Codexへ渡す' -and $guiText -match '結果をH3 WebGPTへ戻す' -and $guiText -match 'Geminiへ渡す' -and $guiText -match '結果をManga WebGPTへ戻す' -and $guiText -notmatch 'Copy H3 Report|Paste Return|Focus \+ paste') 'AA three daily actions per lane'
 $japaneseLabels = @('リポジトリ', '変更...', '常に手前に表示', '状態を更新', "'状態'", "'カード'", "'最新報告'", '接続先設定')
 $labelsPass = $true
 foreach ($label in $japaneseLabels) { if ($guiText -notmatch [regex]::Escape($label)) { $labelsPass = $false } }
-Assert-GuiTest $labelsPass 'Z Japanese Owner labels and target settings'
+Assert-GuiTest ($labelsPass -and $guiText -notmatch '\$ReportLabel|\$reportLabel') 'AB Japanese labels and collision fixed'
 
-# AA-AF: explicit paste guard and no auto-send/browser automation.
+# AC-AH: explicit paste guard and no auto-send/browser automation.
 $zero = Resolve-GuiTargetWindow -Windows @([pscustomobject]@{ Title = 'unrelated window' }) -Token 'Codex'
 $multiple = Resolve-GuiTargetWindow -Windows @([pscustomobject]@{ Title = 'Codex one' }, [pscustomobject]@{ Title = 'Codex two' }) -Token 'Codex'
-Assert-GuiTest ($zero.Status -ceq 'TARGET NOT FOUND' -and $multiple.Status -ceq 'TARGET AMBIGUOUS') 'AA target missing/ambiguous fail-closed'
-Assert-GuiTest ($coreText -match "SendWait\('\^v'\)" -and $coreText -notmatch '\{ENTER\}|\^~|Send button' -and $guiText -notmatch 'Add_.*Timer|ClipboardWatcher|Document\.getElementById|chrome\.') 'AB Ctrl+V only / no browser automation'
-Assert-GuiTest ($guiText -notmatch 'Add_Shown[\s\S]{0,800}Set-GuiClipboardText' -and $guiText -notmatch 'Clipboard.*watch|watch.*Clipboard|poll') 'AC clipboard changes only from explicit actions'
+Assert-GuiTest ($zero.Status -ceq 'TARGET NOT FOUND' -and $multiple.Status -ceq 'TARGET AMBIGUOUS') 'AC target missing/ambiguous fail-closed'
+Assert-GuiTest ($coreText -match "SendWait\('\^v'\)" -and $coreText -notmatch '\{ENTER\}|\^~|Send button' -and $guiText -notmatch 'Add_.*Timer|ClipboardWatcher|Document\.getElementById|chrome\.') 'AD Ctrl+V only / no browser automation'
+Assert-GuiTest ($guiText -notmatch 'Add_Shown[\s\S]{0,800}Set-GuiClipboardText' -and $guiText -notmatch 'Clipboard.*watch|watch.*Clipboard|poll') 'AE clipboard changes only from explicit actions'
 $ignoreText = [IO.File]::ReadAllText((Join-Path $repoRoot '.gitignore'))
-Assert-GuiTest ($ignoreText -match '(?m)^/\.tegaki-handoff/$') 'AD .tegaki-handoff ignored'
+Assert-GuiTest ($ignoreText -match '(?m)^/\.tegaki-handoff/$') 'AF .tegaki-handoff ignored'
 $parseErrors = @()
 foreach ($file in @(Get-ChildItem -LiteralPath $toolRoot -Filter '*.ps1' -File -Recurse)) {
     $tokens = $null; $errors = $null
     [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
     $parseErrors += @($errors)
 }
-Assert-GuiTest ($parseErrors.Count -eq 0) 'AE PowerShell syntax'
+Assert-GuiTest ($parseErrors.Count -eq 0) 'AG PowerShell syntax'
 $oldPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
 $diffOutput = & git -C $repoRoot diff --check -- tools/tegaki-handoff 2>&1
 $diffExit = $LASTEXITCODE
 $ErrorActionPreference = $oldPreference
-Assert-GuiTest ($diffExit -eq 0) 'AF git diff check'
+Assert-GuiTest ($diffExit -eq 0) 'AH git diff check'
 
-Write-Output "GUI V1A VERIFIER PASS ($passed checks)"
+Write-Output "GUI V1B VERIFIER PASS ($passed checks)"
