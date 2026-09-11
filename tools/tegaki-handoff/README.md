@@ -1,6 +1,6 @@
-# TEGAKI Local Handoff GUI V1A
+# TEGAKI Local Handoff GUI V1B
 
-`TEGAKI-HANDOFF-GUI-V1A` is a small, local-only Owner palette around the
+`TEGAKI-HANDOFF-GUI-V1B` is a small, local-only Owner palette around the
 existing Handoff V0.1 Card/Report path. It deliberately keeps H3 and Manga
 independent:
 
@@ -21,18 +21,18 @@ H3:
 
 1. Cardをコピー
 2. `カードを取り込む`
-3. `Codexへ実行指示`
+3. `Codexへ渡す`
 4. Ownerが手動で送信
-5. Agent完了後に `H3 WebGPTへ報告`
+5. Agent完了後に `結果をH3 WebGPTへ戻す`
 6. Ownerが手動で送信
 
 Manga:
 
 1. Cardをコピー
 2. `カードを取り込む`
-3. `Geminiへ実行指示`
+3. `Geminiへ渡す`
 4. Ownerが手動で送信
-5. Agent完了後に `Manga WebGPTへ報告`
+5. Agent完了後に `結果をManga WebGPTへ戻す`
 6. Ownerが手動で送信
 
 明示的な操作以外でクリップボードは変更されません。`NO AUTO SEND` は
@@ -119,7 +119,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/tegaki-handoff/copy_re
 ```
 
 The deterministic verifier exercises generated Run/Return strings and actual
-isolated H3 V1, H3 V2, and Manga V2 staging:
+isolated H3 V1, H3 V2, and Manga V2 staging, including a native WinForms
+runtime smoke and the completed-Report/HEAD-drift contract:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -STA -File tools/tegaki-handoff/verify_handoff_gui.ps1
