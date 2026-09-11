@@ -1,0 +1,2 @@
+# Local TEGAKI Card/Report handoff runtime; never commit this IPC data.
+/.tegaki-handoff/
