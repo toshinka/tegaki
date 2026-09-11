@@ -1,6 +1,6 @@
 # TEGAKI Local Handoff V0
 
-`TEGAKI-HANDOFF-V0` is a small, local-only Card/Report return path between
+`TEGAKI-HANDOFF-V0.1` is a small, local-only Card/Report return path between
 Web-GPT/SOL and Codex/LUNA. It is deliberately manual:
 
 ```text
@@ -11,6 +11,21 @@ CARD = explicit envelope + explicit user staging + explicit LUNA start
 The tools do not watch conversations, start agents, run Card text, call a
 localhost service, or push Git refs. Card and Report files are local plaintext
 and must not contain secrets.
+
+## Owner flow
+
+1. Copy the whole SOL Card block.
+2. Double-click `tools/tegaki-handoff/TEGAKI_HANDOFF.cmd`.
+3. Choose `Stage Card from Clipboard`.
+4. In Codex say `handoffを読んで実行`.
+5. When finished, open `TEGAKI_HANDOFF.cmd` again.
+6. Choose `Copy Latest Report to Clipboard`.
+7. Paste the Report into SOL.
+
+Copying surrounding SOL prose is safe only when the Card uses the explicit
+`<<<TEGAKI_CARD_BEGIN>>>` / `<<<TEGAKI_CARD_END>>>` wrapper. A pure Card
+clipboard remains supported, but surrounding prose without that wrapper is
+rejected.
 
 ## Runtime layout
 
@@ -31,7 +46,14 @@ never a tracked IPC or product-source change.
 
 ## Tracked tools
 
-Run these from the repository root with Windows PowerShell or PowerShell:
+The normal Owner entry point is the double-clickable menu:
+
+```text
+tools/tegaki-handoff/TEGAKI_HANDOFF.cmd
+```
+
+The underlying helpers can also be run from the repository root with Windows
+PowerShell or PowerShell:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/tegaki-handoff/init_handoff.ps1

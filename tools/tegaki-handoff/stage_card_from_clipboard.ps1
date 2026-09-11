@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$RepoRoot
+    [string]$RepoRoot,
+    [switch]$FriendlyErrors
 )
 
 $ErrorActionPreference = 'Stop'
@@ -43,7 +44,56 @@ function Read-ClipboardText {
     catch {
     }
 
-    throw 'Unable to read text from the Windows clipboard.'
+    throw "CARD NOT FOUND`nCopy a TEGAKI Card and try again."
+}
+
+function Get-CardPayload {
+    param([string]$Text)
+
+    $beginMarker = '<<<TEGAKI_CARD_BEGIN>>>'
+    $endMarker = '<<<TEGAKI_CARD_END>>>'
+    $beginMatches = [regex]::Matches($Text, [regex]::Escape($beginMarker))
+    $endMatches = [regex]::Matches($Text, [regex]::Escape($endMarker))
+
+    if ($beginMatches.Count -eq 0 -and $endMatches.Count -eq 0) {
+        $lines = [regex]::Split($Text, "\r\n|\n|\r")
+        if ($lines.Count -gt 0 -and $lines[0].TrimStart([char]0xFEFF) -ceq 'TEGAKI_CARD_V1') {
+            return $Text
+        }
+        throw "CARD NOT FOUND`nCopy a TEGAKI Card and try again."
+    }
+
+    if ($beginMatches.Count -ne 1 -or $endMatches.Count -ne 1) {
+        throw "CARD MARKERS INVALID`nExactly one BEGIN/END Card block is required."
+    }
+
+    $begin = $beginMatches[0]
+    $end = $endMatches[0]
+    if ($end.Index -le $begin.Index) {
+        throw "CARD MARKERS INVALID`nExactly one BEGIN/END Card block is required."
+    }
+
+    $payloadStart = $begin.Index + $begin.Length
+    $payloadLength = $end.Index - $payloadStart
+    $payload = $Text.Substring($payloadStart, $payloadLength)
+    if ($payload.StartsWith("`r`n")) {
+        $payload = $payload.Substring(2)
+    }
+    elseif ($payload.StartsWith("`n") -or $payload.StartsWith("`r")) {
+        $payload = $payload.Substring(1)
+    }
+    if ($payload.EndsWith("`r`n")) {
+        $payload = $payload.Substring(0, $payload.Length - 2)
+    }
+    elseif ($payload.EndsWith("`n") -or $payload.EndsWith("`r")) {
+        $payload = $payload.Substring(0, $payload.Length - 1)
+    }
+
+    $payloadLines = [regex]::Split($payload, "\r\n|\n|\r")
+    if ($payloadLines.Count -eq 0 -or $payloadLines[0].TrimStart([char]0xFEFF) -cne 'TEGAKI_CARD_V1') {
+        throw "CARD NOT FOUND`nThe wrapped block does not start with TEGAKI_CARD_V1."
+    }
+    return $payload
 }
 
 function Get-EnvelopeFields {
@@ -133,7 +183,8 @@ function Write-TextAtomically {
 
 try {
     $root = Resolve-RepositoryRoot -RequestedRoot $RepoRoot
-    $cardText = Read-ClipboardText
+    $clipboardText = Read-ClipboardText
+    $cardText = Get-CardPayload -Text $clipboardText
     $fields = Get-EnvelopeFields -Text $cardText -Kind 'Card'
 
     if ($fields['TARGET'] -cne 'LUNA') {
@@ -160,7 +211,7 @@ try {
     }
     $head = $head.Trim()
     if ($fields['BASE_SHA'] -cne $head) {
-        throw ("Card BASE_SHA mismatch. Expected current HEAD {0}; received {1}." -f $head, $fields['BASE_SHA'])
+        throw ("BASE SHA MISMATCH`nCard expects:`n{0}`nCurrent repository:`n{1}`nNo Card was staged." -f $fields['BASE_SHA'], $head)
     }
 
     $handoffRoot = Join-Path $root '.tegaki-handoff'
@@ -219,6 +270,11 @@ try {
     Write-Output 'Card path: .tegaki-handoff/to_luna/current_card.md'
 }
 catch {
-    Write-Error $_.Exception.Message
+    if ($FriendlyErrors) {
+        Write-Output ("ERROR: {0}" -f $_.Exception.Message)
+    }
+    else {
+        Write-Error $_.Exception.Message
+    }
     exit 1
 }
