@@ -2,8 +2,8 @@ Project: EasyReforge Manga Prompter
 Baseline: v3.7.7 Frozen
 Current Phase: Phase 0
 Last Updated: 2026-09-12 15:15:00
-Latest Commit SHA: pending
-Latest Commit URL: pending
+Latest Commit SHA: b15e801baf46847b7e3b8038d97d534749837e38
+Latest Commit URL: https://github.com/toshinka/tegaki/commit/b15e801baf46847b7e3b8038d97d534749837e38
 
 [LATEST REPORT]
 - 報告書: 計画書/MRP_v3.7.7_改修完了報告書.md
