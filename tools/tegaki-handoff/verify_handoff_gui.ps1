@@ -108,6 +108,7 @@ Assert-GuiTest (-not ([IO.Path]::GetFullPath($settingsPath).StartsWith(($repoRoo
 $defaults = Get-GuiDefaultSettings
 Assert-GuiTest ([bool]$defaults.always_on_top -and $defaults.target_tokens.Keys.Count -eq 2 -and $defaults.target_tokens.Contains('H3_WEBGPT') -and $defaults.target_tokens.Contains('MANGA_WEBGPT')) 'F return target settings only'
 Assert-GuiTest ($defaults.Contains('repo_root') -and $defaults.Contains('h3_repo_root') -and $defaults.Contains('manga_repo_root')) 'F1 independent lane settings present'
+Assert-GuiTest ($defaults.Contains('h3_branch_ref') -and $defaults.Contains('manga_branch_ref') -and $defaults.h3_branch_ref -ceq 'h3-play1-longrun' -and $defaults.manga_branch_ref -ceq 'codex/manga-playable') 'F2 standalone branch refs present'
 Assert-GuiTest ($defaults.Contains('last_returned_h3_report_sha256') -and $defaults.Contains('last_returned_manga_report_sha256')) 'G return digest settings present'
 Assert-GuiTest ($guiText -match '常に手前に表示' -and $guiText -match 'Add_CheckedChanged' -and $guiText -match '\$form\.TopMost = \[bool\]\$alwaysOnTop\.Checked' -and $guiText -match 'ClientSize = New-GuiSize 520 640') 'H TopMost and compact window'
 Assert-GuiTest ($guiText -match 'Get-GuiUsableLaneRoot' -and $guiText -match 'H3RepoRoot' -and $guiText -match 'MangaRepoRoot' -and $guiText -match "'Root'" -and $guiText -match "'Branch'" -and $guiText -match "'HEAD'") 'H1 independent visible lane roots'
@@ -160,7 +161,7 @@ try {
         $routingSettingsForSave.manga_repo_root = $routingMangaRoot
         Save-GuiSettings -Settings $routingSettingsForSave
         $reloadedRoutingSettings = Get-GuiSettings
-        Assert-GuiTest ($reloadedRoutingSettings.h3_repo_root -ceq $routingH3Root -and $reloadedRoutingSettings.manga_repo_root -ceq $routingMangaRoot) 'P7 independent roots persist'
+        Assert-GuiTest ($reloadedRoutingSettings.h3_repo_root -ceq $routingH3Root -and $reloadedRoutingSettings.manga_repo_root -ceq $routingMangaRoot -and $reloadedRoutingSettings.h3_branch_ref -ceq 'h3-play1-longrun' -and $reloadedRoutingSettings.manga_branch_ref -ceq 'codex/manga-playable') 'P7 independent roots and refs persist'
     }
     finally {
         if ($settingsHadFile) { [IO.File]::WriteAllText($settingsPath, $settingsBackup) }
@@ -180,12 +181,17 @@ try {
     $mangaIdentity = Get-GuiLaneIdentity -RepoRoot $routingMangaRoot
     Assert-GuiTest ($h3Identity.Branch -ceq 'h3-routing-fixture' -and $h3Identity.Head -match '^[0-9a-f]{40}$' -and $h3Identity.Origin -ceq 'https://example.invalid/h3.git') 'P8 H3 branch SHA Origin identity'
     Assert-GuiTest ($mangaIdentity.Branch -ceq 'manga-routing-fixture' -and $mangaIdentity.Head -match '^[0-9a-f]{40}$' -and $mangaIdentity.Origin -ceq 'https://example.invalid/manga.git') 'P9 Manga branch SHA Origin identity'
+    $h3RefIdentity = Get-GuiLaneIdentity -RepoRoot $routingH3Root -BranchRef 'h3-routing-fixture'
+    $mangaRefIdentity = Get-GuiLaneIdentity -RepoRoot $routingMangaRoot -BranchRef 'manga-routing-fixture'
+    Assert-GuiTest ($h3RefIdentity.Branch -ceq 'h3-routing-fixture' -and $h3RefIdentity.Head -ceq $h3Identity.Head -and (Get-GuiCurrentBranch -RepoRoot $routingH3Root) -ceq 'h3-routing-fixture') 'P10 branch ref identity reads without checkout'
+    Assert-GuiTest ($mangaRefIdentity.Branch -ceq 'manga-routing-fixture' -and $mangaRefIdentity.Head -ceq $mangaIdentity.Head -and (Get-GuiCurrentBranch -RepoRoot $routingMangaRoot) -ceq 'manga-routing-fixture') 'P11 Manga branch ref identity reads without checkout'
     $h3RoutingPayload = New-GuiReturnTransferText -Lane H3 -RepoRoot $routingH3Root -LastReturnedDigest ''
     $mangaRoutingPayload = New-GuiReturnTransferText -Lane MANGA -RepoRoot $routingMangaRoot -LastReturnedDigest ''
-    Assert-GuiTest ($h3RoutingPayload.IndexOf($h3RoutingReport) -ge 0 -and $h3RoutingPayload -match 'TEGAKI_HANDOFF_CONTEXT' -and $h3RoutingPayload -match 'Lane: H3' -and $h3RoutingPayload -match [regex]::Escape("Repository root: $routingH3Root") -and $h3RoutingPayload -match 'Branch: h3-routing-fixture' -and $h3RoutingPayload -match [regex]::Escape("Origin: https://example.invalid/h3.git") -and $h3RoutingPayload -notmatch [regex]::Escape($routingMangaRoot)) 'P10 H3 payload preserves report and stays isolated'
-    Assert-GuiTest ($mangaRoutingPayload.IndexOf($mangaRoutingReport) -ge 0 -and $mangaRoutingPayload -match 'TEGAKI_HANDOFF_CONTEXT' -and $mangaRoutingPayload -match 'Lane: MANGA' -and $mangaRoutingPayload -match [regex]::Escape("Repository root: $routingMangaRoot") -and $mangaRoutingPayload -match 'Branch: manga-routing-fixture' -and $mangaRoutingPayload -match [regex]::Escape("Origin: https://example.invalid/manga.git") -and $mangaRoutingPayload -notmatch [regex]::Escape($routingH3Root)) 'P11 Manga payload preserves report and stays isolated'
+    Assert-GuiTest ($h3RoutingPayload.IndexOf($h3RoutingReport) -ge 0 -and $h3RoutingPayload -match 'TEGAKI_HANDOFF_CONTEXT' -and $h3RoutingPayload -match 'Lane: H3' -and $h3RoutingPayload -match [regex]::Escape("Repository root: $routingH3Root") -and $h3RoutingPayload -match 'Branch: h3-routing-fixture' -and $h3RoutingPayload -match [regex]::Escape("Origin: https://example.invalid/h3.git") -and $h3RoutingPayload -notmatch [regex]::Escape($routingMangaRoot)) 'P12 H3 payload preserves report and stays isolated'
+    Assert-GuiTest ($mangaRoutingPayload.IndexOf($mangaRoutingReport) -ge 0 -and $mangaRoutingPayload -match 'TEGAKI_HANDOFF_CONTEXT' -and $mangaRoutingPayload -match 'Lane: MANGA' -and $mangaRoutingPayload -match [regex]::Escape("Repository root: $routingMangaRoot") -and $mangaRoutingPayload -match 'Branch: manga-routing-fixture' -and $mangaRoutingPayload -match [regex]::Escape("Origin: https://example.invalid/manga.git") -and $mangaRoutingPayload -notmatch [regex]::Escape($routingH3Root)) 'P13 Manga payload preserves report and stays isolated'
     Invoke-FixtureGit -Root $routingH3Root -Arguments @('checkout', '--detach', '--quiet')
-    Assert-GuiTest ((Get-GuiLaneIdentity -RepoRoot $routingH3Root).Branch -ceq 'DETACHED') 'P12 detached HEAD is explicit'
+    Assert-GuiTest ((Get-GuiLaneIdentity -RepoRoot $routingH3Root).Branch -ceq 'DETACHED') 'P14 detached HEAD is explicit'
+    Assert-GuiTest ((Get-GuiLaneIdentity -RepoRoot $routingH3Root -BranchRef 'h3-routing-fixture').Head -ceq $h3Identity.Head -and (Get-GuiCurrentBranch -RepoRoot $routingH3Root) -ceq 'DETACHED') 'P15 detached checkout does not affect configured ref'
 }
 finally {
     if (Test-Path -LiteralPath $routingBase) { Remove-Item -LiteralPath $routingBase -Recurse -Force -ErrorAction SilentlyContinue }

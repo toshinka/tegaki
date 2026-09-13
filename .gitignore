@@ -40,3 +40,7 @@
 **/.venv/
 **/venv/
 **/python_embeded/
+
+# ComfyUIPortable is maintained in the standalone repository:
+# https://github.com/toshinka/ComfyUIPortable
+/ComfyUIPortable/

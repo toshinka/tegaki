@@ -16,6 +16,8 @@ function Get-GuiDefaultSettings {
         repo_root = ''
         h3_repo_root = ''
         manga_repo_root = ''
+        h3_branch_ref = 'h3-play1-longrun'
+        manga_branch_ref = 'codex/manga-playable'
         always_on_top = $true
         window_x = 80
         window_y = 80
@@ -47,6 +49,12 @@ function Get-GuiSettings {
         }
         if ($stored.PSObject.Properties['manga_repo_root']) {
             $defaults.manga_repo_root = [string]$stored.manga_repo_root
+        }
+        if ($stored.PSObject.Properties['h3_branch_ref']) {
+            $defaults.h3_branch_ref = [string]$stored.h3_branch_ref
+        }
+        if ($stored.PSObject.Properties['manga_branch_ref']) {
+            $defaults.manga_branch_ref = [string]$stored.manga_branch_ref
         }
         if ($stored.PSObject.Properties['always_on_top']) {
             $defaults.always_on_top = [bool]$stored.always_on_top
@@ -104,6 +112,8 @@ function Save-GuiSettings {
         repo_root = [string]$Settings.repo_root
         h3_repo_root = [string]$Settings.h3_repo_root
         manga_repo_root = [string]$Settings.manga_repo_root
+        h3_branch_ref = [string]$Settings.h3_branch_ref
+        manga_branch_ref = [string]$Settings.manga_branch_ref
         always_on_top = [bool]$Settings.always_on_top
         window_x = [int]$Settings.window_x
         window_y = [int]$Settings.window_y
@@ -244,6 +254,39 @@ function Get-GuiLaneRootSettingName {
     return 'manga_repo_root'
 }
 
+function Get-GuiLaneBranchSettingName {
+    param([Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane)
+
+    if ($Lane -eq 'H3') { return 'h3_branch_ref' }
+    return 'manga_branch_ref'
+}
+
+function Get-GuiLaneBranchRef {
+    param(
+        [Parameter(Mandatory = $true)]$Settings,
+        [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane
+    )
+
+    $field = Get-GuiLaneBranchSettingName -Lane $Lane
+    if ($Settings -is [System.Collections.IDictionary] -and $Settings.Contains($field)) {
+        return [string]$Settings[$field]
+    }
+    if ($Settings.PSObject.Properties[$field]) { return [string]$Settings.$field }
+    return ''
+}
+
+function Resolve-GuiStandaloneRepositoryRoot {
+    param([Parameter(Mandatory = $true)][string]$LegacyRoot)
+
+    $resolvedLegacyRoot = Resolve-GuiRepositoryRoot -RequestedRoot $LegacyRoot
+    $parent = Split-Path -Parent $resolvedLegacyRoot
+    if ([string]::IsNullOrWhiteSpace($parent)) { return '' }
+    $candidate = Join-Path $parent 'ComfyUIPortable'
+    if (-not (Test-Path -LiteralPath $candidate -PathType Container)) { return '' }
+    try { return Resolve-GuiRepositoryRoot -RequestedRoot $candidate }
+    catch { return '' }
+}
+
 function Resolve-GuiLaneRepositoryRoot {
     param(
         [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane,
@@ -313,14 +356,61 @@ function Get-GuiOriginUrl {
     return $origin
 }
 
+function Get-GuiBranchHead {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$BranchRef
+    )
+
+    $branch = $BranchRef.Trim()
+    if ($branch.StartsWith('refs/heads/', [StringComparison]::Ordinal)) {
+        $branch = $branch.Substring('refs/heads/'.Length)
+    }
+    if ([string]::IsNullOrWhiteSpace($branch) -or $branch.StartsWith('-')) {
+        throw 'Configured branch ref is invalid.'
+    }
+    $oldPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $null = & git -C $RepoRoot check-ref-format --branch $branch 2>$null
+        $formatExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $oldPreference
+    }
+    if ($formatExitCode -ne 0) { throw "Configured branch ref is invalid: $BranchRef" }
+
+    $ref = "refs/heads/$branch"
+    $headOutput = & git -C $RepoRoot rev-parse --verify --quiet "$ref^{commit}" 2>$null
+    $gitExitCode = $LASTEXITCODE
+    $head = @($headOutput) | Select-Object -First 1
+    if ($gitExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($head)) {
+        throw "Configured branch ref is unavailable: $branch"
+    }
+    return [pscustomobject]@{ Branch = $branch; Head = $head.Trim() }
+}
+
 function Get-GuiLaneIdentity {
-    param([Parameter(Mandatory = $true)][string]$RepoRoot)
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [string]$BranchRef
+    )
 
     $resolvedRoot = Resolve-GuiRepositoryRoot -RequestedRoot $RepoRoot
+    if ([string]::IsNullOrWhiteSpace($BranchRef)) {
+        $branch = Get-GuiCurrentBranch -RepoRoot $resolvedRoot
+        $head = Get-GuiCurrentHead -RepoRoot $resolvedRoot
+    }
+    else {
+        $refIdentity = Get-GuiBranchHead -RepoRoot $resolvedRoot -BranchRef $BranchRef
+        $branch = $refIdentity.Branch
+        $head = $refIdentity.Head
+    }
     return [pscustomobject]@{
         RepositoryRoot = $resolvedRoot
-        Branch = Get-GuiCurrentBranch -RepoRoot $resolvedRoot
-        Head = Get-GuiCurrentHead -RepoRoot $resolvedRoot
+        Branch = $branch
+        BranchRef = $branch
+        Head = $head
         Origin = Get-GuiOriginUrl -RepoRoot $resolvedRoot
     }
 }
@@ -756,10 +846,11 @@ function Get-GuiLaneSnapshot {
     param(
         [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane,
         [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [string]$BranchRef = '',
         [string]$LastReturnedDigest = ''
     )
     $definition = Get-GuiLaneDefinition -Lane $Lane -RepoRoot $RepoRoot
-    $identity = Get-GuiLaneIdentity -RepoRoot $RepoRoot
+    $identity = Get-GuiLaneIdentity -RepoRoot $RepoRoot -BranchRef $BranchRef
     $state = $null
     if (Test-Path -LiteralPath $definition.StatePath -PathType Leaf) {
         try { $state = [IO.File]::ReadAllText($definition.StatePath) | ConvertFrom-Json } catch { $state = $null }
@@ -845,6 +936,7 @@ function New-GuiReturnTransferText {
     param(
         [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane,
         [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [string]$BranchRef = '',
         [string]$LastReturnedDigest
     )
     $definition = Get-GuiLaneDefinition -Lane $Lane -RepoRoot $RepoRoot
@@ -858,7 +950,7 @@ function New-GuiReturnTransferText {
     if (-not [string]::IsNullOrWhiteSpace($effectiveLastDigest) -and $candidate.Digest -ceq $effectiveLastDigest) {
         throw 'REPORT ALREADY RETURNED'
     }
-    $identity = Get-GuiLaneIdentity -RepoRoot $RepoRoot
+    $identity = Get-GuiLaneIdentity -RepoRoot $RepoRoot -BranchRef $BranchRef
     $reportText = $candidate.ReportText
     $context = @(
         'TEGAKI_HANDOFF_CONTEXT'

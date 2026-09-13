@@ -45,11 +45,13 @@ Double-click:
 tools/tegaki-handoff/TEGAKI_HANDOFF_GUI.cmd
 ```
 
-The normal palette exposes exactly one primary Return action per lane. H3 and Manga
-may point to different Git worktrees. Each lane displays and independently changes
-its own validated Root, Branch, and full HEAD SHA; the GUI never checks out or
-mutates Git state. `接続先設定...` opens only the two WebGPT window-title substring
-settings:
+The normal palette exposes exactly one primary Return action per lane. When the
+legacy repository is used as the GUI entry point, blank lane roots resolve to the
+standalone `ComfyUIPortable` repository beside it. H3 and Manga use their
+configured branch refs (`h3-play1-longrun` and `codex/manga-playable` by default)
+and read the ref SHA without checking out or mutating Git state. Each lane
+displays and independently changes its validated Root, Branch/ref, and full HEAD
+SHA. `接続先設定...` opens only the two WebGPT window-title substring settings:
 
 ```text
 H3 WebGPTウィンドウ
@@ -62,18 +64,21 @@ only a path validated by `git rev-parse --show-toplevel`.
 
 Settings are stored outside Git at
 `%LOCALAPPDATA%\TEGAKI-Handoff\settings.json`. The file retains legacy `repo_root`
-and stores independent `h3_repo_root` / `manga_repo_root` values, window position,
-TopMost state, non-secret WebGPT title tokens, and the
+and stores independent `h3_repo_root` / `manga_repo_root` values, the
+`h3_branch_ref` / `manga_branch_ref` selectors, window position, TopMost state,
+non-secret WebGPT title tokens, and the
 SHA-256/card ID of the last Report explicitly prepared for return. A valid
 Report with a different exact digest is shown as `新しい結果あり`; the same
 digest is `返却済み` and its button is disabled. If a lane-specific root is absent,
-the legacy `repo_root` is used for migration compatibility.
+the standalone sibling is preferred and the legacy `repo_root` remains the
+fallback for migration compatibility. An unavailable or malformed configured
+branch ref fails closed and is shown as an invalid lane state.
 
 ## Safe transfer contracts
 
 Return transfers retain the complete validated Report text, append a
-`TEGAKI_HANDOFF_CONTEXT` block containing Lane, selected repository Root, Branch,
-full HEAD SHA, and Origin, then append a route-specific audit instruction. The
+`TEGAKI_HANDOFF_CONTEXT` block containing Lane, selected repository Root, Branch/ref,
+full ref HEAD SHA, and Origin, then append a route-specific audit instruction. The
 instruction uses Branch + HEAD SHA as the primary review identity, asks WebGPT to
 verify a fixed SHA on GitHub when publication is expected, and treats main as a
 comparison/integration target only. Local Git data never claims publication.

@@ -117,12 +117,18 @@ try {
         # An explicit -RepoRoot is a deterministic test/legacy override for both lanes.
         $h3Root = $resolvedLegacyRoot
         $mangaRoot = $resolvedLegacyRoot
+        $h3BranchRef = ''
+        $mangaBranchRef = ''
     }
     else {
         # Preserve an explicitly configured (even invalid) lane value so refresh can
         # show the failure instead of silently replacing it with the legacy root.
-        $h3Root = if ([string]::IsNullOrWhiteSpace([string]$settings.h3_repo_root)) { $resolvedLegacyRoot } else { [string]$settings.h3_repo_root }
-        $mangaRoot = if ([string]::IsNullOrWhiteSpace([string]$settings.manga_repo_root)) { $resolvedLegacyRoot } else { [string]$settings.manga_repo_root }
+        $standaloneRoot = Resolve-GuiStandaloneRepositoryRoot -LegacyRoot $resolvedLegacyRoot
+        if ([string]::IsNullOrWhiteSpace($standaloneRoot)) { $standaloneRoot = $resolvedLegacyRoot }
+        $h3Root = if ([string]::IsNullOrWhiteSpace([string]$settings.h3_repo_root)) { $standaloneRoot } else { [string]$settings.h3_repo_root }
+        $mangaRoot = if ([string]::IsNullOrWhiteSpace([string]$settings.manga_repo_root)) { $standaloneRoot } else { [string]$settings.manga_repo_root }
+        $h3BranchRef = [string](Get-GuiLaneBranchRef -Settings $settings -Lane H3)
+        $mangaBranchRef = [string](Get-GuiLaneBranchRef -Settings $settings -Lane MANGA)
     }
 }
 catch {
@@ -130,7 +136,7 @@ catch {
     exit 1
 }
 
-$guiState = [pscustomobject]@{ H3RepoRoot = $h3Root; MangaRepoRoot = $mangaRoot }
+$guiState = [pscustomobject]@{ H3RepoRoot = $h3Root; MangaRepoRoot = $mangaRoot; H3BranchRef = $h3BranchRef; MangaBranchRef = $mangaBranchRef }
 
 function Get-GuiUsableLaneRoot {
     param(
@@ -181,7 +187,7 @@ $title = New-GuiLabel 'TEGAKI Handoff — 結果返却パレット' 490 28 -Bold
 $title.Font = New-Object System.Drawing.Font($title.Font.FontFamily, 10, [System.Drawing.FontStyle]::Bold)
 [void]$outer.Controls.Add($title)
 
-$routingLabel = New-GuiLabel 'H3 / MANGA は別Git worktreeを個別に参照します。' 490 28
+$routingLabel = New-GuiLabel 'H3 / MANGA はstandalone repoの各branch/refを個別に参照します。' 490 28
 $routingLabel.ForeColor = [System.Drawing.Color]::DimGray
 [void]$outer.Controls.Add($routingLabel)
 
@@ -220,6 +226,8 @@ $saveCurrentSettings = {
     $settings.repo_root = if ([string]::IsNullOrWhiteSpace([string]$settings.repo_root)) { [string]$guiState.H3RepoRoot } else { [string]$settings.repo_root }
     $settings.h3_repo_root = [string]$guiState.H3RepoRoot
     $settings.manga_repo_root = [string]$guiState.MangaRepoRoot
+    $settings.h3_branch_ref = [string]$guiState.H3BranchRef
+    $settings.manga_branch_ref = [string]$guiState.MangaBranchRef
     $settings.always_on_top = [bool]$alwaysOnTop.Checked
     $settings.window_x = [int]$form.Location.X
     $settings.window_y = [int]$form.Location.Y
@@ -248,7 +256,8 @@ $refreshAll = {
         $controls = $laneControls[$lane]
         try {
             $lastDigest = if ($null -ne $trackingDigestOverride) { $trackingDigestOverride } else { Get-GuiLastReturnedDigest -Settings $settings -Lane $lane }
-            $snapshot = Get-GuiLaneSnapshot -Lane $lane -RepoRoot (Get-GuiUsableLaneRoot -GuiState $guiState -Lane $lane) -LastReturnedDigest $lastDigest
+            $branchProperty = if ($lane -eq 'H3') { 'H3BranchRef' } else { 'MangaBranchRef' }
+            $snapshot = Get-GuiLaneSnapshot -Lane $lane -RepoRoot (Get-GuiUsableLaneRoot -GuiState $guiState -Lane $lane) -BranchRef ([string]$guiState.$branchProperty) -LastReturnedDigest $lastDigest
             Set-GuiLaneControlsFromSnapshot -Controls $controls -Snapshot $snapshot
         }
         catch {
@@ -329,7 +338,8 @@ function New-GuiLaneGroup {
             $usableRoot = Get-GuiUsableLaneRoot -GuiState $guiState -Lane $Lane
             $candidate = Get-GuiReportCandidate -Lane $Lane -RepoRoot $usableRoot
             $lastDigest = Get-GuiLastReturnedDigest -Settings $settings -Lane $Lane
-            $text = New-GuiReturnTransferText -Lane $Lane -RepoRoot $usableRoot -LastReturnedDigest $lastDigest
+            $branchProperty = if ($Lane -eq 'H3') { 'H3BranchRef' } else { 'MangaBranchRef' }
+            $text = New-GuiReturnTransferText -Lane $Lane -RepoRoot $usableRoot -BranchRef ([string]$guiState.$branchProperty) -LastReturnedDigest $lastDigest
             $route = if ($Lane -eq 'H3') { 'H3_WEBGPT' } else { 'MANGA_WEBGPT' }
             $transfer = Invoke-GuiReturnTransfer -Text $text -Route (Get-GuiRoutePrefix $route) -TargetToken ([string]$settings.target_tokens[$route]) -SetStatus $setStatus
             if ($transfer.PayloadReady) {
@@ -376,7 +386,7 @@ $alwaysOnTop.Add_CheckedChanged(({
 foreach ($lane in @('H3', 'MANGA')) {
     $laneControls[$lane].ChangeRoot.Add_Click(({
         $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-        $dialog.Description = "$Lane Git worktree rootを選択"
+        $dialog.Description = "$Lane Git repository rootを選択"
         $property = if ($Lane -eq 'H3') { 'H3RepoRoot' } else { 'MangaRepoRoot' }
         $dialog.SelectedPath = [string]$guiState.$property
         if ($dialog.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK) { $dialog.Dispose(); return }
@@ -384,9 +394,9 @@ foreach ($lane in @('H3', 'MANGA')) {
             $guiState.$property = Resolve-GuiRepositoryRoot -RequestedRoot $dialog.SelectedPath
             & $saveCurrentSettings
             & $refreshAll
-            & $setStatus "$Lane のworktreeを変更しました: $($guiState.$property)"
+            & $setStatus "$Lane のrepository rootを変更しました: $($guiState.$property)"
         }
-        catch { & $setStatus "$Lane のworktreeを変更できません: $($_.Exception.Message)" }
+        catch { & $setStatus "$Lane のrepository rootを変更できません: $($_.Exception.Message)" }
     }.GetNewClosure()))
 }
 
@@ -423,8 +433,8 @@ if ($SmokeTest) {
     Set-GuiLaneControlsFromSnapshot -Controls $laneControls.H3 -Snapshot $returnedResult
     if ($laneControls.H3.Return.Enabled) { throw 'WinForms smoke: returned-result return button enabled.' }
     & $refreshAll
-    $null = New-GuiReturnTransferText -Lane H3 -RepoRoot (Get-GuiUsableLaneRoot -GuiState $guiState -Lane H3) -LastReturnedDigest $trackingDigestOverride
-    $null = New-GuiReturnTransferText -Lane MANGA -RepoRoot (Get-GuiUsableLaneRoot -GuiState $guiState -Lane MANGA) -LastReturnedDigest $trackingDigestOverride
+    $null = New-GuiReturnTransferText -Lane H3 -RepoRoot (Get-GuiUsableLaneRoot -GuiState $guiState -Lane H3) -BranchRef ([string]$guiState.H3BranchRef) -LastReturnedDigest $trackingDigestOverride
+    $null = New-GuiReturnTransferText -Lane MANGA -RepoRoot (Get-GuiUsableLaneRoot -GuiState $guiState -Lane MANGA) -BranchRef ([string]$guiState.MangaBranchRef) -LastReturnedDigest $trackingDigestOverride
     Write-Output 'WINFORMS_RETURN_ONLY_SMOKE PASS'
     $form.Dispose()
     exit 0

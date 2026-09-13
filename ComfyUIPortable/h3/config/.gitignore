@@ -1,2 +1,0 @@
-# Machine-local model-path override; use the tracked .example.yaml as a template.
-extra_model_paths.local.yaml
