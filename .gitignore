@@ -1,2 +1,14 @@
 # Local TEGAKI Card/Report handoff runtime; never commit this IPC data.
 /.tegaki-handoff/
+
+# Repository-wide local dependencies, build output, logs, and temporary data.
+# Keep project source directories visible; these patterns cover generated/local
+# storage regardless of which product area owns it.
+**/node_modules/
+**/dist/
+**/*.log
+**/*.tmp
+**/.cache/
+**/cache/
+**/temp/
+開発用資料保管庫/
