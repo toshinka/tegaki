@@ -107,8 +107,10 @@ $settingsPath = Get-GuiSettingsPath
 Assert-GuiTest (-not ([IO.Path]::GetFullPath($settingsPath).StartsWith(($repoRoot + [IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase))) 'E settings outside repo'
 $defaults = Get-GuiDefaultSettings
 Assert-GuiTest ([bool]$defaults.always_on_top -and $defaults.target_tokens.Keys.Count -eq 2 -and $defaults.target_tokens.Contains('H3_WEBGPT') -and $defaults.target_tokens.Contains('MANGA_WEBGPT')) 'F return target settings only'
+Assert-GuiTest ($defaults.Contains('repo_root') -and $defaults.Contains('h3_repo_root') -and $defaults.Contains('manga_repo_root')) 'F1 independent lane settings present'
 Assert-GuiTest ($defaults.Contains('last_returned_h3_report_sha256') -and $defaults.Contains('last_returned_manga_report_sha256')) 'G return digest settings present'
-Assert-GuiTest ($guiText -match '常に手前に表示' -and $guiText -match 'Add_CheckedChanged' -and $guiText -match '\$form\.TopMost = \[bool\]\$alwaysOnTop\.Checked' -and $guiText -match 'ClientSize = New-GuiSize 520 460') 'H TopMost and compact window'
+Assert-GuiTest ($guiText -match '常に手前に表示' -and $guiText -match 'Add_CheckedChanged' -and $guiText -match '\$form\.TopMost = \[bool\]\$alwaysOnTop\.Checked' -and $guiText -match 'ClientSize = New-GuiSize 520 640') 'H TopMost and compact window'
+Assert-GuiTest ($guiText -match 'Get-GuiUsableLaneRoot' -and $guiText -match 'H3RepoRoot' -and $guiText -match 'MangaRepoRoot' -and $guiText -match "'Root'" -and $guiText -match "'Branch'" -and $guiText -match "'HEAD'") 'H1 independent visible lane roots'
 
 # I-P: the GUI has one return action per lane and no forward mediation.
 $returnButtons = [regex]::Matches($guiText, 'New-GuiLaneGroup -Lane H3|New-GuiLaneGroup -Lane MANGA')
@@ -120,9 +122,76 @@ Assert-GuiTest ($coreText -match 'Get-GuiReportDigest' -and $coreText -match 'RE
 Assert-GuiTest ($coreText -match 'Get-GuiReportCandidate' -and $coreText -match '新しい結果あり' -and $coreText -match '返却済み' -and $coreText -match '報告ファイル不正') 'N readiness states'
 Assert-GuiTest ($coreText -match 'Get-GuiLaneSnapshot' -and $coreText -match 'LastReturnedDigest' -and $coreText -notmatch 'New-GuiReturnTransferText[\s\S]{0,500}StatePath') 'O no active-card dependency in return path'
 Assert-GuiTest ($guiText -match 'WINFORMS_RETURN_ONLY_SMOKE' -and $guiText -notmatch 'Add_.*Timer|ClipboardWatcher|Clipboard.*watch|watch.*Clipboard|poll') 'P native smoke and no watcher'
+Assert-GuiTest ($coreText -match 'Get-GuiCurrentBranch' -and $coreText -match 'Get-GuiOriginUrl' -and $coreText -match 'DETACHED') 'P1 branch and detached identity helpers'
+Assert-GuiTest ($guiText -notmatch 'git\s+(checkout|switch|merge|pull|push|fetch)') 'P2 GUI has no Git mutation command'
+
+# P3-P12: two independent Git roots prove migration, persistence, identity, and lane isolation.
+$fixtureBase = 'C:\Users\MAX\.codex\visualizations\2026\09\08\01a07f09-0de3-7e92-a8bb-f365b3648ed8'
+$routingBase = Join-Path $fixtureBase ('.tmp-handoff-routing-' + [Guid]::NewGuid().ToString('N'))
+$routingH3Root = Join-Path $routingBase 'h3-worktree'
+$routingMangaRoot = Join-Path $routingBase 'manga-worktree'
+try {
+    foreach ($spec in @(
+        [pscustomobject]@{ Root = $routingH3Root; Branch = 'h3-routing-fixture'; Origin = 'https://example.invalid/h3.git' }
+        [pscustomobject]@{ Root = $routingMangaRoot; Branch = 'manga-routing-fixture'; Origin = 'https://example.invalid/manga.git' }
+    )) {
+        $null = New-Item -ItemType Directory -Path $spec.Root -Force
+        Invoke-FixtureGit -Root $spec.Root -Arguments @('init', '--quiet')
+        Invoke-FixtureGit -Root $spec.Root -Arguments @('checkout', '-b', $spec.Branch, '--quiet')
+        [IO.File]::WriteAllText((Join-Path $spec.Root 'fixture.txt'), $spec.Branch)
+        Invoke-FixtureGit -Root $spec.Root -Arguments @('add', 'fixture.txt')
+        Invoke-FixtureGit -Root $spec.Root -Arguments @('-c', 'user.name=TEGAKI Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'fixture')
+        Invoke-FixtureGit -Root $spec.Root -Arguments @('remote', 'add', 'origin', $spec.Origin)
+    }
+    $routingSettings = [ordered]@{ repo_root = $routingH3Root; h3_repo_root = ''; manga_repo_root = '' }
+    Assert-GuiTest ((Resolve-GuiLaneRepositoryRoot -Lane H3 -Settings $routingSettings -FallbackRoot $routingH3Root) -ceq (Resolve-GuiRepositoryRoot -RequestedRoot $routingH3Root)) 'P3 legacy repo_root migrates to H3'
+    Assert-GuiTest ((Resolve-GuiLaneRepositoryRoot -Lane MANGA -Settings $routingSettings -FallbackRoot $routingH3Root) -ceq (Resolve-GuiRepositoryRoot -RequestedRoot $routingH3Root)) 'P4 legacy repo_root migrates to Manga'
+    $routingSettings.h3_repo_root = $routingH3Root
+    $routingSettings.manga_repo_root = $routingMangaRoot
+    Assert-GuiTest ((Resolve-GuiLaneRepositoryRoot -Lane H3 -Settings $routingSettings) -ceq (Resolve-GuiRepositoryRoot -RequestedRoot $routingH3Root)) 'P5 explicit H3 root validates independently'
+    Assert-GuiTest ((Resolve-GuiLaneRepositoryRoot -Lane MANGA -Settings $routingSettings) -ceq (Resolve-GuiRepositoryRoot -RequestedRoot $routingMangaRoot)) 'P6 explicit Manga root validates independently'
+
+    $settingsHadFile = Test-Path -LiteralPath $settingsPath -PathType Leaf
+    $settingsBackup = if ($settingsHadFile) { [IO.File]::ReadAllText($settingsPath) } else { $null }
+    try {
+        $routingSettingsForSave = Get-GuiDefaultSettings
+        $routingSettingsForSave.repo_root = $routingH3Root
+        $routingSettingsForSave.h3_repo_root = $routingH3Root
+        $routingSettingsForSave.manga_repo_root = $routingMangaRoot
+        Save-GuiSettings -Settings $routingSettingsForSave
+        $reloadedRoutingSettings = Get-GuiSettings
+        Assert-GuiTest ($reloadedRoutingSettings.h3_repo_root -ceq $routingH3Root -and $reloadedRoutingSettings.manga_repo_root -ceq $routingMangaRoot) 'P7 independent roots persist'
+    }
+    finally {
+        if ($settingsHadFile) { [IO.File]::WriteAllText($settingsPath, $settingsBackup) }
+        elseif (Test-Path -LiteralPath $settingsPath) { Remove-Item -LiteralPath $settingsPath -Force }
+    }
+
+    $h3RoutingDefinition = Get-GuiLaneDefinition -Lane H3 -RepoRoot $routingH3Root
+    $mangaRoutingDefinition = Get-GuiLaneDefinition -Lane MANGA -RepoRoot $routingMangaRoot
+    foreach ($directory in @((Split-Path -Parent $h3RoutingDefinition.ReportPath), (Split-Path -Parent $mangaRoutingDefinition.ReportPath))) {
+        $null = New-Item -ItemType Directory -Path $directory -Force
+    }
+    $h3RoutingReport = New-FixtureReport -CardId 'H3-ROUTING-FIXTURE' -Result 'PASS' -Body 'H3 routing report.'
+    $mangaRoutingReport = New-FixtureReport -CardId 'MANGA-ROUTING-FIXTURE' -Result 'PASS' -Body 'Manga routing report.'
+    [IO.File]::WriteAllText($h3RoutingDefinition.ReportPath, $h3RoutingReport)
+    [IO.File]::WriteAllText($mangaRoutingDefinition.ReportPath, $mangaRoutingReport)
+    $h3Identity = Get-GuiLaneIdentity -RepoRoot $routingH3Root
+    $mangaIdentity = Get-GuiLaneIdentity -RepoRoot $routingMangaRoot
+    Assert-GuiTest ($h3Identity.Branch -ceq 'h3-routing-fixture' -and $h3Identity.Head -match '^[0-9a-f]{40}$' -and $h3Identity.Origin -ceq 'https://example.invalid/h3.git') 'P8 H3 branch SHA Origin identity'
+    Assert-GuiTest ($mangaIdentity.Branch -ceq 'manga-routing-fixture' -and $mangaIdentity.Head -match '^[0-9a-f]{40}$' -and $mangaIdentity.Origin -ceq 'https://example.invalid/manga.git') 'P9 Manga branch SHA Origin identity'
+    $h3RoutingPayload = New-GuiReturnTransferText -Lane H3 -RepoRoot $routingH3Root -LastReturnedDigest ''
+    $mangaRoutingPayload = New-GuiReturnTransferText -Lane MANGA -RepoRoot $routingMangaRoot -LastReturnedDigest ''
+    Assert-GuiTest ($h3RoutingPayload.IndexOf($h3RoutingReport) -ge 0 -and $h3RoutingPayload -match 'TEGAKI_HANDOFF_CONTEXT' -and $h3RoutingPayload -match 'Lane: H3' -and $h3RoutingPayload -match [regex]::Escape("Repository root: $routingH3Root") -and $h3RoutingPayload -match 'Branch: h3-routing-fixture' -and $h3RoutingPayload -match [regex]::Escape("Origin: https://example.invalid/h3.git") -and $h3RoutingPayload -notmatch [regex]::Escape($routingMangaRoot)) 'P10 H3 payload preserves report and stays isolated'
+    Assert-GuiTest ($mangaRoutingPayload.IndexOf($mangaRoutingReport) -ge 0 -and $mangaRoutingPayload -match 'TEGAKI_HANDOFF_CONTEXT' -and $mangaRoutingPayload -match 'Lane: MANGA' -and $mangaRoutingPayload -match [regex]::Escape("Repository root: $routingMangaRoot") -and $mangaRoutingPayload -match 'Branch: manga-routing-fixture' -and $mangaRoutingPayload -match [regex]::Escape("Origin: https://example.invalid/manga.git") -and $mangaRoutingPayload -notmatch [regex]::Escape($routingH3Root)) 'P11 Manga payload preserves report and stays isolated'
+    Invoke-FixtureGit -Root $routingH3Root -Arguments @('checkout', '--detach', '--quiet')
+    Assert-GuiTest ((Get-GuiLaneIdentity -RepoRoot $routingH3Root).Branch -ceq 'DETACHED') 'P12 detached HEAD is explicit'
+}
+finally {
+    if (Test-Path -LiteralPath $routingBase) { Remove-Item -LiteralPath $routingBase -Recurse -Force -ErrorAction SilentlyContinue }
+}
 
 # Q: return-only matrix in an isolated temporary Git repository with no live handoff state.
-$fixtureBase = 'C:\Users\MAX\.codex\visualizations\2026\09\08\01a07f09-0de3-7e92-a8bb-f365b3648ed8'
 $fixtureRoot = Join-Path $fixtureBase ('.tmp-handoff-gui-v1c-' + [Guid]::NewGuid().ToString('N'))
 try {
     $null = New-Item -ItemType Directory -Path $fixtureRoot -Force
@@ -216,7 +285,7 @@ Assert-GuiTest ((Get-GuiRoutePrefix H3_WEBGPT) -ceq '[H3 -> WEBGPT]' -and (Get-G
 Assert-GuiTest ($coreText -match "SendWait\('\^v'\)" -and $coreText -notmatch '\{ENTER\}|\^~|Send button' -and $guiText -notmatch 'Add_.*Timer|ClipboardWatcher|Document\.getElementById|chrome\.') 'S Ctrl+V only / no browser automation'
 Assert-GuiTest ($guiText -notmatch 'Add_Shown[\s\S]{0,800}Set-GuiClipboardText' -and $guiText -notmatch 'Clipboard.*watch|watch.*Clipboard|poll') 'T clipboard changes only from explicit actions'
 $ignoreText = [IO.File]::ReadAllText((Join-Path $repoRoot '.gitignore'))
-Assert-GuiTest ($ignoreText -match '(?m)^/\.tegaki-handoff/$') 'U .tegaki-handoff ignored'
+Assert-GuiTest ($ignoreText -match '(?m)^/\.tegaki-handoff/\r?$') 'U .tegaki-handoff ignored'
 $parseErrors = @()
 foreach ($file in @(Get-ChildItem -LiteralPath $toolRoot -Filter '*.ps1' -File -Recurse)) {
     $tokens = $null; $errors = $null

@@ -14,6 +14,8 @@ function Get-GuiSettingsPath {
 function Get-GuiDefaultSettings {
     return [ordered]@{
         repo_root = ''
+        h3_repo_root = ''
+        manga_repo_root = ''
         always_on_top = $true
         window_x = 80
         window_y = 80
@@ -39,6 +41,12 @@ function Get-GuiSettings {
         $stored = [IO.File]::ReadAllText($path) | ConvertFrom-Json
         if ($stored.PSObject.Properties['repo_root']) {
             $defaults.repo_root = [string]$stored.repo_root
+        }
+        if ($stored.PSObject.Properties['h3_repo_root']) {
+            $defaults.h3_repo_root = [string]$stored.h3_repo_root
+        }
+        if ($stored.PSObject.Properties['manga_repo_root']) {
+            $defaults.manga_repo_root = [string]$stored.manga_repo_root
         }
         if ($stored.PSObject.Properties['always_on_top']) {
             $defaults.always_on_top = [bool]$stored.always_on_top
@@ -94,6 +102,8 @@ function Save-GuiSettings {
 
     $safe = [ordered]@{
         repo_root = [string]$Settings.repo_root
+        h3_repo_root = [string]$Settings.h3_repo_root
+        manga_repo_root = [string]$Settings.manga_repo_root
         always_on_top = [bool]$Settings.always_on_top
         window_x = [int]$Settings.window_x
         window_y = [int]$Settings.window_y
@@ -227,6 +237,40 @@ function Resolve-GuiRepositoryRoot {
     return [IO.Path]::GetFullPath($detected.Trim())
 }
 
+function Get-GuiLaneRootSettingName {
+    param([Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane)
+
+    if ($Lane -eq 'H3') { return 'h3_repo_root' }
+    return 'manga_repo_root'
+}
+
+function Resolve-GuiLaneRepositoryRoot {
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane,
+        [Parameter(Mandatory = $true)]$Settings,
+        [string]$FallbackRoot
+    )
+
+    $field = Get-GuiLaneRootSettingName -Lane $Lane
+    $laneRoot = ''
+    if ($Settings -is [System.Collections.IDictionary] -and $Settings.Contains($field)) {
+        $laneRoot = [string]$Settings[$field]
+    }
+    elseif ($Settings.PSObject.Properties[$field]) {
+        $laneRoot = [string]$Settings.$field
+    }
+    if ([string]::IsNullOrWhiteSpace($laneRoot)) {
+        if ([string]::IsNullOrWhiteSpace($FallbackRoot)) {
+            $FallbackRoot = [string]$Settings.repo_root
+        }
+        $laneRoot = $FallbackRoot
+    }
+    if ([string]::IsNullOrWhiteSpace($laneRoot)) {
+        throw "$Lane repository root is not configured."
+    }
+    return Resolve-GuiRepositoryRoot -RequestedRoot $laneRoot
+}
+
 function Get-GuiCurrentHead {
     param([Parameter(Mandatory = $true)][string]$RepoRoot)
 
@@ -237,6 +281,48 @@ function Get-GuiCurrentHead {
         throw 'Unable to read the repository HEAD.'
     }
     return $head.Trim()
+}
+
+function Get-GuiCurrentBranch {
+    param([Parameter(Mandatory = $true)][string]$RepoRoot)
+
+    $branchOutput = & git -C $RepoRoot branch --show-current 2>$null
+    $gitExitCode = $LASTEXITCODE
+    if ($gitExitCode -ne 0) {
+        throw 'Unable to read the current Git branch.'
+    }
+    $branch = ((@($branchOutput) -join "`n").Trim())
+    if ([string]::IsNullOrWhiteSpace($branch)) { return 'DETACHED' }
+    return $branch
+}
+
+function Get-GuiOriginUrl {
+    param([Parameter(Mandatory = $true)][string]$RepoRoot)
+
+    $oldPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $originOutput = & git -C $RepoRoot remote get-url origin 2>$null
+        $gitExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $oldPreference
+    }
+    $origin = ((@($originOutput) -join "`n").Trim())
+    if ($gitExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($origin)) { return 'UNKNOWN' }
+    return $origin
+}
+
+function Get-GuiLaneIdentity {
+    param([Parameter(Mandatory = $true)][string]$RepoRoot)
+
+    $resolvedRoot = Resolve-GuiRepositoryRoot -RequestedRoot $RepoRoot
+    return [pscustomobject]@{
+        RepositoryRoot = $resolvedRoot
+        Branch = Get-GuiCurrentBranch -RepoRoot $resolvedRoot
+        Head = Get-GuiCurrentHead -RepoRoot $resolvedRoot
+        Origin = Get-GuiOriginUrl -RepoRoot $resolvedRoot
+    }
 }
 
 function Get-GuiLaneDefinition {
@@ -673,7 +759,7 @@ function Get-GuiLaneSnapshot {
         [string]$LastReturnedDigest = ''
     )
     $definition = Get-GuiLaneDefinition -Lane $Lane -RepoRoot $RepoRoot
-    $head = Get-GuiCurrentHead $RepoRoot
+    $identity = Get-GuiLaneIdentity -RepoRoot $RepoRoot
     $state = $null
     if (Test-Path -LiteralPath $definition.StatePath -PathType Leaf) {
         try { $state = [IO.File]::ReadAllText($definition.StatePath) | ConvertFrom-Json } catch { $state = $null }
@@ -687,15 +773,18 @@ function Get-GuiLaneSnapshot {
     $status = if ($state) { [string]$state.status } else { '' }
     $baseSha = if ($state) { [string]$state.base_sha } else { '' }
     $reportPresent = $report.Exists
-    $headMatch = (-not [string]::IsNullOrWhiteSpace($baseSha) -and $baseSha -ceq $head)
+    $headMatch = (-not [string]::IsNullOrWhiteSpace($baseSha) -and $baseSha -ceq $identity.Head)
     return [pscustomobject]@{
         Lane = $Lane
+        RepositoryRoot = $identity.RepositoryRoot
+        Branch = $identity.Branch
+        Origin = $identity.Origin
         CardId = $cardId
         Status = $readiness
         LegacyStatus = $status
         BaseSha = $baseSha
         BaseShaShort = if ($baseSha.Length -ge 8) { $baseSha.Substring(0, 8) } else { $baseSha }
-        Head = $head
+        Head = $identity.Head
         HeadMatchesBase = $headMatch
         ReportPresent = $reportPresent
         ReportValid = $report.Valid
@@ -769,12 +858,26 @@ function New-GuiReturnTransferText {
     if (-not [string]::IsNullOrWhiteSpace($effectiveLastDigest) -and $candidate.Digest -ceq $effectiveLastDigest) {
         throw 'REPORT ALREADY RETURNED'
     }
+    $identity = Get-GuiLaneIdentity -RepoRoot $RepoRoot
     $reportText = $candidate.ReportText
+    $context = @(
+        'TEGAKI_HANDOFF_CONTEXT'
+        ''
+        "Lane: $Lane"
+        "Repository root: $($identity.RepositoryRoot)"
+        "Branch: $($identity.Branch)"
+        "HEAD SHA: $($identity.Head)"
+        "Origin: $($identity.Origin)"
+    ) -join "`r`n"
     if ($Lane -eq 'H3') {
         $instruction = @(
             'H3 RETURN INSTRUCTION:'
             ''
-            'Confirm current GitHub main / publication state when publication is expected.'
+            'Use Branch + HEAD SHA as the primary review identity.'
+            'Verify that fixed SHA on GitHub when publication is expected.'
+            'Review main only when comparison or integration requires it.'
+            'Do not assume the selected worktree branch is already merged to main.'
+            'Do not claim GitHub publication merely from local Git data.'
             'Independently audit actual GitHub diff, implementation, evidence, limitations, and scope.'
             'Do not accept the agent Report blindly.'
             'Do not resume or modify Manga work from this return.'
@@ -786,14 +889,19 @@ function New-GuiReturnTransferText {
         $instruction = @(
             'MANGA RETURN INSTRUCTION:'
             ''
-            'Independently review the result against current GitHub/main and Manga SSOT/boundary.'
+            'Use Branch + HEAD SHA as the primary review identity.'
+            'Verify that fixed SHA on GitHub when publication is expected.'
+            'Review main only when comparison or integration requires it.'
+            'Do not assume the selected worktree branch is already merged to main.'
+            'Do not claim GitHub publication merely from local Git data.'
+            'Independently review the result against the selected worktree and Manga SSOT/boundary.'
             'Do not resume unrelated historical Manga Cards.'
             'Do not modify H3 work from this return.'
             'Keep Manga product implementation HOLD unless explicitly authorized.'
             'Issue the next Manga Card only when explicitly appropriate.'
         ) -join "`r`n"
     }
-    return "$(Get-GuiRoutePrefix $definition.WebRoute)`r`n$reportText`r`n`r`n$instruction"
+    return "$(Get-GuiRoutePrefix $definition.WebRoute)`r`n$reportText`r`n`r`n$context`r`n`r`n$instruction"
 }
 
 function Resolve-GuiTargetWindow {

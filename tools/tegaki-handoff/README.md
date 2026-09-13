@@ -45,8 +45,11 @@ Double-click:
 tools/tegaki-handoff/TEGAKI_HANDOFF_GUI.cmd
 ```
 
-The normal palette exposes exactly one primary Return action per lane. `接続先設定...`
-opens only the two WebGPT window-title substring settings:
+The normal palette exposes exactly one primary Return action per lane. H3 and Manga
+may point to different Git worktrees. Each lane displays and independently changes
+its own validated Root, Branch, and full HEAD SHA; the GUI never checks out or
+mutates Git state. `接続先設定...` opens only the two WebGPT window-title substring
+settings:
 
 ```text
 H3 WebGPTウィンドウ
@@ -54,25 +57,26 @@ Manga WebGPTウィンドウ
 ```
 
 The palette is a normal movable, minimizable, closable window. `常に手前に
-表示` defaults to ON and can be toggled immediately. The repository root is
-visible and `変更...` accepts only a path validated by `git rev-parse
---show-toplevel`.
+表示` defaults to ON and can be toggled immediately. Each lane's `変更...` accepts
+only a path validated by `git rev-parse --show-toplevel`.
 
 Settings are stored outside Git at
-`%LOCALAPPDATA%\TEGAKI-Handoff\settings.json`. The file stores the repository
-root, window position, TopMost state, non-secret WebGPT title tokens, and the
+`%LOCALAPPDATA%\TEGAKI-Handoff\settings.json`. The file retains legacy `repo_root`
+and stores independent `h3_repo_root` / `manga_repo_root` values, window position,
+TopMost state, non-secret WebGPT title tokens, and the
 SHA-256/card ID of the last Report explicitly prepared for return. A valid
 Report with a different exact digest is shown as `新しい結果あり`; the same
-digest is `返却済み` and its button is disabled.
+digest is `返却済み` and its button is disabled. If a lane-specific root is absent,
+the legacy `repo_root` is used for migration compatibility.
 
 ## Safe transfer contracts
 
-Return transfers retain the complete validated Report text and append a route
-specific audit instruction. H3 asks WebGPT to confirm GitHub/main when
-publication is expected and independently audit diff, implementation, evidence,
-limitations, and scope. Manga asks for an independent GitHub/main and Manga
-SSOT/boundary review, keeps product implementation HOLD unless explicitly
-authorized, and does not resume unrelated history.
+Return transfers retain the complete validated Report text, append a
+`TEGAKI_HANDOFF_CONTEXT` block containing Lane, selected repository Root, Branch,
+full HEAD SHA, and Origin, then append a route-specific audit instruction. The
+instruction uses Branch + HEAD SHA as the primary review identity, asks WebGPT to
+verify a fixed SHA on GitHub when publication is expected, and treats main as a
+comparison/integration target only. Local Git data never claims publication.
 
 The Return button is enabled only for `新しい結果あり`. `結果なし`,
 `返却済み`, and `報告ファイル不正` are disabled. A duplicate direct helper

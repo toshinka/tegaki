@@ -110,23 +110,38 @@ function Show-GuiTargetSettingsDialog {
 
 try {
     $settings = Get-GuiSettings
-    $candidateRoot = if (-not [string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot } elseif (-not [string]::IsNullOrWhiteSpace([string]$settings.repo_root)) { [string]$settings.repo_root } else { $null }
-    try { $resolvedRepoRoot = Resolve-GuiRepositoryRoot -RequestedRoot $candidateRoot }
-    catch { $resolvedRepoRoot = Resolve-GuiRepositoryRoot }
+    $legacyRoot = if (-not [string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot } elseif (-not [string]::IsNullOrWhiteSpace([string]$settings.repo_root)) { [string]$settings.repo_root } else { $null }
+    try { $resolvedLegacyRoot = Resolve-GuiRepositoryRoot -RequestedRoot $legacyRoot }
+    catch { $resolvedLegacyRoot = Resolve-GuiRepositoryRoot }
+    if (-not [string]::IsNullOrWhiteSpace($RepoRoot)) {
+        # An explicit -RepoRoot is a deterministic test/legacy override for both lanes.
+        $h3Root = $resolvedLegacyRoot
+        $mangaRoot = $resolvedLegacyRoot
+    }
+    else {
+        # Preserve an explicitly configured (even invalid) lane value so refresh can
+        # show the failure instead of silently replacing it with the legacy root.
+        $h3Root = if ([string]::IsNullOrWhiteSpace([string]$settings.h3_repo_root)) { $resolvedLegacyRoot } else { [string]$settings.h3_repo_root }
+        $mangaRoot = if ([string]::IsNullOrWhiteSpace([string]$settings.manga_repo_root)) { $resolvedLegacyRoot } else { [string]$settings.manga_repo_root }
+    }
 }
 catch {
     [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'TEGAKI Handoff', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
     exit 1
 }
 
-$guiState = [pscustomobject]@{ RepoRoot = $resolvedRepoRoot }
+$guiState = [pscustomobject]@{ H3RepoRoot = $h3Root; MangaRepoRoot = $mangaRoot }
 
-function Get-GuiUsableRepoRoot {
-    param([Parameter(Mandatory = $true)]$GuiState)
-    $candidate = [string]$GuiState.RepoRoot
-    if ([string]::IsNullOrWhiteSpace($candidate)) { throw '現在のリポジトリが未設定です。' }
+function Get-GuiUsableLaneRoot {
+    param(
+        [Parameter(Mandatory = $true)]$GuiState,
+        [Parameter(Mandatory = $true)][ValidateSet('H3', 'MANGA')][string]$Lane
+    )
+    $property = if ($Lane -eq 'H3') { 'H3RepoRoot' } else { 'MangaRepoRoot' }
+    $candidate = [string]$GuiState.$property
+    if ([string]::IsNullOrWhiteSpace($candidate)) { throw "$Lane のリポジトリが未設定です。" }
     $validated = Resolve-GuiRepositoryRoot -RequestedRoot $candidate
-    if ([string]::IsNullOrWhiteSpace($validated)) { throw '現在のリポジトリが未設定です。' }
+    if ([string]::IsNullOrWhiteSpace($validated)) { throw "$Lane のリポジトリが未設定です。" }
     return $validated
 }
 
@@ -141,8 +156,8 @@ $form.MaximizeBox = $false
 $form.ShowInTaskbar = $true
 $form.TopMost = [bool]$settings.always_on_top
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
-$form.ClientSize = New-GuiSize 520 460
-$form.MinimumSize = New-GuiSize 520 430
+$form.ClientSize = New-GuiSize 520 640
+$form.MinimumSize = New-GuiSize 520 600
 $form.BackColor = [System.Drawing.Color]::WhiteSmoke
 $form.Padding = New-Object System.Windows.Forms.Padding(8)
 
@@ -166,21 +181,9 @@ $title = New-GuiLabel 'TEGAKI Handoff — 結果返却パレット' 490 28 -Bold
 $title.Font = New-Object System.Drawing.Font($title.Font.FontFamily, 10, [System.Drawing.FontStyle]::Bold)
 [void]$outer.Controls.Add($title)
 
-$rootPanel = New-Object System.Windows.Forms.Panel
-$rootPanel.Size = New-GuiSize 490 42
-$rootLabel = New-GuiLabel 'リポジトリ' 78 27 -Bold
-$rootLabel.Location = New-GuiPoint 0 4
-[void]$rootPanel.Controls.Add($rootLabel)
-$rootText = New-Object System.Windows.Forms.TextBox
-$rootText.ReadOnly = $true
-$rootText.Size = New-GuiSize 325 27
-$rootText.Location = New-GuiPoint 82 3
-$rootText.Text = $guiState.RepoRoot
-[void]$rootPanel.Controls.Add($rootText)
-$changeRootButton = New-GuiButton '変更...' 78 27
-$changeRootButton.Location = New-GuiPoint 407 3
-[void]$rootPanel.Controls.Add($changeRootButton)
-[void]$outer.Controls.Add($rootPanel)
+$routingLabel = New-GuiLabel 'H3 / MANGA は別Git worktreeを個別に参照します。' 490 28
+$routingLabel.ForeColor = [System.Drawing.Color]::DimGray
+[void]$outer.Controls.Add($routingLabel)
 
 $optionsPanel = New-Object System.Windows.Forms.FlowLayoutPanel
 $optionsPanel.Size = New-GuiSize 490 34
@@ -214,7 +217,9 @@ $setStatus = {
 }.GetNewClosure()
 
 $saveCurrentSettings = {
-    $settings.repo_root = $guiState.RepoRoot
+    $settings.repo_root = if ([string]::IsNullOrWhiteSpace([string]$settings.repo_root)) { [string]$guiState.H3RepoRoot } else { [string]$settings.repo_root }
+    $settings.h3_repo_root = [string]$guiState.H3RepoRoot
+    $settings.manga_repo_root = [string]$guiState.MangaRepoRoot
     $settings.always_on_top = [bool]$alwaysOnTop.Checked
     $settings.window_x = [int]$form.Location.X
     $settings.window_y = [int]$form.Location.Y
@@ -229,6 +234,9 @@ function Set-GuiLaneControlsFromSnapshot {
         [Parameter(Mandatory = $true)]$Controls,
         [Parameter(Mandatory = $true)]$Snapshot
     )
+    $Controls.Root.Text = [string]$Snapshot.RepositoryRoot
+    $Controls.Branch.Text = [string]$Snapshot.Branch
+    $Controls.Head.Text = [string]$Snapshot.Head
     $Controls.State.Text = [string]$Snapshot.Status
     $Controls.Card.Text = if ([string]::IsNullOrWhiteSpace([string]$Snapshot.CardId)) { '—' } else { [string]$Snapshot.CardId }
     $Controls.Return.Enabled = [bool]$Snapshot.ReturnEnabled
@@ -240,17 +248,20 @@ $refreshAll = {
         $controls = $laneControls[$lane]
         try {
             $lastDigest = if ($null -ne $trackingDigestOverride) { $trackingDigestOverride } else { Get-GuiLastReturnedDigest -Settings $settings -Lane $lane }
-            $snapshot = Get-GuiLaneSnapshot -Lane $lane -RepoRoot (Get-GuiUsableRepoRoot -GuiState $guiState) -LastReturnedDigest $lastDigest
+            $snapshot = Get-GuiLaneSnapshot -Lane $lane -RepoRoot (Get-GuiUsableLaneRoot -GuiState $guiState -Lane $lane) -LastReturnedDigest $lastDigest
             Set-GuiLaneControlsFromSnapshot -Controls $controls -Snapshot $snapshot
         }
         catch {
+            $property = if ($lane -eq 'H3') { 'H3RepoRoot' } else { 'MangaRepoRoot' }
+            $controls.Root.Text = [string]$guiState.$property
+            $controls.Branch.Text = '—'
+            $controls.Head.Text = '—'
             $controls.State.Text = '報告ファイル不正'
             $controls.Card.Text = '—'
             $controls.Return.Enabled = $false
             $controls.State.ForeColor = [System.Drawing.Color]::Firebrick
         }
     }
-    $rootText.Text = $guiState.RepoRoot
 }.GetNewClosure()
 
 function New-GuiLaneGroup {
@@ -263,38 +274,59 @@ function New-GuiLaneGroup {
 
     $group = New-Object System.Windows.Forms.GroupBox
     $group.Text = $Title
-    $group.Size = New-GuiSize 490 118
+    $group.Size = New-GuiSize 490 188
     $group.Margin = New-Object System.Windows.Forms.Padding(3, 5, 3, 5)
     $group.Padding = New-Object System.Windows.Forms.Padding(8)
     $group.BackColor = $BackColor
 
-    $latestLabel = New-GuiLabel '最新結果' 92 24 -Bold
-    $latestLabel.Location = New-GuiPoint 10 23
-    $stateValueLabel = New-GuiLabel '結果なし' 360 24
-    $stateValueLabel.Location = New-GuiPoint 108 23
-    $cardLabel = New-GuiLabel 'Card' 92 24
-    $cardLabel.Location = New-GuiPoint 10 49
-    $cardValueLabel = New-GuiLabel '—' 360 24
-    $cardValueLabel.Location = New-GuiPoint 108 49
+    $rootLabel = New-GuiLabel 'Root' 72 24 -Bold
+    $rootLabel.Location = New-GuiPoint 10 23
+    $rootValueLabel = New-GuiLabel '—' 305 24
+    $rootValueLabel.Location = New-GuiPoint 84 23
+    $changeLaneRootButton = New-GuiButton '変更...' 82 24
+    $changeLaneRootButton.Location = New-GuiPoint 397 21
+    $branchLabel = New-GuiLabel 'Branch' 72 24
+    $branchLabel.Location = New-GuiPoint 10 49
+    $branchValueLabel = New-GuiLabel '—' 405 24
+    $branchValueLabel.Location = New-GuiPoint 84 49
+    $headLabel = New-GuiLabel 'HEAD' 72 24
+    $headLabel.Location = New-GuiPoint 10 75
+    $headValueLabel = New-GuiLabel '—' 405 24
+    $headValueLabel.Location = New-GuiPoint 84 75
+    $latestLabel = New-GuiLabel '最新結果' 72 24 -Bold
+    $latestLabel.Location = New-GuiPoint 10 101
+    $stateValueLabel = New-GuiLabel '結果なし' 405 24
+    $stateValueLabel.Location = New-GuiPoint 84 101
+    $cardLabel = New-GuiLabel 'Card' 72 24
+    $cardLabel.Location = New-GuiPoint 10 127
+    $cardValueLabel = New-GuiLabel '—' 405 24
+    $cardValueLabel.Location = New-GuiPoint 84 127
     [void]$group.Controls.Add($latestLabel)
+    [void]$group.Controls.Add($rootLabel)
+    [void]$group.Controls.Add($rootValueLabel)
+    [void]$group.Controls.Add($changeLaneRootButton)
+    [void]$group.Controls.Add($branchLabel)
+    [void]$group.Controls.Add($branchValueLabel)
+    [void]$group.Controls.Add($headLabel)
+    [void]$group.Controls.Add($headValueLabel)
     [void]$group.Controls.Add($stateValueLabel)
     [void]$group.Controls.Add($cardLabel)
     [void]$group.Controls.Add($cardValueLabel)
 
-    $returnButton = New-GuiButton $ReturnButtonText 340 34
-    $returnButton.Location = New-GuiPoint 108 76
+    $returnButton = New-GuiButton $ReturnButtonText 405 34
+    $returnButton.Location = New-GuiPoint 84 153
     [void]$group.Controls.Add($returnButton)
 
     foreach ($control in @($stateValueLabel, $cardValueLabel)) {
         if ($control -isnot [System.Windows.Forms.Label]) { throw 'Lane result control invariant failed.' }
     }
     if ($returnButton -isnot [System.Windows.Forms.Button]) { throw 'Lane return control invariant failed.' }
-    $registry = [pscustomobject]@{ Group = $group; State = $stateValueLabel; Card = $cardValueLabel; Return = $returnButton }
+    $registry = [pscustomobject]@{ Group = $group; Root = $rootValueLabel; Branch = $branchValueLabel; Head = $headValueLabel; State = $stateValueLabel; Card = $cardValueLabel; Return = $returnButton; ChangeRoot = $changeLaneRootButton }
     $script:laneControls[$Lane] = $registry
 
     $returnButton.Add_Click(({
         try {
-            $usableRoot = Get-GuiUsableRepoRoot -GuiState $guiState
+            $usableRoot = Get-GuiUsableLaneRoot -GuiState $guiState -Lane $Lane
             $candidate = Get-GuiReportCandidate -Lane $Lane -RepoRoot $usableRoot
             $lastDigest = Get-GuiLastReturnedDigest -Settings $settings -Lane $Lane
             $text = New-GuiReturnTransferText -Lane $Lane -RepoRoot $usableRoot -LastReturnedDigest $lastDigest
@@ -341,19 +373,22 @@ $alwaysOnTop.Add_CheckedChanged(({
     & $setStatus (if ($alwaysOnTop.Checked) { '常に手前に表示: ON' } else { '常に手前に表示: OFF' })
 }.GetNewClosure()))
 
-$changeRootButton.Add_Click(({
-    $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-    $dialog.Description = 'Gitリポジトリのルートを選択'
-    $dialog.SelectedPath = $guiState.RepoRoot
-    if ($dialog.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK) { $dialog.Dispose(); return }
-    try {
-        $guiState.RepoRoot = Resolve-GuiRepositoryRoot -RequestedRoot $dialog.SelectedPath
-        & $saveCurrentSettings
-        & $refreshAll
-        & $setStatus "リポジトリを変更しました: $($guiState.RepoRoot)"
-    }
-    catch { & $setStatus "リポジトリを変更できません: $($_.Exception.Message)" }
-}.GetNewClosure()))
+foreach ($lane in @('H3', 'MANGA')) {
+    $laneControls[$lane].ChangeRoot.Add_Click(({
+        $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dialog.Description = "$Lane Git worktree rootを選択"
+        $property = if ($Lane -eq 'H3') { 'H3RepoRoot' } else { 'MangaRepoRoot' }
+        $dialog.SelectedPath = [string]$guiState.$property
+        if ($dialog.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK) { $dialog.Dispose(); return }
+        try {
+            $guiState.$property = Resolve-GuiRepositoryRoot -RequestedRoot $dialog.SelectedPath
+            & $saveCurrentSettings
+            & $refreshAll
+            & $setStatus "$Lane のworktreeを変更しました: $($guiState.$property)"
+        }
+        catch { & $setStatus "$Lane のworktreeを変更できません: $($_.Exception.Message)" }
+    }.GetNewClosure()))
+}
 
 $form.Add_Move(({
     if ($form.WindowState -eq [System.Windows.Forms.FormWindowState]::Normal) { & $saveCurrentSettings }
@@ -367,11 +402,10 @@ $form.Add_Shown(({
 }.GetNewClosure()))
 
 if ($SmokeTest) {
-    $usableRoot = Get-GuiUsableRepoRoot -GuiState $guiState
     & $refreshAll
     foreach ($lane in @('H3', 'MANGA')) {
         $controls = $laneControls[$lane]
-        foreach ($valueControl in @($controls.State, $controls.Card)) {
+        foreach ($valueControl in @($controls.Root, $controls.Branch, $controls.Head, $controls.State, $controls.Card)) {
             if ($valueControl -isnot [System.Windows.Forms.Label]) { throw "WinForms smoke: $lane result control is not a Label." }
             if ($null -eq $valueControl.Text) { throw "WinForms smoke: $lane result control has no Text." }
         }
@@ -389,8 +423,8 @@ if ($SmokeTest) {
     Set-GuiLaneControlsFromSnapshot -Controls $laneControls.H3 -Snapshot $returnedResult
     if ($laneControls.H3.Return.Enabled) { throw 'WinForms smoke: returned-result return button enabled.' }
     & $refreshAll
-    $null = New-GuiReturnTransferText -Lane H3 -RepoRoot $usableRoot -LastReturnedDigest $trackingDigestOverride
-    $null = New-GuiReturnTransferText -Lane MANGA -RepoRoot $usableRoot -LastReturnedDigest $trackingDigestOverride
+    $null = New-GuiReturnTransferText -Lane H3 -RepoRoot (Get-GuiUsableLaneRoot -GuiState $guiState -Lane H3) -LastReturnedDigest $trackingDigestOverride
+    $null = New-GuiReturnTransferText -Lane MANGA -RepoRoot (Get-GuiUsableLaneRoot -GuiState $guiState -Lane MANGA) -LastReturnedDigest $trackingDigestOverride
     Write-Output 'WINFORMS_RETURN_ONLY_SMOKE PASS'
     $form.Dispose()
     exit 0
