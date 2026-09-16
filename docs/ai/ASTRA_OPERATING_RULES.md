@@ -4,6 +4,10 @@
 
 この文書は、Owner/GPTがAstraをTEGAKIのRough Product PassやGUI reviewへ投入する時の実行境界を定める。製品仕様、保存正本、Work Packageの代わりにはならない。対象taskのHandoff/Cardと[AGENTS](../../AGENTS.md)、[DEVELOPMENT](../DEVELOPMENT.md)を優先する。
 
+## Precedence
+
+優先順位は、`AGENTS.md`の共通architecture制約、`docs/DEVELOPMENT.md`の共通procedure、本文書のAstra固有behavior、現在のCard/task scopeの順とする。Card/Handoffは`READ`、`WRITE`、tests、mode、subagent permissionをさらに狭められるが、上位のarchitecture restrictionを解除しない。
+
 ## Core motto
 
 ```text
@@ -33,7 +37,7 @@ DEFAULT: SUBAGENTS = OFF
 ```
 
 - 自発的な並列subagent生成、同じ問題の重複調査、念のためのreviewer追加、完了済みsubagentの継続監視、agent-of-agent構造を行わない。
-- Handoffが明示的に許可した場合だけ例外とする。
+- CardまたはHandoffが明示的に許可した場合だけ例外とする。
 - 許可されても原則最大1 subagentとし、使用前に「単独では解決困難な具体的理由」を記録する。
 - subagentの報告だけで完了・受入・仕様採用を決めない。
 
@@ -65,7 +69,7 @@ DEFAULT: SUBAGENTS = OFF
 
 ## Architecture floor
 
-Rough Product Passでも、Cardから明示許可されない限り、次を変更しない。
+Rough Product Passでも、Card/Handoffの明示許可があっても、次の上位architecture floorを変更しない。
 
 - Project schema、保存互換、History framework、save authority
 - canonical renderer authority、CPU/Pixi evaluation order
@@ -85,6 +89,7 @@ Rough Product Passでも、Cardから明示許可されない限り、次を変�
 ```
 
 tokenや時間が残っていても、指定成果物と必要証拠が揃ったら次の改善へ進まない。「もっと良くできる」は継続理由にならない。Ownerの制作受入やGit pushをAstraが代行しない。
+optional cleanup、追加review、extra agent、反復monitoring、次WP開始へ進まず、ここでSTOPする。
 
 ## Task modes
 
@@ -94,7 +99,7 @@ Cardで明示された可逆production prototypeを、指定file・契約・検�
 
 ### REVIEW MODE
 
-`READ / COMPARE / PLAN ONLY`。production codeを変更しない。将来のLyrica比較、GUI Refresh Scope & Scheduling、既存画面の批評は原則このmodeで行う。
+`READ / COMPARE / PLAN ONLY`。production code: `NO WRITE`。GUI: `NO WRITE`。docsのreview成果物だけは、Cardの`WRITE`で明示された場合に限り書ける。将来のLyrica比較、GUI Refresh Scope & Scheduling、既存画面の批評はこのmodeで行い、そのままGUI実装を開始しない。
 
 ## GUI and reference comparison
 
