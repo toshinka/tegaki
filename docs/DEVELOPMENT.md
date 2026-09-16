@@ -38,6 +38,10 @@ RETURN: 変更理由、file、実行した検証、失敗/未確認、既知リ�
 STOP: 新しい保存正本、既存データ削除、未決定UX、対象範囲拡大が必要なら根拠を返す
 ```
 
+委任Cardは`WORK PACKAGE / ROLE / READ / WRITE / BASELINE / RETURN / STOP`を基本形とする。変更範囲に必要な検証を行い、同じ状態・同じcommitへの同一testは理由なく反復しない。ただし変更後のregression suite、失敗後の再実行、Owner/leadが明示した最終suiteは別扱いとする。
+
+Completion reportは、`START / FINAL HEAD`、worktree、changed files、result、tests、Browser evidence、unchanged authorities、HOLD、next human decisionを短く示す。技術PASS、Browser確認、Owner受入を同じ判定へまとめない。
+
 カードは一つの変更理由へ絞る。未決定の全将来機能を詳細仕様へ展開しない。
 親はworkerの報告だけでDONEにせず、diff、入力/終了/失敗、History、関連保存境界を確認する。
 

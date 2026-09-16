@@ -1,6 +1,7 @@
 # WP-008 — Astra / GUI Requirements Handoff Draft
 
 状態: **DRAFT — ACTUAL PRODUCT REVIEW REQUEST**
+Read first: [Astra Operating Rules](../ai/ASTRA_OPERATING_RULES.md)
 この資料は、Owner許可で実装したWP-008 rough product passの画面をAstra/Ownerが批評するための下書きであり、追加実装のblank-slate instructionではない。
 
 ## Review target update — 2026-09-09

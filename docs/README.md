@@ -26,6 +26,7 @@ Tegakiは、ブラウザで絵を描き、その絵を同じCanvas上で動か�
 | 現行データ所有・起動・編集・出力経路 | [ARCHITECTURE](ARCHITECTURE.md) |
 | 同じ概念の名称・互換名 | [VOCABULARY](VOCABULARY.md) |
 | 担当の渡し方、完了条件、局所header、検証 | [DEVELOPMENT](DEVELOPMENT.md) |
+| Astra専用のworker運用規約 | [ASTRA_OPERATING_RULES](ai/ASTRA_OPERATING_RULES.md) |
 | 優先順位・依存・重大判断点 | [ROADMAP](ROADMAP.md) |
 | 調査根拠・確認範囲・既知の穴 | [AUDIT](AUDIT.md) |
 | 旧文書の効力・読み直す理由 | [DOCUMENT_REGISTER](DOCUMENT_REGISTER.md) |

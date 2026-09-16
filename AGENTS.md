@@ -22,6 +22,8 @@
 - 新しい保存正本、互換破壊、大規模class再構成、未決定UXは作業カードへ混ぜず、重大判断点としてleadへ返す。
 - Git pushと最終制作受入はOwner。生成物や秘密情報を成果へ混ぜない。
 
+明示されたRough Product Pass / reversible prototypeは、指定されたUI・interaction範囲に限り試作してよい。ただしprototypeでもProject schema、History authority、save authority、canonical renderer authority、SOURCE / ANIMATE authority、既存terminal grammarを独自に変更しない。workerは`OWNER ACCEPTED`や`DONE`を自己承認せず、最終制作受入とGit pushはOwnerへ返す。
+
 ## 委任と完了
 
 Architecture leadが全体判断、実装AIは確定カードの限定範囲を担当する。
