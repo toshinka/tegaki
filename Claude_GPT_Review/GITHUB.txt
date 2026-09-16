@@ -1,6 +1,6 @@
 # TEGAKI — 外部WEB AI向け GitHub読解リンク集
 
-更新日: 2026-09-09
+更新日: 2026-09-17
 対象: 現行コード・製品思想・技術契約・現在の計画。Archive / 過去Reviewは収録しない。
 このリンク集は案内であり、仕様の第二正本ではない。
 
@@ -10,6 +10,8 @@
 
 読む順序: AGENTS → docs/README → STATUS → TECHNICAL → ARCHITECTURE / VOCABULARY。
 製品思想の評価ならPRODUCT、計画の評価ならROADMAPとWork Packageへ進む。
+WP-008の現在地を見る場合: AGENTS → docs/README → STATUS → TECHNICAL → ARCHITECTURE → WP-008 card → WP-008 audit → 必要ならAstra handoffへ進む。
+ASTRA_OPERATING_RULESはAstra worker運用を見る場合の補助資料であり、一般architecture正本扱いしない。
 AUDITには調査済み・未確認・既知不具合を分けている。現在の作業状態・完了範囲はSTATUSと対象WPを確認する。
 実装対象を限定し、全コードやArchiveを最初から読み直す必要はない。
 
@@ -82,6 +84,15 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-0
 
 docs/work/WP-008-layer-transform-progressive-controls.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-008-layer-transform-progressive-controls.md
+
+docs/work/WP-008-progressive-controls-design-audit.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-008-progressive-controls-design-audit.md
+
+docs/handoffs/WP-008-astra-progressive-controls-request.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/handoffs/WP-008-astra-progressive-controls-request.md
+
+docs/ai/ASTRA_OPERATING_RULES.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/ai/ASTRA_OPERATING_RULES.md
 
 docs/work/WP-009-layer-transform-key-management.md
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-009-layer-transform-key-management.md
@@ -157,6 +168,12 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 tegaki_work/system/animation/warp-grid-rasterizer.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-grid-rasterizer.js
 
+tegaki_work/system/animation/warp-point-selection.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-point-selection.js
+
+tegaki_work/system/animation/warp-grid-brush.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-grid-brush.js
+
 tegaki_work/system/project-manager.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/project-manager.js
 
@@ -174,6 +191,12 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui
 
 tegaki_work/ui/ui-panels.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/ui-panels.js
+
+tegaki_work/ui/layer-transform-warp-controller.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/layer-transform-warp-controller.js
+
+tegaki_work/ui/warp-grid-overlay.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/warp-grid-overlay.js
 
 tegaki_work/ui/keyboard-handler.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/keyboard-handler.js
