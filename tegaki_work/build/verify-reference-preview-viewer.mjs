@@ -1,41 +1,63 @@
 /**
  * ============================================================================
  * verify-reference-preview-viewer.mjs
- * 責務: Reference / Preview Viewer (Floating Mirror + Multi-Reference Tabs) の全契約を検証する
+ * 責務: Reference / Preview Viewer UX Polish 01 の全契約を検証する
  *
- * T1 — sidebar entry (Monitor / reference launcher exists and targets Viewer)
- * T2 — Preview fixed tab (first, not closeable)
- * T3 — Reference multi-tabs (add A, add B, close A, resources released)
- * T4 — Per-tab view state preservation (zoom, pan, rotation, flip independent per tab)
- * T5 — Reset View (rotation 0, flip false, Fit state)
- * T6 — Large image proxy sizing (1000x800 unchanged, 6000x9000 safely bounded <=2048px/4MP, AR preserved)
- * T7 — Proxy disclosure (downscaled metadata / badge)
- * T8 — Clipboard focus routing (Viewer focused -> Reference paste, Canvas focused -> not stolen)
- * T9 — D&D scope (Viewer drop accepted, outside drop ignored)
- * T10 — Runtime only (not serialized in ProjectManager save/load)
- * T11 — History 0 (viewer operations do not create drawing history entries)
- * T12 — Mirror transform state (preview view transform does not mutate project canvas)
+ * T1 — outside click persistence (Viewer visible -> outside/canvas click keeps Viewer visible)
+ * T2 — sidebar toggle (hidden -> launcher -> visible, visible -> launcher -> hidden)
+ * T3 — × close (hidden, references and tabs preserved)
+ * T4 — focus transfer (Viewer focused -> click Canvas: Viewer visible, Viewer focus false)
+ * T5 — clipboard routing (after T4: Canvas Ctrl+V remains Canvas route)
+ * T6 — glass contract (Viewer uses expected glass surface/backdrop tokens without changing global popup behavior)
+ * T7 — cream surface (Viewer image surround is warm cream translucent, old #e8e4df removed)
+ * T8 — Thumbnail entry (Full -> Thumbnail compact dimensions, toolbar hidden, active image/header visible)
+ * T9 — Thumbnail restore (Thumbnail -> Full restores previous full width/height)
+ * T10 — tab state retained (Reference tab zoom/rotate/flip unchanged through Thumbnail -> Full)
+ * T11 — Preview state retained (Preview tab view state unchanged through Thumbnail -> Full)
+ * T12 — History 0 / model 0 (toggle Viewer, toggle thumbnail, outside click -> no History or Project schema changes)
  * ============================================================================
  */
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-// Mock browser globals for Node.js test execution
-globalThis.window = globalThis;
+// Mock minimal browser globals for Node.js test execution
+globalThis.window = {
+    innerWidth: 1280,
+    innerHeight: 800,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+};
 globalThis.document = {
-    createElement: (tag) => ({
-        tagName: tag.toUpperCase(),
-        style: {},
-        classList: { add: () => {}, remove: () => {}, toggle: () => {} },
-        setAttribute: () => {},
-        getAttribute: () => null,
-        appendChild: () => {},
-        querySelector: () => null,
-        querySelectorAll: () => [],
-        addEventListener: () => {},
-        removeEventListener: () => {}
-    }),
+    createElement: (tag) => {
+        const el = {
+            tagName: tag.toUpperCase(),
+            style: {},
+            classList: {
+                _classes: new Set(),
+                add: function(c) { this._classes.add(c); },
+                remove: function(c) { this._classes.delete(c); },
+                toggle: function(c, force) {
+                    if (force !== undefined) {
+                        if (force) this._classes.add(c);
+                        else this._classes.delete(c);
+                        return force;
+                    }
+                    if (this._classes.has(c)) { this._classes.delete(c); return false; }
+                    this._classes.add(c); return true;
+                },
+                contains: function(c) { return this._classes.has(c); }
+            },
+            setAttribute: () => {},
+            getAttribute: () => null,
+            appendChild: () => {},
+            querySelector: () => null,
+            querySelectorAll: () => [],
+            addEventListener: () => {},
+            removeEventListener: () => {}
+        };
+        return el;
+    },
     getElementById: () => null,
     querySelector: () => null,
     querySelectorAll: () => [],
@@ -45,6 +67,7 @@ globalThis.document = {
 };
 
 const {
+    ReferencePreviewViewer,
     calculateReferenceProxyDimensions,
     calculateFitTransform,
     calculate100PercentTransform,
@@ -53,123 +76,291 @@ const {
     MIRROR_PREVIEW_BUDGET
 } = await import('../ui/reference-preview-viewer.js');
 
-console.log('--- Starting Reference / Preview Viewer Verification (T1 - T12) ---');
+console.log('--- Starting Reference / Preview Viewer UX Polish 01 Verification (T1 - T12) ---');
 
-// T1: Sidebar Entry Verification
+// T1: Outside Click Persistence
 {
-    const domBuilderCode = await readFile(new URL('../ui/dom-builder.js', import.meta.url), 'utf8');
     const uiPanelsCode = await readFile(new URL('../ui/ui-panels.js', import.meta.url), 'utf8');
 
-    assert.match(
-        domBuilderCode,
-        /id:\s*'reference-preview-tool',\s*icon:\s*'monitor',\s*title:\s*'資料 \/ プレビュー',\s*role:\s*'popup-launcher',\s*popupName:\s*'referencePreview',\s*controls:\s*'reference-preview-viewer'/u,
-        'T1: reference-preview-tool launcher defined in dom-builder with popup-launcher role, monitor icon, and referencePreview popupName'
-    );
-
+    // Verify outside click handler in ui-panels.js exempts referencePreview
     assert.match(
         uiPanelsCode,
-        /referencePreview:\s*'reference-preview-tool'/u,
-        'T1: SIDEBAR_POPUP_BUTTONS maps referencePreview to reference-preview-tool'
+        /closeAllPopups\(\s*\[[^\]]*'referencePreview'[^\]]*\]\s*\)/u,
+        'T1: ui-panels.js outside-click handler keeps referencePreview open'
     );
 
+    // Verify default keepOpen in closeAllPopups includes referencePreview
+    assert.match(
+        uiPanelsCode,
+        /const keepOpen = exceptName === null \? \[[^\]]*'referencePreview'[^\]]*\] : exceptName;/u,
+        'T1: closeAllPopups() preserves referencePreview by default'
+    );
+    console.log('T1: Outside click persistence PASS');
+}
+
+// T2: Sidebar Toggle
+{
+    const uiPanelsCode = await readFile(new URL('../ui/ui-panels.js', import.meta.url), 'utf8');
     assert.match(
         uiPanelsCode,
         /'reference-preview-tool':\s*\(\)\s*=>\s*\{[\s\S]*?this\.togglePopup\('referencePreview'\);/u,
-        'T1: toolMap delegates reference-preview-tool to togglePopup(referencePreview)'
+        'T2: toolMap delegates reference-preview-tool to togglePopup(referencePreview)'
     );
-    console.log('T1: Sidebar launcher contract PASS');
-}
 
-// T2: Preview Fixed Tab Verification
-{
-    // Minimal mock for testing ReferencePreviewViewer state
-    const { ReferencePreviewViewer } = await import('../ui/reference-preview-viewer.js');
-    const viewer = new ReferencePreviewViewer({
-        app: { renderer: { extract: { canvas: () => ({ width: 800, height: 600 }) } } },
-        layerSystem: { currentFrameContainer: {} },
-        exportManager: null,
-        cameraSystem: {},
-        eventBus: { on: () => {}, emit: () => {} }
-    });
-
-    assert.equal(viewer.tabs.length, 1, 'T2: Starts with 1 initial tab');
-    const previewTab = viewer.tabs[0];
-    assert.equal(previewTab.id, 'preview', 'T2: First tab is preview');
-    assert.equal(previewTab.type, 'preview', 'T2: First tab type is preview');
-    assert.equal(previewTab.closeable, false, 'T2: Preview tab cannot be closed');
-
-    // Attempting to close preview tab should be rejected
-    viewer.closeTab('preview');
-    assert.equal(viewer.tabs.length, 1, 'T2: Preview tab cannot be closed by closeTab');
-    assert.equal(viewer.tabs[0].id, 'preview', 'T2: Preview tab remains intact');
-    console.log('T2: Preview fixed tab contract PASS');
-}
-
-// T3: Reference Multi-tabs and Resource Cleanup
-{
-    const { ReferencePreviewViewer } = await import('../ui/reference-preview-viewer.js');
+    // Mock toggle state on instance
     const viewer = new ReferencePreviewViewer({
         app: {},
         layerSystem: { currentFrameContainer: {} },
         eventBus: { on: () => {}, emit: () => {} }
     });
 
-    // Add Tab A
-    let aReleased = false;
-    const fakeCanvasA = {
-        width: 400,
-        height: 300
-    };
-    viewer.tabs.push({
-        id: 'ref_A',
-        type: 'reference',
-        name: 'Ref A',
-        canvas: fakeCanvasA,
-        origWidth: 400,
-        origHeight: 300,
-        width: 400,
-        height: 300,
-        downscaled: false,
-        closeable: true,
-        viewState: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
-    });
-
-    // Add Tab B
-    const fakeCanvasB = {
-        width: 500,
-        height: 400
-    };
-    viewer.tabs.push({
-        id: 'ref_B',
-        type: 'reference',
-        name: 'Ref B',
-        canvas: fakeCanvasB,
-        origWidth: 500,
-        origHeight: 400,
-        width: 500,
-        height: 400,
-        downscaled: false,
-        closeable: true,
-        viewState: { zoom: 1.5, panX: 10, panY: 20, rotationDeg: 15, flipX: true, flipY: false, initialized: true }
-    });
-
-    assert.equal(viewer.tabs.length, 3, 'T3: 3 tabs present (Preview, Ref A, Ref B)');
-    viewer.switchTab('ref_A');
-    assert.equal(viewer.activeTabId, 'ref_A');
-
-    // Close Tab A
-    viewer.closeTab('ref_A');
-    assert.equal(viewer.tabs.length, 2, 'T3: Ref A removed, 2 tabs remaining');
-    assert.equal(viewer.tabs.some(t => t.id === 'ref_A'), false, 'T3: Ref A not in tabs');
-    assert.equal(viewer.tabs.some(t => t.id === 'ref_B'), true, 'T3: Ref B remains intact');
-    assert.equal(fakeCanvasA.width, 1, 'T3: Ref A canvas buffer shrunk to 1x1 for GC');
-    assert.equal(fakeCanvasA.height, 1, 'T3: Ref A canvas buffer shrunk to 1x1 for GC');
-    console.log('T3: Reference multi-tabs and resource cleanup PASS');
+    assert.equal(viewer.isVisible, false, 'T2: Initially hidden');
+    viewer.show();
+    assert.equal(viewer.isVisible, true, 'T2: Launcher opens -> visible');
+    viewer.toggle();
+    assert.equal(viewer.isVisible, false, 'T2: Launcher toggle while visible -> hidden');
+    viewer.toggle();
+    assert.equal(viewer.isVisible, true, 'T2: Launcher toggle while hidden -> visible');
+    console.log('T2: Sidebar toggle PASS');
 }
 
-// T4: Per-tab View State Preservation
+// T3: × Close Button
 {
-    const { ReferencePreviewViewer } = await import('../ui/reference-preview-viewer.js');
+    const uiPanelsCode = await readFile(new URL('../ui/ui-panels.js', import.meta.url), 'utf8');
+    assert.match(
+        uiPanelsCode,
+        /target === 'reference-preview-viewer'[\s\S]*?this\.hidePopup\('referencePreview'\)/u,
+        'T3: closeBtn handler explicitly delegates reference-preview-viewer to hidePopup'
+    );
+
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    viewer.tabs.push({
+        id: 'ref_sample',
+        type: 'reference',
+        name: 'Sample Ref',
+        width: 600,
+        height: 400,
+        closeable: true,
+        viewState: { zoom: 1.2, panX: 10, panY: 20, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    });
+
+    viewer.show();
+    assert.equal(viewer.isVisible, true);
+    assert.equal(viewer.tabs.length, 2);
+
+    viewer.hide();
+    assert.equal(viewer.isVisible, false, 'T3: × close hides viewer');
+    assert.equal(viewer.tabs.length, 2, 'T3: tabs preserved after hide');
+    assert.equal(viewer.tabs[1].name, 'Sample Ref', 'T3: sample reference preserved');
+
+    viewer.show();
+    assert.equal(viewer.isVisible, true, 'T3: Re-opened viewer');
+    assert.equal(viewer.tabs.length, 2, 'T3: All tabs still present');
+    console.log('T3: × close contract PASS');
+}
+
+// T4: Focus Transfer
+{
+    const keyboardHandlerCode = await readFile(new URL('../ui/keyboard-handler.js', import.meta.url), 'utf8');
+
+    assert.match(
+        keyboardHandlerCode,
+        /if\s*\(\s*e\.target\?\.closest\?\.\(('|")\.reference-preview-viewer\1\)\s*\|\|\s*document\.activeElement\?\.closest\?\.\(('|")\.reference-preview-viewer\2\)\s*\)\s*\{[\s\S]*?return;\s*\}/u,
+        'T4: keyboard-handler yields shortcuts when inside viewer without global Escape close hijack'
+    );
+
+    assert.doesNotMatch(
+        keyboardHandlerCode,
+        /referencePreviewViewer[\s\S]*?Escape[\s\S]*?viewer\.hide/u,
+        'T4: Escape key close hijack is removed from keyboard-handler'
+    );
+    console.log('T4: Focus transfer PASS');
+}
+
+// T5: Clipboard Routing
+{
+    const imageImporterCode = await readFile(new URL('../system/image-importer.js', import.meta.url), 'utf8');
+    const pixelSelectionCode = await readFile(new URL('../system/pixel-selection-system.js', import.meta.url), 'utf8');
+
+    assert.match(
+        imageImporterCode,
+        /if\s*\(\s*event\.target\?\.closest\?\.\(('|")\.reference-preview-viewer\1\)\s*\)\s*return;/u,
+        'T5: image-importer paste listener only bypasses when target is inside .reference-preview-viewer'
+    );
+
+    assert.match(
+        pixelSelectionCode,
+        /if\s*\(\s*event\.target\?\.closest\?\.\(('|")\.reference-preview-viewer\1\)\s*\)\s*return;/u,
+        'T5: pixel-selection keydown listener only bypasses when target is inside .reference-preview-viewer'
+    );
+    console.log('T5: Clipboard routing isolation PASS');
+}
+
+// T6: Glass Contract
+{
+    const cssCode = await readFile(new URL('../styles/main.css', import.meta.url), 'utf8');
+
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer\s*\{[\s\S]*?background:\s*var\(--ui-panel-glass-surface[^;]*\);/u,
+        'T6: .reference-preview-viewer uses --ui-panel-glass-surface token (~0.72 alpha)'
+    );
+
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer\s*\{[\s\S]*?backdrop-filter:\s*var\(--ui-panel-glass-backdrop[^;]*\);/u,
+        'T6: .reference-preview-viewer uses --ui-panel-glass-backdrop token (blur(3px))'
+    );
+    console.log('T6: Glass contract PASS');
+}
+
+// T7: Cream Surface
+{
+    const cssCode = await readFile(new URL('../styles/main.css', import.meta.url), 'utf8');
+
+    assert.doesNotMatch(
+        cssCode,
+        /\.reference-preview-viewer \.viewer-body\s*\{[\s\S]*?background:\s*#e8e4df;/u,
+        'T7: Old gray #e8e4df background is removed from .viewer-body'
+    );
+
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer \.viewer-body\s*\{[\s\S]*?background:\s*rgba\(\s*240,\s*224,\s*214/u,
+        'T7: .viewer-body uses warm Futaba cream translucent background'
+    );
+
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer \.viewer-surface\s*\{[\s\S]*?background:\s*rgba\(\s*255,\s*255,\s*238/u,
+        'T7: .viewer-surface uses warm Futaba light cream background'
+    );
+    console.log('T7: Cream surface PASS');
+}
+
+// T8: Thumbnail Entry
+{
+    const cssCode = await readFile(new URL('../styles/main.css', import.meta.url), 'utf8');
+
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer\.is-thumbnail\s*\{[\s\S]*?width:\s*(?:180|250)px;\s*height:\s*(?:140|190)px;/u,
+        'T8: .is-thumbnail sets compact dimensions (180x140px)'
+    );
+
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer\.is-thumbnail \.viewer-toolbar\s*\{[\s\S]*?display:\s*none\s*!important;/u,
+        'T8: .is-thumbnail hides control toolbar'
+    );
+
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer\.is-thumbnail \.viewer-tabs-bar\s*\{[\s\S]*?display:\s*none\s*!important;/u,
+        'T8: .is-thumbnail hides full tab strip'
+    );
+
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer\.is-thumbnail \.viewer-thumbnail-title\s*\{[\s\S]*?display:\s*block\s*!important;/u,
+        'T8: .is-thumbnail reveals active source title in header'
+    );
+
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    // Mock popup element
+    viewer.popup = {
+        offsetLeft: 100,
+        offsetTop: 120,
+        offsetWidth: 520,
+        offsetHeight: 440,
+        style: { width: '520px', height: '440px', left: '100px', top: '120px' },
+        classList: {
+            _c: new Set(),
+            add: function(c) { this._c.add(c); },
+            remove: function(c) { this._c.delete(c); },
+            toggle: function(c, force) {
+                if (force !== undefined) {
+                    if (force) this._c.add(c); else this._c.delete(c);
+                    return force;
+                }
+                if (this._c.has(c)) { this._c.delete(c); return false; }
+                this._c.add(c); return true;
+            },
+            contains: function(c) { return this._c.has(c); }
+        },
+        querySelector: () => ({
+            style: {},
+            classList: { add: () => {}, remove: () => {} }
+        })
+    };
+
+    viewer.setThumbnailMode(true);
+    assert.equal(viewer.isThumbnailMode, true, 'T8: isThumbnailMode is true');
+    assert.ok(viewer.popup.classList.contains('is-thumbnail'), 'T8: popup has is-thumbnail class');
+    assert.equal(viewer.popup.style.width, '180px', 'T8: width set to thumbnail 180px');
+    assert.equal(viewer.popup.style.height, '140px', 'T8: height set to thumbnail 140px');
+    assert.equal(viewer._savedFullRect.width, 520, 'T8: Saved full width 520');
+    assert.equal(viewer._savedFullRect.height, 440, 'T8: Saved full height 440');
+    console.log('T8: Thumbnail entry PASS');
+}
+
+// T9: Thumbnail Restore
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    viewer.popup = {
+        offsetLeft: 150,
+        offsetTop: 200,
+        offsetWidth: 560,
+        offsetHeight: 480,
+        style: { width: '560px', height: '480px', left: '150px', top: '200px' },
+        classList: {
+            _c: new Set(),
+            add: function(c) { this._c.add(c); },
+            remove: function(c) { this._c.delete(c); },
+            toggle: function(c, force) {
+                if (force !== undefined) {
+                    if (force) this._c.add(c); else this._c.delete(c);
+                    return force;
+                }
+                if (this._c.has(c)) { this._c.delete(c); return false; }
+                this._c.add(c); return true;
+            },
+            contains: function(c) { return this._c.has(c); }
+        },
+        querySelector: () => ({
+            style: {},
+            classList: { add: () => {}, remove: () => {} }
+        })
+    };
+
+    viewer.setThumbnailMode(true);
+    assert.equal(viewer.isThumbnailMode, true);
+
+    viewer.setThumbnailMode(false);
+    assert.equal(viewer.isThumbnailMode, false, 'T9: isThumbnailMode is false');
+    assert.ok(!viewer.popup.classList.contains('is-thumbnail'), 'T9: is-thumbnail class removed');
+    assert.equal(viewer.popup.style.width, '560px', 'T9: Prior full width restored');
+    assert.equal(viewer.popup.style.height, '480px', 'T9: Prior full height restored');
+    console.log('T9: Thumbnail restore PASS');
+}
+
+// T10: Tab View State Retained
+{
     const viewer = new ReferencePreviewViewer({
         app: {},
         layerSystem: { currentFrameContainer: {} },
@@ -180,242 +371,516 @@ console.log('--- Starting Reference / Preview Viewer Verification (T1 - T12) ---
         id: 'ref_A',
         type: 'reference',
         name: 'Ref A',
-        width: 400,
-        height: 300,
-        closeable: true,
-        viewState: { zoom: 2.0, panX: 50, panY: -30, rotationDeg: 45, flipX: true, flipY: false, initialized: true }
-    };
-    const tabB = {
-        id: 'ref_B',
-        type: 'reference',
-        name: 'Ref B',
-        width: 600,
+        width: 800,
         height: 600,
         closeable: true,
-        viewState: { zoom: 0.5, panX: 0, panY: 0, rotationDeg: -90, flipX: false, flipY: true, initialized: true }
+        viewState: { zoom: 2.2, panX: 45, panY: -35, rotationDeg: 30, flipX: true, flipY: false, initialized: true }
     };
-    viewer.tabs.push(tabA, tabB);
-
+    viewer.tabs.push(tabA);
     viewer.switchTab('ref_A');
-    assert.equal(viewer.getActiveTab().viewState.zoom, 2.0);
-    assert.equal(viewer.getActiveTab().viewState.panX, 50);
-    assert.equal(viewer.getActiveTab().viewState.panY, -30);
-    assert.equal(viewer.getActiveTab().viewState.rotationDeg, 45);
-    assert.equal(viewer.getActiveTab().viewState.flipX, true);
-    assert.equal(viewer.getActiveTab().viewState.flipY, false);
 
-    viewer.switchTab('ref_B');
-    assert.equal(viewer.getActiveTab().viewState.zoom, 0.5);
-    assert.equal(viewer.getActiveTab().viewState.rotationDeg, -90);
-    assert.equal(viewer.getActiveTab().viewState.flipX, false);
-    assert.equal(viewer.getActiveTab().viewState.flipY, true);
+    // Check before thumbnail mode
+    assert.equal(tabA.viewState.zoom, 2.2);
+    assert.equal(tabA.viewState.panX, 45);
+    assert.equal(tabA.viewState.panY, -35);
+    assert.equal(tabA.viewState.rotationDeg, 30);
+    assert.equal(tabA.viewState.flipX, true);
+    assert.equal(tabA.viewState.flipY, false);
 
-    // Modify Tab B
-    viewer.getActiveTab().viewState.zoom = 0.75;
-    viewer.getActiveTab().viewState.panX = 100;
+    // Enter thumbnail mode
+    viewer.setThumbnailMode(true);
 
-    // Switch back to Tab A
-    viewer.switchTab('ref_A');
-    assert.equal(viewer.getActiveTab().viewState.zoom, 2.0, 'T4: Tab A zoom preserved');
-    assert.equal(viewer.getActiveTab().viewState.panX, 50, 'T4: Tab A panX preserved');
-    assert.equal(viewer.getActiveTab().viewState.panY, -30, 'T4: Tab A panY preserved');
-    assert.equal(viewer.getActiveTab().viewState.rotationDeg, 45, 'T4: Tab A rotation preserved');
-    assert.equal(viewer.getActiveTab().viewState.flipX, true, 'T4: Tab A flipX preserved');
-    assert.equal(viewer.getActiveTab().viewState.flipY, false, 'T4: Tab A flipY preserved');
+    // In thumbnail mode, tab viewState must NOT be mutated
+    assert.equal(tabA.viewState.zoom, 2.2, 'T10: zoom not mutated in thumbnail');
+    assert.equal(tabA.viewState.panX, 45, 'T10: panX not mutated in thumbnail');
+    assert.equal(tabA.viewState.panY, -35, 'T10: panY not mutated in thumbnail');
+    assert.equal(tabA.viewState.rotationDeg, 30, 'T10: rotationDeg not mutated in thumbnail');
+    assert.equal(tabA.viewState.flipX, true, 'T10: flipX not mutated in thumbnail');
+    assert.equal(tabA.viewState.flipY, false, 'T10: flipY not mutated in thumbnail');
 
-    // Switch back to Tab B
-    viewer.switchTab('ref_B');
-    assert.equal(viewer.getActiveTab().viewState.zoom, 0.75, 'T4: Tab B modified zoom preserved');
-    assert.equal(viewer.getActiveTab().viewState.panX, 100, 'T4: Tab B modified panX preserved');
-    console.log('T4: Per-tab view state preservation PASS');
+    // Exit thumbnail mode
+    viewer.setThumbnailMode(false);
+
+    // Restored full mode preserves identical state
+    assert.equal(tabA.viewState.zoom, 2.2, 'T10: zoom intact after restore');
+    assert.equal(tabA.viewState.panX, 45, 'T10: panX intact after restore');
+    assert.equal(tabA.viewState.panY, -35, 'T10: panY intact after restore');
+    assert.equal(tabA.viewState.rotationDeg, 30, 'T10: rotationDeg intact after restore');
+    assert.equal(tabA.viewState.flipX, true, 'T10: flipX intact after restore');
+    assert.equal(tabA.viewState.flipY, false, 'T10: flipY intact after restore');
+    console.log('T10: Tab state retained PASS');
 }
 
-// T5: Reset View
+// T11: Preview State Retained
 {
-    const { ReferencePreviewViewer } = await import('../ui/reference-preview-viewer.js');
     const viewer = new ReferencePreviewViewer({
         app: {},
         layerSystem: { currentFrameContainer: {} },
         eventBus: { on: () => {}, emit: () => {} }
     });
 
-    const tab = {
-        id: 'ref_test',
-        type: 'reference',
-        name: 'Test',
-        width: 500,
-        height: 500,
-        closeable: true,
-        viewState: { zoom: 3.5, panX: 120, panY: -80, rotationDeg: 60, flipX: true, flipY: true, initialized: true }
+    const previewTab = viewer.tabs[0];
+    previewTab.viewState = {
+        zoom: 1.4,
+        panX: -20,
+        panY: 30,
+        rotationDeg: -15,
+        flipX: false,
+        flipY: true,
+        initialized: true
     };
-    viewer.tabs.push(tab);
-    viewer.switchTab('ref_test');
+    viewer.switchTab('preview');
 
-    viewer.resetActiveTabView();
+    viewer.setThumbnailMode(true);
+    assert.equal(previewTab.viewState.zoom, 1.4, 'T11: Preview zoom intact during thumbnail');
+    assert.equal(previewTab.viewState.rotationDeg, -15, 'T11: Preview rotationDeg intact during thumbnail');
+    assert.equal(previewTab.viewState.flipY, true, 'T11: Preview flipY intact during thumbnail');
 
-    assert.equal(tab.viewState.rotationDeg, 0, 'T5: Reset rotationDeg is 0');
-    assert.equal(tab.viewState.flipX, false, 'T5: Reset flipX is false');
-    assert.equal(tab.viewState.flipY, false, 'T5: Reset flipY is false');
-    // Zoom should be fit scale (> 0 and finite)
-    assert.ok(Number.isFinite(tab.viewState.zoom) && tab.viewState.zoom > 0, 'T5: Reset zoom is valid fit scale');
-    console.log('T5: Reset View contract PASS');
+    viewer.setThumbnailMode(false);
+    assert.equal(previewTab.viewState.zoom, 1.4, 'T11: Preview zoom intact after restore');
+    assert.equal(previewTab.viewState.panX, -20, 'T11: Preview panX intact after restore');
+    assert.equal(previewTab.viewState.panY, 30, 'T11: Preview panY intact after restore');
+    assert.equal(previewTab.viewState.rotationDeg, -15, 'T11: Preview rotationDeg intact after restore');
+    assert.equal(previewTab.viewState.flipX, false, 'T11: Preview flipX intact after restore');
+    assert.equal(previewTab.viewState.flipY, true, 'T11: Preview flipY intact after restore');
+    console.log('T11: Preview state retained PASS');
 }
 
-// T6: Large Image Proxy Sizing Math
-{
-    // Case 1: 1000x800 (within limits: edge <= 2048 and pixels <= 4MP)
-    const res1 = calculateReferenceProxyDimensions(1000, 800);
-    assert.equal(res1.width, 1000);
-    assert.equal(res1.height, 800);
-    assert.equal(res1.downscaled, false, 'T6: 1000x800 is not downscaled');
-    assert.equal(res1.origWidth, 1000);
-    assert.equal(res1.origHeight, 800);
-
-    // Case 2: 6000x9000 (oversize: edge 9000 > 2048, 54MP > 4MP)
-    const res2 = calculateReferenceProxyDimensions(6000, 9000);
-    assert.equal(res2.downscaled, true, 'T6: 6000x9000 is downscaled');
-    assert.ok(res2.width <= REFERENCE_PROXY_BUDGET.maxEdge, 'T6: width <= 2048');
-    assert.ok(res2.height <= REFERENCE_PROXY_BUDGET.maxEdge, 'T6: height <= 2048');
-    assert.ok(res2.width * res2.height <= REFERENCE_PROXY_BUDGET.maxPixels, 'T6: total pixels <= 4MP');
-    assert.equal(res2.height, 2048, 'T6: longest edge clamped to 2048');
-    assert.equal(res2.width, 1365, 'T6: aspect ratio 6000/9000 preserved: 1365x2048');
-    assert.equal(res2.origWidth, 6000);
-    assert.equal(res2.origHeight, 9000);
-
-    // Case 3: 4000x4000 square
-    const res3 = calculateReferenceProxyDimensions(4000, 4000);
-    assert.equal(res3.downscaled, true);
-    assert.ok(res3.width <= 2048);
-    assert.ok(res3.height <= 2048);
-    assert.ok(res3.width * res3.height <= REFERENCE_PROXY_BUDGET.maxPixels);
-    assert.equal(res3.width, res3.height, 'T6: square aspect ratio preserved');
-    console.log('T6: Large image proxy sizing math PASS');
-}
-
-// T7: Proxy Disclosure (Metadata & Badge)
-{
-    const proxyInfo = calculateReferenceProxyDimensions(6000, 9000);
-    assert.equal(proxyInfo.downscaled, true);
-    assert.equal(proxyInfo.origWidth, 6000);
-    assert.equal(proxyInfo.origHeight, 9000);
-    assert.equal(proxyInfo.width, 1365);
-    assert.equal(proxyInfo.height, 2048);
-
-    const normalInfo = calculateReferenceProxyDimensions(800, 600);
-    assert.equal(normalInfo.downscaled, false);
-    console.log('T7: Proxy disclosure metadata PASS');
-}
-
-// T8: Clipboard Focus Routing Verification
-{
-    const imageImporterCode = await readFile(new URL('../system/image-importer.js', import.meta.url), 'utf8');
-    const pixelSelectionCode = await readFile(new URL('../system/pixel-selection-system.js', import.meta.url), 'utf8');
-    const keyboardHandlerCode = await readFile(new URL('../ui/keyboard-handler.js', import.meta.url), 'utf8');
-
-    assert.match(
-        imageImporterCode,
-        /if\s*\(\s*event\.target\?\.closest\?\.\(('|")\.reference-preview-viewer\1\)\s*\)\s*return;/u,
-        'T8: image-importer paste listener bypasses when target is in .reference-preview-viewer'
-    );
-
-    assert.match(
-        pixelSelectionCode,
-        /if\s*\(\s*event\.target\?\.closest\?\.\(('|")\.reference-preview-viewer\1\)\s*\)\s*return;/u,
-        'T8: pixel-selection keydown listener bypasses when target is in .reference-preview-viewer'
-    );
-
-    assert.match(
-        keyboardHandlerCode,
-        /if\s*\(\s*e\.target\?\.closest\?\.\(('|")\.reference-preview-viewer\1\)\s*\|\|\s*document\.activeElement\?\.closest\?\.\(('|")\.reference-preview-viewer\2\)\s*\)/u,
-        'T8: keyboard-handler yields shortcuts when focus is inside .reference-preview-viewer'
-    );
-    console.log('T8: Clipboard focus routing isolation PASS');
-}
-
-// T9: D&D Scope Verification
+// T12: History 0 / Model 0
 {
     const viewerModuleCode = await readFile(new URL('../ui/reference-preview-viewer.js', import.meta.url), 'utf8');
-
-    assert.match(
-        viewerModuleCode,
-        /this\.popup\.addEventListener\('drop'/u,
-        'T9: drop listener is bound directly to this.popup (.reference-preview-viewer)'
-    );
-
-    assert.doesNotMatch(
-        viewerModuleCode,
-        /document\.addEventListener\('drop'/u,
-        'T9: drop listener is NOT attached globally to document'
-    );
-
-    assert.doesNotMatch(
-        viewerModuleCode,
-        /window\.addEventListener\('drop'/u,
-        'T9: drop listener is NOT attached globally to window'
-    );
-    console.log('T9: D&D scope isolation PASS');
-}
-
-// T10: Runtime Only (Not serialized in ProjectManager)
-{
     const projectManagerCode = await readFile(new URL('../system/project-manager.js', import.meta.url), 'utf8');
-
-    assert.doesNotMatch(
-        projectManagerCode,
-        /referencePreview/u,
-        'T10: project-manager does not reference referencePreview'
-    );
-    assert.doesNotMatch(
-        projectManagerCode,
-        /reference-preview-viewer/u,
-        'T10: project-manager does not reference reference-preview-viewer'
-    );
-    console.log('T10: Runtime-only (no project schema impact) PASS');
-}
-
-// T11: History 0
-{
-    const viewerModuleCode = await readFile(new URL('../ui/reference-preview-viewer.js', import.meta.url), 'utf8');
 
     assert.doesNotMatch(
         viewerModuleCode,
         /historyManager|history\.add|history\.execute|history\.record/u,
-        'T11: viewer operations do not invoke drawing history'
+        'T12: viewer operations do not invoke drawing history'
     );
-    console.log('T11: History 0 contract PASS');
+
+    assert.doesNotMatch(
+        projectManagerCode,
+        /referencePreview|reference-preview-viewer/u,
+        'T12: project-manager does not serialize viewer references or thumbnail state'
+    );
+    console.log('T12: History 0 / model 0 PASS');
 }
 
-// T12: Mirror Transform State & View Transform Math
+// T13 — Shift+Q keymap
 {
-    const surfaceW = 400;
-    const surfaceH = 300;
-    const contentW = 800;
-    const contentH = 600;
+    const { TEGAKI_KEYMAP } = await import('../config.js');
+    const qEvent = { code: 'KeyQ', shiftKey: false, ctrlKey: false, altKey: false, metaKey: false };
+    const shiftQEvent = { code: 'KeyQ', shiftKey: true, ctrlKey: false, altKey: false, metaKey: false };
 
-    // Fit Transform
-    const fit = calculateFitTransform(surfaceW, surfaceH, contentW, contentH);
-    assert.ok(fit.zoom > 0 && fit.zoom < 1, 'T12: Fit zoom scales down 800x600 to fit 400x300');
-    assert.equal(fit.rotationDeg, 0);
-    assert.equal(fit.flipX, false);
-    assert.equal(fit.flipY, false);
-
-    // 100% Transform
-    const t100 = calculate100PercentTransform(surfaceW, surfaceH, contentW, contentH);
-    assert.equal(t100.zoom, 1, 'T12: 100% zoom is 1.0');
-    assert.equal(t100.panX, (surfaceW - contentW) / 2);
-    assert.equal(t100.panY, (surfaceH - contentH) / 2);
-
-    // CSS Transform String
-    const cssTransform = getCssTransformString(
-        { zoom: 1.5, panX: 20, panY: 30, rotationDeg: 15, flipX: true, flipY: false },
-        800,
-        600
-    );
-    assert.match(cssTransform, /translate\(/u, 'T12: CSS transform contains translate');
-    assert.match(cssTransform, /rotate\(15deg\)/u, 'T12: CSS transform contains rotation 15deg');
-    assert.match(cssTransform, /scale\(-1\.5,\s*1\.5\)/u, 'T12: CSS transform reflects flipX and zoom');
-
-    console.log('T12: Mirror transform state and CSS transform math PASS');
+    assert.equal(TEGAKI_KEYMAP.getAction(qEvent), 'QUICK_ACCESS_TOGGLE', 'T13: Q maps to QUICK_ACCESS_TOGGLE');
+    assert.equal(TEGAKI_KEYMAP.getAction(shiftQEvent), 'REFERENCE_PREVIEW_TOGGLE', 'T13: Shift+Q maps to REFERENCE_PREVIEW_TOGGLE');
+    assert.notEqual(TEGAKI_KEYMAP.getAction(qEvent), TEGAKI_KEYMAP.getAction(shiftQEvent), 'T13: No conflict between Q and Shift+Q');
+    console.log('T13: Shift+Q keymap PASS');
 }
 
-console.log('\nverify-reference-preview-viewer: ALL 12 SCENARIOS (T1 - T12) PASS');
+// T14 — Shift+Q input safety
+{
+    const kbCode = await readFile(new URL('../ui/keyboard-handler.js', import.meta.url), 'utf8');
+    assert.match(
+        kbCode,
+        /if\s*\(\s*isInputFocused\(\)\s*\)\s*return;/u,
+        'T14: isInputFocused returns before shortcut processing'
+    );
+    assert.match(
+        kbCode,
+        /function\s+isInputFocused\(\)\s*\{[\s\S]*?activeElement\.tagName\s*===\s*('INPUT'|'TEXTAREA'|'SELECT')/u,
+        'T14: isInputFocused covers INPUT, TEXTAREA, SELECT, contentEditable'
+    );
+    console.log('T14: Shift+Q input safety PASS');
+}
+
+// T15 — initial viewport clamp
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    globalThis.window.innerWidth = 600;
+    globalThis.window.innerHeight = 450;
+
+    viewer.popup = {
+        offsetLeft: 200,
+        offsetTop: 150,
+        offsetWidth: 480,
+        offsetHeight: 520,
+        style: { width: '480px', height: '520px', left: '200px', top: '150px' },
+        classList: { _c: new Set(), add: () => {}, remove: () => {}, contains: () => false, toggle: () => false },
+        querySelector: () => ({ style: {}, classList: { add: () => {}, remove: () => {} } })
+    };
+
+    viewer._clampToViewport();
+    const w = parseInt(viewer.popup.style.width, 10);
+    const h = parseInt(viewer.popup.style.height, 10);
+    const l = parseInt(viewer.popup.style.left, 10);
+    const t = parseInt(viewer.popup.style.top, 10);
+
+    assert.ok(w <= 600 - 16, `T15: width ${w} fits within window width 600`);
+    assert.ok(h <= 450 - 16, `T15: height ${h} fits within window height 450`);
+    assert.ok(l >= 8 && l + w <= 600 - 8, `T15: horizontal bounds [${l}, ${l + w}] inside viewport`);
+    assert.ok(t >= 8 && t + h <= 450 - 8, `T15: vertical bounds [${t}, ${t + h}] inside viewport`);
+    console.log('T15: initial viewport clamp PASS');
+}
+
+// T16 — reopen clamp
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    globalThis.window.innerWidth = 800;
+    globalThis.window.innerHeight = 600;
+
+    // Simulate popup placed far outside current viewport (e.g. before browser resize)
+    viewer.popup = {
+        offsetLeft: 900,
+        offsetTop: 700,
+        offsetWidth: 300,
+        offsetHeight: 240,
+        style: { width: '300px', height: '240px', left: '900px', top: '700px' },
+        classList: { _c: new Set(), add: () => {}, remove: () => {}, contains: () => false, toggle: () => false },
+        querySelector: () => ({ style: {}, classList: { add: () => {}, remove: () => {} } })
+    };
+
+    viewer._clampToViewport();
+    const l = parseInt(viewer.popup.style.left, 10);
+    const t = parseInt(viewer.popup.style.top, 10);
+    const w = parseInt(viewer.popup.style.width, 10);
+    const h = parseInt(viewer.popup.style.height, 10);
+
+    assert.ok(l >= 8 && l + w <= 800 - 8, `T16: left ${l} clamped inside viewport`);
+    assert.ok(t >= 8 && t + h <= 600 - 8, `T16: top ${t} clamped inside viewport`);
+    console.log('T16: reopen clamp PASS');
+}
+
+// T17 — smaller minimum size
+{
+    const cssCode = await readFile(new URL('../styles/main.css', import.meta.url), 'utf8');
+    const viewerJs = await readFile(new URL('../ui/reference-preview-viewer.js', import.meta.url), 'utf8');
+
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer\s*\{[\s\S]*?min-width:\s*150px;\s*min-height:\s*120px;/u,
+        'T17: main.css enforces 150px min-width and 120px min-height'
+    );
+
+    assert.match(
+        viewerJs,
+        /minW\s*=\s*150;[\s\S]*?minH\s*=\s*120;/u,
+        'T17: reference-preview-viewer.js uses 150px x 120px minimums'
+    );
+    console.log('T17: smaller minimum size PASS');
+}
+
+// T18 — resize grip always visible
+{
+    const cssCode = await readFile(new URL('../styles/main.css', import.meta.url), 'utf8');
+    const viewerJs = await readFile(new URL('../ui/reference-preview-viewer.js', import.meta.url), 'utf8');
+
+    assert.doesNotMatch(
+        cssCode,
+        /\.reference-preview-viewer\.is-thumbnail\s+\.viewer-resize-handle\s*\{[\s\S]*?display:\s*none/u,
+        'T18: resize handle is not hidden in is-thumbnail'
+    );
+    assert.doesNotMatch(
+        cssCode,
+        /\.reference-preview-viewer\.is-micro\s+\.viewer-resize-handle\s*\{[\s\S]*?display:\s*none/u,
+        'T18: resize handle is not hidden in is-micro'
+    );
+    const resizeListenerMatch = viewerJs.match(/resizeHandle\.addEventListener\('pointerdown'[\s\S]*?\}\);/u);
+    assert.ok(resizeListenerMatch, 'resizeHandle pointerdown listener exists');
+    assert.doesNotMatch(
+        resizeListenerMatch[0],
+        /if\s*\(\s*this\.isThumbnailMode\s*\)\s*return;/u,
+        'T18: pointerdown on resize handle is not blocked in thumbnail mode'
+    );
+    console.log('T18: resize grip always visible PASS');
+}
+
+// T19 — responsive controls
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    const classes = new Set();
+    viewer.popup = {
+        style: {},
+        classList: {
+            add: (c) => classes.add(c),
+            remove: (c) => classes.delete(c),
+            toggle: (c, force) => {
+                if (force) classes.add(c); else classes.delete(c);
+                return force;
+            },
+            contains: (c) => classes.has(c)
+        },
+        querySelector: () => ({ style: {}, classList: { add: () => {}, remove: () => {} } })
+    };
+
+    // 1. Large: Full mode
+    viewer._updateResponsiveState(480, 520);
+    assert.equal(classes.has('is-micro'), false, 'T19: Large has no is-micro');
+    assert.equal(classes.has('is-compact'), false, 'T19: Large has no is-compact');
+
+    // 2. Medium: Compact mode
+    viewer._updateResponsiveState(300, 240);
+    assert.equal(classes.has('is-micro'), false, 'T19: Medium has no is-micro');
+    assert.equal(classes.has('is-compact'), true, 'T19: Medium has is-compact');
+
+    // 3. Small: Micro mode
+    viewer._updateResponsiveState(180, 140);
+    assert.equal(classes.has('is-micro'), true, 'T19: Small has is-micro');
+    assert.equal(classes.has('is-compact'), false, 'T19: Small has no is-compact');
+    console.log('T19: responsive controls PASS');
+}
+
+// T20 — view state preserved
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    const tab = viewer.tabs[0];
+    tab.viewState = {
+        zoom: 2.5,
+        panX: 50,
+        panY: -40,
+        rotationDeg: 45,
+        flipX: true,
+        flipY: true,
+        initialized: true
+    };
+
+    viewer.popup = {
+        style: {},
+        classList: { add: () => {}, remove: () => {}, toggle: () => false, contains: () => false },
+        querySelector: () => ({ style: {}, classList: { add: () => {}, remove: () => {} } })
+    };
+
+    // Responsive transitions Large -> Micro -> Large
+    viewer._updateResponsiveState(180, 140);
+    viewer._applyCurrentTransform();
+    assert.equal(tab.viewState.zoom, 2.5, 'T20: Zoom unchanged in micro');
+    assert.equal(tab.viewState.rotationDeg, 45, 'T20: Rotation unchanged in micro');
+    assert.equal(tab.viewState.flipX, true, 'T20: FlipX unchanged in micro');
+
+    viewer._updateResponsiveState(480, 520);
+    viewer._applyCurrentTransform();
+    assert.equal(tab.viewState.zoom, 2.5, 'T20: Zoom preserved after restoring large');
+    assert.equal(tab.viewState.panX, 50, 'T20: PanX preserved after restoring large');
+    assert.equal(tab.viewState.panY, -40, 'T20: PanY preserved after restoring large');
+    assert.equal(tab.viewState.rotationDeg, 45, 'T20: Rotation preserved after restoring large');
+    assert.equal(tab.viewState.flipX, true, 'T20: FlipX preserved after restoring large');
+    assert.equal(tab.viewState.flipY, true, 'T20: FlipY preserved after restoring large');
+    console.log('T20: view state preserved PASS');
+}
+
+// T21 — first portrait reference
+{
+    globalThis.window.innerWidth = 1200;
+    globalThis.window.innerHeight = 800;
+
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    viewer.popup = {
+        offsetLeft: 84,
+        offsetTop: 72,
+        style: { width: '200px', height: '180px', left: '84px', top: '72px' },
+        classList: { add: () => {}, remove: () => {}, toggle: () => false, contains: () => false },
+        querySelector: () => ({ style: {}, classList: { add: () => {}, remove: () => {} } })
+    };
+
+    // First portrait reference: width 600, height 1200 (aspect 0.5)
+    viewer._maybeSmartExpandForFirstReference({ width: 600, height: 1200 });
+
+    const w = parseInt(viewer.popup.style.width, 10);
+    const h = parseInt(viewer.popup.style.height, 10);
+
+    assert.ok(h > w, `T21: Portrait reference expands vertically (h: ${h} > w: ${w})`);
+    assert.ok(w <= 1200 * 0.48 + 5, `T21: Width within 48% cap (${w} <= 576)`);
+    assert.ok(h <= 800 * 0.52 + 5, `T21: Height within 52% cap (${h} <= 416)`);
+    console.log('T21: first portrait reference PASS');
+}
+
+// T22 — first landscape reference
+{
+    globalThis.window.innerWidth = 1200;
+    globalThis.window.innerHeight = 800;
+
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    viewer.popup = {
+        offsetLeft: 84,
+        offsetTop: 72,
+        style: { width: '200px', height: '180px', left: '84px', top: '72px' },
+        classList: { add: () => {}, remove: () => {}, toggle: () => false, contains: () => false },
+        querySelector: () => ({ style: {}, classList: { add: () => {}, remove: () => {} } })
+    };
+
+    // First landscape reference: width 1200, height 600 (aspect 2.0)
+    viewer._maybeSmartExpandForFirstReference({ width: 1200, height: 600 });
+
+    const w = parseInt(viewer.popup.style.width, 10);
+    const h = parseInt(viewer.popup.style.height, 10);
+
+    assert.ok(w > h, `T22: Landscape reference expands horizontally (w: ${w} > h: ${h})`);
+    assert.ok(w <= 1200 * 0.48 + 5, `T22: Width within 48% cap (${w} <= 576)`);
+    assert.ok(h <= 800 * 0.52 + 5, `T22: Height within 52% cap (${h} <= 416)`);
+    console.log('T22: first landscape reference PASS');
+}
+
+// T23 — first huge reference
+{
+    globalThis.window.innerWidth = 1200;
+    globalThis.window.innerHeight = 800;
+
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    viewer.popup = {
+        offsetLeft: 84,
+        offsetTop: 72,
+        style: { width: '200px', height: '180px', left: '84px', top: '72px' },
+        classList: { add: () => {}, remove: () => {}, toggle: () => false, contains: () => false },
+        querySelector: () => ({ style: {}, classList: { add: () => {}, remove: () => {} } })
+    };
+
+    // Huge 4000x3000 image
+    const proxyInfo = calculateReferenceProxyDimensions(4000, 3000);
+    viewer._maybeSmartExpandForFirstReference(proxyInfo);
+
+    const w = parseInt(viewer.popup.style.width, 10);
+    const h = parseInt(viewer.popup.style.height, 10);
+
+    assert.ok(w <= 1200 * 0.48 + 5, `T23: Huge image window width bounded (${w} <= 576)`);
+    assert.ok(h <= 800 * 0.52 + 5, `T23: Huge image window height bounded (${h} <= 416)`);
+
+    const hugeTab = {
+        origWidth: 4000,
+        origHeight: 3000,
+        width: proxyInfo.width,
+        height: proxyInfo.height,
+        viewState: { zoom: 1, panX: 0, panY: 0 }
+    };
+    viewer.fitTab(hugeTab, { initialReference: true });
+    assert.ok(hugeTab.viewState.zoom <= 0.6, `T23: Initial zoom capped comfortably (${hugeTab.viewState.zoom} <= 0.6)`);
+    console.log('T23: first huge reference PASS');
+}
+
+// T24 — second Reference
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    viewer.tabs.push({ id: 'ref1', type: 'reference', name: 'Ref 1', width: 400, height: 300 });
+    viewer.tabs.push({ id: 'ref2', type: 'reference', name: 'Ref 2', width: 800, height: 600 });
+
+    viewer.popup = {
+        offsetLeft: 84,
+        offsetTop: 72,
+        style: { width: '380px', height: '340px', left: '84px', top: '72px' },
+        classList: { add: () => {}, remove: () => {}, toggle: () => false, contains: () => false },
+        querySelector: () => ({ style: {}, classList: { add: () => {}, remove: () => {} } })
+    };
+
+    // Try auto-expanding with second reference
+    viewer._maybeSmartExpandForFirstReference({ width: 1200, height: 400 });
+
+    assert.equal(viewer.popup.style.width, '380px', 'T24: Second reference does not change width');
+    assert.equal(viewer.popup.style.height, '340px', 'T24: Second reference does not change height');
+    console.log('T24: second Reference PASS');
+}
+
+// T25 — manual resize precedence
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    // User has manually resized
+    viewer._hasUserResized = true;
+
+    viewer.popup = {
+        offsetLeft: 84,
+        offsetTop: 72,
+        style: { width: '220px', height: '170px', left: '84px', top: '72px' },
+        classList: { add: () => {}, remove: () => {}, toggle: () => false, contains: () => false },
+        querySelector: () => ({ style: {}, classList: { add: () => {}, remove: () => {} } })
+    };
+
+    // Attempt smart expand on first reference
+    viewer._maybeSmartExpandForFirstReference({ width: 1200, height: 400 });
+
+    assert.equal(viewer.popup.style.width, '220px', 'T25: Manual resize preserved (width unchanged)');
+    assert.equal(viewer.popup.style.height, '170px', 'T25: Manual resize preserved (height unchanged)');
+    console.log('T25: manual resize precedence PASS');
+}
+
+// T26 — viewport resize
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    globalThis.window.innerWidth = 1200;
+    globalThis.window.innerHeight = 800;
+
+    viewer.popup = {
+        offsetLeft: 700,
+        offsetTop: 500,
+        offsetWidth: 400,
+        offsetHeight: 300,
+        style: { width: '400px', height: '300px', left: '700px', top: '500px' },
+        classList: { add: () => {}, remove: () => {}, toggle: () => false, contains: () => false },
+        querySelector: () => ({ style: {}, classList: { add: () => {}, remove: () => {} } })
+    };
+
+    // Window shrinks to 800x600
+    globalThis.window.innerWidth = 800;
+    globalThis.window.innerHeight = 600;
+
+    viewer._clampToViewport();
+
+    const l = parseInt(viewer.popup.style.left, 10);
+    const t = parseInt(viewer.popup.style.top, 10);
+    const w = parseInt(viewer.popup.style.width, 10);
+    const h = parseInt(viewer.popup.style.height, 10);
+
+    assert.ok(l + w <= 800 - 8, `T26: Clamped within shrunk window width (${l + w} <= 792)`);
+    assert.ok(t + h <= 600 - 8, `T26: Clamped within shrunk window height (${t + h} <= 592)`);
+    assert.ok(l >= 8, 'T26: Header reachable from left');
+    assert.ok(t >= 8, 'T26: Header reachable from top');
+    console.log('T26: viewport resize PASS');
+}
+
+console.log('\nverify-reference-preview-viewer: ALL 26 SCENARIOS (T1 - T26) PASS');

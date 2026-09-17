@@ -368,6 +368,7 @@ export class SettingsPopup {
                     || action.startsWith('EXPORT_')
                     || action.startsWith('ALBUM_')
                     || action.startsWith('QUICK_ACCESS_')
+                    || action.startsWith('REFERENCE_PREVIEW_')
             }
         ];
         const shortcuts = TEGAKI_KEYMAP.getShortcutList();

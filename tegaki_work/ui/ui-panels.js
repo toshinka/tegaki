@@ -112,7 +112,7 @@ export class UIController {
     
     closeAllPopups(exceptName = null) {
         if (this.popupManager) {
-            const keepOpen = exceptName === null ? ['settings'] : exceptName;
+            const keepOpen = exceptName === null ? ['settings', 'referencePreview'] : exceptName;
             this.popupManager.hideAll(keepOpen);
         }
     }
@@ -138,6 +138,10 @@ export class UIController {
         
         this.eventBus.on('ui:toggle-quick-access', () => {
             this.toggleQuickAccessPopup();
+        });
+
+        this.eventBus.on('ui:toggle-reference-preview', () => {
+            this.togglePopup('referencePreview');
         });
 
         this.eventBus.on('popup:shown', ({ name } = {}) => {
@@ -448,6 +452,8 @@ export class UIController {
                     this.hidePopup('resize');
                 } else if (target === 'export-popup') {
                     this.hidePopup('export');
+                } else if (target === 'reference-preview-viewer') {
+                    this.hidePopup('referencePreview');
                 } else {
                     this.closeAllPopups();
                 }
@@ -459,7 +465,7 @@ export class UIController {
                 !e.target.closest('.layer-transform-panel') &&
                 !e.target.closest('.tool-button') &&
                 !e.target.closest('.layer-panel-container')) {
-                this.closeAllPopups(['quickAccess', 'settings', 'animationTable']);
+                this.closeAllPopups(['quickAccess', 'settings', 'animationTable', 'referencePreview']);
             }
         });
     }

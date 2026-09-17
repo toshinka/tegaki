@@ -24,6 +24,11 @@ export const MIRROR_PREVIEW_BUDGET = Object.freeze({
     maxEdge: 1024
 });
 
+const ICONS = Object.freeze({
+    collapse: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="M14 10l7-7"/><path d="M3 21l7-7"/></svg>',
+    expand: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>'
+});
+
 /**
  * 大きな外部参照画像の縮小プロキシ寸法を計算する純粋関数
  * @param {number} origWidth 
@@ -134,6 +139,9 @@ export class ReferencePreviewViewer {
         this.popup = null;
         this.isVisible = false;
         this.clipboardCount = 1;
+        this.isThumbnailMode = false;
+        this._savedFullRect = null;
+        this._hasUserResized = false;
 
         this.tabs = [
             {
@@ -173,6 +181,7 @@ export class ReferencePreviewViewer {
 
     _ensurePopupElement() {
         if (typeof document === 'undefined') return;
+        if (this.popup) return;
         this.popup = document.getElementById('reference-preview-viewer');
         if (!this.popup) {
             this._createPopupElement();
@@ -188,12 +197,18 @@ export class ReferencePreviewViewer {
         const popup = document.createElement('div');
         popup.id = 'reference-preview-viewer';
         popup.className = 'popup-panel popup-panel--translucent reference-preview-viewer';
-        popup.tabIndex = -1;
+        const winW = typeof window !== 'undefined' ? (window.innerWidth || 1200) : 1200;
+        const winH = typeof window !== 'undefined' ? (window.innerHeight || 800) : 800;
+        const defaultW = Math.max(150, Math.min(480, winW - 16));
+        const defaultH = Math.max(120, Math.min(520, winH - 16));
+        const defaultL = Math.max(8, Math.min(84, winW - defaultW - 8));
+        const defaultT = Math.max(8, Math.min(72, winH - defaultH - 8));
+
         popup.style.display = 'none';
-        popup.style.left = '84px';
-        popup.style.top = '72px';
-        popup.style.width = '480px';
-        popup.style.height = '520px';
+        popup.style.left = `${defaultL}px`;
+        popup.style.top = `${defaultT}px`;
+        popup.style.width = `${defaultW}px`;
+        popup.style.height = `${defaultH}px`;
 
         popup.innerHTML = `
             <div class="viewer-header">
@@ -203,9 +218,15 @@ export class ReferencePreviewViewer {
                     </button>
                     <button type="button" class="viewer-add-tab-btn" title="資料画像を追加 (+)" aria-label="資料画像を追加">+</button>
                 </div>
-                <button type="button" class="ui-close-button ui-close-button--medium popup-close-btn viewer-close-btn" data-action="close-popup" data-target="reference-preview-viewer" title="閉じる" aria-label="閉じる">
-                    ${UI_ICONS.close || '×'}
-                </button>
+                <div class="viewer-thumbnail-title" style="display: none;">プレビュー</div>
+                <div class="viewer-header-actions">
+                    <button type="button" class="viewer-mode-btn" data-action="toggle-thumbnail" title="サムネイル表示に縮小" aria-label="サムネイル表示に縮小">
+                        ${ICONS.collapse}
+                    </button>
+                    <button type="button" class="ui-close-button ui-close-button--medium popup-close-btn viewer-close-btn" data-action="close-popup" data-target="reference-preview-viewer" title="閉じる" aria-label="閉じる">
+                        ${UI_ICONS.close || '×'}
+                    </button>
+                </div>
             </div>
             
             <div class="viewer-toolbar">
@@ -250,6 +271,16 @@ export class ReferencePreviewViewer {
     _setupEventListeners() {
         if (!this.popup) return;
 
+        // Window resize clamping listener
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+            window.addEventListener('resize', () => {
+                if (this.isVisible && this.popup) {
+                    this._clampToViewport();
+                    this._applyCurrentTransform();
+                }
+            });
+        }
+
         // 1. Dragging the window via header
         attachPopupDrag(this.popup, {
             interactiveSelector: 'button, input, select, textarea, .viewer-tab, .viewer-controls, .viewer-toolbar, .viewer-resize-handle, .viewer-surface, .viewer-body'
@@ -266,16 +297,28 @@ export class ReferencePreviewViewer {
                 if (!isResizing || e.pointerId !== resizePointerId) return;
                 e.preventDefault?.();
 
-                const minW = 360;
-                const minH = 300;
-                const maxW = Math.max(minW, window.innerWidth - this.popup.offsetLeft - 8);
-                const maxH = Math.max(minH, window.innerHeight - this.popup.offsetTop - 8);
+                this._hasUserResized = true;
+
+                const minW = 150;
+                const minH = 120;
+                const winW = typeof window !== 'undefined' ? (window.innerWidth || 1200) : 1200;
+                const winH = typeof window !== 'undefined' ? (window.innerHeight || 800) : 800;
+                const maxW = Math.max(minW, winW - this.popup.offsetLeft - 8);
+                const maxH = Math.max(minH, winH - this.popup.offsetTop - 8);
 
                 const nextW = Math.max(minW, Math.min(maxW, resizeStart.width + (e.clientX - resizeStart.x)));
                 const nextH = Math.max(minH, Math.min(maxH, resizeStart.height + (e.clientY - resizeStart.y)));
 
                 this.popup.style.width = `${nextW}px`;
                 this.popup.style.height = `${nextH}px`;
+
+                if (this.isThumbnailMode && (nextW >= 240 && nextH >= 190)) {
+                    this.isThumbnailMode = false;
+                    this.popup.classList.remove('is-thumbnail');
+                }
+
+                this._updateResponsiveState(nextW, nextH);
+                this._applyCurrentTransform();
             };
 
             const onResizeUp = (e) => {
@@ -312,6 +355,14 @@ export class ReferencePreviewViewer {
                 e.stopPropagation();
             });
         }
+
+        // 2.5. Thumbnail Mode Toggle Button
+        const modeBtn = this.popup.querySelector('.viewer-mode-btn');
+        modeBtn?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.toggleThumbnailMode();
+        });
 
         // 3. Close button
         const closeBtn = this.popup.querySelector('.viewer-close-btn');
@@ -403,6 +454,7 @@ export class ReferencePreviewViewer {
         const surface = this.popup.querySelector('.viewer-surface');
         if (surface) {
             surface.addEventListener('pointerdown', (e) => {
+                if (this.isThumbnailMode) return;
                 if (e.button !== 0) return;
                 const tab = this.getActiveTab();
                 if (!tab) return;
@@ -447,6 +499,7 @@ export class ReferencePreviewViewer {
 
             // Wheel zoom around cursor
             surface.addEventListener('wheel', (e) => {
+                if (this.isThumbnailMode) return;
                 e.preventDefault();
                 e.stopPropagation();
                 const tab = this.getActiveTab();
@@ -571,6 +624,8 @@ export class ReferencePreviewViewer {
         this.popup.style.display = 'flex';
         this.isVisible = true;
 
+        this._clampToViewport();
+
         if (!wasVisible) {
             this.eventBus?.emit('popup:shown', { name: 'referencePreview' });
         }
@@ -581,6 +636,88 @@ export class ReferencePreviewViewer {
 
         this._renderTabsHeader();
         this._renderActiveTabContent();
+    }
+
+    _clampToViewport() {
+        if (!this.popup) return;
+        const winW = typeof window !== 'undefined' ? (window.innerWidth || 1200) : 1200;
+        const winH = typeof window !== 'undefined' ? (window.innerHeight || 800) : 800;
+        const margin = 8;
+
+        const minW = 150;
+        const minH = 120;
+
+        let curW = parseInt(this.popup.style?.width, 10) || this.popup.offsetWidth || 480;
+        let curH = parseInt(this.popup.style?.height, 10) || this.popup.offsetHeight || 520;
+        let curL = this.popup.offsetLeft;
+        let curT = this.popup.offsetTop;
+
+        const maxW = Math.max(minW, winW - margin * 2);
+        const maxH = Math.max(minH, winH - margin * 2);
+        const w = Math.max(minW, Math.min(curW, maxW));
+        const h = Math.max(minH, Math.min(curH, maxH));
+
+        const maxL = Math.max(margin, winW - w - margin);
+        const maxT = Math.max(margin, winH - h - margin);
+        const l = Math.max(margin, Math.min(curL, maxL));
+        const t = Math.max(margin, Math.min(curT, maxT));
+
+        this.popup.style.width = `${w}px`;
+        this.popup.style.height = `${h}px`;
+        this.popup.style.left = `${l}px`;
+        this.popup.style.top = `${t}px`;
+
+        this._updateResponsiveState(w, h);
+    }
+
+    _updateResponsiveState(width, height) {
+        if (!this.popup) return;
+        const w = width ?? (this.popup.offsetWidth || parseInt(this.popup.style.width, 10) || 480);
+        const h = height ?? (this.popup.offsetHeight || parseInt(this.popup.style.height, 10) || 520);
+
+        const isMicro = w < 240 || h < 190 || this.isThumbnailMode;
+        const isCompact = !isMicro && (w < 340 || h < 260);
+
+        if (typeof this.popup.classList?.toggle === 'function') {
+            this.popup.classList.toggle('is-micro', isMicro);
+            this.popup.classList.toggle('is-compact', isCompact);
+        } else if (this.popup.classList) {
+            if (isMicro) this.popup.classList.add('is-micro'); else this.popup.classList.remove('is-micro');
+            if (isCompact) this.popup.classList.add('is-compact'); else this.popup.classList.remove('is-compact');
+        }
+
+        const thumbTitle = this.popup.querySelector('.viewer-thumbnail-title');
+        const tabsBar = this.popup.querySelector('.viewer-tabs-bar');
+        const modeBtn = this.popup.querySelector('.viewer-mode-btn');
+
+        if (isMicro) {
+            if (thumbTitle) {
+                const activeTab = this.getActiveTab();
+                thumbTitle.textContent = activeTab ? activeTab.name : 'プレビュー';
+                thumbTitle.title = activeTab ? activeTab.name : 'プレビュー';
+                thumbTitle.style.display = 'block';
+            }
+            if (tabsBar) {
+                tabsBar.style.display = 'none';
+            }
+            if (modeBtn) {
+                modeBtn.innerHTML = ICONS.expand;
+                modeBtn.title = '通常表示に戻す';
+                modeBtn.setAttribute?.('aria-label', '通常表示に戻す');
+            }
+        } else {
+            if (thumbTitle) {
+                thumbTitle.style.display = 'none';
+            }
+            if (tabsBar) {
+                tabsBar.style.display = 'flex';
+            }
+            if (modeBtn) {
+                modeBtn.innerHTML = ICONS.collapse;
+                modeBtn.title = 'サムネイル表示に縮小';
+                modeBtn.setAttribute?.('aria-label', 'サムネイル表示に縮小');
+            }
+        }
     }
 
     hide() {
@@ -599,12 +736,79 @@ export class ReferencePreviewViewer {
         }
     }
 
+    toggleThumbnailMode() {
+        this.setThumbnailMode(!this.isThumbnailMode);
+    }
+
+    setThumbnailMode(enabled) {
+        if (this.isThumbnailMode === enabled) return;
+        this.isThumbnailMode = enabled;
+
+        this._ensurePopupElement();
+        if (!this.popup) return;
+
+        if (enabled) {
+            // 1. Remember previous full dimensions
+            this._savedFullRect = {
+                left: this.popup.offsetLeft,
+                top: this.popup.offsetTop,
+                width: this.popup.offsetWidth || 480,
+                height: this.popup.offsetHeight || 520
+            };
+
+            this.popup.classList.add('is-thumbnail');
+
+            const thumbW = 180;
+            const thumbH = 140;
+            this.popup.style.width = `${thumbW}px`;
+            this.popup.style.height = `${thumbH}px`;
+
+            this._clampToViewport();
+        } else {
+            this.popup.classList.remove('is-thumbnail');
+
+            if (this._savedFullRect) {
+                const minW = 150;
+                const minH = 120;
+                const winW = typeof window !== 'undefined' ? (window.innerWidth || 1200) : 1200;
+                const winH = typeof window !== 'undefined' ? (window.innerHeight || 800) : 800;
+
+                const targetW = Math.max(minW, Math.min(winW - 16, this._savedFullRect.width || 480));
+                const targetH = Math.max(minH, Math.min(winH - 16, this._savedFullRect.height || 520));
+
+                let left = this._savedFullRect.left ?? this.popup.offsetLeft;
+                let top = this._savedFullRect.top ?? this.popup.offsetTop;
+                const maxL = Math.max(8, winW - targetW - 8);
+                const maxT = Math.max(8, winH - targetH - 8);
+                left = Math.max(8, Math.min(left, maxL));
+                top = Math.max(8, Math.min(top, maxT));
+
+                this.popup.style.width = `${targetW}px`;
+                this.popup.style.height = `${targetH}px`;
+                this.popup.style.left = `${left}px`;
+                this.popup.style.top = `${top}px`;
+            }
+            this._clampToViewport();
+        }
+
+        this._applyCurrentTransform();
+        this._updateToolbarUI();
+    }
+
     switchTab(tabId) {
         const tab = this.tabs.find(t => t.id === tabId);
         if (!tab) return;
 
         this.activeTabId = tabId;
         this._renderTabsHeader();
+
+        if (this.isThumbnailMode && this.popup) {
+            const thumbTitle = this.popup.querySelector('.viewer-thumbnail-title');
+            if (thumbTitle) {
+                thumbTitle.textContent = tab.name;
+                thumbTitle.title = tab.name;
+            }
+        }
 
         if (tab.type === 'preview' && this._previewDirty) {
             this.captureMirrorPreview();
@@ -726,10 +930,77 @@ export class ReferencePreviewViewer {
             }
         };
 
+        const isFirstRef = this.tabs.filter(t => t.type === 'reference').length === 0;
+
         this.tabs.push(tab);
+
+        if (isFirstRef) {
+            this._maybeSmartExpandForFirstReference(proxyInfo);
+        }
+
         this._renderTabsHeader();
         this.switchTab(tabId);
         return true;
+    }
+
+    _maybeSmartExpandForFirstReference(proxyInfo) {
+        if (this._hasUserResized) return;
+        const refCount = this.tabs.filter(t => t.type === 'reference').length;
+        if (refCount > 1) return;
+        if (!this.popup) return;
+
+        const winW = typeof window !== 'undefined' ? (window.innerWidth || 1200) : 1200;
+        const winH = typeof window !== 'undefined' ? (window.innerHeight || 800) : 800;
+
+        const proxyW = proxyInfo.width || 800;
+        const proxyH = proxyInfo.height || 600;
+        const aspect = proxyW / proxyH;
+
+        const maxW = Math.max(300, Math.min(Math.round(winW * 0.48), 640));
+        const maxH = Math.max(260, Math.min(Math.round(winH * 0.52), 600));
+        const minW = 240;
+        const minH = 220;
+
+        const verticalOverhead = 76;
+        const horizontalOverhead = 16;
+
+        let targetW, targetH;
+
+        if (aspect >= 1.2) {
+            targetW = Math.round(Math.min(maxW, Math.max(minW, 400 * Math.min(1.4, aspect))));
+            const contentH = (targetW - horizontalOverhead) / aspect;
+            targetH = Math.round(Math.min(maxH, Math.max(minH, contentH + verticalOverhead)));
+        } else if (aspect <= 0.85) {
+            targetH = Math.round(Math.min(maxH, Math.max(minH, 420 / Math.max(0.65, aspect))));
+            const contentW = (targetH - verticalOverhead) * aspect;
+            targetW = Math.round(Math.min(maxW, Math.max(minW, contentW + horizontalOverhead)));
+        } else {
+            targetW = Math.round(Math.min(maxW, Math.max(minW, 360)));
+            targetH = Math.round(Math.min(maxH, Math.max(minH, 360 + 30)));
+        }
+
+        targetW = Math.max(minW, Math.min(targetW, maxW));
+        targetH = Math.max(minH, Math.min(targetH, maxH));
+
+        if (this.isThumbnailMode) {
+            this.isThumbnailMode = false;
+            this.popup.classList.remove('is-thumbnail');
+        }
+
+        let left = this.popup.offsetLeft;
+        let top = this.popup.offsetTop;
+        const margin = 8;
+        const maxL = Math.max(margin, winW - targetW - margin);
+        const maxT = Math.max(margin, winH - targetH - margin);
+        left = Math.max(margin, Math.min(left, maxL));
+        top = Math.max(margin, Math.min(top, maxT));
+
+        this.popup.style.width = `${targetW}px`;
+        this.popup.style.height = `${targetH}px`;
+        this.popup.style.left = `${left}px`;
+        this.popup.style.top = `${top}px`;
+
+        this._updateResponsiveState(targetW, targetH);
     }
 
     captureMirrorPreview() {
@@ -824,12 +1095,16 @@ export class ReferencePreviewViewer {
         this._updateToolbarUI();
     }
 
-    fitTab(tab) {
+    fitTab(tab, options = {}) {
         const surface = this.popup?.querySelector('.viewer-surface');
         const sw = surface?.clientWidth || 400;
         const sh = surface?.clientHeight || 360;
         const fit = calculateFitTransform(sw, sh, tab.width, tab.height);
-        tab.viewState.zoom = fit.zoom;
+        let targetZoom = fit.zoom;
+        if (options.initialReference && targetZoom > 0.6 && (tab.origWidth > 1600 || tab.origHeight > 1600)) {
+            targetZoom = Math.min(targetZoom, 0.6);
+        }
+        tab.viewState.zoom = targetZoom;
         tab.viewState.panX = fit.panX;
         tab.viewState.panY = fit.panY;
     }
@@ -959,7 +1234,8 @@ export class ReferencePreviewViewer {
         }
 
         if (!tab.viewState.initialized) {
-            this.fitTab(tab);
+            const isFirstRef = tab.type === 'reference' && this.tabs.filter(t => t.type === 'reference').length === 1;
+            this.fitTab(tab, { initialReference: isFirstRef });
             tab.viewState.initialized = true;
         }
 
@@ -972,6 +1248,19 @@ export class ReferencePreviewViewer {
         if (!tab || !this.popup) return;
         const contentEl = this.popup.querySelector('.viewer-content');
         if (!contentEl) return;
+
+        const w = this.popup.offsetWidth || parseInt(this.popup.style.width, 10) || 480;
+        const h = this.popup.offsetHeight || parseInt(this.popup.style.height, 10) || 520;
+        const isMicro = w < 240 || h < 190 || this.isThumbnailMode;
+
+        if (isMicro) {
+            const surface = this.popup.querySelector('.viewer-surface');
+            const sw = surface?.clientWidth || Math.max(120, w - 4);
+            const sh = surface?.clientHeight || Math.max(80, h - 30);
+            const fit = calculateFitTransform(sw, sh, tab.width, tab.height);
+            contentEl.style.transform = getCssTransformString(fit, tab.width, tab.height);
+            return;
+        }
 
         contentEl.style.transform = getCssTransformString(tab.viewState, tab.width, tab.height);
     }
@@ -991,10 +1280,10 @@ export class ReferencePreviewViewer {
         }
 
         const flipHBtn = this.popup.querySelector('[data-action="flip-h"]');
-        flipHBtn?.classList.toggle('is-active', tab.viewState.flipX === true);
+        flipHBtn?.classList?.toggle?.('is-active', tab.viewState.flipX === true);
 
         const flipVBtn = this.popup.querySelector('[data-action="flip-v"]');
-        flipVBtn?.classList.toggle('is-active', tab.viewState.flipY === true);
+        flipVBtn?.classList?.toggle?.('is-active', tab.viewState.flipY === true);
 
         // Downscale badge
         const badge = this.popup.querySelector('.viewer-downscale-badge');

@@ -70,16 +70,9 @@ export const KeyboardHandler = (function() {
         if (!eventBus || !keymap) return;
         if (isInputFocused()) return;
         if (e.target?.closest?.('.reference-preview-viewer') || document.activeElement?.closest?.('.reference-preview-viewer')) {
-            if (e.key === 'Escape') {
-                const viewer = window.referencePreviewViewer
-                    || window.PopupManager?.get?.('referencePreview')
-                    || window.coreEngine?.popupManager?.get?.('referencePreview');
-                if (viewer?.isVisible) {
-                    viewer.hide();
-                    e.preventDefault();
-                    e.stopImmediatePropagation();
-                    return;
-                }
+            const action = keymap.getAction(e, { vMode: vKeyPressed });
+            if (action === 'REFERENCE_PREVIEW_TOGGLE') {
+                handleAction(action, e, eventBus);
             }
             return;
         }
@@ -804,6 +797,20 @@ export const KeyboardHandler = (function() {
                     eventBus.emit('ui:toggle-quick-access');
                 }
                 event.preventDefault();
+                break;
+
+            case 'REFERENCE_PREVIEW_TOGGLE':
+                {
+                    const viewer = window.coreEngine?.popupManager?.get?.('referencePreview') || window.referencePreviewViewer;
+                    if (viewer?.toggle) {
+                        viewer.toggle();
+                    } else if (window.coreEngine?.popupManager?.toggle) {
+                        window.coreEngine.popupManager.toggle('referencePreview');
+                    } else {
+                        eventBus.emit('ui:toggle-reference-preview');
+                    }
+                    event.preventDefault();
+                }
                 break;
 
             case 'QUICK_ACCESS_PRESET_PREV':

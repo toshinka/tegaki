@@ -30,16 +30,48 @@
   3. 容量超過による確定拒絶時: 変形セッションを強制破棄せずプレビューを維持し、警告トースト「変形後の画像が安全上限（16MP）を超えています。このままでは確定できません。拡大率を下げるか、Mキーで必要範囲を切り出してください。」でM切り出しへ誘導。
   4. 専用検証 `verify-transform-preview-capture.mjs` を作成し、T1〜T14（Mトグル入場/退場、非BASICガード、Ctrl+Aキャンバス全域選択、ドラッグ矩形選択、ドラッグ中のLayerMove抑制、Ctrl+C単一Canvas2D抽出、Ctrl+V新規レイヤー作成/ベースライン復帰/V終了/Undo、Ctrl+X禁止トースト、Vキー全キャンセル、Escape全キャンセル、容量超過拒絶時のVセッション維持、Mキーレスキュー連携、UI同期/HUD状態表示、二重貼り付けガード）を網羅して PASS。
   5. `test transform`（20/20）、`harness check`（35 docs, 144 links, 25 proposals, 9 packages OK）、全verifier（176/176）、Vite production buildすべて PASS。
-- Reference / Preview Viewer MVP — Floating Mirror + Multi-Reference Tabs（2026-09-18）:
-  キャンバス作業領域を圧迫せず、全体構図確認（Navigator / Mirror）および複数資料画像の同時閲覧が可能なフローティング型Viewer（資料 / プレビュー）を実装。
+- Reference / Preview Viewer MVP, UX Polish 01 & UX Polish 02 — Responsive Compact Viewer + Shift+Q + Smart First Reference Sizing (2026-09-18):
+  キャンバス作業領域を圧迫せず、全体構図確認（Navigator / Mirror）および複数資料画像の同時閲覧が可能なフローティング型Viewer（資料 / プレビュー）を実装、第1回UX Polish（常時表示性・Futaba調和・サムネイル表示）および第2回UX Polish（Shift+Qトグル・レスポンシブ極小化・ビューポート安全・初弾アスペクト自動追従）を完了。
   1. 左サイドバーに「資料 / プレビュー」（`monitor` アイコン、`popup-launcher` ロール、`library` と `export` の中間）を新設。
   2. フローティングウィンドウ: 移動（ヘッダードラッグ）、サイズ変更（右下リサイズハンドル）、閉じる（非表示、タブ状態・参照画像は同一セッション中保持）、メインキャンバス縮小なし、非モーダル（z-index 4000）。
   3. 固定Previewタブ: 現在の作品全体を常時表示（メインカメラの拡大・パンと独立、UIオーバーレイ・変形枠・選択枠なし、最長辺1024px以下に有界サンプリング、第2レンダラー新設なし、描画完了等への遅延スロットル更新）。
   4. 複数Referenceタブ: `+` ボタン（ファイル選択/複数可）、Viewerへのドラッグ＆ドロップ（ドロップオーバーレイ表示）、Viewerフォーカス時のOSクリップボード貼り付け（`Ctrl+V`）に対応。
   5. ビュー操作（タブ個別保持）: パン（サーフェスドラッグ）、ズーム（ホイール / ボタン）、Fit（全体収める）、100%（プロキシ原寸）、水平反転（`↔`）、垂直反転（`↕`）、自由回転（`-15°` / `+15°` / 数値入力）、Reset View。
   6. 大容量画像プロキシ: 最長辺2048pxかつ総画素4MP（4,194,304px）以下へ自動縮小。元の巨大デコードバッファは直ちに解放。縮小時は「縮小表示」バッジと元画像/表示用解像度を記載したツールチップを明示。
-  7. 権限分離: 完全Runtime/Session-only。Project保存、Layer生成、History（History 0）、Exportに一切影響しない。クリップボードはViewerフォーカス時のみ吸着し、Canvas側のCtrl+V（Layer貼付、選択貼付、V+M切り出し貼付）を妨害しない。
-  8. 専用検証 `verify-reference-preview-viewer.mjs`（T1〜T12全シナリオ）を作成し PASS。`test ui`（46/46 PASS）、`harness check` PASS。
+  7. 常時表示とフォーカス契約（UX Polish 01）:
+     - 外枠クリック（Canvas、Layerパネル、他UI）による無言閉じを撤廃（`ui-panels.js` の `closeAllPopups` 除外リストに `referencePreview` を追加）。閉じるのはViewerの `×` ボタン押下または左サイドバーMonitorボタン押下時のみ。
+     - `Escape` キーによるViewer強制閉じショートカットを撤廃（`keyboard-handler.js`）。
+     - クリップボード分離: CanvasクリックでViewerフォーカスが自然に外れ、Canvas側の `Ctrl+V`（Layer貼付、選択貼付、V+M切り出し貼付）が通常通り動作。Viewer内をクリック/フォーカスした時のみ `Ctrl+V` が資料画像として追加される。
+  8. Futaba調和サーフェスとグラス質感（UX Polish 01）:
+     - 灰色の冷たい外枠 `#e8e4df` を撤去。Viewer本体に `--ui-panel-glass-surface`（約0.72透過）および `--ui-panel-glass-backdrop`（`blur(3px)`）を適用。
+     - サーフェス背景に温かいFutabaクリーム透過色（`rgba(240, 224, 214, 0.55)` / `rgba(255, 255, 238, 0.4)`）を採用し、下層UIとの視認性と調和を両立。
+  9. サムネイル（コンパクト）表示モード（UX Polish 01 & 02）:
+     - ヘッダーに格納/復元ボタン（`viewer-mode-btn`）を新設。180×140pxのサムネイル表示へワンクリックで切り替え。
+     - 拡縮・パン・回転等のビュー状態（`tab.viewState`）を一切破壊せず、表示時のみ一時的なフィット枠（`calculateFitTransform`）を適用。通常表示に戻した際、直前の拡大率・パン位置・回転・反転が100%完全復元される（非破壊的ビュー契約）。
+     - 通常サイズとサムネイルサイズ・位置を双方向記憶（`_savedFullRect`）。
+  10. Shift+Q グローバルトグル＆タイピング安全性（UX Polish 02）:
+     - `TEGAKI_KEYMAP` に `REFERENCE_PREVIEW_TOGGLE: { key: 'KeyQ', ctrl: false, shift: true }` を登録。Settingsポップアップのヘルプ「パネル・保存」欄に自動反映。
+     - Canvas・UIパネル等の任意フォーカスから `Shift+Q` 一発でViewerの表示/非表示をトグル。
+     - INPUT、TEXTAREA、SELECT、contentEditable 入力中、およびViewer内の角度入力フィールドへの入力中は `Shift+Q` が文字入力を奪わない安全契約を保証。
+     - 単独 `Q` キー（`QUICK_ACCESS_TOGGLE`）やCanvasの主要ショートカットと一切干渉しない。
+  11. ビューポート安全クランプ（UX Polish 02）:
+     - 初回オープン時、再オープン時、およびブラウザウィンドウリサイズ時に、ウィンドウ矩形（Left/Top/Width/Height）が画面外にはみ出さないよう上下左右各8pxの安全マージン内で自動クランプ。ヘッダー（移動用）および右下リサイズグリップが常に掴める位置に保たれる。
+  12. 最小サイズの超小型化（150×120px）＆リサイズグリップの常時可視化（UX Polish 02）:
+     - 従来の 360×300 / 250×190px の下限を撤廃し、150×120px までの自由な極小サイズ変更に対応。
+     - FULL、COMPACT、MICRO（サムネイル含む）の全モードで右下リサイズグリップを常時可視化・操作可能化。サムネイルモードからでも直接ドラッグで任意の大きさに拡張可能。
+  13. レスポンシブUIブレークポイント（UX Polish 02）:
+     - Full表示（>= 340×260px）: タブバー、全ツールバー（Fit, 100%, Zoom, 反転, 回転, 角度入力, Reset）をフル表示。
+     - Compact表示（< 340×260px）: 非必須の回転度数ボタン（-15°/入力/度単位）を非表示にし、Fit / 100% / 反転 / Reset を優先維持。
+     - Micro表示（< 240×190px または サムネイル）: タブバー・ツールバーを隠し、ヘッダーにアクティブタブ名を表示。ビュー状態を非破壊に保持したまま一時的フィット表示。
+  14. 初弾資料画像のスマート自動拡張（UX Polish 02）:
+     - 初回起動（プレビューのみ状態）から「最初の資料画像」を追加した際のみ、画像の縦横比に応じてViewerサイズを自然に追従（横長画像なら横に広く最大48vw、縦長画像なら縦に高く最大52vh）。
+     - 2枚目以降の資料画像追加時はウィンドウサイズを変更しない。
+     - ユーザーが手動でサイズ変更（リサイズハンドル操作）を行っていた場合（`_hasUserResized = true`）は、初弾であってもユーザーの好みの配置・サイズを尊重し、自動拡張を抑制。
+     - 巨大画像（4K等）の初弾追加時、初期ズーム上限を 0.60 に制限して快適な全体俯瞰を提供。
+  15. 権限分離と全テスト合格:
+     - 完全Runtime/Session-only。Project保存、Layer生成、History（History 0）、Exportに一切影響しない。
+     - 専用検証 `verify-reference-preview-viewer.mjs`（全26シナリオ T1〜T26）すべて PASS。
+     - `test ui`（46/46 PASS）、`development-harness check`（35 docs, 144 links, 25 proposals, 9 packages OK）、全テスト（177/177 PASS）、Vite build（0エラー）をすべて達成。
 
 ## CURRENT OBJECTIVE — WP-008 ROUGH PRODUCT PASS
 
