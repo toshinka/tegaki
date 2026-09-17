@@ -289,10 +289,12 @@ export class ReferencePreviewViewer {
 
         // Focus handling and Viewer-focused shortcuts
         this.popup.addEventListener?.('pointerdown', (e) => {
-            if (!e.target?.closest?.('input, textarea, select, button, .viewer-tab')) {
-                this.popup.focus?.();
+            if (!e.target?.closest?.('input, textarea, select')) {
+                if (!e.target?.closest?.('button, .viewer-tab')) {
+                    this.popup.focus?.();
+                }
             }
-        });
+        }, true);
 
         this.popup.addEventListener?.('keydown', (e) => {
             this.handleKeyDown(e);
@@ -364,6 +366,7 @@ export class ReferencePreviewViewer {
 
             resizeHandle.addEventListener('pointerdown', (e) => {
                 if (e.button !== 0) return;
+                this.popup.focus?.();
                 const rect = this.popup.getBoundingClientRect();
                 isResizing = true;
                 resizePointerId = e.pointerId;
@@ -1246,6 +1249,7 @@ export class ReferencePreviewViewer {
     }
 
     handleKeyDown(e) {
+        if (e.defaultPrevented) return false;
         if (!this.isVisible || !this.popup) return false;
 
         const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
@@ -1253,8 +1257,10 @@ export class ReferencePreviewViewer {
         if (!isFocused) return false;
 
         const target = e.target || activeEl;
-        const tag = target?.tagName?.toUpperCase();
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
+        const targetTag = target?.tagName?.toUpperCase();
+        const activeTag = activeEl?.tagName?.toUpperCase();
+        if (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT' || target?.isContentEditable ||
+            activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT' || activeEl?.isContentEditable) {
             return false;
         }
 
@@ -1326,6 +1332,7 @@ export class ReferencePreviewViewer {
 
             tabBtn.addEventListener('click', () => {
                 this.switchTab(tab.id);
+                this.popup?.querySelector?.(`.viewer-tab[data-tab-id="${tab.id}"]`)?.focus?.();
             });
 
             tabsBar.appendChild?.(tabBtn);
@@ -1353,6 +1360,23 @@ export class ReferencePreviewViewer {
         const rail = this.popup.querySelector?.('.viewer-source-rail');
         if (!rail) return;
 
+        // Check if existing markers match current tabs for in-place active update
+        const existingMarkers = Array.from(rail.querySelectorAll?.('.viewer-source-marker') || []);
+        const tabsMatch = existingMarkers.length === this.tabs.length &&
+            existingMarkers.every((m, i) => m.getAttribute?.('data-tab-id') === this.tabs[i]?.id);
+
+        if (tabsMatch) {
+            existingMarkers.forEach((marker, i) => {
+                const tab = this.tabs[i];
+                const isActive = tab.id === this.activeTabId;
+                const isPreview = tab.type === 'preview';
+                marker.className = `viewer-source-marker ${isPreview ? 'viewer-source-marker--preview' : 'viewer-source-marker--ref'}${isActive ? ' active' : ''}`;
+                marker.title = tab.name;
+                marker.setAttribute?.('aria-label', tab.name);
+            });
+            return;
+        }
+
         rail.innerHTML = '';
         this.tabs.forEach(tab => {
             const marker = document.createElement('button');
@@ -1377,6 +1401,7 @@ export class ReferencePreviewViewer {
                 e.preventDefault?.();
                 e.stopPropagation?.();
                 this.switchTab(tab.id);
+                marker.focus?.();
             });
 
             rail.appendChild?.(marker);

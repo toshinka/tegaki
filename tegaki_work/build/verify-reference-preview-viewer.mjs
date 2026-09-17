@@ -1830,4 +1830,255 @@ console.log('--- Starting Reference / Preview Viewer UX Polish 01 Verification (
     console.log('T58: Scope & schema integrity PASS');
 }
 
-console.log('\nverify-reference-preview-viewer: ALL 58 SCENARIOS (T1 - T58) PASS');
+// T59 — marker focus classified as Viewer
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+
+    const markerEl = document.createElement('button');
+    markerEl.className = 'viewer-source-marker active';
+    viewer.popup = {
+        style: {},
+        contains: (el) => el === markerEl,
+        querySelector: () => null
+    };
+
+    globalThis.document.activeElement = markerEl;
+    const handled = viewer.handleKeyDown({
+        code: 'KeyH',
+        key: 'h',
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    assert.equal(handled, true, 'T59: Marker BUTTON focus classified as Viewer context');
+    console.log('T59: marker focus classified as Viewer PASS');
+}
+
+// T60 — popup/surface focus classified as Viewer
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+
+    viewer.popup = {
+        style: {},
+        contains: (el) => el === viewer.popup,
+        querySelector: () => null
+    };
+
+    globalThis.document.activeElement = viewer.popup;
+    const handled = viewer.handleKeyDown({
+        code: 'KeyR',
+        key: 'r',
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    assert.equal(handled, true, 'T60: popup/surface focus classified as Viewer context');
+    console.log('T60: popup/surface focus classified as Viewer PASS');
+}
+
+// T61 — angle INPUT focus excludes shortcuts
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+
+    const inputEl = document.createElement('input');
+    inputEl.tagName = 'INPUT';
+    viewer.popup = {
+        style: {},
+        contains: (el) => el === inputEl,
+        querySelector: () => null
+    };
+
+    globalThis.document.activeElement = inputEl;
+    const handled = viewer.handleKeyDown({
+        code: 'KeyH',
+        key: 'h',
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false,
+        target: inputEl
+    });
+    assert.equal(handled, false, 'T61: INPUT focus rejected by Viewer shortcut handler');
+    console.log('T61: angle INPUT focus excludes shortcuts PASS');
+}
+
+// T62 — outside/Canvas focus excludes Viewer shortcuts
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+
+    const outsideEl = document.createElement('canvas');
+    viewer.popup = {
+        style: {},
+        contains: (el) => false,
+        querySelector: () => null
+    };
+
+    globalThis.document.activeElement = outsideEl;
+    const handled = viewer.handleKeyDown({
+        code: 'KeyH',
+        key: 'h',
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false,
+        target: outsideEl
+    });
+    assert.equal(handled, false, 'T62: Outside/Canvas focus does not trigger Viewer shortcuts');
+    console.log('T62: outside/Canvas focus excludes shortcuts PASS');
+}
+
+// T63 — source marker immediate H flips active tab
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+
+    const refTabB = {
+        id: 'ref-b',
+        type: 'reference',
+        name: 'pose_b.png',
+        width: 800,
+        height: 600,
+        viewState: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    };
+    viewer.tabs.push(refTabB);
+    viewer.activeTabId = 'ref-b';
+
+    const markerEl = document.createElement('button');
+    markerEl.className = 'viewer-source-marker active';
+    viewer.popup = {
+        style: {},
+        contains: (el) => el === markerEl,
+        querySelector: () => null
+    };
+
+    globalThis.document.activeElement = markerEl;
+    viewer.handleKeyDown({
+        code: 'KeyH',
+        key: 'h',
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    assert.equal(refTabB.viewState.flipX, true, 'T63: Active Reference B flipX toggled to true');
+    console.log('T63: source marker immediate H PASS');
+}
+
+// T64 — source marker immediate R rotates active tab +15
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+
+    const refTabC = {
+        id: 'ref-c',
+        type: 'reference',
+        name: 'pose_c.png',
+        width: 800,
+        height: 600,
+        viewState: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    };
+    viewer.tabs.push(refTabC);
+    viewer.activeTabId = 'ref-c';
+
+    const markerEl = document.createElement('button');
+    markerEl.className = 'viewer-source-marker active';
+    viewer.popup = {
+        style: {},
+        contains: (el) => el === markerEl,
+        querySelector: () => null
+    };
+
+    globalThis.document.activeElement = markerEl;
+    viewer.handleKeyDown({
+        code: 'KeyR',
+        key: 'r',
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    assert.equal(refTabC.viewState.rotationDeg, 15, 'T64: Active Reference C rotation incremented by 15');
+    console.log('T64: source marker immediate R PASS');
+}
+
+// T65 — Micro state does not disable local listener
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    viewer.isThumbnailMode = true;
+
+    const markerEl = document.createElement('button');
+    markerEl.className = 'viewer-source-marker active';
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        contains: (el) => el === markerEl,
+        querySelector: () => null
+    };
+
+    globalThis.document.activeElement = markerEl;
+    const handledH = viewer.handleKeyDown({
+        code: 'KeyH',
+        key: 'h',
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    const handledR = viewer.handleKeyDown({
+        code: 'KeyR',
+        key: 'r',
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    assert.equal(handledH, true, 'T65: Micro mode processes H');
+    assert.equal(handledR, true, 'T65: Micro mode processes R');
+    console.log('T65: Micro state does not disable local listener PASS');
+}
+
+console.log('\nverify-reference-preview-viewer: ALL 65 SCENARIOS (T1 - T65) PASS');

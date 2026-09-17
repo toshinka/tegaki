@@ -73,6 +73,12 @@
      - 「このViewerは資料を見るための窓である」の製品思想を堅持。レイヤー化、不透明度、クリックスルー、クロップ、Projectスキーマ変更、History変更（History 0）は一切行わず、完全Runtime/Session-onlyを維持。
      - 専用検証 `verify-reference-preview-viewer.mjs` を全58シナリオ（T1〜T58）へ拡張し、すべて PASS。
      - `test ui`（46/46 PASS）、`development-harness check`（35 docs, 144 links, 25 proposals, 9 packages OK）、全テスト（177/177 PASS）、Vite build（0エラー）をすべて達成。
+  16. Microモード局所ショートカット・フォーカス退避バグ修正（Final Acceptance Fix）:
+     - Microモードにおいて、ヘッダーのSource Rail（Preview/Referenceドット）クリック時や右下リサイズハンドル操作後に、Viewer局所ショートカット（`H`, `Shift+H`, `R`, `Shift+R`）が効かなくなる実ブラウザ退行を解消。
+     - 根本原因: ソース切替時の `_renderSourceRail()` 内で `rail.innerHTML = ''` によりフォーカス中のマーカーボタンがDOM破棄され、ブラウザ仕様により `document.activeElement` が `<body>` へリセットされていたこと、およびリサイズハンドルの `stopPropagation` により親要素へのフォーカス伝播が阻害されていたこと。
+     - 修正内容: `_renderSourceRail()` のインプレースDOM差分更新（既存要素破棄の防止）、マーカークリック時の明示的フォーカス維持（`marker.focus?.()`）、Viewerポップアップ全体でのキャプチャフェーズ `pointerdown` フォーカス獲得、リサイズ開始時の明示的フォーカス獲得、および `handleKeyDown` での二重発火防止。
+     - 検証: 実ブラウザCDP操作テスト（B1〜B8）および決定論的検証（T59〜T65を増補し計65シナリオすべてPASS）により、マーカー切替・リサイズ後も即座に局所ショートカットが機能し、Canvas側およびテキスト入力側へのフォーカス分離契約が維持されることを実証。
+
 
 ## CURRENT OBJECTIVE — WP-008 ROUGH PRODUCT PASS
 
