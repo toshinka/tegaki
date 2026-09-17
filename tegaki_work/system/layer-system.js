@@ -616,59 +616,20 @@ export class LayerSystem {
         sourceBounds.height = Math.max(1, Math.round(sourceSnapshot.height || sourceBounds.height));
 
         const contentBounds = calculateOpaqueRasterBounds(sourceSnapshot) || sourceBounds;
-        let targetBounds = this._calculateTransformedRasterBounds(contentBounds, transformState);
+        const targetBounds = this._calculateTransformedRasterBounds(contentBounds, transformState);
         const maxTextureSize = this._getMaxRenderTextureSize();
-        if (!targetBounds) {
-            console.warn('[LayerSystem] transform bake skipped: invalid target bounds', {
-                layerId: layerData.id,
-                contentBounds,
-                transform: transformState
-            });
-            return false;
-        }
-
         if (
-            targetBounds.width > maxTextureSize
+            !targetBounds
+            || targetBounds.width > maxTextureSize
             || targetBounds.height > maxTextureSize
             || !this._isRasterBakeSizeAllowed(targetBounds)
         ) {
-            const canvasW = this.config?.canvas?.width || 1000;
-            const canvasH = this.config?.canvas?.height || 1000;
-            const padX = Math.min(canvasW, 512);
-            const padY = Math.min(canvasH, 512);
-            const frameBounds = {
-                x: -padX,
-                y: -padY,
-                width: canvasW + 2 * padX,
-                height: canvasH + 2 * padY
-            };
-            const clipped = {
-                x: Math.max(targetBounds.x, frameBounds.x),
-                y: Math.max(targetBounds.y, frameBounds.y),
-                width: 0,
-                height: 0
-            };
-            const right = Math.min(targetBounds.x + targetBounds.width, frameBounds.x + frameBounds.width);
-            const bottom = Math.min(targetBounds.y + targetBounds.height, frameBounds.y + frameBounds.height);
-            clipped.width = Math.max(0, right - clipped.x);
-            clipped.height = Math.max(0, bottom - clipped.y);
-
-            if (
-                clipped.width > 0
-                && clipped.height > 0
-                && clipped.width <= maxTextureSize
-                && clipped.height <= maxTextureSize
-                && this._isRasterBakeSizeAllowed(clipped)
-            ) {
-                targetBounds = clipped;
-            } else {
-                console.warn('[LayerSystem] transform bake skipped: exceeds max texture size', {
-                    layerId: layerData.id,
-                    targetBounds,
-                    maxTextureSize
-                });
-                return false;
-            }
+            console.warn('[LayerSystem] transform bake skipped: exceeds max texture size', {
+                layerId: layerData.id,
+                targetBounds,
+                maxTextureSize
+            });
+            return false;
         }
 
         const sourceCanvas = document.createElement('canvas');
@@ -759,44 +720,16 @@ export class LayerSystem {
         sourceBounds.height = Math.max(1, Math.round(sourceSnapshot.height || sourceBounds.height));
 
         const contentBounds = calculateOpaqueRasterBounds(sourceSnapshot) || sourceBounds;
-        let targetBounds = this._calculateTransformedRasterBounds(contentBounds, transformState);
+        const targetBounds = this._calculateTransformedRasterBounds(contentBounds, transformState);
         const maxTextureSize = this._getMaxRenderTextureSize();
         if (!targetBounds) {
             return { ok: false, reason: 'invalid-target-bounds', sourceBounds, contentBounds, transform: transformState, targetBounds };
         }
-        if (targetBounds.width > maxTextureSize || targetBounds.height > maxTextureSize || !this._isRasterBakeSizeAllowed(targetBounds)) {
-            const canvasW = this.config?.canvas?.width || 1000;
-            const canvasH = this.config?.canvas?.height || 1000;
-            const padX = Math.min(canvasW, 512);
-            const padY = Math.min(canvasH, 512);
-            const frameBounds = {
-                x: -padX,
-                y: -padY,
-                width: canvasW + 2 * padX,
-                height: canvasH + 2 * padY
-            };
-            const clipped = {
-                x: Math.max(targetBounds.x, frameBounds.x),
-                y: Math.max(targetBounds.y, frameBounds.y),
-                width: 0,
-                height: 0
-            };
-            const right = Math.min(targetBounds.x + targetBounds.width, frameBounds.x + frameBounds.width);
-            const bottom = Math.min(targetBounds.y + targetBounds.height, frameBounds.y + frameBounds.height);
-            clipped.width = Math.max(0, right - clipped.x);
-            clipped.height = Math.max(0, bottom - clipped.y);
-
-            if (
-                clipped.width > 0
-                && clipped.height > 0
-                && clipped.width <= maxTextureSize
-                && clipped.height <= maxTextureSize
-                && this._isRasterBakeSizeAllowed(clipped)
-            ) {
-                targetBounds = clipped;
-            } else {
-                return { ok: false, reason: 'exceeds-max-texture-size', sourceBounds, contentBounds, transform: transformState, targetBounds, maxTextureSize };
-            }
+        if (targetBounds.width > maxTextureSize || targetBounds.height > maxTextureSize) {
+            return { ok: false, reason: 'exceeds-max-texture-size', sourceBounds, contentBounds, transform: transformState, targetBounds, maxTextureSize };
+        }
+        if (!this._isRasterBakeSizeAllowed(targetBounds)) {
+            return { ok: false, reason: 'exceeds-safe-pixel-count', sourceBounds, contentBounds, transform: transformState, targetBounds, maxTextureSize };
         }
 
         return { ok: true, sourceBounds, contentBounds, transform: transformState, targetBounds, maxTextureSize };

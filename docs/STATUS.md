@@ -1,17 +1,19 @@
 # Tegaki — 再開checkpoint
 
 状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。WP-009 ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。WP-008 ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW。
-更新日: 2026-09-09。現在の実HEAD: `8b776abb7acebdfeb7369ef315e8276457cc127d`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `b44e74a46d4f42c0e04c61b6c4e8faac627a3af6`とは一致しなかったため、履歴を巻き戻さず現在のHEADへ追補した。
+更新日: 2026-09-17。現在の実HEAD: `78c908be82632a9a4995668d0c3edb8f4233b39d`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `78c908be82632a9a4995668d0c3edb8f4233b39d`と一致した状態で修正・検証を実施。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
-## CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17)
+## CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17 Correction Pass)
 
 - 根本原因1: 外部画像読み込み時、`layerData.rasterBounds` はキャンバス全面（例: 1920×1080）となる。これを拡縮（例: 2.5倍〜3倍）した際、`bakeTransform` が実描画内容（`calculateOpaqueRasterBounds`）ではなく全面 `rasterBounds` を affine 変換して `targetBounds` を求めていたため、18.7メガピクセル等に膨張し、`_isRasterBakeSizeAllowed`（16 MP上限）に抵触して `false` を返していた。
-- 根本原因2: `confirmLayerTransform` では `!this.bakeTransform` 時に `this.restoreLayerRasterSnapshot(beforeSnapshot)` を実行して `beforeSnapshot` へ無言ロールバックし、`exitMoveMode` で表示 scale も (1, 1) へ戻していたため、拡縮が破棄された状態で保存・ロードされていた。また、`confirmLayerTransform` 引数省略時に `sessionLayer` ではなく `this.getActiveLayer()` を参照していたため、アクティブレイヤー切替時に変形レイヤーが確定されない境界があった。
-- 修正内容:
-  1. `bakeTransform` および `canBakeLayerTransform` において、`contentBounds = calculateOpaqueRasterBounds(sourceSnapshot) || sourceBounds` を採用し、実際の画像領域を基準に変形後バウンディングボックスを算出。さらに変形後領域がテクスチャ上限（8192px / 16MP）を超える巨大変形時は、キャンバス枠＋マージン（512px）でクリップして可視領域を確実に焼き込み保持する安全フォールバックを整備。
-  2. `confirmLayerTransform` において、引数省略時にも `_layerTransformSession.layerId` の `sessionLayer` を優先解決するように修正。
-  3. 専用回帰検証 `verify-project-imported-raster-transform-roundtrip.mjs`（Case A 明示V確定、Case B 未確定保存auto-commit、Case C 通常Raster変形保持、Case D Esc取消維持、Case E レイヤー切替同期、Case F 大画面大拡大）を追加し PASS。全173本 verifier PASS、harness check PASS、Vite build PASS（dist差分0）。
+- 根本原因2: `confirmLayerTransform` 引数省略時に `sessionLayer` ではなく `this.getActiveLayer()` を参照していたため、アクティブレイヤー切替時に変形レイヤーが確定されない境界があった。
+- 修正内容（Correction Pass）:
+  1. `bakeTransform` および `canBakeLayerTransform` において、`contentBounds = calculateOpaqueRasterBounds(sourceSnapshot) || sourceBounds` を採用し、実際の画像領域を基準に変形後バウンディングボックスを算出。初回パッチで混入したキャンバス枠＋512pxへの無言クリッピングフォールバック（ユーザーの意図しない画像欠損リスク）は完全撤去し、安全限界を超えた場合は正しく拒絶（`return false` / エラー理由返却）するフェイルセーフ契約へ復元した。
+  2. `confirmLayerTransform` において、引数省略時にも `_layerTransformSession.layerId` の `sessionLayer` を優先解決するように維持。
+  3. 専用回帰検証 `verify-project-imported-raster-transform-roundtrip.mjs` を本物のTypedArrayピクセルバッファによるモックへ強化。Case A〜F（実ピクセル領域とサーフェスサイズの分離検証、2.5x/3.0xの自然成功、確定後・保存再読込後の実フットプリント保持）に加え、Case G（過大拡縮に対する拒絶検証: 軸上限8192px超過、16MP超過時の `ok: false` および `bakeTransform` / `confirmLayerTransform` の拒絶と元サーフェス保持）を実証して PASS。
+- 隣接所見（Adjacent Finding）:
+  現行の仕様上、変形が真のテクスチャ／ピクセル上限を正当に超えた場合（極端な拡大率など）、`bakeTransform` は安全な RenderTexture を確保できないため拒絶し、`confirmLayerTransform` は直前スナップショットへロールバックして変形表示を恒等へリセットする。ユーザーへの警告トースト表示や非破壊プレビュー保持などのUX改善は、別カードで検討すべき課題である。
 
 ## CURRENT OBJECTIVE — WP-008 ROUGH PRODUCT PASS
 
