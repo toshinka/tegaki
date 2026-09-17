@@ -140,6 +140,7 @@ export class ReferencePreviewViewer {
         this.isVisible = false;
         this.clipboardCount = 1;
         this.isThumbnailMode = false;
+        this.controlsCollapsed = false;
         this._savedFullRect = null;
         this._hasUserResized = false;
 
@@ -219,8 +220,12 @@ export class ReferencePreviewViewer {
                     </button>
                     <button type="button" class="viewer-add-tab-btn" title="資料画像を追加 (+)" aria-label="資料画像を追加">+</button>
                 </div>
+                <div class="viewer-source-rail" style="display: none;"></div>
                 <div class="viewer-thumbnail-title" style="display: none;">プレビュー</div>
                 <div class="viewer-header-actions">
+                    <button type="button" class="viewer-toggle-controls-btn is-active" data-action="toggle-controls" title="操作パネルを折りたたむ" aria-label="操作パネルを折りたたむ">
+                        ${UI_ICONS.slidersHorizontal}
+                    </button>
                     <button type="button" class="viewer-mode-btn" data-action="toggle-thumbnail" title="サムネイル表示に縮小" aria-label="サムネイル表示に縮小">
                         ${ICONS.collapse}
                     </button>
@@ -378,6 +383,14 @@ export class ReferencePreviewViewer {
                 e.stopPropagation();
             });
         }
+
+        // 2.4. Toggle Controls Button
+        const toggleControlsBtn = this.popup.querySelector('.viewer-toggle-controls-btn');
+        toggleControlsBtn?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.toggleControlsCollapsed();
+        });
 
         // 2.5. Thumbnail Mode Toggle Button
         const modeBtn = this.popup.querySelector('.viewer-mode-btn');
@@ -701,20 +714,23 @@ export class ReferencePreviewViewer {
             if (isCompact) this.popup.classList.add('is-compact'); else this.popup.classList.remove('is-compact');
         }
 
-        const thumbTitle = this.popup.querySelector('.viewer-thumbnail-title');
-        const tabsBar = this.popup.querySelector('.viewer-tabs-bar');
-        const modeBtn = this.popup.querySelector('.viewer-mode-btn');
+        const thumbTitle = this.popup.querySelector?.('.viewer-thumbnail-title');
+        const tabsBar = this.popup.querySelector?.('.viewer-tabs-bar');
+        const modeBtn = this.popup.querySelector?.('.viewer-mode-btn');
+        const sourceRail = this.popup.querySelector?.('.viewer-source-rail');
 
         if (isMicro) {
             if (thumbTitle) {
-                const activeTab = this.getActiveTab();
-                thumbTitle.textContent = activeTab ? activeTab.name : 'プレビュー';
-                thumbTitle.title = activeTab ? activeTab.name : 'プレビュー';
-                thumbTitle.style.display = 'block';
+                thumbTitle.textContent = '';
+                thumbTitle.style.display = 'none';
             }
             if (tabsBar) {
                 tabsBar.style.display = 'none';
             }
+            if (sourceRail) {
+                sourceRail.style.display = 'flex';
+            }
+            this._renderSourceRail();
             if (modeBtn) {
                 modeBtn.innerHTML = ICONS.expand;
                 modeBtn.title = '通常表示に戻す';
@@ -723,6 +739,9 @@ export class ReferencePreviewViewer {
         } else {
             if (thumbTitle) {
                 thumbTitle.style.display = 'none';
+            }
+            if (sourceRail) {
+                sourceRail.style.display = 'none';
             }
             if (tabsBar) {
                 tabsBar.style.display = 'flex';
@@ -810,17 +829,48 @@ export class ReferencePreviewViewer {
         this._updateToolbarUI();
     }
 
+    toggleControlsCollapsed() {
+        this.setControlsCollapsed(!this.controlsCollapsed);
+    }
+
+    setControlsCollapsed(collapsed) {
+        this.controlsCollapsed = Boolean(collapsed);
+        if (!this.popup) return;
+        if (typeof this.popup.classList?.toggle === 'function') {
+            this.popup.classList.toggle('is-controls-collapsed', this.controlsCollapsed);
+        } else if (this.popup.classList) {
+            if (this.controlsCollapsed) this.popup.classList.add('is-controls-collapsed');
+            else this.popup.classList.remove('is-controls-collapsed');
+        }
+
+        const btn = this.popup.querySelector?.('.viewer-toggle-controls-btn');
+        if (btn) {
+            if (typeof btn.classList?.toggle === 'function') {
+                btn.classList.toggle('is-active', !this.controlsCollapsed);
+            } else if (btn.classList) {
+                if (!this.controlsCollapsed) btn.classList.add('is-active');
+                else btn.classList.remove('is-active');
+            }
+            const title = this.controlsCollapsed ? '操作パネルを展開する' : '操作パネルを折りたたむ';
+            btn.title = title;
+            btn.setAttribute?.('aria-label', title);
+        }
+
+        this._applyCurrentTransform();
+    }
+
     switchTab(tabId) {
         const tab = this.tabs.find(t => t.id === tabId);
         if (!tab) return;
 
         this.activeTabId = tabId;
         this._renderTabsHeader();
+        this._renderSourceRail();
 
         if (this.isThumbnailMode && this.popup) {
-            const thumbTitle = this.popup.querySelector('.viewer-thumbnail-title');
+            const thumbTitle = this.popup.querySelector?.('.viewer-thumbnail-title');
             if (thumbTitle) {
-                thumbTitle.textContent = tab.name;
+                thumbTitle.textContent = '';
                 thumbTitle.title = tab.name;
             }
         }
@@ -852,6 +902,7 @@ export class ReferencePreviewViewer {
             this.switchTab(nextTab.id);
         } else {
             this._renderTabsHeader();
+            this._renderSourceRail();
         }
     }
 
@@ -1277,7 +1328,7 @@ export class ReferencePreviewViewer {
                 this.switchTab(tab.id);
             });
 
-            tabsBar.appendChild(tabBtn);
+            tabsBar.appendChild?.(tabBtn);
         });
 
         const addBtn = document.createElement('button');
@@ -1286,14 +1337,50 @@ export class ReferencePreviewViewer {
         addBtn.title = '資料画像を追加 (+)';
         addBtn.setAttribute('aria-label', '資料画像を追加');
         addBtn.textContent = '+';
-        const fileInput = this.popup.querySelector('.viewer-file-input');
-        addBtn.addEventListener('click', () => {
+        const fileInput = this.popup.querySelector?.('.viewer-file-input');
+        addBtn.addEventListener?.('click', () => {
             if (fileInput) {
                 fileInput.value = '';
-                fileInput.click();
+                fileInput.click?.();
             }
         });
-        tabsBar.appendChild(addBtn);
+        tabsBar.appendChild?.(addBtn);
+        this._renderSourceRail();
+    }
+
+    _renderSourceRail() {
+        if (!this.popup) return;
+        const rail = this.popup.querySelector?.('.viewer-source-rail');
+        if (!rail) return;
+
+        rail.innerHTML = '';
+        this.tabs.forEach(tab => {
+            const marker = document.createElement('button');
+            marker.type = 'button';
+            const isActive = tab.id === this.activeTabId;
+            const isPreview = tab.type === 'preview';
+            marker.className = `viewer-source-marker ${isPreview ? 'viewer-source-marker--preview' : 'viewer-source-marker--ref'}${isActive ? ' active' : ''}`;
+            marker.setAttribute?.('data-tab-id', tab.id);
+            if (marker.dataset) marker.dataset.tabId = tab.id;
+            marker.title = tab.name;
+            marker.setAttribute?.('aria-label', tab.name);
+
+            if (isPreview) {
+                marker.innerHTML = UI_ICONS.monitor;
+            } else {
+                const dot = document.createElement('span');
+                dot.className = 'viewer-source-dot';
+                marker.appendChild?.(dot);
+            }
+
+            marker.addEventListener?.('click', (e) => {
+                e.preventDefault?.();
+                e.stopPropagation?.();
+                this.switchTab(tab.id);
+            });
+
+            rail.appendChild?.(marker);
+        });
     }
 
     _renderActiveTabContent() {
@@ -1335,8 +1422,8 @@ export class ReferencePreviewViewer {
         const contentEl = this.popup.querySelector('.viewer-content');
         if (!contentEl) return;
 
-        const w = this.popup.offsetWidth || parseInt(this.popup.style.width, 10) || 480;
-        const h = this.popup.offsetHeight || parseInt(this.popup.style.height, 10) || 520;
+        const w = this.popup.offsetWidth || parseInt(this.popup.style?.width, 10) || 480;
+        const h = this.popup.offsetHeight || parseInt(this.popup.style?.height, 10) || 520;
         const isMicro = w < 240 || h < 190 || this.isThumbnailMode;
 
         if (isMicro && tab.type === 'preview') {

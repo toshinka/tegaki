@@ -7379,6 +7379,38 @@ button.anim-motion-graph-legend-item.is-primary {
     flex-shrink: 0;
 }
 
+.reference-preview-viewer .viewer-toggle-controls-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    border: 1px solid var(--futaba-light-medium, #d4a8a0);
+    background: var(--futaba-cream, #ffffee);
+    color: var(--futaba-maroon, #800000);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.reference-preview-viewer .viewer-toggle-controls-btn:hover {
+    background: #ffffff;
+    border-color: var(--futaba-maroon, #800000);
+}
+
+.reference-preview-viewer .viewer-toggle-controls-btn.is-active {
+    background: var(--futaba-light-medium, #d4a8a0);
+    color: var(--futaba-maroon, #800000);
+}
+
+.reference-preview-viewer .viewer-toggle-controls-btn svg {
+    width: 13px;
+    height: 13px;
+    stroke: currentColor;
+}
+
 .reference-preview-viewer .viewer-mode-btn {
     display: inline-flex;
     align-items: center;
@@ -7397,6 +7429,64 @@ button.anim-motion-graph-legend-item.is-primary {
 .reference-preview-viewer .viewer-mode-btn:hover {
     background: #ffffff;
     border-color: var(--futaba-maroon, #800000);
+}
+
+.reference-preview-viewer .viewer-source-rail {
+    display: none;
+    align-items: center;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.reference-preview-viewer.is-micro .viewer-source-rail,
+.reference-preview-viewer.is-thumbnail .viewer-source-rail {
+    display: flex;
+}
+
+.reference-preview-viewer .viewer-source-marker {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    padding: 0;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--futaba-maroon, #800000);
+    opacity: 0.55;
+    cursor: pointer;
+    transition: opacity 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.reference-preview-viewer .viewer-source-marker:hover {
+    opacity: 1;
+    background: rgba(128, 0, 0, 0.08);
+}
+
+.reference-preview-viewer .viewer-source-marker.active,
+.reference-preview-viewer .viewer-source-marker.is-active {
+    opacity: 1;
+    background: var(--futaba-cream, #ffffee);
+    border-color: var(--futaba-maroon, #800000);
+}
+
+.reference-preview-viewer .viewer-source-marker--preview svg {
+    width: 13px;
+    height: 13px;
+    stroke: currentColor;
+}
+
+.reference-preview-viewer .viewer-source-dot {
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: currentColor;
 }
 
 .reference-preview-viewer .viewer-tab {
@@ -7693,6 +7783,20 @@ button.anim-motion-graph-legend-item.is-primary {
     display: none !important;
 }
 .reference-preview-viewer.is-micro .viewer-toolbar {
+    display: none !important;
+}
+
+.reference-preview-viewer.is-controls-collapsed .viewer-toolbar {
+    display: none !important;
+}
+
+.reference-preview-viewer.is-micro .viewer-toggle-controls-btn,
+.reference-preview-viewer.is-thumbnail .viewer-toggle-controls-btn {
+    display: none !important;
+}
+
+.reference-preview-viewer.is-micro .viewer-source-rail ~ .viewer-thumbnail-title,
+.reference-preview-viewer.is-thumbnail .viewer-source-rail ~ .viewer-thumbnail-title {
     display: none !important;
 }
 

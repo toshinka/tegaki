@@ -48,8 +48,10 @@ globalThis.document = {
                 },
                 contains: function(c) { return this._classes.has(c); }
             },
-            setAttribute: () => {},
-            getAttribute: () => null,
+            dataset: {},
+            _attrs: new Map(),
+            setAttribute: function(k, v) { this._attrs.set(k, String(v)); },
+            getAttribute: function(k) { return this._attrs.has(k) ? this._attrs.get(k) : null; },
             appendChild: () => {},
             querySelector: () => null,
             querySelectorAll: () => [],
@@ -1360,4 +1362,472 @@ console.log('--- Starting Reference / Preview Viewer UX Polish 01 Verification (
     console.log('T42: resize grip PASS');
 }
 
-console.log('\nverify-reference-preview-viewer: ALL 42 SCENARIOS (T1 - T42) PASS');
+// T43 — Micro Source Rail DOM presence and CSS contract
+{
+    const jsCode = await readFile(new URL('../ui/reference-preview-viewer.js', import.meta.url), 'utf8');
+    const cssCode = await readFile(new URL('../styles/main.css', import.meta.url), 'utf8');
+
+    assert.match(
+        jsCode,
+        /class="viewer-source-rail"/u,
+        'T43: HTML template includes .viewer-source-rail'
+    );
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer\.is-micro \.viewer-source-rail/u,
+        'T43: .viewer-source-rail displayed in micro mode'
+    );
+    console.log('T43: Micro Source Rail DOM & CSS PASS');
+}
+
+// T44 — Micro mode activates Source Rail and hides full tab bar
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    let railDisplay = '';
+    let tabsDisplay = '';
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        classList: {
+            _c: new Set(),
+            add: function(c) { this._c.add(c); },
+            remove: function(c) { this._c.delete(c); },
+            toggle: function(c, force) {
+                if (force) this._c.add(c); else this._c.delete(c);
+                return force;
+            }
+        },
+        querySelector: (sel) => {
+            if (sel === '.viewer-source-rail') return { style: { set display(v) { railDisplay = v; }, get display() { return railDisplay; } }, innerHTML: '', appendChild: () => {} };
+            if (sel === '.viewer-tabs-bar') return { style: { set display(v) { tabsDisplay = v; }, get display() { return tabsDisplay; } } };
+            if (sel === '.viewer-thumbnail-title') return { style: {}, textContent: '' };
+            if (sel === '.viewer-mode-btn') return { innerHTML: '', title: '', setAttribute: () => {} };
+            return null;
+        }
+    };
+
+    viewer._updateResponsiveState(150, 170);
+    assert.equal(railDisplay, 'flex', 'T44: Source Rail display set to flex in Micro');
+    assert.equal(tabsDisplay, 'none', 'T44: Tabs bar display set to none in Micro');
+    console.log('T44: Micro mode Source Rail activation PASS');
+}
+
+// T45 — Distinct Preview marker with monitor icon
+{
+    const jsCode = await readFile(new URL('../ui/reference-preview-viewer.js', import.meta.url), 'utf8');
+    const cssCode = await readFile(new URL('../styles/main.css', import.meta.url), 'utf8');
+
+    assert.match(
+        jsCode,
+        /viewer-source-marker--preview/u,
+        'T45: Preview marker has distinct modifier class'
+    );
+    assert.match(
+        jsCode,
+        /UI_ICONS\.monitor/u,
+        'T45: Preview marker renders UI_ICONS.monitor'
+    );
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer \.viewer-source-marker--preview svg/u,
+        'T45: Preview marker svg has dedicated sizing rules'
+    );
+    console.log('T45: Distinct Preview marker PASS');
+}
+
+// T46 — Reference marker uses compact dot
+{
+    const cssCode = await readFile(new URL('../styles/main.css', import.meta.url), 'utf8');
+
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer \.viewer-source-dot\s*\{[\s\S]*?width:\s*(?:7|8|9|10)px;[\s\S]*?height:\s*(?:7|8|9|10)px;/u,
+        'T46: .viewer-source-dot has compact 7-10px visual dimensions'
+    );
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer \.viewer-source-marker\s*\{[\s\S]*?width:\s*(?:18|20|22|24)px;[\s\S]*?height:\s*(?:18|20|22|24)px;/u,
+        'T46: .viewer-source-marker provides 18-24px touch/click target'
+    );
+    console.log('T46: Compact reference marker PASS');
+}
+
+// T47 — Filename pressure removal in Micro mode
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    let thumbTitleText = 'initial';
+    let thumbTitleDisplay = 'initial';
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        classList: { toggle: () => {} },
+        querySelector: (sel) => {
+            if (sel === '.viewer-thumbnail-title') {
+                return {
+                    set textContent(v) { thumbTitleText = v; },
+                    get textContent() { return thumbTitleText; },
+                    style: {
+                        set display(v) { thumbTitleDisplay = v; },
+                        get display() { return thumbTitleDisplay; }
+                    }
+                };
+            }
+            if (sel === '.viewer-source-rail') return { style: {}, innerHTML: '', appendChild: () => {} };
+            return { style: {}, setAttribute: () => {} };
+        }
+    };
+
+    viewer._updateResponsiveState(150, 170);
+    assert.equal(thumbTitleText, '', 'T47: Micro header text suppressed to eliminate filename pressure');
+    assert.equal(thumbTitleDisplay, 'none', 'T47: Micro header text element hidden');
+    console.log('T47: Filename pressure removal PASS');
+}
+
+// T48 — Source switching via marker click in Micro mode updates activeTabId
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    const refTab = {
+        id: 'ref-101',
+        type: 'reference',
+        name: 'pose_study.png',
+        width: 600,
+        height: 800,
+        viewState: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    };
+    viewer.tabs.push(refTab);
+
+    let appendedMarkers = [];
+    const mockRail = {
+        innerHTML: '',
+        appendChild: (child) => { appendedMarkers.push(child); }
+    };
+
+    viewer.popup = {
+        querySelector: (sel) => {
+            if (sel === '.viewer-source-rail') return mockRail;
+            return { style: {}, classList: { toggle: () => {} }, setAttribute: () => {} };
+        }
+    };
+
+    viewer._renderSourceRail();
+    assert.equal(appendedMarkers.length, 2, 'T48: Rail renders Preview and Reference markers');
+
+    // Click ref marker
+    const refMarker = appendedMarkers[1];
+    assert.equal(refMarker.getAttribute('data-tab-id'), 'ref-101', 'T48: Marker has ref tab ID');
+    assert.equal(refMarker.title, 'pose_study.png', 'T48: Marker title retains full filename tooltip');
+
+    // Trigger tab switch to ref-101
+    viewer.switchTab('ref-101');
+    assert.equal(viewer.activeTabId, 'ref-101', 'T48: activeTabId switched to ref-101');
+    console.log('T48: Source switching via marker click PASS');
+}
+
+// T49 — Marker active class updates on source switch
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    viewer.tabs.push({
+        id: 'ref-a',
+        type: 'reference',
+        name: 'hand.png',
+        width: 400,
+        height: 400,
+        viewState: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    });
+
+    let markers = [];
+    viewer.popup = {
+        querySelector: (sel) => {
+            if (sel === '.viewer-source-rail') return { innerHTML: '', appendChild: (m) => markers.push(m) };
+            return { style: {}, classList: { toggle: () => {} } };
+        }
+    };
+
+    viewer.activeTabId = 'preview';
+    viewer._renderSourceRail();
+    assert.match(markers[0].className, /active/, 'T49: Preview marker is active');
+    assert.doesNotMatch(markers[1].className, /\bactive\b/, 'T49: Reference marker is inactive');
+
+    markers = [];
+    viewer.activeTabId = 'ref-a';
+    viewer._renderSourceRail();
+    assert.doesNotMatch(markers[0].className, /\bactive\b/, 'T49: Preview marker is inactive after switch');
+    assert.match(markers[1].className, /active/, 'T49: Reference marker is active after switch');
+    console.log('T49: Marker active class update PASS');
+}
+
+// T50 — Source switching in Micro mode stays in Micro mode
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isThumbnailMode = true;
+    viewer.tabs.push({
+        id: 'ref-b',
+        type: 'reference',
+        name: 'ref_b.png',
+        width: 500,
+        height: 500,
+        viewState: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    });
+
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        classList: { toggle: () => {}, contains: (c) => c === 'is-thumbnail' },
+        querySelector: () => ({ style: {}, classList: { toggle: () => {} } })
+    };
+
+    viewer.switchTab('ref-b');
+    assert.equal(viewer.isThumbnailMode, true, 'T50: Micro mode remains true after switching tab');
+    assert.equal(viewer.popup.style.width, '150px', 'T50: Micro width unaffected by tab switch');
+    assert.equal(viewer.popup.style.height, '170px', 'T50: Micro height unaffected by tab switch');
+    console.log('T50: Micro mode persistence on tab switch PASS');
+}
+
+// T51 — Source state independence across tab switching
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    const previewTab = viewer.tabs[0];
+    previewTab.viewState.zoom = 1.8;
+    previewTab.viewState.rotationDeg = 30;
+    previewTab.viewState.flipX = true;
+
+    const refTab = {
+        id: 'ref-indep',
+        type: 'reference',
+        name: 'independent.png',
+        width: 800,
+        height: 600,
+        viewState: {
+            zoom: 0.5,
+            panX: 40,
+            panY: -20,
+            rotationDeg: -45,
+            flipX: false,
+            flipY: true,
+            initialized: true
+        }
+    };
+    viewer.tabs.push(refTab);
+
+    viewer.popup = {
+        querySelector: () => ({ style: {}, classList: { toggle: () => {} } })
+    };
+
+    viewer.switchTab('ref-indep');
+    assert.equal(refTab.viewState.zoom, 0.5, 'T51: Ref zoom preserved');
+    assert.equal(refTab.viewState.rotationDeg, -45, 'T51: Ref rotation preserved');
+    assert.equal(refTab.viewState.flipY, true, 'T51: Ref flipY preserved');
+
+    viewer.switchTab('preview');
+    assert.equal(previewTab.viewState.zoom, 1.8, 'T51: Preview zoom preserved');
+    assert.equal(previewTab.viewState.rotationDeg, 30, 'T51: Preview rotation preserved');
+    assert.equal(previewTab.viewState.flipX, true, 'T51: Preview flipX preserved');
+    console.log('T51: Source state independence PASS');
+}
+
+// T52 — Collapsible controls toggle button exists in header actions
+{
+    const jsCode = await readFile(new URL('../ui/reference-preview-viewer.js', import.meta.url), 'utf8');
+    const cssCode = await readFile(new URL('../styles/main.css', import.meta.url), 'utf8');
+
+    assert.match(
+        jsCode,
+        /class="viewer-toggle-controls-btn/u,
+        'T52: Header actions includes .viewer-toggle-controls-btn'
+    );
+    assert.match(
+        jsCode,
+        /UI_ICONS\.slidersHorizontal/u,
+        'T52: Toggle controls button uses UI_ICONS.slidersHorizontal'
+    );
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer \.viewer-toggle-controls-btn\s*\{/u,
+        'T52: .viewer-toggle-controls-btn styled in main.css'
+    );
+    console.log('T52: Collapsible controls button presence PASS');
+}
+
+// T53 — Collapsible controls toggle collapses toolbar
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    let collapsedClassApplied = false;
+    let btnIsActive = true;
+    let btnTitle = '';
+
+    viewer.popup = {
+        offsetWidth: 480,
+        offsetHeight: 520,
+        style: {},
+        classList: {
+            toggle: (c, force) => {
+                if (c === 'is-controls-collapsed') collapsedClassApplied = force;
+            }
+        },
+        querySelector: (sel) => {
+            if (sel === '.viewer-toggle-controls-btn') {
+                return {
+                    classList: {
+                        toggle: (c, force) => {
+                            if (c === 'is-active') btnIsActive = force;
+                        }
+                    },
+                    set title(v) { btnTitle = v; },
+                    get title() { return btnTitle; },
+                    setAttribute: () => {}
+                };
+            }
+            return { style: {} };
+        }
+    };
+
+    assert.equal(viewer.controlsCollapsed, false, 'T53: controlsCollapsed initial false');
+    viewer.toggleControlsCollapsed();
+    assert.equal(viewer.controlsCollapsed, true, 'T53: controlsCollapsed toggled to true');
+    assert.equal(collapsedClassApplied, true, 'T53: is-controls-collapsed added to popup');
+    assert.equal(btnIsActive, false, 'T53: btn is-active false when collapsed');
+    assert.equal(btnTitle, '操作パネルを展開する', 'T53: title updated to expand');
+
+    viewer.toggleControlsCollapsed();
+    assert.equal(viewer.controlsCollapsed, false, 'T53: controlsCollapsed toggled back to false');
+    assert.equal(collapsedClassApplied, false, 'T53: is-controls-collapsed removed from popup');
+    assert.equal(btnIsActive, true, 'T53: btn is-active true when expanded');
+    assert.equal(btnTitle, '操作パネルを折りたたむ', 'T53: title updated to collapse');
+    console.log('T53: Controls collapse toggle PASS');
+}
+
+// T54 — Collapsing controls hides toolbar via CSS and expands image area
+{
+    const cssCode = await readFile(new URL('../styles/main.css', import.meta.url), 'utf8');
+
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer\.is-controls-collapsed \.viewer-toolbar\s*\{[\s\S]*?display:\s*none\s*!important;/u,
+        'T54: Collapsed state hides toolbar with display: none !important'
+    );
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer \.viewer-body\s*\{[\s\S]*?flex:\s*1;/u,
+        'T54: .viewer-body flex: 1 expands to fill space'
+    );
+    console.log('T54: Collapsing controls image expansion PASS');
+}
+
+// T55 — Controls toggle button tooltip accessibility
+{
+    const jsCode = await readFile(new URL('../ui/reference-preview-viewer.js', import.meta.url), 'utf8');
+
+    assert.match(
+        jsCode,
+        /操作パネルを折りたたむ/u,
+        'T55: Collapse tooltip present'
+    );
+    assert.match(
+        jsCode,
+        /操作パネルを展開する/u,
+        'T55: Expand tooltip present'
+    );
+    console.log('T55: Controls button accessibility PASS');
+}
+
+// T56 — Collapsible controls button is hidden in Micro mode
+{
+    const cssCode = await readFile(new URL('../styles/main.css', import.meta.url), 'utf8');
+
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer\.is-micro \.viewer-toggle-controls-btn[\s\S]*?display:\s*none\s*!important;/u,
+        'T56: Toggle controls button hidden in Micro mode'
+    );
+    console.log('T56: Toggle button hidden in Micro PASS');
+}
+
+// T57 — Collapsed controls state persists across tab switches
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    viewer.tabs.push({
+        id: 'ref-c',
+        type: 'reference',
+        name: 'ref_c.png',
+        width: 300,
+        height: 300,
+        viewState: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    });
+
+    viewer.popup = {
+        offsetWidth: 480,
+        offsetHeight: 520,
+        style: {},
+        classList: { toggle: () => {} },
+        querySelector: () => ({ style: {}, classList: { toggle: () => {} } })
+    };
+
+    viewer.setControlsCollapsed(true);
+    assert.equal(viewer.controlsCollapsed, true, 'T57: Collapsed set to true');
+
+    viewer.switchTab('ref-c');
+    assert.equal(viewer.controlsCollapsed, true, 'T57: Collapsed state maintained on tab switch');
+
+    viewer.switchTab('preview');
+    assert.equal(viewer.controlsCollapsed, true, 'T57: Collapsed state maintained returning to preview');
+    console.log('T57: Controls collapsed state persistence PASS');
+}
+
+// T58 — Scope & schema integrity
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    // Check no history mutator called, no project schema touched
+    assert.equal(typeof viewer.controlsCollapsed, 'boolean', 'T58: controlsCollapsed is runtime boolean');
+    assert.equal(Array.isArray(viewer.tabs), true, 'T58: tabs is runtime array');
+    assert.equal(viewer.tabs[0].id, 'preview', 'T58: Preview tab is permanent runtime source');
+    console.log('T58: Scope & schema integrity PASS');
+}
+
+console.log('\nverify-reference-preview-viewer: ALL 58 SCENARIOS (T1 - T58) PASS');

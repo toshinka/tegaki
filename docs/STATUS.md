@@ -1,7 +1,7 @@
 # Tegaki — 再開checkpoint
 
 状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。WP-009 ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。WP-008 ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW。
-更新日: 2026-09-17。現在の実HEAD: `78c908be82632a9a4995668d0c3edb8f4233b39d`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `78c908be82632a9a4995668d0c3edb8f4233b39d`と一致した状態で修正・検証を実施。
+更新日: 2026-09-18。現在の実HEAD: `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`と一致した状態で修正・検証を実施。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ### CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17 Correction Pass & Off-Canvas Investigation)
@@ -30,8 +30,8 @@
   3. 容量超過による確定拒絶時: 変形セッションを強制破棄せずプレビューを維持し、警告トースト「変形後の画像が安全上限（16MP）を超えています。このままでは確定できません。拡大率を下げるか、Mキーで必要範囲を切り出してください。」でM切り出しへ誘導。
   4. 専用検証 `verify-transform-preview-capture.mjs` を作成し、T1〜T14（Mトグル入場/退場、非BASICガード、Ctrl+Aキャンバス全域選択、ドラッグ矩形選択、ドラッグ中のLayerMove抑制、Ctrl+C単一Canvas2D抽出、Ctrl+V新規レイヤー作成/ベースライン復帰/V終了/Undo、Ctrl+X禁止トースト、Vキー全キャンセル、Escape全キャンセル、容量超過拒絶時のVセッション維持、Mキーレスキュー連携、UI同期/HUD状態表示、二重貼り付けガード）を網羅して PASS。
   5. `test transform`（20/20）、`harness check`（35 docs, 144 links, 25 proposals, 9 packages OK）、全verifier（176/176）、Vite production buildすべて PASS。
-- Reference / Preview Viewer MVP, UX Polish 01, 02 & UX Polish 03 — True Micro Reference View + Focus Shortcuts + Shared Lucide Icons (2026-09-18):
-  キャンバス作業領域を圧迫せず、全体構図確認（Navigator / Mirror）および複数資料画像の同時閲覧が可能なフローティング型Viewer（資料 / プレビュー）を実装し、第1回〜第3回UX Polish（常時表示性・Futaba調和・レスポンシブ極小化・初弾アスペクト追従・真のMicro拡大部維持・Viewerローカル操作・中央共有Lucideアイコン）を完了。
+- Reference / Preview Viewer MVP, UX Polish 01, 02, 03 & Final Polish — Micro Source Rail + Collapsible Controls + Reference-First Scope Cleanup (2026-09-18):
+  キャンバス作業領域を圧迫せず、全体構図確認（Navigator / Mirror）および複数資料画像の同時閲覧が可能なフローティング型Viewer（資料 / プレビュー）を実装し、第1回〜第3回UX PolishおよびFinal Polish（Micro Source Rail、ファイル名プレッシャー排除、操作バー折りたたみ、ソース状態独立性、資料閲覧特化スコープ整理）を完了。
   1. 左サイドバーに「資料 / プレビュー」（`monitor` アイコン、`popup-launcher` ロール、`library` と `export` の中間）を新設。
   2. フローティングウィンドウ: 移動（ヘッダードラッグ）、サイズ変更（右下リサイズハンドル）、閉じる（非表示、タブ状態・参照画像は同一セッション中保持）、メインキャンバス縮小なし、非モーダル（z-index 4000）。
   3. 固定Previewタブ: 現在の作品全体を常時表示（メインカメラの拡大・パンと独立、UIオーバーレイ・変形枠・選択枠なし、最長辺1024px以下に有界サンプリング、第2レンダラー新設なし、描画完了等への遅延スロットル更新）。
@@ -49,21 +49,29 @@
   9. 真のMicro表示＆アスペクト調和（UX Polish 03）:
      - ReferenceタブはMicro突入時に自動Fitせず、ユーザーが拡大・注視している手や顔等の詳細領域（zoom, panX, panY, rotationDeg, flipX, flipY）をそのまま表示維持。ウィンドウが小さくなっても指定箇所を拡大比較可能。
      - PreviewタブはMicro突入時に作品全体をFit表示しつつ、回転・反転の向きを正しく維持。
-     - Micro時のヘッダー圧縮: ヘッダー高さ ~28px、タイトルフォント 11px（長文時ellipsis省略）、縮小/復元ボタンおよび閉じるボタン（22×22px）の重なりゼロ化・個別ヒットボックス確保。
+     - Micro時のヘッダー圧縮: ヘッダー高さ ~28px、縮小/復元ボタンおよび閉じるボタン（22×22px）の重なりゼロ化・個別ヒットボックス確保。
      - サムネイルプリセットを 150×170px へ刷新。ヘッダー（28px）を除いた画像表示領域が ~148×142px とほぼ正方形となり、正方形プレビュー時にも余計な左右余白帯を排除。
-  10. Viewerフォーカス・ショートカット（UX Polish 03）:
+  10. Micro Source Rail & ファイル名プレッシャー排除（Final Polish）:
+     - Microモード時、ウィンドウをFullモードへ拡大復元することなく、ヘッダー上のコンパクトなSource Rail（`.viewer-source-rail`）からPreviewと各Referenceを直接切替可能。
+     - Previewは専用のモニターアイコン（`UI_ICONS.monitor`）、各Referenceはコンパクトな角丸ドット（`.viewer-source-dot`、7〜10px視覚サイズ、18〜22pxクリック領域）で表現。
+     - Microヘッダーから長いファイル名文字列の表示占有を完全に排除し、`title` / `aria-label` ツールチップへ格納。150px幅のヘッダーchromeの文字列窮屈感・省略記号ノイズを解消。
+     - Microモードでのソース切替時、ウィンドウサイズはMicroのまま維持され、Preview $\leftrightarrow$ 各Reference間でそれぞれのズーム・パン・回転・反転状態が完全に独立保持される。
+  11. 操作パネルの折りたたみ（Collapsible Controls, Final Polish）:
+     - Full / Compactモードのヘッダー右側に操作パネル折りたたみボタン（`.viewer-toggle-controls-btn`、`UI_ICONS.slidersHorizontal`）を配置。
+     - クリックでツールバーの表示/非表示（`.is-controls-collapsed`、`controlsCollapsed`真偽値）をトグル。折りたたみ時はツールバーが完全に非表示となり、`.viewer-body`（`flex: 1`）が上下いっぱいに展開して画像表示面積が即座に拡張。
+     - 折りたたみ状態はタブ切替をまたいで維持。Microモード時は操作バーが元から非表示であるため、折りたたみボタンも自動非表示。
+  12. Viewerフォーカス・ショートカット（UX Polish 03）:
      - Viewerにフォーカスがある時、`H`（左右反転）、`Shift+H`（上下反転）、`R`（右15°回転）、`Shift+R`（左15°回転）がツールバー非表示のMicro時も含めて即時動作。キーリピートによる不要な連続反転は安全に抑制。
      - INPUT、TEXTAREA、SELECT、contentEditable、および回転角度数値入力フィールド内でのタイピング時はショートカットを奪わない安全契約を厳格遵守。
      - Canvas・アプリ側フォーカス時はCanvasの本来のショートカット（H/Shift+Hなど）に一切干渉しないフォーカス完全分離。グローバルKeymapに裸のRを登録せず、ローカルスコープを厳守。
-  11. 中央共有Lucideアイコンの登録とViewerツールバーへの適用（UX Polish 03）:
-     - `ui-icons.js`（`UI_ICONS`）に `flipHorizontal`, `flipVertical`, `rotateCcw`, `rotateCw` を公式Lucideジオメトリ（`currentColor`、stroke-width="2"、#800000直接埋め込みなし）で登録。将来のCanvasコントロール等とも完全共有可能。
-     - Viewer内の文字表記（↔, ↕, -15°, +15°）を中央登録アイコンへ置換。ローカルなSVG重複定義を完全排除。
-  12. Shift+Q グローバルトグル＆ビューポート安全（UX Polish 02）:
+  13. 中央共有Lucideアイコンの登録とViewerツールバーへの適用（UX Polish 03）:
+     - `ui-icons.js`（`UI_ICONS`）に `flipHorizontal`, `flipVertical`, `rotateCcw`, `rotateCw`, `slidersHorizontal`, `monitor` を公式Lucideジオメトリ（`currentColor`、stroke-width="2"、#800000直接埋め込みなし）で登録。将来のCanvasコントロール等とも完全共有可能。
+  14. Shift+Q グローバルトグル＆ビューポート安全（UX Polish 02）:
      - `Shift+Q` でどこからでもViewerをトグル可能。単独 `Q`（Quick Access）とは完全分離。
      - 初回オープン・再オープン・ウィンドウリサイズ時の安全マージン（8px）自動クランプにより、ヘッダーと右下リサイズグリップ（150×120px以上全モード常時可視）が常に画面内に維持される。
-  13. 権限分離と全テスト合格:
-     - 完全Runtime/Session-only。Project保存、Layer生成、History（History 0）、Exportに一切影響しない。
-     - 専用検証 `verify-reference-preview-viewer.mjs`（全42シナリオ T1〜T42）すべて PASS。
+  15. 資料閲覧特化スコープの厳守と全テスト合格（Final Polish）:
+     - 「このViewerは資料を見るための窓である」の製品思想を堅持。レイヤー化、不透明度、クリックスルー、クロップ、Projectスキーマ変更、History変更（History 0）は一切行わず、完全Runtime/Session-onlyを維持。
+     - 専用検証 `verify-reference-preview-viewer.mjs` を全58シナリオ（T1〜T58）へ拡張し、すべて PASS。
      - `test ui`（46/46 PASS）、`development-harness check`（35 docs, 144 links, 25 proposals, 9 packages OK）、全テスト（177/177 PASS）、Vite build（0エラー）をすべて達成。
 
 ## CURRENT OBJECTIVE — WP-008 ROUGH PRODUCT PASS
