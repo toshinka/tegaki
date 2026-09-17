@@ -197,6 +197,7 @@ export class ReferencePreviewViewer {
         const popup = document.createElement('div');
         popup.id = 'reference-preview-viewer';
         popup.className = 'popup-panel popup-panel--translucent reference-preview-viewer';
+        popup.setAttribute('tabindex', '-1');
         const winW = typeof window !== 'undefined' ? (window.innerWidth || 1200) : 1200;
         const winH = typeof window !== 'undefined' ? (window.innerHeight || 800) : 800;
         const defaultW = Math.max(150, Math.min(480, winW - 16));
@@ -238,12 +239,12 @@ export class ReferencePreviewViewer {
                     <button type="button" class="viewer-tool-btn" data-action="zoom-in" title="拡大 (Zoom +)">+</button>
                 </div>
                 <div class="viewer-toolbar-group">
-                    <button type="button" class="viewer-tool-btn" data-action="flip-h" title="左右反転 (Horizontal Flip)">↔</button>
-                    <button type="button" class="viewer-tool-btn" data-action="flip-v" title="上下反転 (Vertical Flip)">↕</button>
-                    <button type="button" class="viewer-tool-btn" data-action="rotate-ccw" title="左に15°回転">-15°</button>
+                    <button type="button" class="viewer-tool-btn" data-action="flip-h" title="左右反転 (H)" aria-label="左右反転 (H)">${UI_ICONS.flipHorizontal}</button>
+                    <button type="button" class="viewer-tool-btn" data-action="flip-v" title="上下反転 (Shift+H)" aria-label="上下反転 (Shift+H)">${UI_ICONS.flipVertical}</button>
+                    <button type="button" class="viewer-tool-btn" data-action="rotate-ccw" title="左に15°回転 (Shift+R)" aria-label="左に15°回転 (Shift+R)">${UI_ICONS.rotateCcw}</button>
                     <input type="number" class="viewer-angle-input" value="0" step="any" title="回転角度（度）" aria-label="回転角度">
                     <span class="viewer-angle-unit">°</span>
-                    <button type="button" class="viewer-tool-btn" data-action="rotate-cw" title="右に15°回転">+15°</button>
+                    <button type="button" class="viewer-tool-btn" data-action="rotate-cw" title="右に15°回転 (R)" aria-label="右に15°回転 (R)">${UI_ICONS.rotateCw}</button>
                     <button type="button" class="viewer-tool-btn" data-action="reset-view" title="ビューリセット (Reset View)">Reset</button>
                 </div>
                 <div class="viewer-badge-container">
@@ -277,6 +278,28 @@ export class ReferencePreviewViewer {
                 if (this.isVisible && this.popup) {
                     this._clampToViewport();
                     this._applyCurrentTransform();
+                }
+            });
+        }
+
+        // Focus handling and Viewer-focused shortcuts
+        this.popup.addEventListener?.('pointerdown', (e) => {
+            if (!e.target?.closest?.('input, textarea, select, button, .viewer-tab')) {
+                this.popup.focus?.();
+            }
+        });
+
+        this.popup.addEventListener?.('keydown', (e) => {
+            this.handleKeyDown(e);
+        });
+
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+            window.addEventListener('keydown', (e) => {
+                if (this.isVisible && this.popup) {
+                    const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+                    if (activeEl && (activeEl === this.popup || this.popup.contains?.(activeEl))) {
+                        this.handleKeyDown(e);
+                    }
                 }
             });
         }
@@ -546,24 +569,16 @@ export class ReferencePreviewViewer {
                     this.zoomActiveTab(1.25);
                     break;
                 case 'flip-h':
-                    tab.viewState.flipX = !tab.viewState.flipX;
-                    this._applyCurrentTransform();
-                    this._updateToolbarUI();
+                    this.toggleFlipH();
                     break;
                 case 'flip-v':
-                    tab.viewState.flipY = !tab.viewState.flipY;
-                    this._applyCurrentTransform();
-                    this._updateToolbarUI();
+                    this.toggleFlipV();
                     break;
                 case 'rotate-ccw':
-                    tab.viewState.rotationDeg = Math.round((tab.viewState.rotationDeg - 15) * 10) / 10;
-                    this._applyCurrentTransform();
-                    this._updateToolbarUI();
+                    this.rotateActiveTab(-15);
                     break;
                 case 'rotate-cw':
-                    tab.viewState.rotationDeg = Math.round((tab.viewState.rotationDeg + 15) * 10) / 10;
-                    this._applyCurrentTransform();
-                    this._updateToolbarUI();
+                    this.rotateActiveTab(15);
                     break;
                 case 'reset-view':
                     this.resetActiveTabView();
@@ -758,8 +773,8 @@ export class ReferencePreviewViewer {
 
             this.popup.classList.add('is-thumbnail');
 
-            const thumbW = 180;
-            const thumbH = 140;
+            const thumbW = 150;
+            const thumbH = 170;
             this.popup.style.width = `${thumbW}px`;
             this.popup.style.height = `${thumbH}px`;
 
@@ -1155,6 +1170,77 @@ export class ReferencePreviewViewer {
         this._updateToolbarUI();
     }
 
+    toggleFlipH() {
+        const tab = this.getActiveTab();
+        if (!tab) return;
+        tab.viewState.flipX = !tab.viewState.flipX;
+        this._applyCurrentTransform();
+        this._updateToolbarUI();
+    }
+
+    toggleFlipV() {
+        const tab = this.getActiveTab();
+        if (!tab) return;
+        tab.viewState.flipY = !tab.viewState.flipY;
+        this._applyCurrentTransform();
+        this._updateToolbarUI();
+    }
+
+    rotateActiveTab(deltaDeg) {
+        const tab = this.getActiveTab();
+        if (!tab) return;
+        tab.viewState.rotationDeg = Math.round((tab.viewState.rotationDeg + deltaDeg) * 10) / 10;
+        this._applyCurrentTransform();
+        this._updateToolbarUI();
+    }
+
+    handleKeyDown(e) {
+        if (!this.isVisible || !this.popup) return false;
+
+        const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+        const isFocused = Boolean(activeEl && (activeEl === this.popup || this.popup.contains?.(activeEl)));
+        if (!isFocused) return false;
+
+        const target = e.target || activeEl;
+        const tag = target?.tagName?.toUpperCase();
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
+            return false;
+        }
+
+        if (e.repeat) return false;
+        if (e.ctrlKey || e.metaKey || e.altKey) return false;
+
+        if (e.code === 'KeyH' || e.key === 'h' || e.key === 'H') {
+            if (!e.shiftKey) {
+                e.preventDefault?.();
+                e.stopPropagation?.();
+                this.toggleFlipH();
+                return true;
+            } else {
+                e.preventDefault?.();
+                e.stopPropagation?.();
+                this.toggleFlipV();
+                return true;
+            }
+        }
+
+        if (e.code === 'KeyR' || e.key === 'r' || e.key === 'R') {
+            if (!e.shiftKey) {
+                e.preventDefault?.();
+                e.stopPropagation?.();
+                this.rotateActiveTab(15);
+                return true;
+            } else {
+                e.preventDefault?.();
+                e.stopPropagation?.();
+                this.rotateActiveTab(-15);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     _renderTabsHeader() {
         if (!this.popup) return;
         const tabsBar = this.popup.querySelector('.viewer-tabs-bar');
@@ -1253,12 +1339,18 @@ export class ReferencePreviewViewer {
         const h = this.popup.offsetHeight || parseInt(this.popup.style.height, 10) || 520;
         const isMicro = w < 240 || h < 190 || this.isThumbnailMode;
 
-        if (isMicro) {
+        if (isMicro && tab.type === 'preview') {
             const surface = this.popup.querySelector('.viewer-surface');
             const sw = surface?.clientWidth || Math.max(120, w - 4);
             const sh = surface?.clientHeight || Math.max(80, h - 30);
             const fit = calculateFitTransform(sw, sh, tab.width, tab.height);
-            contentEl.style.transform = getCssTransformString(fit, tab.width, tab.height);
+            const microViewState = {
+                ...fit,
+                rotationDeg: tab.viewState.rotationDeg,
+                flipX: tab.viewState.flipX,
+                flipY: tab.viewState.flipY
+            };
+            contentEl.style.transform = getCssTransformString(microViewState, tab.width, tab.height);
             return;
         }
 

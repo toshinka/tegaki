@@ -249,8 +249,8 @@ console.log('--- Starting Reference / Preview Viewer UX Polish 01 Verification (
 
     assert.match(
         cssCode,
-        /\.reference-preview-viewer\.is-thumbnail\s*\{[\s\S]*?width:\s*(?:180|250)px;\s*height:\s*(?:140|190)px;/u,
-        'T8: .is-thumbnail sets compact dimensions (180x140px)'
+        /\.reference-preview-viewer\.is-thumbnail\s*\{[\s\S]*?width:\s*(?:150|180|250)px;\s*height:\s*(?:170|140|190)px;/u,
+        'T8: .is-thumbnail sets compact dimensions (150x170px)'
     );
 
     assert.match(
@@ -307,8 +307,8 @@ console.log('--- Starting Reference / Preview Viewer UX Polish 01 Verification (
     viewer.setThumbnailMode(true);
     assert.equal(viewer.isThumbnailMode, true, 'T8: isThumbnailMode is true');
     assert.ok(viewer.popup.classList.contains('is-thumbnail'), 'T8: popup has is-thumbnail class');
-    assert.equal(viewer.popup.style.width, '180px', 'T8: width set to thumbnail 180px');
-    assert.equal(viewer.popup.style.height, '140px', 'T8: height set to thumbnail 140px');
+    assert.equal(viewer.popup.style.width, '150px', 'T8: width set to thumbnail 150px');
+    assert.equal(viewer.popup.style.height, '170px', 'T8: height set to thumbnail 170px');
     assert.equal(viewer._savedFullRect.width, 520, 'T8: Saved full width 520');
     assert.equal(viewer._savedFullRect.height, 440, 'T8: Saved full height 440');
     console.log('T8: Thumbnail entry PASS');
@@ -883,4 +883,481 @@ console.log('--- Starting Reference / Preview Viewer UX Polish 01 Verification (
     console.log('T26: viewport resize PASS');
 }
 
-console.log('\nverify-reference-preview-viewer: ALL 26 SCENARIOS (T1 - T26) PASS');
+// T27 — Reference Micro preserves orientation
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const refTab = {
+        id: 'ref-1',
+        type: 'reference',
+        name: 'hand.png',
+        width: 1000,
+        height: 800,
+        viewState: {
+            zoom: 2.0,
+            panX: -50,
+            panY: -100,
+            rotationDeg: 30,
+            flipX: true,
+            flipY: false,
+            initialized: true
+        }
+    };
+    viewer.tabs.push(refTab);
+    viewer.activeTabId = 'ref-1';
+
+    let appliedTransform = '';
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        querySelector: (sel) => {
+            if (sel === '.viewer-content') return { style: { set transform(val) { appliedTransform = val; }, get transform() { return appliedTransform; } } };
+            return { clientWidth: 148, clientHeight: 142 };
+        }
+    };
+
+    viewer._applyCurrentTransform();
+    assert.match(appliedTransform, /rotate\(30deg\)/, 'T27: Rotation 30deg preserved in rendered transform');
+    assert.match(appliedTransform, /scale\(-2,\s*2\)/, 'T27: Horizontal flip (scale(-2, 2)) preserved in rendered transform');
+    console.log('T27: Reference Micro preserves orientation PASS');
+}
+
+// T28 — Reference Micro preserves framing
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const refTab = {
+        id: 'ref-2',
+        type: 'reference',
+        name: 'face.png',
+        width: 1200,
+        height: 1200,
+        viewState: {
+            zoom: 3.5,
+            panX: -320,
+            panY: -280,
+            rotationDeg: 15,
+            flipX: false,
+            flipY: false,
+            initialized: true
+        }
+    };
+    viewer.tabs.push(refTab);
+    viewer.activeTabId = 'ref-2';
+
+    let appliedTransform = '';
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        querySelector: (sel) => {
+            if (sel === '.viewer-content') return { style: { set transform(val) { appliedTransform = val; }, get transform() { return appliedTransform; } } };
+            return { clientWidth: 148, clientHeight: 142 };
+        }
+    };
+
+    viewer._applyCurrentTransform();
+    assert.match(appliedTransform, /scale\(3\.5,\s*3\.5\)/, 'T28: Zoom 3.5 not overwritten by generic fit');
+    assert.equal(refTab.viewState.zoom, 3.5, 'T28: Tab viewState zoom intact');
+    assert.equal(refTab.viewState.panX, -320, 'T28: Tab viewState panX intact');
+    console.log('T28: Reference Micro preserves framing PASS');
+}
+
+// T29 — Preview Micro Fit + orientation
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const previewTab = viewer.tabs[0];
+    previewTab.width = 800;
+    previewTab.height = 600;
+    previewTab.viewState.rotationDeg = -15;
+    previewTab.viewState.flipX = true;
+    previewTab.viewState.flipY = false;
+
+    let appliedTransform = '';
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        querySelector: (sel) => {
+            if (sel === '.viewer-content') return { style: { set transform(val) { appliedTransform = val; }, get transform() { return appliedTransform; } } };
+            if (sel === '.viewer-surface') return { clientWidth: 148, clientHeight: 142 };
+            return null;
+        }
+    };
+
+    viewer._applyCurrentTransform();
+    assert.match(appliedTransform, /rotate\(-15deg\)/, 'T29: Preview rotation preserved');
+    assert.match(appliedTransform, /scale\(-0\.17\d*,\s*0\.17\d*\)/, 'T29: Preview fitted with flipX');
+    console.log('T29: Preview Micro Fit + orientation PASS');
+}
+
+// T30 — Micro restore
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const refTab = {
+        id: 'ref-3',
+        type: 'reference',
+        name: 'detail.png',
+        width: 1000,
+        height: 1000,
+        viewState: {
+            zoom: 2.8,
+            panX: -150,
+            panY: -120,
+            rotationDeg: 45,
+            flipX: true,
+            flipY: true,
+            initialized: true
+        }
+    };
+    viewer.tabs.push(refTab);
+    viewer.activeTabId = 'ref-3';
+
+    let appliedTransform = '';
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        querySelector: (sel) => {
+            if (sel === '.viewer-content') return { style: { set transform(val) { appliedTransform = val; }, get transform() { return appliedTransform; } } };
+            return { clientWidth: 148, clientHeight: 142 };
+        }
+    };
+
+    // Enter Micro
+    viewer._applyCurrentTransform();
+    // Restore to Full
+    viewer.popup.offsetWidth = 500;
+    viewer.popup.offsetHeight = 450;
+    viewer.popup.style.width = '500px';
+    viewer.popup.style.height = '450px';
+    viewer._applyCurrentTransform();
+
+    assert.equal(refTab.viewState.zoom, 2.8, 'T30: Zoom restored');
+    assert.equal(refTab.viewState.panX, -150, 'T30: PanX restored');
+    assert.equal(refTab.viewState.panY, -120, 'T30: PanY restored');
+    assert.equal(refTab.viewState.rotationDeg, 45, 'T30: Rotation restored');
+    assert.equal(refTab.viewState.flipX, true, 'T30: FlipX restored');
+    assert.equal(refTab.viewState.flipY, true, 'T30: FlipY restored');
+    console.log('T30: Micro restore PASS');
+}
+
+// T31 — shared icon registry
+{
+    const { UI_ICONS } = await import('../ui/ui-icons.js');
+    assert.ok(UI_ICONS.flipHorizontal, 'T31: UI_ICONS has flipHorizontal');
+    assert.ok(UI_ICONS.flipVertical, 'T31: UI_ICONS has flipVertical');
+    assert.ok(UI_ICONS.rotateCcw, 'T31: UI_ICONS has rotateCcw');
+    assert.ok(UI_ICONS.rotateCw, 'T31: UI_ICONS has rotateCw');
+    console.log('T31: shared icon registry PASS');
+}
+
+// T32 — currentColor
+{
+    const { UI_ICONS } = await import('../ui/ui-icons.js');
+    for (const key of ['flipHorizontal', 'flipVertical', 'rotateCcw', 'rotateCw']) {
+        const svg = UI_ICONS[key];
+        assert.match(svg, /stroke="currentColor"/, `T32: ${key} uses stroke="currentColor"`);
+        assert.doesNotMatch(svg, /#800000/, `T32: ${key} does not hardcode maroon`);
+    }
+    console.log('T32: currentColor PASS');
+}
+
+// T33 — Viewer toolbar shared icons
+{
+    const viewerJs = await readFile(new URL('../ui/reference-preview-viewer.js', import.meta.url), 'utf8');
+    assert.match(viewerJs, /\$\{UI_ICONS\.flipHorizontal\}/, 'T33: Viewer uses UI_ICONS.flipHorizontal');
+    assert.match(viewerJs, /\$\{UI_ICONS\.flipVertical\}/, 'T33: Viewer uses UI_ICONS.flipVertical');
+    assert.match(viewerJs, /\$\{UI_ICONS\.rotateCcw\}/, 'T33: Viewer uses UI_ICONS.rotateCcw');
+    assert.match(viewerJs, /\$\{UI_ICONS\.rotateCw\}/, 'T33: Viewer uses UI_ICONS.rotateCw');
+    console.log('T33: Viewer toolbar shared icons PASS');
+}
+
+// T34 — Viewer H
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    const tab = viewer.getActiveTab();
+    tab.viewState.flipX = false;
+
+    viewer.popup = {
+        style: {},
+        contains: () => true,
+        querySelector: () => null
+    };
+    globalThis.document.activeElement = viewer.popup;
+
+    const handled = viewer.handleKeyDown({
+        code: 'KeyH',
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    assert.equal(handled, true, 'T34: Handled H key');
+    assert.equal(tab.viewState.flipX, true, 'T34: flipX toggled to true');
+    console.log('T34: Viewer H PASS');
+}
+
+// T35 — Viewer Shift+H
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    const tab = viewer.getActiveTab();
+    tab.viewState.flipY = false;
+
+    viewer.popup = {
+        style: {},
+        contains: () => true,
+        querySelector: () => null
+    };
+    globalThis.document.activeElement = viewer.popup;
+
+    const handled = viewer.handleKeyDown({
+        code: 'KeyH',
+        shiftKey: true,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    assert.equal(handled, true, 'T35: Handled Shift+H key');
+    assert.equal(tab.viewState.flipY, true, 'T35: flipY toggled to true');
+    console.log('T35: Viewer Shift+H PASS');
+}
+
+// T36 — Viewer R
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    const tab = viewer.getActiveTab();
+    tab.viewState.rotationDeg = 0;
+
+    viewer.popup = {
+        style: {},
+        contains: () => true,
+        querySelector: () => null
+    };
+    globalThis.document.activeElement = viewer.popup;
+
+    const handled = viewer.handleKeyDown({
+        code: 'KeyR',
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    assert.equal(handled, true, 'T36: Handled R key');
+    assert.equal(tab.viewState.rotationDeg, 15, 'T36: rotationDeg is +15');
+    console.log('T36: Viewer R PASS');
+}
+
+// T37 — Viewer Shift+R
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    const tab = viewer.getActiveTab();
+    tab.viewState.rotationDeg = 0;
+
+    viewer.popup = {
+        style: {},
+        contains: () => true,
+        querySelector: () => null
+    };
+    globalThis.document.activeElement = viewer.popup;
+
+    const handled = viewer.handleKeyDown({
+        code: 'KeyR',
+        shiftKey: true,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    assert.equal(handled, true, 'T37: Handled Shift+R key');
+    assert.equal(tab.viewState.rotationDeg, -15, 'T37: rotationDeg is -15');
+    console.log('T37: Viewer Shift+R PASS');
+}
+
+// T38 — input isolation
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    const tab = viewer.getActiveTab();
+    tab.viewState.rotationDeg = 0;
+    tab.viewState.flipX = false;
+
+    const angleInput = { tagName: 'INPUT' };
+    viewer.popup = {
+        style: {},
+        contains: () => true,
+        querySelector: () => null
+    };
+    globalThis.document.activeElement = angleInput;
+
+    const handledH = viewer.handleKeyDown({
+        code: 'KeyH',
+        target: angleInput,
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    assert.equal(handledH, false, 'T38: KeyH ignored when INPUT focused');
+    assert.equal(tab.viewState.flipX, false, 'T38: flipX not changed');
+
+    const handledR = viewer.handleKeyDown({
+        code: 'KeyR',
+        target: angleInput,
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    assert.equal(handledR, false, 'T38: KeyR ignored when INPUT focused');
+    assert.equal(tab.viewState.rotationDeg, 0, 'T38: rotationDeg not changed');
+    console.log('T38: input isolation PASS');
+}
+
+// T39 — Canvas isolation
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    const tab = viewer.getActiveTab();
+    tab.viewState.flipX = false;
+
+    const canvasElement = { tagName: 'CANVAS' };
+    viewer.popup = {
+        style: {},
+        contains: (el) => el === viewer.popup,
+        querySelector: () => null
+    };
+    globalThis.document.activeElement = canvasElement;
+
+    const handled = viewer.handleKeyDown({
+        code: 'KeyH',
+        target: canvasElement,
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    assert.equal(handled, false, 'T39: Viewer does not consume H when Canvas is focused');
+    assert.equal(tab.viewState.flipX, false, 'T39: flipX not changed');
+    console.log('T39: Canvas isolation PASS');
+}
+
+// T40 — Micro shortcut
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    viewer.isThumbnailMode = true;
+    const tab = viewer.getActiveTab();
+    tab.viewState.rotationDeg = 0;
+
+    viewer.popup = {
+        style: {},
+        contains: () => true,
+        querySelector: () => null
+    };
+    globalThis.document.activeElement = viewer.popup;
+
+    const handled = viewer.handleKeyDown({
+        code: 'KeyR',
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        repeat: false
+    });
+    assert.equal(handled, true, 'T40: Micro mode handles R shortcut');
+    assert.equal(tab.viewState.rotationDeg, 15, 'T40: rotation updated in Micro mode');
+    console.log('T40: Micro shortcut PASS');
+}
+
+// T41 — square Micro geometry contract
+{
+    const cssCode = await readFile(new URL('../styles/main.css', import.meta.url), 'utf8');
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer\.is-micro \.viewer-header[\s\S]*?min-height:\s*28px;/u,
+        'T41: Micro header height reduced to ~28px'
+    );
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer\.is-micro \.viewer-thumbnail-title[\s\S]*?text-overflow:\s*ellipsis;/u,
+        'T41: Micro title uses ellipsis without overflowing'
+    );
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer\.is-thumbnail\s*\{[\s\S]*?width:\s*150px;\s*height:\s*170px;/u,
+        'T41: Thumbnail preset is 150x170 for near-square surface'
+    );
+    console.log('T41: square Micro geometry contract PASS');
+}
+
+// T42 — resize grip
+{
+    const cssCode = await readFile(new URL('../styles/main.css', import.meta.url), 'utf8');
+    assert.match(
+        cssCode,
+        /\.reference-preview-viewer \.viewer-resize-handle\s*\{[\s\S]*?cursor:\s*se-resize;/u,
+        'T42: resize handle exists with se-resize cursor'
+    );
+    assert.doesNotMatch(
+        cssCode,
+        /\.reference-preview-viewer\.is-micro \.viewer-resize-handle\s*\{[\s\S]*?display:\s*none/u,
+        'T42: resize grip not hidden in is-micro'
+    );
+    console.log('T42: resize grip PASS');
+}
+
+console.log('\nverify-reference-preview-viewer: ALL 42 SCENARIOS (T1 - T42) PASS');
