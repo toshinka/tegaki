@@ -4,7 +4,17 @@
 更新日: 2026-09-09。現在の実HEAD: `8b776abb7acebdfeb7369ef315e8276457cc127d`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `b44e74a46d4f42c0e04c61b6c4e8faac627a3af6`とは一致しなかったため、履歴を巻き戻さず現在のHEADへ追補した。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
+## CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17)
+
+- 根本原因1: 外部画像読み込み時、`layerData.rasterBounds` はキャンバス全面（例: 1920×1080）となる。これを拡縮（例: 2.5倍〜3倍）した際、`bakeTransform` が実描画内容（`calculateOpaqueRasterBounds`）ではなく全面 `rasterBounds` を affine 変換して `targetBounds` を求めていたため、18.7メガピクセル等に膨張し、`_isRasterBakeSizeAllowed`（16 MP上限）に抵触して `false` を返していた。
+- 根本原因2: `confirmLayerTransform` では `!this.bakeTransform` 時に `this.restoreLayerRasterSnapshot(beforeSnapshot)` を実行して `beforeSnapshot` へ無言ロールバックし、`exitMoveMode` で表示 scale も (1, 1) へ戻していたため、拡縮が破棄された状態で保存・ロードされていた。また、`confirmLayerTransform` 引数省略時に `sessionLayer` ではなく `this.getActiveLayer()` を参照していたため、アクティブレイヤー切替時に変形レイヤーが確定されない境界があった。
+- 修正内容:
+  1. `bakeTransform` および `canBakeLayerTransform` において、`contentBounds = calculateOpaqueRasterBounds(sourceSnapshot) || sourceBounds` を採用し、実際の画像領域を基準に変形後バウンディングボックスを算出。さらに変形後領域がテクスチャ上限（8192px / 16MP）を超える巨大変形時は、キャンバス枠＋マージン（512px）でクリップして可視領域を確実に焼き込み保持する安全フォールバックを整備。
+  2. `confirmLayerTransform` において、引数省略時にも `_layerTransformSession.layerId` の `sessionLayer` を優先解決するように修正。
+  3. 専用回帰検証 `verify-project-imported-raster-transform-roundtrip.mjs`（Case A 明示V確定、Case B 未確定保存auto-commit、Case C 通常Raster変形保持、Case D Esc取消維持、Case E レイヤー切替同期、Case F 大画面大拡大）を追加し PASS。全173本 verifier PASS、harness check PASS、Vite build PASS（dist差分0）。
+
 ## CURRENT OBJECTIVE — WP-008 ROUGH PRODUCT PASS
+
 
 Owner-authorized reversible prototypeとして、Layer TransformのBASIC/WARP progressive shell、既存BASIC detail整理、同一Simple 4×4 WARP sessionへ接続したPOINT/BRUSH最小操作を実装し、GPT/Ownerが実物を批評できる状態へ進める。Project schema、History、SOURCE/ANIMATE authority、CPU/Pixi evaluation order、WP-003/007/009 terminal semanticsは変更しない。
 
