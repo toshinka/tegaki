@@ -103,7 +103,19 @@ export const CoreRuntime = (function() {
                         ) === true,
                     clear: () => engine.pixelSelectionSystem?.clearSelection?.('api') === true,
                     copy: () => engine.pixelSelectionSystem?.copySelection?.() === true,
-                    delete: () => engine.pixelSelectionSystem?.deleteSelection?.() === true
+                    delete: () => engine.pixelSelectionSystem?.deleteSelection?.() === true,
+                    isTransformPreviewCaptureActive: () =>
+                        engine.pixelSelectionSystem?.isTransformPreviewCaptureActive?.() === true,
+                    canEnterTransformPreviewCapture: () =>
+                        engine.pixelSelectionSystem?.canEnterTransformPreviewCapture?.() === true,
+                    enterTransformPreviewCapture: () =>
+                        engine.pixelSelectionSystem?.enterTransformPreviewCapture?.() === true,
+                    exitTransformPreviewCapture: (options) =>
+                        engine.pixelSelectionSystem?.exitTransformPreviewCapture?.(options) === true,
+                    copyTransformPreviewSelection: () =>
+                        engine.pixelSelectionSystem?.copyTransformPreviewSelection?.() === true,
+                    pasteTransformPreviewSelectionAsNewLayer: () =>
+                        engine.pixelSelectionSystem?.pasteTransformPreviewSelectionAsNewLayer?.() === true
                 },
                 export: {
                     png: (options) => window.exportManager?.export('png', options),

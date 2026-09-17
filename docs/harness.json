@@ -37,7 +37,7 @@
     "transform": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": ["tegaki_work/system/layer-system.js", "tegaki_work/system/layer-transform.js", "tegaki_work/system/animation/transform-edit-context.js", "tegaki_work/system/animation/transform-edit-transaction.js", "tegaki_work/ui/animation-table-popup.js"],
-      "patterns": ["^verify-phase9[op]-", "^verify-clip-transform-", "^verify-clip-layer-transform", "^verify-layer-transform-key-", "^verify-layer-transform-basic-warp-envelope", "^verify-layer-transform-progressive-controls", "^verify-timeline-wheel-routing"]
+      "patterns": ["^verify-phase9[op]-", "^verify-clip-transform-", "^verify-clip-layer-transform", "^verify-layer-transform-key-", "^verify-layer-transform-basic-warp-envelope", "^verify-layer-transform-progressive-controls", "^verify-timeline-wheel-routing", "^verify-layer-transform-capacity-feedback", "^verify-transform-preview-capture"]
     },
     "animation": {
       "architecture": "docs/ARCHITECTURE.md",
@@ -56,8 +56,8 @@
     },
     "ui": {
       "architecture": "docs/ARCHITECTURE.md",
-      "entrypoints": ["tegaki_work/ui/layer-panel-renderer.js", "tegaki_work/ui/dom-builder.js", "tegaki_work/ui/ui-panels.js", "tegaki_work/ui/keyboard-handler.js", "tegaki_work/styles/main.css"],
-      "patterns": ["^verify-animation-table-", "^verify-layer-panel-", "^verify-qtp-", "^verify-sidebar-", "^verify-ui-", "^verify-shortcut-", "^verify-touch-", "^verify-right-", "^verify-rig-workspace-"]
+      "entrypoints": ["tegaki_work/ui/layer-panel-renderer.js", "tegaki_work/ui/dom-builder.js", "tegaki_work/ui/ui-panels.js", "tegaki_work/ui/keyboard-handler.js", "tegaki_work/ui/reference-preview-viewer.js", "tegaki_work/styles/main.css"],
+      "patterns": ["^verify-animation-table-", "^verify-layer-panel-", "^verify-qtp-", "^verify-sidebar-", "^verify-ui-", "^verify-shortcut-", "^verify-touch-", "^verify-right-", "^verify-rig-workspace-", "^verify-reference-preview-viewer"]
     },
     "docs": {
       "architecture": "docs/README.md",

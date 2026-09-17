@@ -1644,6 +1644,11 @@ export class LayerTransform {
         if (!canvas) return;
         
         canvas.addEventListener('pointerdown', (e) => {
+            if (this.isTransformPreviewCaptureActive?.()
+                || window.pixelSelectionSystem?.isTransformPreviewCaptureActive?.()
+                || window.drawingApp?.pixelSelectionSystem?.isTransformPreviewCaptureActive?.()) {
+                return;
+            }
             if (this.isVKeyPressed && this.transformMode === 'warp') {
                 this.warpController?.handleCanvasPointerDown?.(e);
                 return;

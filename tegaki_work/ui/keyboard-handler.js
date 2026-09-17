@@ -69,6 +69,20 @@ export const KeyboardHandler = (function() {
         
         if (!eventBus || !keymap) return;
         if (isInputFocused()) return;
+        if (e.target?.closest?.('.reference-preview-viewer') || document.activeElement?.closest?.('.reference-preview-viewer')) {
+            if (e.key === 'Escape') {
+                const viewer = window.referencePreviewViewer
+                    || window.PopupManager?.get?.('referencePreview')
+                    || window.coreEngine?.popupManager?.get?.('referencePreview');
+                if (viewer?.isVisible) {
+                    viewer.hide();
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    return;
+                }
+            }
+            return;
+        }
         // Sidebarはnative buttonがclickを一元発火する。Enter / Spaceをglobal shortcutへ
         // 横取りさせず、pointerと同じUIController actionへ到達させる。
         if (shouldYieldSidebarButtonActivation(e)) return;
@@ -137,6 +151,19 @@ export const KeyboardHandler = (function() {
                 e.preventDefault();
                 return;
             }
+        }
+
+        const pixelSelection = window.pixelSelectionSystem || window.drawingApp?.pixelSelectionSystem;
+        if (e.key === 'Escape' && pixelSelection?.isTransformPreviewCaptureActive?.()) {
+            pixelSelection.exitTransformPreviewCapture({ cancelSourceTransform: true });
+            vKeyPressed = false;
+            eventBus.emit('keyboard:vkey-state-changed', {
+                pressed: false,
+                cancelled: true
+            });
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return;
         }
 
         if (e.key === 'Escape' && vKeyPressed) {
@@ -220,6 +247,13 @@ export const KeyboardHandler = (function() {
         // VキーでLayer / selection変形モードをトグルする。
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
             if (!e.repeat) {
+                const pixelSelection = window.pixelSelectionSystem || window.drawingApp?.pixelSelectionSystem;
+                if (pixelSelection?.isTransformPreviewCaptureActive?.()) {
+                    pixelSelection.exitTransformPreviewCapture({ cancelSourceTransform: true });
+                    vKeyPressed = false;
+                    e.preventDefault();
+                    return;
+                }
                 toggleLayerTransform('transform-shortcut');
             }
             e.preventDefault();
@@ -291,6 +325,18 @@ export const KeyboardHandler = (function() {
         
         switch(action) {
             case 'SELECT_ALL':
+                {
+                    const pixelSelection = window.pixelSelectionSystem || window.drawingApp?.pixelSelectionSystem;
+                    if (api?.selection?.isTransformPreviewCaptureActive?.() || pixelSelection?.isTransformPreviewCaptureActive?.()) {
+                        if (api?.selection?.selectAll) {
+                            api.selection.selectAll();
+                        } else {
+                            pixelSelection?.selectAll?.();
+                        }
+                        event.preventDefault();
+                        break;
+                    }
+                }
                 if (api?.selection?.selectAll?.()) {
                     syncToolUI('selection');
                 }
@@ -364,6 +410,27 @@ export const KeyboardHandler = (function() {
                 break;
 
             case 'TOOL_RECT_SELECTION':
+                {
+                    const pixelSelection = window.pixelSelectionSystem || window.drawingApp?.pixelSelectionSystem;
+                    if (api?.selection?.isTransformPreviewCaptureActive?.() || pixelSelection?.isTransformPreviewCaptureActive?.()) {
+                        if (api?.selection?.exitTransformPreviewCapture) {
+                            api.selection.exitTransformPreviewCapture();
+                        } else {
+                            pixelSelection?.exitTransformPreviewCapture?.();
+                        }
+                        event.preventDefault();
+                        break;
+                    }
+                    if (api?.selection?.canEnterTransformPreviewCapture?.() || pixelSelection?.canEnterTransformPreviewCapture?.()) {
+                        if (api?.selection?.enterTransformPreviewCapture) {
+                            api.selection.enterTransformPreviewCapture();
+                        } else {
+                            pixelSelection?.enterTransformPreviewCapture?.();
+                        }
+                        event.preventDefault();
+                        break;
+                    }
+                }
                 if (!confirmActiveTransformsForToolSwitch('selection')) {
                     event.preventDefault();
                     break;
@@ -1152,6 +1219,10 @@ export const KeyboardHandler = (function() {
 
         TegakiEventBus?.on?.('layer:transform-exit', () => {
             vKeyPressed = false;
+        });
+
+        TegakiEventBus?.on?.('layer:transform-bake-rejected', () => {
+            vKeyPressed = true;
         });
         
         window.addEventListener('blur', () => {

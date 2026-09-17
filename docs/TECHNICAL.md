@@ -26,10 +26,12 @@
 - Frame/CAF切替だけでHistoryをresetしない。Project全体loadのclearとは別。
 - Raster履歴は変更対象の前後snapshot/patch。無関係なCAF全体を毎stroke複製しない。
 - runtime selection、GPU buffer、評価頂点、scan cacheをProjectへ保存しない。
+- Reference / Preview Viewer（資料 / プレビュー）は閲覧専用・session-onlyの補助機能。Project保存、Layer生成、History、Export、Emergency Recoveryへ一切関与しない。Previewタブは既存WebGLレンダラーから有界解像度（最長辺1024px以下）でサンプリングし、第2レンダラーや第2レイヤーツリーを新設しない。大容量参照画像は2048px/4MP以下へ縮小プロキシ化し、元の巨大デコードバッファを保持しない。クリップボード（Ctrl+V）はViewerフォーカス時のみ参照画像追加として扱い、Canvas側の貼り付け権限を横取りしない。
 
 ## Transform / Motion / WARP / Rig
 
 - SOURCE変形はpreviewと確定を分離し、確定で一度だけRaster bake。既定Container transformへ戻す。
+- SOURCE Layer Transform中のプレビュー切り出し（V+M Rescue）は、変形プレビューからProject Canvas内の選択矩形だけを新規Raster Layerへ切り出す可逆操作。巨大中間テクスチャの確保を禁止し、切り出し矩形サイズのみを単一Canvas2Dでサンプリングして新規レイヤーを生成、元レイヤーはベースラインへロールバックする。容量上限（16MP/8192px）による確定拒絶時もVセッションを破棄せず保持し、Mキー切り出しへ誘導する。
 - ANIMATEはSOURCE bakeを経由せず、ClipInstanceの対象KEYへ確定する。
 - CAF全体MotionはtransformKeyframes、個別Raster MotionはlayerTransformTracks。対象を混同しない。
 - WARPはroot deformer / folderDeformers / layerDeformersの既存所有とBind/Pose/placementを維持する。

@@ -372,6 +372,7 @@ export class ImageImporter {
         if (this._pasteListener) return;
         this._pasteListener = async (event) => {
             if (this._isEditableTarget(event.target)) return;
+            if (event.target?.closest?.('.reference-preview-viewer')) return;
             if (this._suppressNextSystemPaste) {
                 this._suppressNextSystemPaste = false;
                 if (this._suppressPasteTimer) {

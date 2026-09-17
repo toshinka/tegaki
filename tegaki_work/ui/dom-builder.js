@@ -64,6 +64,7 @@ export const DOMBuilder = (function() {
         const tools = [
             { id: 'library-tool', icon: 'library', title: 'アルバム保管', role: 'popup-launcher', popupName: 'album', controls: 'album-popup' },
             { id: 'image-import-tool', icon: 'load', title: '画像をアクティブレイヤーへ読み込み', role: 'command' },
+            { id: 'reference-preview-tool', icon: 'monitor', title: '資料 / プレビュー', role: 'popup-launcher', popupName: 'referencePreview', controls: 'reference-preview-viewer' },
             { id: 'export-tool', icon: 'export', title: '画像・アニメ出力', role: 'popup-launcher', popupName: 'export', controls: 'export-popup' },
             { separator: true },
             { id: 'resize-tool', icon: 'resize', title: 'リサイズ', role: 'popup-launcher', popupName: 'resize', controls: 'resize-settings' },

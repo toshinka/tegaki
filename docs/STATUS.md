@@ -4,16 +4,42 @@
 更新日: 2026-09-17。現在の実HEAD: `78c908be82632a9a4995668d0c3edb8f4233b39d`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `78c908be82632a9a4995668d0c3edb8f4233b39d`と一致した状態で修正・検証を実施。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
-## CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17 Correction Pass)
+### CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17 Correction Pass & Off-Canvas Investigation)
 
 - 根本原因1: 外部画像読み込み時、`layerData.rasterBounds` はキャンバス全面（例: 1920×1080）となる。これを拡縮（例: 2.5倍〜3倍）した際、`bakeTransform` が実描画内容（`calculateOpaqueRasterBounds`）ではなく全面 `rasterBounds` を affine 変換して `targetBounds` を求めていたため、18.7メガピクセル等に膨張し、`_isRasterBakeSizeAllowed`（16 MP上限）に抵触して `false` を返していた。
 - 根本原因2: `confirmLayerTransform` 引数省略時に `sessionLayer` ではなく `this.getActiveLayer()` を参照していたため、アクティブレイヤー切替時に変形レイヤーが確定されない境界があった。
 - 修正内容（Correction Pass）:
   1. `bakeTransform` および `canBakeLayerTransform` において、`contentBounds = calculateOpaqueRasterBounds(sourceSnapshot) || sourceBounds` を採用し、実際の画像領域を基準に変形後バウンディングボックスを算出。初回パッチで混入したキャンバス枠＋512pxへの無言クリッピングフォールバック（ユーザーの意図しない画像欠損リスク）は完全撤去し、安全限界を超えた場合は正しく拒絶（`return false` / エラー理由返却）するフェイルセーフ契約へ復元した。
   2. `confirmLayerTransform` において、引数省略時にも `_layerTransformSession.layerId` の `sessionLayer` を優先解決するように維持。
-  3. 専用回帰検証 `verify-project-imported-raster-transform-roundtrip.mjs` を本物のTypedArrayピクセルバッファによるモックへ強化。Case A〜F（実ピクセル領域とサーフェスサイズの分離検証、2.5x/3.0xの自然成功、確定後・保存再読込後の実フットプリント保持）に加え、Case G（過大拡縮に対する拒絶検証: 軸上限8192px超過、16MP超過時の `ok: false` および `bakeTransform` / `confirmLayerTransform` の拒絶と元サーフェス保持）を実証して PASS。
-- 隣接所見（Adjacent Finding）:
-  現行の仕様上、変形が真のテクスチャ／ピクセル上限を正当に超えた場合（極端な拡大率など）、`bakeTransform` は安全な RenderTexture を確保できないため拒絶し、`confirmLayerTransform` は直前スナップショットへロールバックして変形表示を恒等へリセットする。ユーザーへの警告トースト表示や非破壊プレビュー保持などのUX改善は、別カードで検討すべき課題である。
+  3. 専用回帰検証 `verify-project-imported-raster-transform-roundtrip.mjs` を本物のTypedArrayピクセルバッファによるモックへ強化。Case A〜G を実証して PASS。
+- Off-Canvas 追跡検証（Follow-Up Gate: 2026-09-18）:
+  Owner受入時の懸念「キャンバス外にはみ出るほど拡大した画像がSave/Load後にリセットされる」について、確定境界T1〜T6およびブラウザ操作B1〜B3（実Chrome CDP / 本番WebGL）を全境界（V preview / Before confirm / After confirm / Export project / After load / UI refresh）で追跡。
+  結果: 安全上限（軸8192px / 16MP）以内のキャンバス外拡縮（上はみ出し y<0、左はみ出し x<0、右下超過、四隅超過、Pending変形中の保存自動確定、多層下書き構成）は、決定論的検証・実ブラウザともにSave/Load後も正確に位置・拡縮・不透明フットプリントを保持（NOT REPRODUCED for valid ranges）。
+  変形がリセットされる唯一の条件は「真の安全上限（16MP）超過時」のフェイルセーフ拒絶（元画像保持）であることを確認。憶測による修正は行わず、Owner実機での具体的な元画像解像度・キャンバス解像度・拡大倍率の確認へ引き継ぐ。
+- Capacity Feedback Micro Fix（2026-09-18）:
+  Layer Transform確定時にRaster bake capacity上限（8192px / 16MP）超過で拒絶された場合、無言でベースラインへロールバックするのではなく、既存の通知システム（`showFeedbackToast` / `eventBus`）を通じてユーザーへ明示するように改善。
+  1. `bakeTransform` の拒絶理由（`exceeds-max-texture-size` / `exceeds-safe-pixel-count`）を `_lastTransformBakeFailure` として記録し、`confirmLayerTransform` および `_confirmFolderTransform` での失敗時に `_notifyTransformBakeFailure` を介して既存トーストを表示。
+  2. 容量超過時のみトーストを表示し、`invalid-transform-state` 等の他の失敗理由では容量警告を誤表示しない契約を遵守。
+  3. 16MP・8192px上限値の変更、自動クリッピング・ダウンサンプリング、スキーマ変更、History変更、Transform terminal redesignは一切行わず既存の安全契約を維持。
+  4. 専用検証 `verify-layer-transform-capacity-feedback.mjs` を作成し、通常確定（警告なし）、16MP超過（警告1回）、8192px超過（警告1回）、Project Save自動確定（警告表示）、非容量エラー（警告非表示）の5シナリオを検証して PASS。
+  5. `verify-project-imported-raster-transform-roundtrip.mjs`、`verify-imported-raster-offcanvas-roundtrip.mjs`、`test transform`（18/18）、`harness check`、全verifier（175/175）、Vite production buildすべて PASS。
+- SOURCE Transform Preview Capture — V + M Canvas Crop Rescue / Copy → New Layer（2026-09-18）:
+  大きな下絵・スクショをキャンバス外にはみ出るほど拡大した際、変形確定（16MP/8192px）が拒絶されても変形プレビューを破棄せず保持し、`M` キーで必要なキャンバス領域のみを切り出して新規Raster Layerとして復元・利用できる機能を追加。
+  1. 通常SOURCE Raster LayerのBASIC V Transform中に `M` キーを押下すると「変形プレビュー切り出しモード（Transform Preview Capture Mode）」へ遷移（ツール切替や変形確定を行わない）。
+  2. 切り出しモード中: ドラッグまたは `Ctrl+A` でProject Canvas矩形を選択。`Ctrl+C` で選択矩形のみの変形プレビュー画像を単一Canvas2Dで高速抽出（巨大中間テクスチャのメモリ確保は一切行わず安全）。`Ctrl+V` で選択矩形位置に新規Raster Layerを作成し、元レイヤーはV開始前ベースラインへロールバックしてVセッションを安全に終了。`Ctrl+X` は意図的画像欠損を防ぐため禁止トーストを表示。
+  3. 容量超過による確定拒絶時: 変形セッションを強制破棄せずプレビューを維持し、警告トースト「変形後の画像が安全上限（16MP）を超えています。このままでは確定できません。拡大率を下げるか、Mキーで必要範囲を切り出してください。」でM切り出しへ誘導。
+  4. 専用検証 `verify-transform-preview-capture.mjs` を作成し、T1〜T14（Mトグル入場/退場、非BASICガード、Ctrl+Aキャンバス全域選択、ドラッグ矩形選択、ドラッグ中のLayerMove抑制、Ctrl+C単一Canvas2D抽出、Ctrl+V新規レイヤー作成/ベースライン復帰/V終了/Undo、Ctrl+X禁止トースト、Vキー全キャンセル、Escape全キャンセル、容量超過拒絶時のVセッション維持、Mキーレスキュー連携、UI同期/HUD状態表示、二重貼り付けガード）を網羅して PASS。
+  5. `test transform`（20/20）、`harness check`（35 docs, 144 links, 25 proposals, 9 packages OK）、全verifier（176/176）、Vite production buildすべて PASS。
+- Reference / Preview Viewer MVP — Floating Mirror + Multi-Reference Tabs（2026-09-18）:
+  キャンバス作業領域を圧迫せず、全体構図確認（Navigator / Mirror）および複数資料画像の同時閲覧が可能なフローティング型Viewer（資料 / プレビュー）を実装。
+  1. 左サイドバーに「資料 / プレビュー」（`monitor` アイコン、`popup-launcher` ロール、`library` と `export` の中間）を新設。
+  2. フローティングウィンドウ: 移動（ヘッダードラッグ）、サイズ変更（右下リサイズハンドル）、閉じる（非表示、タブ状態・参照画像は同一セッション中保持）、メインキャンバス縮小なし、非モーダル（z-index 4000）。
+  3. 固定Previewタブ: 現在の作品全体を常時表示（メインカメラの拡大・パンと独立、UIオーバーレイ・変形枠・選択枠なし、最長辺1024px以下に有界サンプリング、第2レンダラー新設なし、描画完了等への遅延スロットル更新）。
+  4. 複数Referenceタブ: `+` ボタン（ファイル選択/複数可）、Viewerへのドラッグ＆ドロップ（ドロップオーバーレイ表示）、Viewerフォーカス時のOSクリップボード貼り付け（`Ctrl+V`）に対応。
+  5. ビュー操作（タブ個別保持）: パン（サーフェスドラッグ）、ズーム（ホイール / ボタン）、Fit（全体収める）、100%（プロキシ原寸）、水平反転（`↔`）、垂直反転（`↕`）、自由回転（`-15°` / `+15°` / 数値入力）、Reset View。
+  6. 大容量画像プロキシ: 最長辺2048pxかつ総画素4MP（4,194,304px）以下へ自動縮小。元の巨大デコードバッファは直ちに解放。縮小時は「縮小表示」バッジと元画像/表示用解像度を記載したツールチップを明示。
+  7. 権限分離: 完全Runtime/Session-only。Project保存、Layer生成、History（History 0）、Exportに一切影響しない。クリップボードはViewerフォーカス時のみ吸着し、Canvas側のCtrl+V（Layer貼付、選択貼付、V+M切り出し貼付）を妨害しない。
+  8. 専用検証 `verify-reference-preview-viewer.mjs`（T1〜T12全シナリオ）を作成し PASS。`test ui`（46/46 PASS）、`harness check` PASS。
 
 ## CURRENT OBJECTIVE — WP-008 ROUGH PRODUCT PASS
 

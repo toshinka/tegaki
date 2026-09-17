@@ -21,6 +21,7 @@ import { showFeedbackToast } from './feedback-toast.js';
 
 const SIDEBAR_POPUP_BUTTONS = Object.freeze({
     album: 'library-tool',
+    referencePreview: 'reference-preview-tool',
     export: 'export-tool',
     resize: 'resize-tool',
     quickAccess: 'quick-access-tool',
@@ -708,6 +709,9 @@ export class UIController {
             },
             'image-import-tool': () => {
                 window.imageImporter?.openFileDialog?.();
+            },
+            'reference-preview-tool': () => {
+                this.togglePopup('referencePreview');
             },
             'export-tool': () => {
                 this.togglePopup('export');

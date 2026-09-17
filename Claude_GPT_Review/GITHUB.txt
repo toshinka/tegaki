@@ -201,6 +201,9 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui
 tegaki_work/ui/keyboard-handler.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/keyboard-handler.js
 
+tegaki_work/ui/reference-preview-viewer.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/reference-preview-viewer.js
+
 tegaki_work/styles/main.css
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/styles/main.css
 

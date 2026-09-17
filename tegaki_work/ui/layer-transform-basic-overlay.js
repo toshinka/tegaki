@@ -83,6 +83,10 @@ export class LayerTransformBasicOverlay {
 
     _ensureElement() {
         if (this.element?.isConnected) return;
+        this.cornerHandles = [];
+        this.cornerHitHandles = [];
+        this.sideHandles = [];
+        this.sideHitHandles = [];
         document.querySelectorAll('.layer-transform-basic-overlay').forEach(element => element.remove());
         const svg = document.createElementNS(SVG_NS, 'svg');
         svg.classList.add('layer-transform-basic-overlay');

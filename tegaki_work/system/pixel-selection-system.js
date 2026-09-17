@@ -23,6 +23,9 @@ import { applyTransformMatrix, createCenteredTransformMatrix } from './transform
 import { resolveIntegerTranslation, translateRgbaPixels } from './raster-translation.js';
 import { normalizeRasterBounds } from './raster-bounds.js';
 import { estimateRasterHistoryPairBytes } from './raster-snapshot-memory.js';
+import { showFeedbackToast } from '../ui/feedback-toast.js';
+import { layerTransformBasicOverlay } from '../ui/layer-transform-basic-overlay.js';
+import { TRANSFORM_EDIT_TRANSACTION_TARGET } from './animation/transform-edit-transaction.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MIN_SELECTION_SIZE = 1;
@@ -47,6 +50,9 @@ export class PixelSelectionSystem {
         this.overlayPolygon = null;
         this.canvas = null;
         this.overlayFrameRequest = null;
+        this.transformPreviewCaptureMode = false;
+        this.transformPreviewCaptureClipboard = null;
+        this._captureHudElement = null;
         this._detachCallbacks = [];
     }
 
@@ -207,6 +213,229 @@ export class PixelSelectionSystem {
         return true;
     }
 
+    isTransformPreviewCaptureActive() {
+        return this.transformPreviewCaptureMode === true;
+    }
+
+    canEnterTransformPreviewCapture() {
+        if (!this.layerSystem || !this.layerSystem.isLayerMoveMode) return false;
+        const activeLayer = this.layerSystem.getActiveLayer?.();
+        if (!activeLayer || !activeLayer.layerData) return false;
+        if (activeLayer.layerData.isFolder || activeLayer.layerData.isBackground) return false;
+        if (activeLayer.layerData.isAnimationWorkingLayer) return false;
+        if (this.layerSystem._layerWarpEditSession != null) return false;
+        const target = this.layerSystem.getActiveTransformEditTarget?.();
+        if (target && target !== TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE) return false;
+        if (this.layerSystem.transform?.transformMode && this.layerSystem.transform.transformMode !== 'basic') return false;
+        return true;
+    }
+
+    enterTransformPreviewCapture() {
+        if (!this.canEnterTransformPreviewCapture()) return false;
+        this.transformPreviewCaptureMode = true;
+        this.transformPreviewCaptureClipboard = null;
+        this.clearSelection('enter-capture');
+        layerTransformBasicOverlay?.deactivate?.();
+        this.setToolActive(true);
+        this._showCaptureHud(1);
+        this.eventBus?.emit('selection:transform-preview-capture-entered');
+        return true;
+    }
+
+    exitTransformPreviewCapture(options = {}) {
+        if (!this.transformPreviewCaptureMode) return false;
+        this.transformPreviewCaptureMode = false;
+        this.transformPreviewCaptureClipboard = null;
+        this.clearSelection('exit-capture');
+        this.setToolActive(false);
+        this._hideCaptureHud();
+        if (options.cancelSourceTransform === true) {
+            this.layerSystem?.exitLayerMoveMode?.({ cancelled: true });
+        } else {
+            this.layerSystem?.transform?.syncBasicOverlay?.();
+        }
+        this.eventBus?.emit('selection:transform-preview-capture-exited');
+        return true;
+    }
+
+    copyTransformPreviewSelection() {
+        if (!this.transformPreviewCaptureMode) return false;
+        if (!this.hasSelection()) {
+            showFeedbackToast('先にドラッグまたは Ctrl+A で範囲を選択してください', { duration: 2500 });
+            return false;
+        }
+        const b = this.state.bounds;
+        const canvasW = Math.max(1, Math.round(this.layerSystem?.config?.canvas?.width || 1));
+        const canvasH = Math.max(1, Math.round(this.layerSystem?.config?.canvas?.height || 1));
+        const cropX = Math.max(0, Math.min(canvasW, Math.round(b.x)));
+        const cropY = Math.max(0, Math.min(canvasH, Math.round(b.y)));
+        const cropW = Math.max(0, Math.min(canvasW - cropX, Math.round(b.width)));
+        const cropH = Math.max(0, Math.min(canvasH - cropY, Math.round(b.height)));
+        if (cropW <= 0 || cropH <= 0) {
+            return false;
+        }
+
+        const activeLayer = this.layerSystem?.getActiveLayer?.();
+        if (!activeLayer?.layerData?.renderTexture) return false;
+
+        const sourceSnapshot = this.layerSystem.createLayerRasterSnapshot(activeLayer);
+        if (!sourceSnapshot?.pixels) return false;
+
+        const sourceBounds = normalizeRasterBounds(sourceSnapshot.rasterBounds, {
+            width: sourceSnapshot.width,
+            height: sourceSnapshot.height
+        });
+        sourceBounds.width = Math.max(1, Math.round(sourceSnapshot.width || sourceBounds.width));
+        sourceBounds.height = Math.max(1, Math.round(sourceSnapshot.height || sourceBounds.height));
+
+        const rawTransform = this.layerSystem.transform?.getTransform?.(activeLayer.layerData.id)
+            || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
+        const transformState = this.layerSystem._normalizeTransformStateForBake?.(rawTransform) || rawTransform;
+
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = sourceBounds.width;
+        sourceCanvas.height = sourceBounds.height;
+        const sourceCtx = sourceCanvas.getContext('2d');
+        if (!sourceCtx) return false;
+        sourceCtx.putImageData(
+            new ImageData(new Uint8ClampedArray(sourceSnapshot.pixels), sourceBounds.width, sourceBounds.height),
+            0,
+            0
+        );
+
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = cropW;
+        cropCanvas.height = cropH;
+        const cropCtx = cropCanvas.getContext('2d');
+        if (!cropCtx) return false;
+
+        const centerX = canvasW / 2;
+        const centerY = canvasH / 2;
+        const matrix = createCenteredTransformMatrix(transformState, centerX, centerY);
+        cropCtx.clearRect(0, 0, cropW, cropH);
+        cropCtx.imageSmoothingEnabled = true;
+        cropCtx.imageSmoothingQuality = 'high';
+        cropCtx.setTransform(
+            matrix.a,
+            matrix.b,
+            matrix.c,
+            matrix.d,
+            matrix.tx - cropX,
+            matrix.ty - cropY
+        );
+        cropCtx.drawImage(sourceCanvas, sourceBounds.x, sourceBounds.y);
+
+        const capturedPixels = cropCtx.getImageData(0, 0, cropW, cropH).data;
+        this.transformPreviewCaptureClipboard = {
+            x: cropX,
+            y: cropY,
+            width: cropW,
+            height: cropH,
+            pixels: new Uint8ClampedArray(capturedPixels)
+        };
+
+        this._showCaptureHud(3);
+        showFeedbackToast('切り出し範囲をコピーしました (Ctrl+V で新規レイヤー)', { duration: 2500 });
+        this.eventBus?.emit('selection:transform-preview-captured', {
+            x: cropX,
+            y: cropY,
+            width: cropW,
+            height: cropH
+        });
+        return true;
+    }
+
+    pasteTransformPreviewSelectionAsNewLayer() {
+        if (!this.transformPreviewCaptureMode) return false;
+        if (!this.transformPreviewCaptureClipboard) {
+            showFeedbackToast('先に Ctrl+C で切り出し範囲をコピーしてください', { duration: 2500 });
+            return false;
+        }
+        const clip = this.transformPreviewCaptureClipboard;
+        this.transformPreviewCaptureClipboard = null;
+        this.transformPreviewCaptureMode = false;
+        this.clearSelection('paste-capture');
+        this.setToolActive(false);
+        this._hideCaptureHud();
+
+        // 1. Roll back source layer to pre-V baseline and close V session
+        this.layerSystem?.exitLayerMoveMode?.({ cancelled: true });
+
+        // 2. Create new Raster Layer from the captured crop
+        const layerName = this.layerSystem?._generateNextLayerName
+            ? this.layerSystem._generateNextLayerName()
+            : '切り出しレイヤー';
+        const createdLayer = this.layerSystem?.createRasterLayerFromSnapshot?.({
+            width: clip.width,
+            height: clip.height,
+            rasterBounds: { x: clip.x, y: clip.y, width: clip.width, height: clip.height },
+            pixels: clip.pixels
+        }, {
+            name: layerName
+        });
+
+        if (!createdLayer) {
+            return false;
+        }
+
+        showFeedbackToast('切り出しを新規レイヤーとして作成しました', { duration: 2500 });
+        this.eventBus?.emit('selection:transform-preview-pasted', {
+            layerId: createdLayer.layerData?.id,
+            bounds: { x: clip.x, y: clip.y, width: clip.width, height: clip.height }
+        });
+        return true;
+    }
+
+    _ensureCaptureHud() {
+        if (typeof document === 'undefined') return null;
+        if (!this._captureHudElement) {
+            let el = document.getElementById('tegaki-transform-preview-capture-hud');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'tegaki-transform-preview-capture-hud';
+                el.className = 'tegaki-transform-preview-capture-hud';
+                const host = document.querySelector('.canvas-area') || document.body;
+                host.appendChild?.(el);
+            }
+            this._captureHudElement = el;
+        }
+        return this._captureHudElement;
+    }
+
+    _showCaptureHud(state = 1) {
+        const hud = this._ensureCaptureHud();
+        if (!hud) return;
+        if (state === 1) {
+            hud.textContent = '変形プレビュー切り出し: ドラッグまたは Ctrl+A で範囲を選択してください';
+        } else if (state === 2) {
+            const b = this.state?.bounds;
+            const w = b ? Math.round(b.width) : 0;
+            const h = b ? Math.round(b.height) : 0;
+            hud.textContent = `選択範囲: ${w}×${h}px — Ctrl+C: 切り出しをコピー | M: キャンセル`;
+        } else if (state === 3) {
+            hud.textContent = 'コピー完了 — Ctrl+V: 新規レイヤーとして作成 | M: キャンセル';
+        }
+        hud.classList.add('is-visible');
+    }
+
+    _hideCaptureHud() {
+        if (this._captureHudElement) {
+            this._captureHudElement.classList.remove('is-visible');
+            this._captureHudElement.textContent = '';
+        }
+    }
+
+    _updateCaptureHud() {
+        if (!this.transformPreviewCaptureMode) return;
+        if (this.transformPreviewCaptureClipboard) {
+            this._showCaptureHud(3);
+        } else if (this.hasSelection()) {
+            this._showCaptureHud(2);
+        } else {
+            this._showCaptureHud(1);
+        }
+    }
+
     setToolActive(active) {
         const nextActive = active === true;
         if (this.toolActive === nextActive) return true;
@@ -227,6 +456,9 @@ export class PixelSelectionSystem {
         this.drag = null;
         this._updateOverlay();
         this.eventBus?.emit('selection:cleared', { reason, previous });
+        if (this.transformPreviewCaptureMode) {
+            this._updateCaptureHud();
+        }
         return Boolean(previous);
     }
 
@@ -234,19 +466,15 @@ export class PixelSelectionSystem {
         const target = this._getActiveSelectionTarget();
         if (!target) return false;
         const isFolder = target.kind === 'folder';
-        const width = isFolder
-            ? Math.max(1, Math.round(this.layerSystem.config?.canvas?.width || 1))
-            : Math.max(1, Math.round(target.layer.layerData.renderTexture.width));
-        const height = isFolder
-            ? Math.max(1, Math.round(this.layerSystem.config?.canvas?.height || 1))
-            : Math.max(1, Math.round(target.layer.layerData.renderTexture.height));
+        const canvasWidth = Math.max(1, Math.round(this.layerSystem?.config?.canvas?.width || target.layer.layerData?.renderTexture?.width || 1));
+        const canvasHeight = Math.max(1, Math.round(this.layerSystem?.config?.canvas?.height || target.layer.layerData?.renderTexture?.height || 1));
         this.state = {
             active: true,
             layerId: target.layer.layerData.id,
             scope: isFolder
                 ? { kind: 'folder', folderId: target.layer.layerData.id }
                 : { kind: 'layer', layerId: target.layer.layerData.id },
-            bounds: { x: 0, y: 0, width, height },
+            bounds: { x: 0, y: 0, width: canvasWidth, height: canvasHeight },
             mode: 'rectangle',
             transformSessionActive: false
         };
@@ -256,6 +484,9 @@ export class PixelSelectionSystem {
             ...this.getState(),
             action: 'select-all'
         });
+        if (this.transformPreviewCaptureMode) {
+            this._updateCaptureHud();
+        }
         return true;
     }
 
@@ -850,6 +1081,7 @@ export class PixelSelectionSystem {
     _bindKeyboardEvents() {
         const onKeyDown = event => {
             if (this._isTextInputFocused()) return;
+            if (event.target?.closest?.('.reference-preview-viewer')) return;
             if (event.key === 'Escape' && this.transformSession) {
                 this.cancelTransform('escape');
                 event.preventDefault();
@@ -887,15 +1119,28 @@ export class PixelSelectionSystem {
             }
             if (primaryModifier && !event.shiftKey && !event.altKey && event.code === 'KeyV') {
                 if (document.documentElement.dataset.tegakiShortcutContext === 'animation') return;
+                if (this.transformPreviewCaptureMode) {
+                    if (this.pasteTransformPreviewSelectionAsNewLayer()) {
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+                    }
+                    return;
+                }
                 if (this.pasteSelectionAsNewLayer()) {
                     event.preventDefault();
                     event.stopImmediatePropagation();
                 }
                 return;
             }
-            if (!this.hasSelection()) return;
             if (primaryModifier && !event.shiftKey && !event.altKey && event.code === 'KeyC') {
                 if (document.documentElement.dataset.tegakiShortcutContext === 'animation') return;
+                if (this.transformPreviewCaptureMode) {
+                    this.copyTransformPreviewSelection();
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    return;
+                }
+                if (!this.hasSelection()) return;
                 if (this.copySelection()) {
                     event.preventDefault();
                     event.stopImmediatePropagation();
@@ -903,12 +1148,20 @@ export class PixelSelectionSystem {
                 return;
             }
             if (primaryModifier && !event.shiftKey && !event.altKey && event.code === 'KeyX') {
+                if (this.transformPreviewCaptureMode) {
+                    showFeedbackToast('変形プレビューの切り出しでは Ctrl+X は使用できません', { duration: 2500 });
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    return;
+                }
+                if (!this.hasSelection()) return;
                 if (this.copySelection() && this.deleteSelection('cut')) {
                     event.preventDefault();
                     event.stopImmediatePropagation();
                 }
                 return;
             }
+            if (!this.hasSelection()) return;
             if (!primaryModifier && !event.shiftKey && !event.altKey
                 && (event.key === 'Delete' || event.key === 'Backspace')) {
                 if (this.deleteSelection()) {
@@ -924,6 +1177,11 @@ export class PixelSelectionSystem {
     _bindEventBus() {
         if (!this.eventBus) return;
         const subscriptions = [
+            ['layer:transform-exit', () => {
+                if (this.transformPreviewCaptureMode) {
+                    this.exitTransformPreviewCapture({ cancelSourceTransform: false });
+                }
+            }],
             ['camera:transform-changed', () => this._scheduleOverlayUpdate()],
             ['layer:transform-updated', () => this._scheduleOverlayUpdate()],
             ['camera:resized', () => this.clearSelection('canvas-resized')],
@@ -973,14 +1231,19 @@ export class PixelSelectionSystem {
 
     _handlePointerDown(event) {
         if (!this.toolActive || event.button !== 0) return;
-        if (this.cameraSystem?.isCanvasMoveMode?.() || this.layerSystem?.vKeyPressed) return;
+        if (this.cameraSystem?.isCanvasMoveMode?.()) return;
+        if (!this.transformPreviewCaptureMode && this.layerSystem?.vKeyPressed) return;
         const target = this._getActiveSelectionTarget();
         if (!target) return;
         const layer = target.layer;
-        const point = target.kind === 'folder'
+        const point = (target.kind === 'folder' || this.transformPreviewCaptureMode)
             ? this._clientToCanvasPoint(event.clientX, event.clientY)
             : this._clientToLayerPoint(event.clientX, event.clientY, layer);
         if (!point) return;
+
+        if (this.transformPreviewCaptureMode) {
+            this.transformPreviewCaptureClipboard = null;
+        }
 
         if (this.transformSession) {
             if (target.kind === 'folder') return;
@@ -1007,7 +1270,7 @@ export class PixelSelectionSystem {
             type: 'selection-create',
             pointerId: event.pointerId,
             layer,
-            coordinateSpace: target.kind === 'folder' ? 'canvas' : 'layer',
+            coordinateSpace: (target.kind === 'folder' || this.transformPreviewCaptureMode) ? 'canvas' : 'layer',
             start: point,
             current: point
         };
@@ -1083,6 +1346,9 @@ export class PixelSelectionSystem {
         this.drag.current = point;
         this.state.bounds = this._boundsFromPoints(this.drag.start, point);
         this._updateOverlay();
+        if (this.transformPreviewCaptureMode) {
+            this._updateCaptureHud();
+        }
         event.preventDefault();
         event.stopImmediatePropagation();
     }
@@ -1122,6 +1388,9 @@ export class PixelSelectionSystem {
                 action: 'create'
             });
             this._updateOverlay();
+            if (this.transformPreviewCaptureMode) {
+                this._updateCaptureHud();
+            }
         }
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -1474,6 +1743,25 @@ export class PixelSelectionSystem {
 
     _updateOverlay() {
         if (!this.overlay || !this.overlayPolygon) return;
+        if (this.transformPreviewCaptureMode && this.hasSelection()) {
+            const bounds = this.state.bounds;
+            const screenPoints = [
+                { x: bounds.x, y: bounds.y },
+                { x: bounds.x + bounds.width, y: bounds.y },
+                { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
+                { x: bounds.x, y: bounds.y + bounds.height }
+            ].map(point => this.coordSystem.worldToScreen(point.x, point.y));
+            if (screenPoints.some(point => !Number.isFinite(point?.clientX) || !Number.isFinite(point?.clientY))) {
+                this.overlay.classList.remove('is-visible');
+                return;
+            }
+            this.overlayPolygon.setAttribute(
+                'points',
+                screenPoints.map(point => `${point.clientX},${point.clientY}`).join(' ')
+            );
+            this.overlay.classList.add('is-visible');
+            return;
+        }
         const folderContext = this._getFolderSelectionContext();
         if (folderContext) {
             const bounds = folderContext.bounds;

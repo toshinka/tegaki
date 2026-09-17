@@ -64,6 +64,7 @@ import { QuickAccessPopup } from './ui/quick-access-popup.js';
 import { ResizePopup } from './ui/resize-popup.js';
 import { ExportPopup } from './ui/export-popup.js';
 import { AlbumPopup } from './ui/album-popup.js';
+import { ReferencePreviewViewer } from './ui/reference-preview-viewer.js';
 
 export class CoreEngine {
     constructor(app, options = {}) {
@@ -360,9 +361,17 @@ export class CoreEngine {
             layerSystem: this.layerSystem,
             animationSystem: this.animationSystem
         });
+        this.popupManager.register('referencePreview', ReferencePreviewViewer, {
+            app: this.app,
+            layerSystem: this.layerSystem,
+            exportManager: this.exportManager,
+            cameraSystem: this.cameraSystem,
+            eventBus: this.eventBus
+        });
 
         // 15. ポップアップの初期化実行
         this.popupManager.initializeAll();
+        window.referencePreviewViewer = this.popupManager.get('referencePreview');
         const animationTable = this.popupManager.get('animationTable');
         this.layerSystem.setTransformEditAdapter(
             animationTable?.createLayerTransformEditAdapter?.() || null

@@ -57,6 +57,7 @@ import {
     isLayerPanelDiagnosticsEnabled,
     recordLayerClippingRefresh
 } from './layer-panel-diagnostics.js';
+import { showFeedbackToast } from '../ui/feedback-toast.js';
 import {
     isTransformTimelineKeyTarget,
     TRANSFORM_EDIT_TRANSACTION_TARGET
@@ -592,6 +593,7 @@ export class LayerSystem {
         if (!this.app?.renderer || !layer?.layerData?.renderTexture) return false;
 
         const layerData = layer.layerData;
+        this._lastTransformBakeFailure = null;
         const rawTransformState = structuredClone(
             transformOverride
                 || this.transform?.getTransform?.(layerData.id)
@@ -599,6 +601,7 @@ export class LayerSystem {
         );
         const transformState = this._normalizeTransformStateForBake(rawTransformState);
         if (!transformState) {
+            this._lastTransformBakeFailure = { reason: 'invalid-transform-state', layerId: layerData.id };
             console.warn('[LayerSystem] transform bake skipped: invalid transform state', {
                 layerId: layerData.id,
                 transform: rawTransformState
@@ -606,7 +609,10 @@ export class LayerSystem {
             return false;
         }
         const sourceSnapshot = sourceSnapshotOverride || this.createLayerRasterSnapshot(layer);
-        if (!sourceSnapshot?.pixels) return false;
+        if (!sourceSnapshot?.pixels) {
+            this._lastTransformBakeFailure = { reason: 'missing-source-snapshot', layerId: layerData.id };
+            return false;
+        }
 
         const sourceBounds = normalizeRasterBounds(sourceSnapshot.rasterBounds, {
             width: sourceSnapshot.width,
@@ -618,13 +624,32 @@ export class LayerSystem {
         const contentBounds = calculateOpaqueRasterBounds(sourceSnapshot) || sourceBounds;
         const targetBounds = this._calculateTransformedRasterBounds(contentBounds, transformState);
         const maxTextureSize = this._getMaxRenderTextureSize();
-        if (
-            !targetBounds
-            || targetBounds.width > maxTextureSize
-            || targetBounds.height > maxTextureSize
-            || !this._isRasterBakeSizeAllowed(targetBounds)
-        ) {
+        if (!targetBounds) {
+            this._lastTransformBakeFailure = { reason: 'invalid-target-bounds', layerId: layerData.id };
+            return false;
+        }
+        if (targetBounds.width > maxTextureSize || targetBounds.height > maxTextureSize) {
+            this._lastTransformBakeFailure = {
+                reason: 'exceeds-max-texture-size',
+                layerId: layerData.id,
+                targetBounds,
+                maxTextureSize
+            };
             console.warn('[LayerSystem] transform bake skipped: exceeds max texture size', {
+                layerId: layerData.id,
+                targetBounds,
+                maxTextureSize
+            });
+            return false;
+        }
+        if (!this._isRasterBakeSizeAllowed(targetBounds)) {
+            this._lastTransformBakeFailure = {
+                reason: 'exceeds-safe-pixel-count',
+                layerId: layerData.id,
+                targetBounds,
+                maxTextureSize
+            };
+            console.warn('[LayerSystem] transform bake skipped: exceeds safe pixel count', {
                 layerId: layerData.id,
                 targetBounds,
                 maxTextureSize
@@ -681,6 +706,11 @@ export class LayerSystem {
         );
 
         const restored = this.restoreLayerRasterSnapshot(nextSnapshot);
+        if (!restored) {
+            this._lastTransformBakeFailure = { reason: 'restore-snapshot-failed', layerId: layerData.id };
+        } else {
+            this._lastTransformBakeFailure = null;
+        }
         if (this.config?.debug && restored) {
             console.log(`[LayerSystem] Baked transform for layer: ${layerData.name}`, {
                 sourceBounds,
@@ -733,6 +763,31 @@ export class LayerSystem {
         }
 
         return { ok: true, sourceBounds, contentBounds, transform: transformState, targetBounds, maxTextureSize };
+    }
+
+    getLastTransformBakeFailure() {
+        return this._lastTransformBakeFailure ? { ...this._lastTransformBakeFailure } : null;
+    }
+
+    _notifyTransformBakeFailure(failure) {
+        if (!failure?.reason) return;
+        let message = null;
+        if (failure.reason === 'exceeds-max-texture-size') {
+            message = '変形後の画像の幅または高さが上限（8192px）を超えています。このままでは確定できません。拡大率を下げるか、Mキーで必要範囲を切り出してください。';
+        } else if (failure.reason === 'exceeds-safe-pixel-count') {
+            message = '変形後の画像が安全上限（16MP）を超えています。このままでは確定できません。拡大率を下げるか、Mキーで必要範囲を切り出してください。';
+        }
+        if (message) {
+            showFeedbackToast(message, { duration: 3200 });
+            if (this.eventBus) {
+                this.eventBus.emit('layer:transform-bake-rejected', {
+                    layerId: failure.layerId || null,
+                    reason: failure.reason,
+                    targetBounds: failure.targetBounds ? { ...failure.targetBounds } : null,
+                    message
+                });
+            }
+        }
     }
 
     _calculateTransformedRasterBounds(sourceBounds, transformState) {
@@ -4160,7 +4215,19 @@ export class LayerSystem {
             }
         } catch (error) {
             console.error('[LayerSystem] Failed to confirm layer transform:', error);
-        } finally {
+        }
+
+        const isCapacityRejection = !cancelled && !transformConfirmed && (
+            this._lastTransformBakeFailure?.reason === 'exceeds-max-texture-size'
+            || this._lastTransformBakeFailure?.reason === 'exceeds-safe-pixel-count'
+        );
+
+        if (isCapacityRejection && !options.force && options.source !== 'project-save') {
+            this._hideOperationIndicator();
+            return false;
+        }
+
+        try {
             this.transform.exitMoveMode(activeLayer);
             if (this.cameraSystem?.setVKeyPressed) {
                 this.cameraSystem.setVKeyPressed(false);
@@ -4183,6 +4250,7 @@ export class LayerSystem {
             }
             this._layerTransformSession = null;
             this.transform.setEditContextProjection?.(null);
+        } finally {
             this._folderTransformConfirmDeferred = false;
             this._hideOperationIndicator();
         }
@@ -4510,6 +4578,7 @@ export class LayerSystem {
                 // 回転・拡縮・flip・複合変形は、変形後AABBへ拡張して焼き込む。
                 if (!this.bakeTransform(activeLayer, transformBefore, beforeSnapshot)) {
                     this.restoreLayerRasterSnapshot(beforeSnapshot);
+                    this._notifyTransformBakeFailure(this._lastTransformBakeFailure);
                     return false;
                 }
 
@@ -4663,6 +4732,7 @@ export class LayerSystem {
             }
             this.transform.setTransform(folderId, structuredClone(resetTransform));
             this._resetDisplayTransform(folderLayer);
+            this._notifyTransformBakeFailure(this._lastTransformBakeFailure);
             return false;
         }
 
