@@ -141,6 +141,7 @@ export class ReferencePreviewViewer {
         this.clipboardCount = 1;
         this.isThumbnailMode = false;
         this.controlsCollapsed = false;
+        this.previewMicroAutoFit = true;
         this._savedFullRect = null;
         this._hasUserResized = false;
 
@@ -493,10 +494,13 @@ export class ReferencePreviewViewer {
         const surface = this.popup.querySelector('.viewer-surface');
         if (surface) {
             surface.addEventListener('pointerdown', (e) => {
-                if (this.isThumbnailMode) return;
                 if (e.button !== 0) return;
                 const tab = this.getActiveTab();
                 if (!tab) return;
+
+                if (tab.type === 'preview') {
+                    this.previewMicroAutoFit = false;
+                }
 
                 this._isPanning = true;
                 this._panStart = { x: e.clientX, y: e.clientY };
@@ -536,13 +540,27 @@ export class ReferencePreviewViewer {
             surface.addEventListener('pointerup', onPanEnd);
             surface.addEventListener('pointercancel', onPanEnd);
 
-            // Wheel zoom around cursor
+            // Wheel: Plain -> zoom, Shift+Wheel -> rotate (parity with CameraSystem)
             surface.addEventListener('wheel', (e) => {
-                if (this.isThumbnailMode) return;
                 e.preventDefault();
                 e.stopPropagation();
                 const tab = this.getActiveTab();
                 if (!tab) return;
+
+                // Shift + Wheel -> Rotate active source (deltaY < 0 -> +15, deltaY > 0 -> -15)
+                if (e.shiftKey) {
+                    if (e.deltaY < 0) {
+                        this.rotateActiveTab(15);
+                    } else if (e.deltaY > 0) {
+                        this.rotateActiveTab(-15);
+                    }
+                    return;
+                }
+
+                // Plain Wheel -> Zoom active source around pointer
+                if (tab.type === 'preview') {
+                    this.previewMicroAutoFit = false;
+                }
 
                 const rect = surface.getBoundingClientRect();
                 const mx = e.clientX - rect.left;
@@ -785,6 +803,7 @@ export class ReferencePreviewViewer {
         if (!this.popup) return;
 
         if (enabled) {
+            this.previewMicroAutoFit = true;
             // 1. Remember previous full dimensions
             this._savedFullRect = {
                 left: this.popup.offsetLeft,
@@ -1160,6 +1179,9 @@ export class ReferencePreviewViewer {
         const tab = this.getActiveTab();
         if (!tab) return;
         this.fitTab(tab);
+        if (tab.type === 'preview') {
+            this.previewMicroAutoFit = true;
+        }
         this._applyCurrentTransform();
         this._updateToolbarUI();
     }
@@ -1220,6 +1242,9 @@ export class ReferencePreviewViewer {
         tab.viewState.flipX = false;
         tab.viewState.flipY = false;
         this.fitTab(tab);
+        if (tab.type === 'preview') {
+            this.previewMicroAutoFit = true;
+        }
         this._applyCurrentTransform();
         this._updateToolbarUI();
     }
@@ -1267,7 +1292,11 @@ export class ReferencePreviewViewer {
         if (e.repeat) return false;
         if (e.ctrlKey || e.metaKey || e.altKey) return false;
 
-        if (e.code === 'KeyH' || e.key === 'h' || e.key === 'H') {
+        const key = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+        const isH = e.code === 'KeyH' || key === 'h';
+        const isR = e.code === 'KeyR' || key === 'r';
+
+        if (isH) {
             if (!e.shiftKey) {
                 e.preventDefault?.();
                 e.stopPropagation?.();
@@ -1281,7 +1310,7 @@ export class ReferencePreviewViewer {
             }
         }
 
-        if (e.code === 'KeyR' || e.key === 'r' || e.key === 'R') {
+        if (isR) {
             if (!e.shiftKey) {
                 e.preventDefault?.();
                 e.stopPropagation?.();
@@ -1451,11 +1480,14 @@ export class ReferencePreviewViewer {
         const h = this.popup.offsetHeight || parseInt(this.popup.style?.height, 10) || 520;
         const isMicro = w < 240 || h < 190 || this.isThumbnailMode;
 
-        if (isMicro && tab.type === 'preview') {
+        if (isMicro && tab.type === 'preview' && this.previewMicroAutoFit) {
             const surface = this.popup.querySelector('.viewer-surface');
             const sw = surface?.clientWidth || Math.max(120, w - 4);
             const sh = surface?.clientHeight || Math.max(80, h - 30);
             const fit = calculateFitTransform(sw, sh, tab.width, tab.height);
+            tab.viewState.zoom = fit.zoom;
+            tab.viewState.panX = fit.panX;
+            tab.viewState.panY = fit.panY;
             const microViewState = {
                 ...fit,
                 rotationDeg: tab.viewState.rotationDeg,

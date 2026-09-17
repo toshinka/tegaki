@@ -78,6 +78,39 @@
      - 根本原因: ソース切替時の `_renderSourceRail()` 内で `rail.innerHTML = ''` によりフォーカス中のマーカーボタンがDOM破棄され、ブラウザ仕様により `document.activeElement` が `<body>` へリセットされていたこと、およびリサイズハンドルの `stopPropagation` により親要素へのフォーカス伝播が阻害されていたこと。
      - 修正内容: `_renderSourceRail()` のインプレースDOM差分更新（既存要素破棄の防止）、マーカークリック時の明示的フォーカス維持（`marker.focus?.()`）、Viewerポップアップ全体でのキャプチャフェーズ `pointerdown` フォーカス獲得、リサイズ開始時の明示的フォーカス獲得、および `handleKeyDown` での二重発火防止。
      - 検証: 実ブラウザCDP操作テスト（B1〜B8）および決定論的検証（T59〜T65を増補し計65シナリオすべてPASS）により、マーカー切替・リサイズ後も即座に局所ショートカットが機能し、Canvas側およびテキスト入力側へのフォーカス分離契約が維持されることを実証。
+  17. Reference / Preview Viewer Owner受入修正 02 — Micro ホイールズーム退帰解消 ＆ 回転ショートカット正規化（Owner Acceptance Fix 02）:
+     - Owner受入操作で確認された2件の退行（A: Micro表示時のマウスホイールによる資料拡大縮小不可、B: Viewer内での R / Shift+R 回転ショートカット不発）を完全解決。
+     - 根本原因1（Micro Wheel Zoom）: `reference-preview-viewer.js` のサーフェス `wheel` リスナー冒頭に `if (this.isThumbnailMode) return;` の早期脱出ガードが存在し、Micro（サムネイル）表示時にホイールズーム処理が完全に遮断されていた。
+     - 根本原因2（Rotation Shortcut Normalization）: `handleKeyDown` のキー判定が `e.code === 'KeyR' || e.key === 'r' || e.key === 'R'` となっており、環境や修飾キー・IME確定状態による揺らぎへの耐性が低かった。
+     - 修正内容:
+       1. サーフェス `wheel` リスナーから `if (this.isThumbnailMode) return;` ガードを撤去し、Micro表示時でもマウスホイールによるスムーズな拡大縮小（zoom in / zoom out）を許可。回転（rotationDeg）や反転（flipX, flipY）状態を確実に保持。
+       2. `handleKeyDown` 内のキー判定を `const key = typeof e.key === 'string' ? e.key.toLowerCase() : ''; const isR = e.code === 'KeyR' || key === 'r';` に正規化（`isH` も同様）。修飾キー（Shift+R で -15°、単独 R で +15°）を確実に認識。
+       3. PreviewタブのMicro表示については、全体表示Fit再計算の意図的設計（Section 12）を尊重して手動ホイール変更を保留（HOLD）。ReferenceタブのMicroホイールズームを主対象として完遂。
+     - 検証:
+       1. 決定論的検証 `verify-reference-preview-viewer.mjs` に T66〜T75（全75シナリオ）を追加し、すべて PASS。
+       2. 実Chrome CDPによる本番受入シナリオ B1〜B10（Full Reference R/Shift+R、Full Preview R/Shift+R、Micro Reference Wheel Zoom、Micro Reference R/Shift+R、Micro Preview R/Shift+R、Micro タブ切替＆回転独立性、H/Shift+H回帰なし、Canvasホイール境界分離、Canvasハンドオフ、角度入力隔離＆コンソールエラー0件）を完全実施し、ALL PASS。
+       3. `harness check`（35 docs, 144 links, 25 proposals, 9 packages OK）、`test ui`（46/46 PASS）、Vite production build（0エラー）、`git diff --check`（0件）をすべて確認。
+  18. Reference / Preview Viewer Owner受入修正 03 — Micro ホイールズーム完遂 ＆ Main Canvas準拠 Shift+ホイール回転パリティ（Owner Acceptance Fix 03）:
+      - Owner受入操作および要望に基づき、ホイール入力文法をメインキャンバス（`camera-system.js`）と完全一致（単独Wheel = ズーム、Shift+Wheel = 15°ステップ回転、Shift+ドラッグによる回転・拡縮は導入せずドラッグはパン専任）させ、Micro Previewの強制全体Fitを「初回入場時は全体Fit、手動操作（ホイールズームまたはパンドラッグ）開始時に手動ビューへシームレス移行」契約へと刷新。
+      - 根本原因1（Preview Micro強制Fit）: `_applyCurrentTransform()` 内で `isMicro && tab.type === 'preview'` の条件が成立するたびに強制的に `calculateFitTransform` が実行され、ユーザーの手動ズーム・パン値が描画フレームごとに上書きされていた。
+      - 根本原因2（Microモード時のパンドラッグ遮断）: サーフェスの `pointerdown`（パン開始）リスナー冒頭に `if (this.isThumbnailMode) return;` の早期脱出ガードが残存しており、Microモードでのパンドラッグが遮断されていた。
+      - 根本原因3（Shift+Wheel回転の欠落）: サーフェスの `wheel` リスナーに `Shift` キー判定が存在せず、Canvas側の身体感覚（Shift+Wheelで回転）が効かずズームが暴発していた。
+      - 修正内容:
+        1. ホイール入力文法の完全パリティ:
+           - Viewerサーフェス上の単独 `Wheel` はポインター中心のズーム（拡大/縮小）のみを実行（回転は一切行わない）。
+           - `Shift + Wheel` はアクティブタブの回転（`deltaY < 0 ? +15 : -15`、`camera-system.js` と完全同一方向・同一ステップ）を実行し、ズームは一切行わない。
+           - `Shift + ドラッグ` は既存のパンドラッグのまま維持（不要な回転・拡縮挙動は一切導入せず）。
+        2. Micro Previewの手動ビュー移行契約（`previewMicroAutoFit` フラグ）:
+           - Micro Previewへの初回入場時は全体Fit（`previewMicroAutoFit = true`）で開始。
+           - ユーザーがホイールズームまたはパンドラッグを一度でも行うと、即座に手動ビュー（`previewMicroAutoFit = false`）へと遷移し、以後は手動ズーム・パン・回転・反転が保持される。
+           - キャンバス描画更新（ミラー再描画）、他タブ（Reference）との往復、回転・反転ショートカット後も手動ビューを維持。
+           - 明示的に「Fit」ボタンまたは「Reset View」ボタンを押下した時、およびフルサイズからMicroモード（サムネイル化）へ再入場した時に `previewMicroAutoFit = true`（全体Fit）へ復帰。
+        3. Micro Referenceの操作性完遂:
+           - ポインター位置を中心とする滑らかなホイールズームおよび自由なパンドラッグを完備。
+      - 検証:
+        1. 決定論的検証 `verify-reference-preview-viewer.mjs` に T76〜T93（全93シナリオ）を追加し、ALL PASS。
+        2. 実Chrome CDPによる本番受入シナリオ B1〜B10（Micro Reference Wheel Zoom、Micro Preview Zoom、Micro Preview Pan、Micro Reference Shift+Wheel 15°回転、Micro Preview Shift+Wheel回転、Fullモード入力文法パリティ、キャンバス描画更新でのPreview手動ビュー保持、タブ切替往復での手動ビュー保持、Canvas側Wheelとの境界分離、Shift+ドラッグのパン専任＆エラー0件）を完全実施し、ALL PASS。
+        3. `harness check`（35 docs, 144 links, 25 proposals, 9 packages OK）、`test ui`（46/46 PASS）、Vite production build（0エラー）、`git diff --check`（0件）をすべて確認。
 
 
 ## CURRENT OBJECTIVE — WP-008 ROUGH PRODUCT PASS

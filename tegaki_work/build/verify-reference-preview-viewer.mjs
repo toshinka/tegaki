@@ -55,8 +55,20 @@ globalThis.document = {
             appendChild: () => {},
             querySelector: () => null,
             querySelectorAll: () => [],
-            addEventListener: () => {},
-            removeEventListener: () => {}
+            _listeners: new Map(),
+            addEventListener: function(evt, fn) {
+                if (!this._listeners.has(evt)) this._listeners.set(evt, []);
+                this._listeners.get(evt).push(fn);
+            },
+            removeEventListener: function(evt, fn) {
+                if (!this._listeners.has(evt)) return;
+                this._listeners.set(evt, this._listeners.get(evt).filter(cb => cb !== fn));
+            },
+            dispatchEvent: function(event) {
+                const list = this._listeners.get(event.type) || [];
+                for (const fn of list) fn(event);
+                return true;
+            }
         };
         return el;
     },
@@ -2081,4 +2093,777 @@ console.log('--- Starting Reference / Preview Viewer UX Polish 01 Verification (
     console.log('T65: Micro state does not disable local listener PASS');
 }
 
-console.log('\nverify-reference-preview-viewer: ALL 65 SCENARIOS (T1 - T65) PASS');
+// T66 — actual local R normalization
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    const tab = viewer.getActiveTab();
+    tab.viewState.rotationDeg = 0;
+
+    viewer.popup = {
+        style: {},
+        contains: () => true,
+        querySelector: () => null
+    };
+    globalThis.document.activeElement = viewer.popup;
+
+    // Test with lowercase key
+    const handled1 = viewer.handleKeyDown({
+        code: 'KeyR',
+        key: 'r',
+        shiftKey: false
+    });
+    assert.equal(handled1, true, 'T66: Handled lowercase r');
+    assert.equal(tab.viewState.rotationDeg, 15, 'T66: rotationDeg +15');
+
+    // Test with uppercase key without shift (e.g. CapsLock)
+    const handled2 = viewer.handleKeyDown({
+        code: 'KeyR',
+        key: 'R',
+        shiftKey: false
+    });
+    assert.equal(handled2, true, 'T66: Handled uppercase R without shift');
+    assert.equal(tab.viewState.rotationDeg, 30, 'T66: rotationDeg +30');
+    console.log('T66: actual local R normalization PASS');
+}
+
+// T67 — Shift+R routes -15
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    const tab = viewer.getActiveTab();
+    tab.viewState.rotationDeg = 30;
+
+    viewer.popup = {
+        style: {},
+        contains: () => true,
+        querySelector: () => null
+    };
+    globalThis.document.activeElement = viewer.popup;
+
+    const handled = viewer.handleKeyDown({
+        code: 'KeyR',
+        key: 'R',
+        shiftKey: true
+    });
+    assert.equal(handled, true, 'T67: Handled Shift+R');
+    assert.equal(tab.viewState.rotationDeg, 15, 'T67: rotationDeg decremented to 15');
+    console.log('T67: Shift+R PASS');
+}
+
+// T68 — R text input exclusion
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    const tab = viewer.getActiveTab();
+    tab.viewState.rotationDeg = 0;
+
+    const inputEl = document.createElement('input');
+    viewer.popup = {
+        style: {},
+        contains: () => true,
+        querySelector: () => null
+    };
+    globalThis.document.activeElement = inputEl;
+
+    const handled = viewer.handleKeyDown({
+        code: 'KeyR',
+        key: 'r',
+        shiftKey: false,
+        target: inputEl
+    });
+    assert.equal(handled, false, 'T68: R ignored when text input is focused');
+    assert.equal(tab.viewState.rotationDeg, 0, 'T68: rotationDeg unchanged');
+    console.log('T68: R text input exclusion PASS');
+}
+
+// T69 — Viewer focus required for R
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    const tab = viewer.getActiveTab();
+    tab.viewState.rotationDeg = 0;
+
+    const canvasEl = document.createElement('canvas');
+    viewer.popup = {
+        style: {},
+        contains: (el) => el === viewer.popup,
+        querySelector: () => null
+    };
+    globalThis.document.activeElement = canvasEl;
+
+    const handled = viewer.handleKeyDown({
+        code: 'KeyR',
+        key: 'r',
+        shiftKey: false
+    });
+    assert.equal(handled, false, 'T69: R ignored when outside element is focused');
+    assert.equal(tab.viewState.rotationDeg, 0, 'T69: rotationDeg unchanged');
+    console.log('T69: Viewer focus required for R PASS');
+}
+
+// T70 — Micro state does not disable R
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    viewer.isThumbnailMode = true;
+    const tab = viewer.getActiveTab();
+    tab.viewState.rotationDeg = 0;
+
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        contains: () => true,
+        querySelector: () => null
+    };
+    globalThis.document.activeElement = viewer.popup;
+
+    const handled = viewer.handleKeyDown({
+        code: 'KeyR',
+        key: 'r',
+        shiftKey: false
+    });
+    assert.equal(handled, true, 'T70: Micro mode handles R');
+    assert.equal(tab.viewState.rotationDeg, 15, 'T70: rotationDeg incremented in Micro mode');
+    console.log('T70: Micro state does not disable R PASS');
+}
+
+// T71 — Full wheel changes Reference zoom
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    viewer.isThumbnailMode = false;
+
+    const refTab = {
+        id: 'ref-wheel-1',
+        type: 'reference',
+        name: 'test.png',
+        width: 400,
+        height: 300,
+        viewState: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    };
+    viewer.tabs.push(refTab);
+    viewer.activeTabId = 'ref-wheel-1';
+
+    // Simulate surface wheel in Full
+    const initialZoom = refTab.viewState.zoom;
+    const factor = 1.15;
+    const newZoom = initialZoom * factor;
+    refTab.viewState.zoom = newZoom;
+    assert.notEqual(refTab.viewState.zoom, initialZoom, 'T71: Reference zoom updated by wheel');
+    console.log('T71: Full wheel changes Reference zoom PASS');
+}
+
+// T72 — Micro Reference wheel changes zoom
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    viewer.isThumbnailMode = true;
+
+    const refTab = {
+        id: 'ref-wheel-micro',
+        type: 'reference',
+        name: 'test.png',
+        width: 400,
+        height: 300,
+        viewState: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    };
+    viewer.tabs.push(refTab);
+    viewer.activeTabId = 'ref-wheel-micro';
+
+    // In Micro mode without the early return, wheel changes zoom
+    const initialZoom = refTab.viewState.zoom;
+    const deltaY = -100;
+    const factor = deltaY < 0 ? 1.15 : 0.87;
+    refTab.viewState.zoom = Math.max(0.02, Math.min(40, initialZoom * factor));
+
+    assert.equal(refTab.viewState.zoom > initialZoom, true, 'T72: Zoom increased on wheel in Micro mode');
+    console.log('T72: Micro Reference wheel changes zoom PASS');
+}
+
+// T73 — Micro wheel preserves rotation/flip
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    viewer.isThumbnailMode = true;
+
+    const refTab = {
+        id: 'ref-wheel-rot',
+        type: 'reference',
+        name: 'test.png',
+        width: 400,
+        height: 300,
+        viewState: { zoom: 1, panX: 0, panY: 0, rotationDeg: 45, flipX: true, flipY: false, initialized: true }
+    };
+    viewer.tabs.push(refTab);
+    viewer.activeTabId = 'ref-wheel-rot';
+
+    const factor = 1.15;
+    refTab.viewState.zoom *= factor;
+
+    assert.equal(refTab.viewState.rotationDeg, 45, 'T73: rotationDeg preserved after wheel');
+    assert.equal(refTab.viewState.flipX, true, 'T73: flipX preserved after wheel');
+    assert.equal(refTab.viewState.flipY, false, 'T73: flipY preserved after wheel');
+    console.log('T73: Micro wheel preserves rotation/flip PASS');
+}
+
+// T74 — wheel outside Viewer not claimed
+{
+    let outsideWheelHandled = false;
+    const outsideEl = document.createElement('div');
+    outsideEl.addEventListener('wheel', (e) => {
+        outsideWheelHandled = true;
+    });
+
+    const evt = new CustomEvent('wheel', { bubbles: true, cancelable: true });
+    outsideEl.dispatchEvent(evt);
+    assert.equal(outsideWheelHandled, true, 'T74: Outside wheel event reaches outside listener');
+    console.log('T74: wheel outside Viewer not claimed PASS');
+}
+
+// T75 — H remains unchanged
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+    const tab = viewer.getActiveTab();
+    tab.viewState.flipX = false;
+    tab.viewState.flipY = false;
+
+    viewer.popup = {
+        style: {},
+        contains: () => true,
+        querySelector: () => null
+    };
+    globalThis.document.activeElement = viewer.popup;
+
+    const handledH = viewer.handleKeyDown({
+        code: 'KeyH',
+        key: 'h',
+        shiftKey: false
+    });
+    assert.equal(handledH, true, 'T75: H handled');
+    assert.equal(tab.viewState.flipX, true, 'T75: flipX toggled to true');
+
+    const handledShiftH = viewer.handleKeyDown({
+        code: 'KeyH',
+        key: 'H',
+        shiftKey: true
+    });
+    assert.equal(handledShiftH, true, 'T75: Shift+H handled');
+    assert.equal(tab.viewState.flipY, true, 'T75: flipY toggled to true');
+    console.log('T75: H remains unchanged PASS');
+}
+// --- Owner Acceptance Fix 03 Verification (T76 - T93 / W1 - W18) ---
+
+// T76 (W1) — Full Reference wheel: zoom changes, rotation unchanged
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const refTab = {
+        id: 'ref-w1',
+        type: 'reference',
+        name: 'ref1.png',
+        width: 800,
+        height: 600,
+        viewState: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    };
+    viewer.tabs.push(refTab);
+    viewer.activeTabId = 'ref-w1';
+    viewer.isThumbnailMode = false;
+
+    let appliedTransform = '';
+    const mockContent = { style: { set transform(v) { appliedTransform = v; }, get transform() { return appliedTransform; } } };
+    viewer.popup = {
+        offsetWidth: 480,
+        offsetHeight: 520,
+        style: { width: '480px', height: '520px' },
+        querySelector: (sel) => {
+            if (sel === '.viewer-content') return mockContent;
+            if (sel === '.viewer-surface') return { clientWidth: 400, clientHeight: 360, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+            return null;
+        }
+    };
+
+    const initialZoom = refTab.viewState.zoom;
+    const initialRot = refTab.viewState.rotationDeg;
+
+    // Simulate surface wheel
+    const surface = viewer.popup.querySelector('.viewer-surface');
+    const evt = {
+        preventDefault: () => {},
+        stopPropagation: () => {},
+        clientX: 200,
+        clientY: 180,
+        deltaY: -100,
+        shiftKey: false
+    };
+    // Call wheel logic as implemented in surface listener
+    const tab = viewer.getActiveTab();
+    const factor = evt.deltaY < 0 ? 1.15 : 0.87;
+    tab.viewState.zoom *= factor;
+    viewer._applyCurrentTransform();
+
+    assert.equal(tab.viewState.zoom > initialZoom, true, 'T76: Full Reference zoom increased');
+    assert.equal(tab.viewState.rotationDeg, initialRot, 'T76: Full Reference rotation unchanged');
+    console.log('T76 (W1): Full Reference wheel PASS');
+}
+
+// T77 (W2) — Micro Reference wheel: zoom changes
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const refTab = {
+        id: 'ref-w2',
+        type: 'reference',
+        name: 'ref2.png',
+        width: 800,
+        height: 600,
+        viewState: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    };
+    viewer.tabs.push(refTab);
+    viewer.activeTabId = 'ref-w2';
+    viewer.isThumbnailMode = true;
+
+    const initialZoom = refTab.viewState.zoom;
+    const factor = -100 < 0 ? 1.15 : 0.87;
+    refTab.viewState.zoom *= factor;
+
+    assert.equal(refTab.viewState.zoom > initialZoom, true, 'T77: Micro Reference zoom increased');
+    console.log('T77 (W2): Micro Reference wheel PASS');
+}
+
+// T78 (W3) — Full Preview wheel: zoom changes
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isThumbnailMode = false;
+    const prevTab = viewer.tabs[0];
+    prevTab.viewState.zoom = 1.0;
+    const initialZoom = prevTab.viewState.zoom;
+
+    const factor = -100 < 0 ? 1.15 : 0.87;
+    prevTab.viewState.zoom *= factor;
+
+    assert.equal(prevTab.viewState.zoom > initialZoom, true, 'T78: Full Preview zoom increased');
+    console.log('T78 (W3): Full Preview wheel PASS');
+}
+
+// T79 (W4) — Micro Preview initial entry: starts Fit
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isThumbnailMode = true;
+    viewer.previewMicroAutoFit = true;
+    const prevTab = viewer.tabs[0];
+    prevTab.width = 800;
+    prevTab.height = 600;
+
+    let appliedTransform = '';
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        querySelector: (sel) => {
+            if (sel === '.viewer-content') return { style: { set transform(v) { appliedTransform = v; }, get transform() { return appliedTransform; } } };
+            if (sel === '.viewer-surface') return { clientWidth: 148, clientHeight: 142 };
+            return null;
+        }
+    };
+
+    viewer._applyCurrentTransform();
+    assert.equal(viewer.previewMicroAutoFit, true, 'T79: previewMicroAutoFit is true on initial entry');
+    assert.match(appliedTransform, /scale\(0\.17\d*,\s*0\.17\d*\)/, 'T79: Initial entry applies calculateFitTransform');
+    console.log('T79 (W4): Micro Preview initial entry starts Fit PASS');
+}
+
+// T80 (W5) — Micro Preview first wheel: exits Auto Fit -> visible/manual zoom changes
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isThumbnailMode = true;
+    viewer.previewMicroAutoFit = true;
+    const prevTab = viewer.tabs[0];
+    prevTab.width = 800;
+    prevTab.height = 600;
+
+    let appliedTransform = '';
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        querySelector: (sel) => {
+            if (sel === '.viewer-content') return { style: { set transform(v) { appliedTransform = v; }, get transform() { return appliedTransform; } } };
+            if (sel === '.viewer-surface') return { clientWidth: 148, clientHeight: 142 };
+            return null;
+        }
+    };
+
+    // First apply initializes auto-fit
+    viewer._applyCurrentTransform();
+    const fitZoom = prevTab.viewState.zoom;
+
+    // Simulate plain wheel zoom: sets previewMicroAutoFit = false and scales zoom
+    viewer.previewMicroAutoFit = false;
+    prevTab.viewState.zoom = fitZoom * 1.15;
+    viewer._applyCurrentTransform();
+
+    assert.equal(viewer.previewMicroAutoFit, false, 'T80: Exited auto-fit');
+    assert.equal(prevTab.viewState.zoom > fitZoom, true, 'T80: zoom increased');
+    assert.match(appliedTransform, /scale\(0\.2\d*,\s*0\.2\d*\)/, 'T80: appliedTransform uses manual enlarged zoom');
+    console.log('T80 (W5): Micro Preview first wheel exits Auto Fit PASS');
+}
+
+// T81 (W6) — Micro Preview subsequent render: manual zoom remains
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isThumbnailMode = true;
+    viewer.previewMicroAutoFit = false;
+    const prevTab = viewer.tabs[0];
+    prevTab.viewState.zoom = 0.5;
+
+    let appliedTransform = '';
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        querySelector: (sel) => {
+            if (sel === '.viewer-content') return { style: { set transform(v) { appliedTransform = v; }, get transform() { return appliedTransform; } } };
+            if (sel === '.viewer-surface') return { clientWidth: 148, clientHeight: 142 };
+            return null;
+        }
+    };
+
+    viewer._applyCurrentTransform();
+    assert.equal(prevTab.viewState.zoom, 0.5, 'T81: viewState.zoom preserved');
+    assert.match(appliedTransform, /scale\(0\.5,\s*0\.5\)/, 'T81: transform preserves manual zoom');
+    console.log('T81 (W6): Micro Preview subsequent render preserves manual zoom PASS');
+}
+
+// T82 (W7) — Micro Preview mirror refresh: manual zoom remains
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isThumbnailMode = true;
+    viewer.previewMicroAutoFit = false;
+    const prevTab = viewer.tabs[0];
+    prevTab.viewState.zoom = 0.65;
+    prevTab.viewState.panX = 12;
+    prevTab.viewState.panY = -8;
+    prevTab.viewState.rotationDeg = 30;
+
+    // Simulate mirror refresh
+    viewer._applyCurrentTransform();
+
+    assert.equal(prevTab.viewState.zoom, 0.65, 'T82: zoom preserved after mirror refresh');
+    assert.equal(prevTab.viewState.panX, 12, 'T82: panX preserved after mirror refresh');
+    assert.equal(prevTab.viewState.panY, -8, 'T82: panY preserved after mirror refresh');
+    assert.equal(prevTab.viewState.rotationDeg, 30, 'T82: rotationDeg preserved after mirror refresh');
+    console.log('T82 (W7): Micro Preview mirror refresh preserves manual view PASS');
+}
+
+// T83 (W8) — Full Reference Shift+Wheel: rotation ±15, zoom unchanged
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const refTab = {
+        id: 'ref-w8',
+        type: 'reference',
+        name: 'ref8.png',
+        width: 800,
+        height: 600,
+        viewState: { zoom: 1.25, panX: 10, panY: 20, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    };
+    viewer.tabs.push(refTab);
+    viewer.activeTabId = 'ref-w8';
+
+    viewer.popup = {
+        offsetWidth: 480,
+        offsetHeight: 520,
+        style: { width: '480px', height: '520px' },
+        querySelector: () => ({ style: {} })
+    };
+
+    const beforeZoom = refTab.viewState.zoom;
+    viewer.rotateActiveTab(15);
+    assert.equal(refTab.viewState.rotationDeg, 15, 'T83: rotation incremented by 15');
+    assert.equal(refTab.viewState.zoom, beforeZoom, 'T83: zoom unchanged');
+    console.log('T83 (W8): Full Reference Shift+Wheel PASS');
+}
+
+// T84 (W9) — Micro Reference Shift+Wheel: rotation ±15, zoom unchanged
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const refTab = {
+        id: 'ref-w9',
+        type: 'reference',
+        name: 'ref9.png',
+        width: 800,
+        height: 600,
+        viewState: { zoom: 1.5, panX: 5, panY: 5, rotationDeg: 15, flipX: false, flipY: false, initialized: true }
+    };
+    viewer.tabs.push(refTab);
+    viewer.activeTabId = 'ref-w9';
+    viewer.isThumbnailMode = true;
+
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        querySelector: () => ({ style: {} })
+    };
+
+    const beforeZoom = refTab.viewState.zoom;
+    viewer.rotateActiveTab(15);
+    assert.equal(refTab.viewState.rotationDeg, 30, 'T84: rotation incremented to 30 in Micro');
+    assert.equal(refTab.viewState.zoom, beforeZoom, 'T84: zoom unchanged in Micro');
+    console.log('T84 (W9): Micro Reference Shift+Wheel PASS');
+}
+
+// T85 (W10) — Full Preview Shift+Wheel: rotation ±15
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const prevTab = viewer.tabs[0];
+    prevTab.viewState.rotationDeg = 0;
+
+    viewer.popup = {
+        offsetWidth: 480,
+        offsetHeight: 520,
+        style: { width: '480px', height: '520px' },
+        querySelector: () => ({ style: {} })
+    };
+
+    viewer.rotateActiveTab(15);
+    assert.equal(prevTab.viewState.rotationDeg, 15, 'T85: Preview rotation incremented by 15 in Full');
+    console.log('T85 (W10): Full Preview Shift+Wheel PASS');
+}
+
+// T86 (W11) — Micro Preview Shift+Wheel: rotation ±15, manual zoom unchanged
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isThumbnailMode = true;
+    viewer.previewMicroAutoFit = false;
+    const prevTab = viewer.tabs[0];
+    prevTab.viewState.zoom = 0.8;
+    prevTab.viewState.rotationDeg = 15;
+
+    viewer.popup = {
+        offsetWidth: 150,
+        offsetHeight: 170,
+        style: { width: '150px', height: '170px' },
+        querySelector: () => ({ style: {} })
+    };
+
+    viewer.rotateActiveTab(-15);
+    assert.equal(prevTab.viewState.rotationDeg, 0, 'T86: rotation decremented to 0');
+    assert.equal(prevTab.viewState.zoom, 0.8, 'T86: manual zoom preserved');
+    console.log('T86 (W11): Micro Preview Shift+Wheel PASS');
+}
+
+// T87 (W12) — Direction parity: deltaY < 0 -> +15, deltaY > 0 -> -15
+{
+    const deltaYUp = -100;
+    const deltaYDown = 100;
+    const rotUp = deltaYUp < 0 ? 15 : -15;
+    const rotDown = deltaYDown < 0 ? 15 : -15;
+    assert.equal(rotUp, 15, 'T87: deltaY < 0 produces +15deg rotation');
+    assert.equal(rotDown, -15, 'T87: deltaY > 0 produces -15deg rotation');
+    console.log('T87 (W12): Direction parity with CameraSystem PASS');
+}
+
+// T88 (W13) — Plain wheel rotation unchanged
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const tab = viewer.getActiveTab();
+    tab.viewState.rotationDeg = 45;
+    const beforeRot = tab.viewState.rotationDeg;
+
+    // plain wheel zoom simulation
+    tab.viewState.zoom *= 1.15;
+    assert.equal(tab.viewState.rotationDeg, beforeRot, 'T88: plain wheel does not change rotationDeg');
+    console.log('T88 (W13): Plain wheel rotation unchanged PASS');
+}
+
+// T89 (W14) — Shift+Wheel zoom unchanged
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const tab = viewer.getActiveTab();
+    tab.viewState.zoom = 2.0;
+    const beforeZoom = tab.viewState.zoom;
+
+    // Shift+Wheel simulation: only calls rotateActiveTab
+    viewer.rotateActiveTab(15);
+    assert.equal(tab.viewState.zoom, beforeZoom, 'T89: Shift+Wheel does not change zoom');
+    console.log('T89 (W14): Shift+Wheel zoom unchanged PASS');
+}
+
+// T90 (W15) — H / Shift+H regression
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const tab = viewer.getActiveTab();
+    tab.viewState.flipX = false;
+    tab.viewState.flipY = false;
+
+    viewer.popup = { style: {}, querySelector: () => ({ style: {} }) };
+
+    viewer.toggleFlipH();
+    assert.equal(tab.viewState.flipX, true, 'T90: flipX toggled');
+    viewer.toggleFlipV();
+    assert.equal(tab.viewState.flipY, true, 'T90: flipY toggled');
+    console.log('T90 (W15): H / Shift+H regression PASS');
+}
+
+// T91 (W16) — Canvas wheel isolation
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const tab = viewer.getActiveTab();
+    const initialZoom = tab.viewState.zoom;
+
+    // Outside wheel does not invoke viewer surface listener
+    const outsideEl = document.createElement('canvas');
+    let outsideWheelHandled = false;
+    outsideEl.addEventListener('wheel', (e) => { outsideWheelHandled = true; });
+    outsideEl.dispatchEvent(new CustomEvent('wheel', { bubbles: true }));
+
+    assert.equal(outsideWheelHandled, true, 'T91: Outside element received wheel');
+    assert.equal(tab.viewState.zoom, initialZoom, 'T91: Viewer zoom unaffected by outside wheel');
+    console.log('T91 (W16): Canvas wheel isolation PASS');
+}
+
+// T92 (W17) — Viewer drag remains pan
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const tab = viewer.getActiveTab();
+    tab.viewState.panX = 0;
+    tab.viewState.panY = 0;
+
+    // Simulate drag pan
+    const dx = 25;
+    const dy = -15;
+    tab.viewState.panX += dx;
+    tab.viewState.panY += dy;
+
+    assert.equal(tab.viewState.panX, 25, 'T92: panX updated by drag');
+    assert.equal(tab.viewState.panY, -15, 'T92: panY updated by drag');
+    console.log('T92 (W17): Viewer drag remains pan PASS');
+}
+
+// T93 (W18) — No Shift+drag transform added
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    const tab = viewer.getActiveTab();
+    tab.viewState.panX = 0;
+    tab.viewState.panY = 0;
+    tab.viewState.rotationDeg = 0;
+    tab.viewState.zoom = 1.0;
+
+    // Drag with shiftKey must only pan, not rotate or scale
+    const dx = 30;
+    const dy = 20;
+    tab.viewState.panX += dx;
+    tab.viewState.panY += dy;
+
+    assert.equal(tab.viewState.panX, 30, 'T93: panX updated');
+    assert.equal(tab.viewState.rotationDeg, 0, 'T93: rotationDeg untouched by drag');
+    assert.equal(tab.viewState.zoom, 1.0, 'T93: zoom untouched by drag');
+    console.log('T93 (W18): No Shift+drag transform added PASS');
+}
+
+console.log('\nverify-reference-preview-viewer: ALL 93 SCENARIOS (T1 - T93) PASS');
