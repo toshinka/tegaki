@@ -1,7 +1,7 @@
 # Tegaki — 再開checkpoint
 
 状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。WP-009 ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。WP-008 ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW。
-更新日: 2026-09-18。現在の実HEAD: `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`と一致した状態で修正・検証を実施。
+更新日: 2026-09-18。CHECKPOINT BASELINE HEAD: `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`と一致した状態で修正・検証を実施。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
 ### CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17 Correction Pass & Off-Canvas Investigation)

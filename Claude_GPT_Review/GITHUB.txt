@@ -16,26 +16,29 @@
 
 ## CURRENT REVIEW PACKET
 
-このパケットは、Web GPTがリポジトリ全体を読み直すことなく、現在のInteraction / GUI調査・検証文脈を最小セットで復元するための高優先案内です。
+このパケットは、Web GPT / WebSOLがリポジトリ全体を読み直すことなく、現在のInteraction / GUI調査・検証文脈を最小セットで復元するための高優先案内です。
 
 Do not read every URL in this file.
 The remainder is a navigation catalog.
-Follow the current review packet first.
+
+CURRENT REVIEW PACKET is a high-priority packet for resuming the current Interaction / GUI research context.
+If the user's question is specifically about another domain (e.g. History / Save, Drawing / Input, Transform / WARP), use the matching DOMAIN ROUTE below first.
+Do not preload the Interaction Research Bank for unrelated domain questions.
 
 ### 必須5文書（Core Packet）:
-1. AGENTS.md
+1. AGENTS.md [CURRENT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
 
-2. docs/STATUS.md
+2. docs/STATUS.md [CURRENT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/STATUS.md
 
-3. docs/TECHNICAL.md
+3. docs/TECHNICAL.md [CURRENT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/TECHNICAL.md
 
-4. docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md
+4. docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md [REFERENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md
 
-5. docs/reference/interaction/TIMELINE_POINTER_TERMINAL_EVIDENCE_2026-09-18.md
+5. docs/reference/interaction/TIMELINE_POINTER_TERMINAL_EVIDENCE_2026-09-18.md [REFERENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/reference/interaction/TIMELINE_POINTER_TERMINAL_EVIDENCE_2026-09-18.md
 
 ### OPTIONAL（コード・検証根拠が必要な場合のみ）:
@@ -59,33 +62,33 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui
 ### 1. CORE / CURRENT STATE
 WHEN TO READ: 全体状況の把握、タスクの現在地・未解決事項、技術契約の確認時。
 START WITH:
-- AGENTS.md [CURRENT AUTHORITY]（URLはCURRENT REVIEW PACKET参照）
-- docs/STATUS.md [CURRENT STATUS]（URLはCURRENT REVIEW PACKET参照）
-- docs/TECHNICAL.md [CURRENT AUTHORITY]（URLはCURRENT REVIEW PACKET参照）
-- docs/README.md [CURRENT AUTHORITY]
+- AGENTS.md [CURRENT]（URLはCURRENT REVIEW PACKET参照）
+- docs/STATUS.md [CURRENT]（URLはCURRENT REVIEW PACKET参照）
+- docs/TECHNICAL.md [CURRENT]（URLはCURRENT REVIEW PACKET参照）
+- docs/README.md [CURRENT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/README.md
 
 OPTIONAL:
 - README.md [CURRENT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/README.md
-- docs/ARCHITECTURE.md [CURRENT AUTHORITY]
+- docs/ARCHITECTURE.md [CURRENT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/ARCHITECTURE.md
-- docs/VOCABULARY.md [CURRENT REFERENCE]
+- docs/VOCABULARY.md [CURRENT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/VOCABULARY.md
-- docs/ROADMAP.md [CURRENT REFERENCE]
+- docs/ROADMAP.md [CURRENT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/ROADMAP.md
-- docs/AUDIT.md [REFERENCE / AUDIT]
+- docs/AUDIT.md [CURRENT] — audit / evidence boundary
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/AUDIT.md
-- docs/DOCUMENT_REGISTER.md [CURRENT AUTHORITY]
+- docs/DOCUMENT_REGISTER.md [CURRENT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/DOCUMENT_REGISTER.md
-- docs/ai/ASTRA_OPERATING_RULES.md [CURRENT REFERENCE]
+- docs/ai/ASTRA_OPERATING_RULES.md [CURRENT] — Astra worker operating rules
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/ai/ASTRA_OPERATING_RULES.md
 
 
 ### 2. PRODUCT / UI / DESIGN
 WHEN TO READ: 製品思想、UI配置・レイアウト原則、Attention Lens、スタイル規約の確認時。
 START WITH:
-- docs/PRODUCT.md [CURRENT AUTHORITY]
+- docs/PRODUCT.md [CURRENT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/PRODUCT.md
 - docs/UI_DESIGN_AUTHORITY_MAP.md [CURRENT REFERENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/UI_DESIGN_AUTHORITY_MAP.md
@@ -99,7 +102,7 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/dom-builder.js
 - tegaki_work/ui/reference-preview-viewer.js [SOURCE EVIDENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/reference-preview-viewer.js
-- docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md [REFERENCE / RESEARCH]（UI/UX比較・参考文脈。URLはCURRENT REVIEW PACKET参照）
+- docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md [REFERENCE]（UI/UX比較・参考文脈。URLはCURRENT REVIEW PACKET参照）
 
 
 ### 3. DRAWING / INPUT
@@ -121,17 +124,19 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui
 
 
 ### 4. INTERACTION / TIMELINE
-WHEN TO READ: Timeline操作、Animation Table、ポインタージェスチャー終端、D&D、Retimeの確認時。
+WHEN TO READ: Timeline操作、Animation Table、ポインタージェスチャー終端、D&D、Retimeの確認時。まず調査・実機証拠を理解し、コード検証・実装計画・直接のソースレビューが必要な場合のみプロダクションソースへ進む。
 START WITH:
-- docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md [REFERENCE / RESEARCH]（URLはCURRENT REVIEW PACKET参照）
-- docs/reference/interaction/TIMELINE_POINTER_TERMINAL_EVIDENCE_2026-09-18.md [REFERENCE / EVIDENCE]（URLはCURRENT REVIEW PACKET参照）
+- docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md [REFERENCE]（URLはCURRENT REVIEW PACKET参照）
+- docs/reference/interaction/TIMELINE_POINTER_TERMINAL_EVIDENCE_2026-09-18.md [REFERENCE]（URLはCURRENT REVIEW PACKET参照）
+
+OPTIONAL — SOURCE VERIFICATION:
 - tegaki_work/ui/animation-table-popup.js [SOURCE EVIDENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/animation-table-popup.js
 - tegaki_work/ui/layer-panel-renderer.js [SOURCE EVIDENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/layer-panel-renderer.js
-
-OPTIONAL:
 - tegaki_work/ui/layer-transform-warp-controller.js [SOURCE EVIDENCE / 終端契約リファレンス]（URLはCURRENT REVIEW PACKET参照）
+
+OPTIONAL — DIAGNOSTIC EVIDENCE:
 - tegaki_work/build/verify-timeline-pointer-terminal.mjs [VERIFIER / DIAGNOSTIC]（URLはCURRENT REVIEW PACKET参照）
 - tegaki_work/build/timeline-pointer-terminal-diagnostic.html [VERIFIER / DIAGNOSTIC]（URLはCURRENT REVIEW PACKET参照）
 
@@ -215,9 +220,9 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-0
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-009-layer-transform-key-management.md
 
 ACTIVE WP 関連資料:
-- docs/work/WP-008-progressive-controls-design-audit.md [REFERENCE / DESIGN AUDIT]
+- docs/work/WP-008-progressive-controls-design-audit.md [REFERENCE] — design audit
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-008-progressive-controls-design-audit.md
-- docs/handoffs/WP-008-astra-progressive-controls-request.md [REFERENCE / HANDOFF SNAPSHOT]
+- docs/handoffs/WP-008-astra-progressive-controls-request.md [REFERENCE] — handoff snapshot
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/handoffs/WP-008-astra-progressive-controls-request.md
 
 CLOSED / HISTORICAL WORK PACKAGES（完了済みパッケージ・参考記録）:
@@ -240,7 +245,7 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-0
 ### 9. DEVELOPMENT / VERIFICATION
 WHEN TO READ: 委任契約、テストハーネス、ビルド設定、検証コマンドの確認時。
 START WITH:
-- docs/DEVELOPMENT.md [CURRENT AUTHORITY]
+- docs/DEVELOPMENT.md [CURRENT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/DEVELOPMENT.md
 - docs/harness.json [MACHINE ROUTER]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/harness.json
