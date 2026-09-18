@@ -2,10 +2,15 @@
 
 更新日: 2026-09-18
 対象: 現行コード・製品思想・技術契約・現在の計画。Archive / 過去Reviewは収録しない。
-このリンク集は案内であり、仕様の第二正本ではない。
+このリンク集は外部AI向けの案内であり、仕様の第二正本ではない。
 
 重要: URLはmainの可変参照。ローカル変更はOwnerがpushするまで外部AIには見えない。
 レビュー開始時に対象commitを確認し、必要なら refs/heads/main を対象commit SHAへ置換する。
+
+ソースコード方針:
+ソースファイル内のRELATED等はリポジトリ相対パスを使用する。
+ソースヘッダーへの絶対GitHub URL埋め込みは要求しない。
+本ファイル（GITHUB.txt）が外部URL解決ナビゲーション層を担当する。
 
 ---
 
@@ -45,205 +50,210 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui
 
 ---
 
-以下はローカル実在と重複を検証するが、公開先の最新内容との一致は別確認。
+## 領域別ナビゲーションカタログ (NAVIGATION CATALOG BY DOMAIN)
 
-読む順序: AGENTS → docs/README → STATUS → TECHNICAL → ARCHITECTURE / VOCABULARY。
-製品思想の評価ならPRODUCT、計画の評価ならROADMAPとWork Packageへ進む。
-ASTRA_OPERATING_RULESはAstra worker運用を見る場合の補助資料であり、一般architecture正本扱いしない。
-AUDITには調査済み・未確認・既知不具合を分けている。現在の作業状態・完了範囲はSTATUSと対象WPを確認する。
-実装対象を限定し、全コードやArchiveを最初から読み直す必要はない。
+上記パケット以外の特定領域・課題を調査する場合のみ、該当カテゴリの文書を参照する。
+全URLを順に読む必要はない。各カテゴリの「START WITH」から着手し、コード確認が必要な場合のみ「OPTIONAL」へ進む。
+各URLは重複掲載を避けて本カタログまたはCURRENT REVIEW PACKETのいずれか1箇所に配置している。
 
-文書と現行計画
-AGENTS.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
-
-README.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/README.md
-
-docs/README.md
+### 1. CORE / CURRENT STATE
+WHEN TO READ: 全体状況の把握、タスクの現在地・未解決事項、技術契約の確認時。
+START WITH:
+- AGENTS.md [CURRENT AUTHORITY]（URLはCURRENT REVIEW PACKET参照）
+- docs/STATUS.md [CURRENT STATUS]（URLはCURRENT REVIEW PACKET参照）
+- docs/TECHNICAL.md [CURRENT AUTHORITY]（URLはCURRENT REVIEW PACKET参照）
+- docs/README.md [CURRENT AUTHORITY]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/README.md
 
-docs/STATUS.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/STATUS.md
-
-docs/PRODUCT.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/PRODUCT.md
-
-docs/TECHNICAL.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/TECHNICAL.md
-
-docs/ARCHITECTURE.md
+OPTIONAL:
+- README.md [CURRENT]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/README.md
+- docs/ARCHITECTURE.md [CURRENT AUTHORITY]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/ARCHITECTURE.md
-
-docs/VOCABULARY.md
+- docs/VOCABULARY.md [CURRENT REFERENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/VOCABULARY.md
-
-docs/DEVELOPMENT.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/DEVELOPMENT.md
-
-docs/ROADMAP.md
+- docs/ROADMAP.md [CURRENT REFERENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/ROADMAP.md
-
-docs/AUDIT.md
+- docs/AUDIT.md [REFERENCE / AUDIT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/AUDIT.md
-
-docs/DOCUMENT_REGISTER.md
+- docs/DOCUMENT_REGISTER.md [CURRENT AUTHORITY]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/DOCUMENT_REGISTER.md
-
-docs/UI_DESIGN_AUTHORITY_MAP.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/UI_DESIGN_AUTHORITY_MAP.md
-
-docs/work/README.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/README.md
-
-docs/harness.json
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/harness.json
-
-docs/work/WP-001-history-failure.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-001-history-failure.md
-
-docs/work/WP-002-effect-guards.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-002-effect-guards.md
-
-docs/work/WP-003-key-continuation.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-003-key-continuation.md
-
-docs/work/WP-004-output-terminal.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-004-output-terminal.md
-
-docs/work/WP-005-simple-warp.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-005-simple-warp.md
-
-docs/work/WP-006-folder-transform-key.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-006-folder-transform-key.md
-
-docs/work/WP-007-export-terminal-guard.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-007-export-terminal-guard.md
-
-docs/work/WP-008-layer-transform-progressive-controls.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-008-layer-transform-progressive-controls.md
-
-docs/work/WP-008-progressive-controls-design-audit.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-008-progressive-controls-design-audit.md
-
-docs/handoffs/WP-008-astra-progressive-controls-request.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/handoffs/WP-008-astra-progressive-controls-request.md
-
-docs/ai/ASTRA_OPERATING_RULES.md
+- docs/ai/ASTRA_OPERATING_RULES.md [CURRENT REFERENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/ai/ASTRA_OPERATING_RULES.md
 
-docs/work/WP-009-layer-transform-key-management.md
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-009-layer-transform-key-management.md
 
-ツールコード / 開発検証入口
-詳細の依存関係・役割はdocs/ARCHITECTURE.md、領域別入口はdocs/harness.jsonを参照。
-tegaki_work/package.json
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/package.json
+### 2. PRODUCT / UI / DESIGN
+WHEN TO READ: 製品思想、UI配置・レイアウト原則、Attention Lens、スタイル規約の確認時。
+START WITH:
+- docs/PRODUCT.md [CURRENT AUTHORITY]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/PRODUCT.md
+- docs/UI_DESIGN_AUTHORITY_MAP.md [CURRENT REFERENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/UI_DESIGN_AUTHORITY_MAP.md
 
-tegaki_work/vite.config.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/vite.config.js
+OPTIONAL:
+- tegaki_work/styles/main.css [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/styles/main.css
+- tegaki_work/ui/ui-panels.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/ui-panels.js
+- tegaki_work/ui/dom-builder.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/dom-builder.js
+- tegaki_work/ui/reference-preview-viewer.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/reference-preview-viewer.js
+- docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md [REFERENCE / RESEARCH]（UI/UX比較・参考文脈。URLはCURRENT REVIEW PACKET参照）
 
-tegaki_work/build/development-harness.mjs
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/development-harness.mjs
 
-tegaki_work/system/history.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/history.js
-
-tegaki_work/system/drawing/raster-patch-history.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/raster-patch-history.js
-
-tegaki_work/system/drawing/drawing-engine.js
+### 3. DRAWING / INPUT
+WHEN TO READ: ラスター描画エンジン、ペン/ポインター入力、ブラシ処理、入力座標系の確認時。
+START WITH:
+- docs/TECHNICAL.md（Drawing/Layer契約。URLはCURRENT REVIEW PACKET参照）
+- tegaki_work/system/drawing/drawing-engine.js [SOURCE EVIDENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/drawing-engine.js
-
-tegaki_work/system/drawing/pointer-handler.js
+- tegaki_work/system/drawing/pointer-handler.js [SOURCE EVIDENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/pointer-handler.js
 
-tegaki_work/system/drawing/brush-core.js
+OPTIONAL:
+- tegaki_work/system/drawing/brush-core.js [SOURCE EVIDENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/brush-core.js
-
-tegaki_work/coordinate-system.js
+- tegaki_work/coordinate-system.js [SOURCE EVIDENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/coordinate-system.js
-
-tegaki_work/system/layer-system.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/layer-system.js
-
-tegaki_work/system/layer-transform.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/layer-transform.js
-
-tegaki_work/system/animation/transform-edit-context.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/transform-edit-context.js
-
-tegaki_work/system/animation/transform-edit-transaction.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/transform-edit-transaction.js
-
-tegaki_work/ui/animation-table-popup.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/animation-table-popup.js
-
-tegaki_work/system/animation/animation-data-model.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/animation-data-model.js
-
-tegaki_work/system/animation/folder-part-render-plan.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/folder-part-render-plan.js
-
-tegaki_work/system/animation/timeline-frame-compositor.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/timeline-frame-compositor.js
-
-tegaki_work/system/animation/part-rig.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/part-rig.js
-
-tegaki_work/system/animation/clip-deformer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/clip-deformer.js
-
-tegaki_work/system/animation/clip-layer-deformer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/clip-layer-deformer.js
-
-tegaki_work/system/animation/clip-layer-key-bundle.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/clip-layer-key-bundle.js
-
-tegaki_work/system/animation/layer-warp-edit-transaction.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/layer-warp-edit-transaction.js
-
-tegaki_work/system/animation/warp-grid-rasterizer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-grid-rasterizer.js
-
-tegaki_work/system/animation/warp-point-selection.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-point-selection.js
-
-tegaki_work/system/animation/warp-grid-brush.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-grid-brush.js
-
-tegaki_work/system/project-manager.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/project-manager.js
-
-tegaki_work/system/export-manager.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/export-manager.js
-
-tegaki_work/system/emergency-recovery-store.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/emergency-recovery-store.js
-
-tegaki_work/ui/layer-panel-renderer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/layer-panel-renderer.js
-
-tegaki_work/ui/dom-builder.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/dom-builder.js
-
-tegaki_work/ui/ui-panels.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/ui-panels.js
-
-tegaki_work/ui/layer-transform-warp-controller.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/layer-transform-warp-controller.js
-
-tegaki_work/ui/warp-grid-overlay.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/warp-grid-overlay.js
-
-tegaki_work/ui/keyboard-handler.js
+- tegaki_work/ui/keyboard-handler.js [SOURCE EVIDENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/keyboard-handler.js
 
-tegaki_work/ui/reference-preview-viewer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/reference-preview-viewer.js
 
-tegaki_work/styles/main.css
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/styles/main.css
+### 4. INTERACTION / TIMELINE
+WHEN TO READ: Timeline操作、Animation Table、ポインタージェスチャー終端、D&D、Retimeの確認時。
+START WITH:
+- docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md [REFERENCE / RESEARCH]（URLはCURRENT REVIEW PACKET参照）
+- docs/reference/interaction/TIMELINE_POINTER_TERMINAL_EVIDENCE_2026-09-18.md [REFERENCE / EVIDENCE]（URLはCURRENT REVIEW PACKET参照）
+- tegaki_work/ui/animation-table-popup.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/animation-table-popup.js
+- tegaki_work/ui/layer-panel-renderer.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/layer-panel-renderer.js
+
+OPTIONAL:
+- tegaki_work/ui/layer-transform-warp-controller.js [SOURCE EVIDENCE / 終端契約リファレンス]（URLはCURRENT REVIEW PACKET参照）
+- tegaki_work/build/verify-timeline-pointer-terminal.mjs [VERIFIER / DIAGNOSTIC]（URLはCURRENT REVIEW PACKET参照）
+- tegaki_work/build/timeline-pointer-terminal-diagnostic.html [VERIFIER / DIAGNOSTIC]（URLはCURRENT REVIEW PACKET参照）
+
+
+### 5. TRANSFORM / WARP
+WHEN TO READ: レイヤー変形（BASIC V）、WARPメッシュ編集、キー管理、プログレッシブUIの確認時。
+START WITH:
+- docs/TECHNICAL.md（Transform/WARP契約。URLはCURRENT REVIEW PACKET参照）
+- tegaki_work/system/layer-transform.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/layer-transform.js
+- tegaki_work/system/layer-system.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/layer-system.js
+- tegaki_work/ui/layer-transform-warp-controller.js [SOURCE EVIDENCE]（URLはCURRENT REVIEW PACKET参照）
+
+OPTIONAL:
+- tegaki_work/system/animation/transform-edit-context.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/transform-edit-context.js
+- tegaki_work/system/animation/transform-edit-transaction.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/transform-edit-transaction.js
+- tegaki_work/system/animation/layer-warp-edit-transaction.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/layer-warp-edit-transaction.js
+- tegaki_work/system/animation/warp-grid-rasterizer.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-grid-rasterizer.js
+- tegaki_work/system/animation/warp-point-selection.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-point-selection.js
+- tegaki_work/system/animation/warp-grid-brush.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/warp-grid-brush.js
+- tegaki_work/ui/warp-grid-overlay.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/warp-grid-overlay.js
+- 関連Active WP: WP-005, WP-008, WP-009（WORK PACKAGES参照）
+
+
+### 6. ANIMATION / RIG
+WHEN TO READ: アニメーションデータモデル、フレーム合成、フォルダー描画計画、リグ/ボーン変形の確認時。
+START WITH:
+- docs/ARCHITECTURE.md（Animation/Rig節）
+- tegaki_work/system/animation/animation-data-model.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/animation-data-model.js
+- tegaki_work/system/animation/timeline-frame-compositor.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/timeline-frame-compositor.js
+
+OPTIONAL:
+- tegaki_work/system/animation/folder-part-render-plan.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/folder-part-render-plan.js
+- tegaki_work/system/animation/clip-deformer.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/clip-deformer.js
+- tegaki_work/system/animation/clip-layer-deformer.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/clip-layer-deformer.js
+- tegaki_work/system/animation/clip-layer-key-bundle.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/clip-layer-key-bundle.js
+- tegaki_work/system/animation/part-rig.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/part-rig.js
+
+
+### 7. HISTORY / SAVE / EXPORT
+WHEN TO READ: Undo/Redo履歴管理、プロジェクト保存・復元、画像出力、非常時リカバリの確認時。
+START WITH:
+- docs/TECHNICAL.md（History/Save契約。URLはCURRENT REVIEW PACKET参照）
+- tegaki_work/system/history.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/history.js
+- tegaki_work/system/drawing/raster-patch-history.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/drawing/raster-patch-history.js
+- tegaki_work/system/project-manager.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/project-manager.js
+
+OPTIONAL:
+- tegaki_work/system/export-manager.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/export-manager.js
+- tegaki_work/system/emergency-recovery-store.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/emergency-recovery-store.js
+
+
+### 8. WORK PACKAGES / HISTORICAL REFERENCE
+WHEN TO READ: 個別Work Package仕様、過去の設計判断・監査・受渡し経緯を確認する時（既定読解対象外）。
+ACTIVE WORK PACKAGES（現在進行中・受入待ち）:
+- docs/work/WP-005-simple-warp.md [ACTIVE WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-005-simple-warp.md
+- docs/work/WP-008-layer-transform-progressive-controls.md [ACTIVE WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-008-layer-transform-progressive-controls.md
+- docs/work/WP-009-layer-transform-key-management.md [ACTIVE WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-009-layer-transform-key-management.md
+
+ACTIVE WP 関連資料:
+- docs/work/WP-008-progressive-controls-design-audit.md [REFERENCE / DESIGN AUDIT]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-008-progressive-controls-design-audit.md
+- docs/handoffs/WP-008-astra-progressive-controls-request.md [REFERENCE / HANDOFF SNAPSHOT]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/handoffs/WP-008-astra-progressive-controls-request.md
+
+CLOSED / HISTORICAL WORK PACKAGES（完了済みパッケージ・参考記録）:
+- docs/work/README.md [CURRENT REFERENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/README.md
+- docs/work/WP-001-history-failure.md [HISTORICAL / CLOSED WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-001-history-failure.md
+- docs/work/WP-002-effect-guards.md [HISTORICAL / CLOSED WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-002-effect-guards.md
+- docs/work/WP-003-key-continuation.md [HISTORICAL / CLOSED WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-003-key-continuation.md
+- docs/work/WP-004-output-terminal.md [HISTORICAL / CLOSED WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-004-output-terminal.md
+- docs/work/WP-006-folder-transform-key.md [HISTORICAL / CLOSED WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-006-folder-transform-key.md
+- docs/work/WP-007-export-terminal-guard.md [HISTORICAL / CLOSED WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-007-export-terminal-guard.md
+
+
+### 9. DEVELOPMENT / VERIFICATION
+WHEN TO READ: 委任契約、テストハーネス、ビルド設定、検証コマンドの確認時。
+START WITH:
+- docs/DEVELOPMENT.md [CURRENT AUTHORITY]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/DEVELOPMENT.md
+- docs/harness.json [MACHINE ROUTER]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/harness.json
+
+OPTIONAL:
+- tegaki_work/package.json [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/package.json
+- tegaki_work/vite.config.js [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/vite.config.js
+- tegaki_work/build/development-harness.mjs [SOURCE EVIDENCE / HARNESS RUNNER]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/development-harness.mjs
+
+---
 
 外部AIへの依頼時: 対象WPまたは評価したい領域、対象commit、質問、禁止変更範囲を添える。
 読めないURLを推測で補わず、欠落として報告する。過去資料が必要になった時だけOwnerへ追加を依頼する。
