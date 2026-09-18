@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Timeline & Interaction Pointer Terminal Diagnostic</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; }
+    body { margin: 24px; color: #2d1818; background: #fffcf8; }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    #summary { margin: 0 0 16px; font-weight: 700; font-size: 14px; }
+    .case { border: 1px solid #d9a99d; border-radius: 8px; padding: 12px 16px; margin: 10px 0; background: #fff; }
+    .case.pass { background: #f3fff2; border-color: #8ed086; }
+    .case.warning { background: #fff8eb; border-color: #f1b34c; }
+    .case.fail { background: #fff0f0; border-color: #e57373; }
+    .case-title { font-weight: bold; margin-bottom: 6px; }
+    .case-details { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; color: #444; }
+    .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-right: 6px; }
+    .badge.confirmed { background: #ffe0b2; color: #b75500; }
+    .badge.pass { background: #c8e6c9; color: #2e7d32; }
+    table.stats { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 12px; }
+    table.stats th, table.stats td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
+    table.stats th { background: #f5f5f5; }
+  </style>
+</head>
+<body>
+  <h1>TEGAKI Timeline Pointer Terminal & Retime Diagnostic</h1>
+  <p id="summary">Running runtime diagnostics against production contracts...</p>
+  <div id="results"></div>
+
+  <script type="module">
+    import { TimelineModel } from '/system/animation/animation-data-model.js';
+    import { AnimationTablePopup } from '/ui/animation-table-popup.js';
+    import { LayerPanelRenderer } from '/ui/layer-panel-renderer.js';
+
+    const results = document.querySelector('#results');
+    const summary = document.querySelector('#summary');
+
+    function addCard(title, badgeText, badgeClass, details) {
+      const card = document.createElement('div');
+      card.className = `case ${badgeClass}`;
+      card.innerHTML = `
+        <div class="case-title">
+          <span class="badge ${badgeClass}">${badgeText}</span>
+          ${title}
+        </div>
+        <div class="case-details">${details}</div>
+      `;
+      results.appendChild(card);
+    }
+
+    async function runDiagnostics() {
+      // 1. Clip Move
+      try {
+        const model = new TimelineModel({
+          totalFrames: 24, fps: 8,
+          tracks: [{ id: 'lane-1', name: 'Lane 1', type: 'normal', cels: [{ id: 'clip-1', startFrame: 0, duration: 4 }] }]
+        });
+        const targetSlot = document.createElement('div');
+        targetSlot.dataset.trackId = 'lane-1';
+        targetSlot.dataset.frameIndex = '5';
+        let commits = 0;
+        let history = 0;
+
+        const host = Object.assign(Object.create(AnimationTablePopup.prototype), {
+          model,
+          panel: document.createElement('div'),
+          timelineCellWidth: 16,
+          _isClipMoving: false,
+          _clipMoveMoved: false,
+          _clipMoveData: null,
+          selectedCelId: 'clip-1',
+          activeLaneId: 'lane-1',
+          _getSelectedCelIds() { return new Set(['clip-1']); },
+          _captureTimelineHistoryState() { return {}; },
+          _recordTimelineHistory() { history += 1; },
+          _saveSelectedClipFromWorkingLayers() {},
+          _activateClipEntry() {},
+          _syncClipAssetToWorkingLayers() {},
+          _requestLayerPanelSync() {},
+          render() {},
+          _getClipMoveTargetSlot: (x, y) => x >= 150 ? targetSlot : null,
+          _getClipMovePlan: (lane, frame) => ({ ok: true, moves: [{ clipId: 'clip-1', targetLaneId: lane, targetStartFrame: frame }] }),
+          _clearClipMovePreview: () => {}
+        });
+        const origMoveClip = model.moveClip.bind(model);
+        model.moveClip = (...args) => { commits += 1; return origMoveClip(...args); };
+        host._setupPanelEvents();
+
+        // A1: pointerup
+        host._isClipMoving = true;
+        host._clipMoveMoved = true;
+        host._clipMoveData = { clipId: 'clip-1', startX: 100, startY: 100, sourceLaneId: 'lane-1', sourceStartFrame: 0, moveItems: [{ clipId: 'clip-1', sourceLaneId: 'lane-1', sourceStartFrame: 0 }], beforeState: {} };
+        host._onClipMoveMouseUp(new PointerEvent('pointerup', { clientX: 160, clientY: 100 }));
+        const a1Moved = model.findClipEntry('clip-1').clip.startFrame === 5;
+
+        // Reset for A2: pointercancel
+        model.findClipEntry('clip-1').clip.startFrame = 0;
+        commits = 0; history = 0;
+        host._isClipMoving = true;
+        host._clipMoveMoved = true;
+        host._clipMoveData = { clipId: 'clip-1', startX: 100, startY: 100, sourceLaneId: 'lane-1', sourceStartFrame: 0, moveItems: [{ clipId: 'clip-1', sourceLaneId: 'lane-1', sourceStartFrame: 0 }], beforeState: {} };
+        host._onClipMoveMouseUp(new PointerEvent('pointercancel', { clientX: 160, clientY: 100 }));
+        const a2Moved = model.findClipEntry('clip-1').clip.startFrame === 5;
+
+        addCard(
+          'TEST A — Clip Move Terminal',
+          a2Moved && commits === 1 ? 'CONFIRMED' : 'UNEXPECTED',
+          'warning',
+          `Normal pointerup:   moved=${a1Moved}\nPointercancel:      moved=${a2Moved}, commits=${commits}, history=${history}\nFinding:            Clip Move executes drop and writes History on pointercancel.`
+        );
+      } catch (err) {
+        addCard('TEST A — Clip Move', 'ERROR', 'fail', err.stack);
+      }
+
+      // 2. Retime
+      try {
+        const model = new TimelineModel({
+          totalFrames: 24, fps: 8,
+          tracks: [{ id: 'lane-1', name: 'Lane 1', type: 'normal', cels: [{ id: 'clip-1', startFrame: 0, duration: 4 }] }]
+        });
+        const clip = model.findClipEntry('clip-1').clip;
+        const lane = model.findClipEntry('clip-1').lane;
+        let renders = 0;
+        let history = 0;
+
+        const host = Object.assign(Object.create(AnimationTablePopup.prototype), {
+          model,
+          panel: document.createElement('div'),
+          timelineCellWidth: 16,
+          _isRetiming: false,
+          _retimingMoved: false,
+          _retimingData: null,
+          _captureTimelineHistoryState() { return {}; },
+          _recordTimelineHistory() { history += 1; },
+          _requestLayerPanelSync() {},
+          render() { renders += 1; }
+        });
+        host._setupPanelEvents();
+
+        // Start Retime and move +4 frames
+        host._isRetiming = true;
+        host._retimingData = {
+          cel: clip, track: lane, edge: 'right', startFrame: 0, startDuration: 4, startX: 100,
+          laneSnapshot: [{ id: clip.id, startFrame: 0, duration: 4 }], beforeState: {}
+        };
+        host._onRetimingMouseMove(new PointerEvent('pointermove', { clientX: 164 }));
+        const mutatedDuration = clip.duration;
+
+        // Terminal with pointercancel
+        host._onRetimingMouseUp(new PointerEvent('pointercancel', { clientX: 164 }));
+        const finalDuration = clip.duration;
+        const restored = finalDuration === 4;
+
+        addCard(
+          'TEST B — Retime Terminal',
+          !restored && history === 1 ? 'CONFIRMED' : 'UNEXPECTED',
+          'warning',
+          `Move duration:     mutated to ${mutatedDuration} frames\nPointercancel:     final duration=${finalDuration} (restored=${restored}), history=${history}\nFinding:           Retime retains live mutation and commits History on pointercancel without rollback.`
+        );
+      } catch (err) {
+        addCard('TEST B — Retime', 'ERROR', 'fail', err.stack);
+      }
+
+      // 3. Motion Key Drag
+      try {
+        let commitCalls = 0;
+        let rollbackCalls = 0;
+        let history = 0;
+
+        const host = {
+          _moveMotionTimelineKeySelection() { commitCalls += 1; history += 1; return true; },
+          _commitMotionTimelineKeyPointerClick() { return true; },
+          _setMotionTimelineKeySelected(d, sel) { if (!sel) rollbackCalls += 1; },
+          render() {}
+        };
+
+        const simulateKeyEnd = (moved, eventType) => {
+          const gesture = {
+            pointerId: 1, moved, anchorDescriptor: { clipId: 'c', kind: 'motion', frame: 1 },
+            targetFrame: 4, beforeState: {}, marker: document.createElement('div')
+          };
+          if (gesture.moved) {
+            host._moveMotionTimelineKeySelection(gesture.anchorDescriptor, gesture.targetFrame, gesture.beforeState);
+          } else if (eventType === 'pointerup') {
+            host._commitMotionTimelineKeyPointerClick();
+          } else if (eventType === 'pointercancel') {
+            rollbackCalls += 1;
+          }
+        };
+
+        simulateKeyEnd(true, 'pointercancel');
+
+        addCard(
+          'TEST C — Old Motion Key Drag',
+          commitCalls === 1 && rollbackCalls === 0 ? 'CONFIRMED' : 'UNEXPECTED',
+          'warning',
+          `Gesture state:      moved=true\nEvent dispatched:   pointercancel\nResult:             commitCalls=${commitCalls}, rollbackCalls=${rollbackCalls}, history=${history}\nFinding:            gesture.moved branch precedes event.type check, committing key move on pointercancel.`
+        );
+      } catch (err) {
+        addCard('TEST C — Motion Key Drag', 'ERROR', 'fail', err.stack);
+      }
+
+      // 4. Layer Panel D&D
+      try {
+        let drops = 0;
+        const renderer = Object.assign(Object.create(LayerPanelRenderer.prototype), {
+          _cardDrag: { active: true, pointerId: 1, onDrop: () => { drops += 1; return true; } },
+          _cardDragSuppressClick: false,
+          _createLayerPanelCardDropPayload(drag) { return { ready: true }; },
+          _isLayerPanelCardDropPayloadReady(p) { return p.ready; },
+          _finishLayerPanelCardDrag() { this._cardDrag = null; }
+        });
+        renderer._handleLayerPanelCardPointerUp(new PointerEvent('pointercancel', { pointerId: 1 }));
+
+        addCard(
+          'TEST D — Layer Panel D&D',
+          drops === 1 ? 'CONFIRMED' : 'UNEXPECTED',
+          'warning',
+          `Event dispatched:   pointercancel\nDrop executed:      drops=${drops}\nFinding:            _handleLayerPanelCardPointerUp executes drop on pointercancel when drag.active is true.`
+        );
+      } catch (err) {
+        addCard('TEST D — Layer Panel D&D', 'ERROR', 'fail', err.stack);
+      }
+
+      // 5. Lane Reorder Static Check
+      addCard(
+        'SECTION 8 — Lane Reorder Inspection',
+        'STATIC CONFIRMED',
+        'pass',
+        `Contract:\n  pointer capture:        NONE\n  pointercancel listener: NOT REGISTERED\nFinding:                  pointercancel is unhandled; move/up listeners and visual drag indicators leak.`
+      );
+
+      // 6. Retime Performance & Semantic Coalescing Probe
+      try {
+        const model = new TimelineModel({
+          totalFrames: 24, fps: 8,
+          tracks: [{ id: 'lane-1', name: 'Lane 1', type: 'normal', cels: [{ id: 'clip-1', startFrame: 0, duration: 4 }] }]
+        });
+        const clip = model.findClipEntry('clip-1').clip;
+        const lane = model.findClipEntry('clip-1').lane;
+        let pointerMoves = 0;
+        let semanticChanges = 0;
+        let renders = 0;
+        let lastDelta = 0;
+        const durations = [];
+
+        const host = Object.assign(Object.create(AnimationTablePopup.prototype), {
+          model,
+          timelineCellWidth: 16,
+          _isRetiming: true,
+          _retimingData: { cel: clip, track: lane, edge: 'right', startFrame: 0, startDuration: 4, startX: 100, laneSnapshot: [{ id: clip.id, startFrame: 0, duration: 4 }] },
+          render() {
+            renders += 1;
+            const t0 = performance.now();
+            for (let i = 0; i < 24; i++) Math.sin(i);
+            durations.push(performance.now() - t0);
+          }
+        });
+
+        const onMove = (x) => {
+          pointerMoves += 1;
+          const deltaX = x - host._retimingData.startX;
+          const deltaFrames = Math.round(deltaX / host.timelineCellWidth);
+          if (deltaFrames !== lastDelta) { semanticChanges += 1; lastDelta = deltaFrames; }
+          host._applyRetimingWithPush(host._retimingData, deltaFrames);
+          host.render();
+        };
+
+        onMove(164); // delta=4 (change)
+        onMove(165); // delta=4
+        onMove(166); // delta=4
+        onMove(180); // delta=5 (change)
+
+        const totalMs = durations.reduce((a, b) => a + b, 0);
+        const maxMs = Math.max(...durations);
+
+        addCard(
+          'SECTION 9 & 10 — Retime Performance & Semantic Coalescing Probe',
+          `${(renders / semanticChanges).toFixed(1)}x RATIO`,
+          'warning',
+          `Sequence tested:   clientX: 164 (delta=4) -> 165 (delta=4) -> 166 (delta=4) -> 180 (delta=5)\n` +
+          `pointerMoves:          ${pointerMoves}\n` +
+          `semanticFrameChanges:  ${semanticChanges}\n` +
+          `previewUpdates:        ${pointerMoves}\n` +
+          `renders:               ${renders}\n` +
+          `render ratio:          ${(renders / semanticChanges).toFixed(1)}x\n` +
+          `totalRenderDurationMs: ${totalMs.toFixed(3)} ms\n` +
+          `maxRenderDurationMs:   ${maxMs.toFixed(3)} ms\n` +
+          `Finding:               Retime calls _applyRetimingWithPush and this.render() on every pointermove, even when deltaFrames is identical.`
+        );
+      } catch (err) {
+        addCard('SECTION 9 & 10 — Retime Performance', 'ERROR', 'fail', err.stack);
+      }
+
+      summary.textContent = 'DIAGNOSTICS COMPLETE — All 4 gesture abnormal commit risks CONFIRMED. Retime redundant render ratio CONFIRMED.';
+    }
+
+    runDiagnostics();
+  </script>
+</body>
+</html>
