@@ -226,9 +226,9 @@ globalThis.PointerEvent = class PointerEvent {
 };
 
 // Import production classes
-const { AnimationTablePopup } = await import('file:///D:/GitHub/tegaki/tegaki_work/ui/animation-table-popup.js');
-const { TimelineModel } = await import('file:///D:/GitHub/tegaki/tegaki_work/system/animation/animation-data-model.js');
-const { LayerPanelRenderer } = await import('file:///D:/GitHub/tegaki/tegaki_work/ui/layer-panel-renderer.js');
+const { AnimationTablePopup } = await import('../ui/animation-table-popup.js');
+const { TimelineModel } = await import('../system/animation/animation-data-model.js');
+const { LayerPanelRenderer } = await import('../ui/layer-panel-renderer.js');
 
 console.log('=== TEGAKI TIMELINE TERMINAL & INTERACTION DIAGNOSTIC ===\n');
 

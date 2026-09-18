@@ -5,14 +5,15 @@
 ## 担当と権限
 
 - Owner: 製品思想、優先順位、重大なUX/保存互換判断、最終制作受入、Git push。
-- Architecture lead（現在Astra）: live code照合、重大判断点の整理、作業分割、返却差分の監査、状態更新。
-- Implementer（Terra/Luna等）: READYカードの対象fileと契約内で実装・検証・報告。
-- Reviewer/subagent: 指定領域の調査・反証・検証。報告を根拠なしに採用しない。
+- Web GPT / 指定Commander: Research Bank統合、scope削減、モデルルーティング、一次監査、作業分割。
+- Architecture review（明示召喚時のAstra等）: live code照合、重大判断点の整理、限定された設計レビュー（常任のプロジェクトマネージャーや既定の実装者ではない）。
+- Implementer / Investigator（Luna / Gemini等）: 確定Cardの対象fileと契約内で限定された実装・調査・検証・報告。
+- Reviewer: 指定領域の調査・反証・検証。報告を根拠なしに採用しない。
 
 同一file/同じmodelを複数workerで同時変更しない。独立したread-only調査は並列化できる。
 既存`.codex/agents/tegaki-luna-worker.toml`は旧Phase読む順序を含む設定のまま。今回configは変更していない。
 workerへは新しい読む順序と対象カードを明示する。利用不能なら状態を報告し、別modelへ黙って切り替えない。
-深いarchitecture判断はleadへ戻すが、既存契約内の技術修正で逐一Owner確認を求めない。
+深いarchitecture判断はCommander / Architecture reviewへ戻すが、既存契約内の技術修正で逐一Owner確認を求めない。
 
 ## 仕事の状態
 

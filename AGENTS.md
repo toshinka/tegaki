@@ -11,6 +11,8 @@
 
 新規参加/全体判断なら[docs/README.md](docs/README.md)から製品思想・語彙へ。
 旧 `task-codex/phase*.md` は現在の作業指示と仮定しない。[文書登録簿](docs/DOCUMENT_REGISTER.md)で状態を確認する。
+- 調査・監査・Handoff・REFERENCE資料は既定の必読文書ではない。現在のCard/WPが明示指定した場合に限り参照する。
+- REFERENCE資料はいかなる場合も `STATUS`、`TECHNICAL`、現在のCard/WP、製品コードの正本性を上書きしない。
 
 ## 作業範囲と安全
 

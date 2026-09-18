@@ -24,6 +24,8 @@
 - `task-codex/phase9q.md`: PAUSED。A〜D証拠と未完Eを残す。
 - `docs/UI_DESIGN_AUTHORITY_MAP.md`: CURRENT REFERENCE。styleの所有先、phase別checkpointを区別。
 - `docs/reference/TRANSFORM_SESSION_BOUNDARY.md`: REFERENCE。局所履歴。現在のSOURCE/ANIMATEはdocs/ARCHITECTURE。
+- `docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md`: REFERENCE。OSS・GUI・Timeline・Gesture等の調査・比較バンク（検討用参考資料）。現在の実装指示・製品正本ではない。
+- `docs/reference/interaction/TIMELINE_POINTER_TERMINAL_EVIDENCE_2026-09-18.md`: REFERENCE。Timeline / Layer D&Dの異常終端（pointercancel）およびRetime再描画負荷の計測・実機証拠記録。現在の実装指示・製品正本ではない。
 - `docs/OWNER_VERIFICATION_BACKLOG.md`: REFERENCE。制作受入の証拠。後のOwner受入を古いNG文より優先。
 - `docs/reference/EXTERNAL_WEB_REVIEW_REQUEST_TEMPLATE.md`: REFERENCE。現行workflowはdocs/DEVELOPMENT。
 - `Claude_GPT_Review/GITHUB.txt`: CURRENTの外部案内。仕様/現在地の第二正本にしない。

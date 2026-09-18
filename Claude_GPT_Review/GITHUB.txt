@@ -1,16 +1,54 @@
 # TEGAKI — 外部WEB AI向け GitHub読解リンク集
 
-更新日: 2026-09-17
+更新日: 2026-09-18
 対象: 現行コード・製品思想・技術契約・現在の計画。Archive / 過去Reviewは収録しない。
 このリンク集は案内であり、仕様の第二正本ではない。
 
 重要: URLはmainの可変参照。ローカル変更はOwnerがpushするまで外部AIには見えない。
 レビュー開始時に対象commitを確認し、必要なら refs/heads/main を対象commit SHAへ置換する。
+
+---
+
+## CURRENT REVIEW PACKET
+
+このパケットは、Web GPTがリポジトリ全体を読み直すことなく、現在のInteraction / GUI調査・検証文脈を最小セットで復元するための高優先案内です。
+
+Do not read every URL in this file.
+The remainder is a navigation catalog.
+Follow the current review packet first.
+
+### 必須5文書（Core Packet）:
+1. AGENTS.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
+
+2. docs/STATUS.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/STATUS.md
+
+3. docs/TECHNICAL.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/TECHNICAL.md
+
+4. docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md
+
+5. docs/reference/interaction/TIMELINE_POINTER_TERMINAL_EVIDENCE_2026-09-18.md
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/reference/interaction/TIMELINE_POINTER_TERMINAL_EVIDENCE_2026-09-18.md
+
+### OPTIONAL（コード・検証根拠が必要な場合のみ）:
+- tegaki_work/build/verify-timeline-pointer-terminal.mjs
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-timeline-pointer-terminal.mjs
+
+- tegaki_work/build/timeline-pointer-terminal-diagnostic.html
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/timeline-pointer-terminal-diagnostic.html
+
+- tegaki_work/ui/layer-transform-warp-controller.js（先行する終端契約リファレンス）
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/layer-transform-warp-controller.js
+
+---
+
 以下はローカル実在と重複を検証するが、公開先の最新内容との一致は別確認。
 
 読む順序: AGENTS → docs/README → STATUS → TECHNICAL → ARCHITECTURE / VOCABULARY。
 製品思想の評価ならPRODUCT、計画の評価ならROADMAPとWork Packageへ進む。
-WP-008の現在地を見る場合: AGENTS → docs/README → STATUS → TECHNICAL → ARCHITECTURE → WP-008 card → WP-008 audit → 必要ならAstra handoffへ進む。
 ASTRA_OPERATING_RULESはAstra worker運用を見る場合の補助資料であり、一般architecture正本扱いしない。
 AUDITには調査済み・未確認・既知不具合を分けている。現在の作業状態・完了範囲はSTATUSと対象WPを確認する。
 実装対象を限定し、全コードやArchiveを最初から読み直す必要はない。

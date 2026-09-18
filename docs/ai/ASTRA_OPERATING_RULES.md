@@ -8,6 +8,15 @@
 
 優先順位は、`AGENTS.md`の共通architecture制約、`docs/DEVELOPMENT.md`の共通procedure、本文書のAstra固有behavior、現在のCard/task scopeの順とする。Card/Handoffは`READ`、`WRITE`、tests、mode、subagent permissionをさらに狭められるが、上位のarchitecture restrictionを解除しない。
 
+### Instruction source check
+
+実作業前に以下を確認・照合する。
+- 適用されるAGENTS / override指示
+- 現在のtask Card / Handoff
+- 実際に起動されたSkill（存在する場合）
+
+もしCardの境界を超えてscope、委任、検証を拡大する指示が存在する場合、黙って広げずconflictとして報告する。
+
 ## Core motto
 
 ```text
@@ -90,6 +99,7 @@ Rough Product Passでも、Card/Handoffの明示許可があっても、次の�
 
 tokenや時間が残っていても、指定成果物と必要証拠が揃ったら次の改善へ進まない。「もっと良くできる」は継続理由にならない。Ownerの制作受入やGit pushをAstraが代行しない。
 optional cleanup、追加review、extra agent、反復monitoring、次WP開始へ進まず、ここでSTOPする。
+禁止事項の列挙だけに頼らず、task Card側で達成すべき積極的完了条件（Positive DONE WHEN）を明示し、それが満たされた時点で終了する。
 
 ## Task modes
 
@@ -149,6 +159,7 @@ RETURN:
 
 ```text
 START HEAD:
+ACTUAL HEAD REVIEWED:
 FINAL HEAD:
 WORKTREE:
 
