@@ -238,6 +238,9 @@ console.log('=== TEGAKI TIMELINE TERMINAL & INTERACTION DIAGNOSTIC ===\n');
 function runClipMoveDiagnostic() {
     console.log('--- TEST A: CLIP MOVE ---');
 
+    const listenerCount = (type, listener) =>
+        (docListeners.get(type) || []).filter(candidate => candidate === listener).length;
+
     function setupClipMoveHost() {
         const model = new TimelineModel({
             totalFrames: 24,
@@ -257,7 +260,10 @@ function runClipMoveDiagnostic() {
         const panel = new MockElement('div');
         panel.className = 'animation-table-panel';
         const rawQuery = panel.querySelector.bind(panel);
-        panel.querySelector = (sel) => rawQuery(sel) || new MockElement('div');
+        panel.querySelector = (sel) => {
+            if (sel.includes('.anim-cel-block')) return clipBlock;
+            return rawQuery(sel) || new MockElement('div');
+        };
         const clipBlock = new MockElement('div');
         clipBlock.className = 'anim-cel-block';
         clipBlock.dataset.celId = 'clip-1';
@@ -271,6 +277,7 @@ function runClipMoveDiagnostic() {
 
         let historyCount = 0;
         let commitCount = 0;
+        let restoreCount = 0;
 
         const host = Object.assign(Object.create(AnimationTablePopup.prototype), {
             model,
@@ -285,6 +292,7 @@ function runClipMoveDiagnostic() {
             _getSelectedCelIds() { return new Set(['clip-1']); },
             _captureTimelineHistoryState() { return { rev: historyCount }; },
             _recordTimelineHistory() { historyCount += 1; },
+            _restoreTimelineHistoryState() { restoreCount += 1; },
             _saveSelectedClipFromWorkingLayers() {},
             _activateClipEntry() {},
             _syncClipAssetToWorkingLayers() {},
@@ -316,93 +324,103 @@ function runClipMoveDiagnostic() {
         // Wire event handlers via setupPanelEvents
         host._setupPanelEvents();
 
-        return { host, model, clipBlock, targetSlot, getHistoryCount: () => historyCount, getCommitCount: () => commitCount };
+        return {
+            host,
+            model,
+            clipBlock,
+            targetSlot,
+            getHistoryCount: () => historyCount,
+            getCommitCount: () => commitCount,
+            getRestoreCount: () => restoreCount,
+            getListenerCount: (type) => listenerCount(type, host._onClipMoveMouseUp)
+        };
     }
 
-    // A1: Normal pointerup
+    const begin = (fixture, pointerId = 7) => {
+        fixture.host._isClipMoving = true;
+        fixture.host._clipMoveMoved = false;
+        fixture.host._clipMoveData = {
+            clipId: 'clip-1',
+            pointerId,
+            startX: 100,
+            startY: 100,
+            sourceLaneId: 'lane-1',
+            sourceStartFrame: 0,
+            sourceLaneIndex: 0,
+            movableLaneIds: ['lane-1'],
+            moveItems: [{ clipId: 'clip-1', sourceLaneId: 'lane-1', sourceLaneIndex: 0, sourceStartFrame: 0 }],
+            isGroupMove: false,
+            beforeState: { rev: 0 }
+        };
+        document.addEventListener('pointermove', fixture.host._onClipMoveMouseMove);
+        document.addEventListener('pointerup', fixture.host._onClipMoveMouseUp);
+        document.addEventListener('pointercancel', fixture.host._onClipMoveMouseUp);
+        return pointerId;
+    };
+
+    // A1: normal pointerup preserves the existing move/history path.
     const a1 = setupClipMoveHost();
-    const clip1Before = a1.model.findClipEntry('clip-1').clip.startFrame;
-    assert.equal(clip1Before, 0, 'Clip 1 starts at frame 0');
-
-    // Simulate pointerdown
-    a1.host._isClipMoving = true;
-    a1.host._clipMoveMoved = false;
-    a1.host._clipMoveData = {
-        clipId: 'clip-1',
-        startX: 100,
-        startY: 100,
-        sourceLaneId: 'lane-1',
-        sourceStartFrame: 0,
-        sourceLaneIndex: 0,
-        movableLaneIds: ['lane-1'],
-        moveItems: [{ clipId: 'clip-1', sourceLaneId: 'lane-1', sourceLaneIndex: 0, sourceStartFrame: 0 }],
-        isGroupMove: false,
-        beforeState: { rev: 0 }
+    begin(a1, 7);
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 7, clientX: 160, clientY: 100 }));
+    assert.equal(a1.host._clipMoveMoved, true);
+    assert.equal(a1.targetSlot.classList.contains('move-target'), true);
+    document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 7, clientX: 160, clientY: 100 }));
+    const a1Result = {
+        moved: a1.model.findClipEntry('clip-1').clip.startFrame === 5,
+        commits: a1.getCommitCount(),
+        history: a1.getHistoryCount(),
+        cleaned: a1.host._clipMoveData === null && !a1.targetSlot.classList.contains('move-target'),
+        listenerLeak: a1.getListenerCount('pointerup') + a1.getListenerCount('pointercancel')
     };
-    document.addEventListener('pointermove', a1.host._onClipMoveMouseMove);
-    document.addEventListener('pointerup', a1.host._onClipMoveMouseUp);
-    document.addEventListener('pointercancel', a1.host._onClipMoveMouseUp);
+    assert.deepEqual(a1Result, { moved: true, commits: 1, history: 1, cleaned: true, listenerLeak: 0 });
+    console.log('A1 (normal pointerup):', a1Result);
 
-    // Movement beyond activation threshold (dx = 60 > 4)
-    document.dispatchEvent(new PointerEvent('pointermove', { clientX: 160, clientY: 100 }));
-    assert.equal(a1.host._clipMoveMoved, true, 'Movement beyond threshold activated _clipMoveMoved');
-    assert.equal(a1.targetSlot.classList.contains('move-target'), true, 'target slot has move-target preview');
-
-    // Normal pointerup
-    document.dispatchEvent(new PointerEvent('pointerup', { clientX: 160, clientY: 100 }));
-    const a1Moved = a1.model.findClipEntry('clip-1').clip.startFrame === 5;
-    const a1Commits = a1.getCommitCount();
-    const a1History = a1.getHistoryCount();
-    const a1Residual = a1.targetSlot.classList.contains('move-target');
-
-    console.log('A1 (normal pointerup):', {
-        clipMoved: a1Moved,
-        commitCount: a1Commits,
-        historyCount: a1History,
-        residualPreviewClasses: a1Residual
-    });
-
-    // A2: Abnormal terminal (pointercancel)
+    // A2: threshold-before cancel is a no-op and ignores a foreign pointer.
     const a2 = setupClipMoveHost();
-    a2.host._isClipMoving = true;
-    a2.host._clipMoveMoved = false;
-    a2.host._clipMoveData = {
-        clipId: 'clip-1',
-        startX: 100,
-        startY: 100,
-        sourceLaneId: 'lane-1',
-        sourceStartFrame: 0,
-        sourceLaneIndex: 0,
-        movableLaneIds: ['lane-1'],
-        moveItems: [{ clipId: 'clip-1', sourceLaneId: 'lane-1', sourceLaneIndex: 0, sourceStartFrame: 0 }],
-        isGroupMove: false,
-        beforeState: { rev: 0 }
+    begin(a2, 8);
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 99, clientX: 160, clientY: 100 }));
+    document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 99, clientX: 160, clientY: 100 }));
+    assert.equal(a2.host._isClipMoving, true);
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 8, clientX: 102, clientY: 100 }));
+    document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 8, clientX: 102, clientY: 100 }));
+    const a2Result = {
+        startFrame: a2.model.findClipEntry('clip-1').clip.startFrame,
+        commits: a2.getCommitCount(),
+        history: a2.getHistoryCount(),
+        restoredSelectionState: a2.getRestoreCount() === 1,
+        cleaned: a2.host._clipMoveData === null && !a2.targetSlot.classList.contains('move-target'),
+        listenerLeak: a2.getListenerCount('pointerup') + a2.getListenerCount('pointercancel')
     };
-    document.addEventListener('pointermove', a2.host._onClipMoveMouseMove);
-    document.addEventListener('pointerup', a2.host._onClipMoveMouseUp);
-    document.addEventListener('pointercancel', a2.host._onClipMoveMouseUp);
+    assert.deepEqual(a2Result, { startFrame: 0, commits: 0, history: 0, restoredSelectionState: true, cleaned: true, listenerLeak: 0 });
+    console.log('A2 (threshold-before pointercancel + foreign pointer):', a2Result);
 
-    // Movement beyond threshold
-    document.dispatchEvent(new PointerEvent('pointermove', { clientX: 160, clientY: 100 }));
-    assert.equal(a2.host._clipMoveMoved, true);
+    // A3: threshold-after cancel does not call the move API; the next gesture can commit.
+    const a3 = setupClipMoveHost();
+    begin(a3, 9);
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 9, clientX: 160, clientY: 100 }));
+    assert.equal(a3.targetSlot.classList.contains('move-target'), true);
+    document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 9, clientX: 160, clientY: 100 }));
+    const a3Cancelled = {
+        startFrame: a3.model.findClipEntry('clip-1').clip.startFrame,
+        commits: a3.getCommitCount(),
+        history: a3.getHistoryCount(),
+        restoredSelectionState: a3.getRestoreCount() === 1,
+        cleaned: a3.host._clipMoveData === null && !a3.targetSlot.classList.contains('move-target')
+    };
+    assert.deepEqual(a3Cancelled, { startFrame: 0, commits: 0, history: 0, restoredSelectionState: true, cleaned: true });
 
-    // Abnormal pointercancel
-    document.dispatchEvent(new PointerEvent('pointercancel', { clientX: 160, clientY: 100 }));
-    const a2Moved = a2.model.findClipEntry('clip-1').clip.startFrame === 5;
-    const a2Commits = a2.getCommitCount();
-    const a2History = a2.getHistoryCount();
-    const a2Residual = a2.targetSlot.classList.contains('move-target');
-
-    console.log('A2 (pointercancel):', {
-        clipMoved: a2Moved,
-        commitCount: a2Commits,
-        historyCount: a2History,
-        residualPreviewClasses: a2Residual
-    });
-
-    const staticConfirmed = a2Moved && a2Commits === 1 && a2History === 1;
-    console.log('Clip Move static finding:', staticConfirmed ? 'CONFIRMED' : 'NOT REPRODUCED');
-    return { a1: { moved: a1Moved, commits: a1Commits, history: a1History, residual: a1Residual }, a2: { moved: a2Moved, commits: a2Commits, history: a2History, residual: a2Residual }, staticConfirmed };
+    begin(a3, 10);
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 10, clientX: 160, clientY: 100 }));
+    document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 10, clientX: 160, clientY: 100 }));
+    const a3Next = {
+        moved: a3.model.findClipEntry('clip-1').clip.startFrame === 5,
+        commits: a3.getCommitCount(),
+        history: a3.getHistoryCount(),
+        cleaned: a3.host._clipMoveData === null
+    };
+    assert.deepEqual(a3Next, { moved: true, commits: 1, history: 1, cleaned: true });
+    console.log('A3 (threshold-after cancel, late lost ignored, next gesture):', { cancelled: a3Cancelled, next: a3Next, lostCapture: 'not applicable: legacy path owns no pointer capture' });
+    return { a1: a1Result, a2: a2Result, a3: { cancelled: a3Cancelled, next: a3Next } };
 }
 
 // ---------------------------------------------------------------------------
@@ -411,7 +429,7 @@ function runClipMoveDiagnostic() {
 function runRetimeDiagnostic() {
     console.log('\n--- TEST B: RETIME ---');
 
-    function setupRetimeHost() {
+    function setupRetimeHost({ edge = 'right', pointerId = 20 } = {}) {
         const model = new TimelineModel({
             totalFrames: 24,
             fps: 8,
@@ -421,7 +439,33 @@ function runRetimeDiagnostic() {
                     name: 'Lane 1',
                     type: 'normal',
                     cels: [
-                        { id: 'clip-1', startFrame: 0, duration: 4, assetId: 'asset-1' }
+                        {
+                            id: 'clip-before',
+                            startFrame: edge === 'left' ? 1 : 0,
+                            duration: edge === 'left' ? 3 : 1,
+                            assetId: 'asset-before',
+                            transformKeyframes: [{ frame: 0, x: 1 }]
+                        },
+                        {
+                            id: 'clip-1',
+                            startFrame: edge === 'left' ? 4 : 0,
+                            duration: 4,
+                            assetId: 'asset-1',
+                            transformKeyframes: [{ frame: 0, x: 1 }, { frame: 3, x: 9 }],
+                            layerTransformTracks: [{ layerId: 'layer-1', keyframes: [{ frame: 3, value: 2 }] }],
+                            folderTransformTracks: [{ folderLayerId: 'folder-1', keyframes: [{ frame: 3, value: 3 }] }],
+                            layerDeformers: { targets: [{ layerId: 'layer-1', deformer: { type: 'warp-grid', keyframes: [{ frame: 3, value: 4 }] } }] },
+                            deformer: { type: 'warp-grid', keyframes: [{ frame: 3, value: 5 }] },
+                            folderDeformers: { targets: [{ folderLayerId: 'folder-1', deformer: { type: 'warp-grid', keyframes: [{ frame: 3, value: 6 }] } }] },
+                            rigMotion: { bones: [{ boneId: 'bone-1', keyframes: [{ frame: 3, value: 7 }] }] }
+                        },
+                        {
+                            id: 'clip-after',
+                            startFrame: edge === 'left' ? 8 : 4,
+                            duration: 4,
+                            assetId: 'asset-after',
+                            transformKeyframes: [{ frame: 0, x: 8 }]
+                        }
                     ]
                 }
             ]
@@ -429,14 +473,15 @@ function runRetimeDiagnostic() {
 
         const panel = new MockElement('div');
         const rawQuery = panel.querySelector.bind(panel);
-        panel.querySelector = (sel) => rawQuery(sel) || new MockElement('div');
         const clipBlock = new MockElement('div');
         clipBlock.className = 'anim-cel-block';
         clipBlock.dataset.celId = 'clip-1';
         panel.appendChild(clipBlock);
+        panel.querySelector = (sel) => sel.includes('.anim-cel-block') ? clipBlock : rawQuery(sel) || new MockElement('div');
 
         let renderCount = 0;
         let historyCount = 0;
+        let restoreCount = 0;
 
         const host = Object.assign(Object.create(AnimationTablePopup.prototype), {
             model,
@@ -452,6 +497,11 @@ function runRetimeDiagnostic() {
         });
 
         host._setupPanelEvents();
+        const restoreSnapshot = host._restoreRetimingLaneSnapshot.bind(host);
+        host._restoreRetimingLaneSnapshot = (...args) => {
+            restoreCount += 1;
+            return restoreSnapshot(...args);
+        };
 
         const entry = model.findClipEntry('clip-1');
         const lane = entry.lane;
@@ -463,14 +513,22 @@ function runRetimeDiagnostic() {
             host._retimingData = {
                 cel: clip,
                 track: lane,
-                edge: 'right',
+                edge,
+                pointerId,
                 startFrame: clip.startFrame,
                 startDuration: clip.duration,
                 startX,
                 laneSnapshot: (lane.cels || []).map(cel => ({
                     id: cel.id,
                     startFrame: cel.startFrame,
-                    duration: cel.duration
+                    duration: cel.duration,
+                    transformKeyframes: cel.transformKeyframes,
+                    layerTransformTracks: cel.layerTransformTracks,
+                    folderTransformTracks: cel.folderTransformTracks,
+                    layerDeformers: cel.layerDeformers,
+                    deformer: cel.deformer,
+                    folderDeformers: cel.folderDeformers,
+                    rigMotion: cel.rigMotion
                 })),
                 beforeState: host._captureTimelineHistoryState()
             };
@@ -479,64 +537,104 @@ function runRetimeDiagnostic() {
             document.addEventListener('pointercancel', host._onRetimingMouseUp);
         };
 
-        return { host, model, clip, lane, startRetime, getRenderCount: () => renderCount, getHistoryCount: () => historyCount };
+        return {
+            host,
+            model,
+            clip,
+            lane,
+            startRetime,
+            getRenderCount: () => renderCount,
+            getHistoryCount: () => historyCount,
+            getRestoreCount: () => restoreCount,
+            getListenerCount: (type) => (docListeners.get(type) || [])
+                .filter(candidate => candidate === host._onRetimingMouseUp).length
+        };
     }
 
-    // B1: Normal pointerup
-    const b1 = setupRetimeHost();
+    const laneSnapshot = lane => JSON.stringify(lane.cels);
+
+    // B1: right-edge normal pointerup keeps push and metadata retiming.
+    const b1 = setupRetimeHost({ edge: 'right', pointerId: 20 });
     b1.startRetime(100);
-    assert.equal(b1.clip.duration, 4, 'Original duration is 4');
-
-    // Move: deltaX = 64 -> deltaFrames = round(64/16) = +4 frames -> new duration = 8
-    document.dispatchEvent(new PointerEvent('pointermove', { clientX: 164 }));
-    assert.equal(b1.clip.duration, 8, 'Duration updated during pointermove to 8');
+    const b1Before = laneSnapshot(b1.lane);
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 999, clientX: 132 }));
+    assert.equal(b1.clip.duration, 4, 'Foreign pointer cannot mutate retime');
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 20, clientX: 132 }));
+    assert.equal(b1.clip.duration, 6, 'Duration updated during pointermove to 6');
+    assert.equal(b1.model.findClipEntry('clip-after').clip.startFrame, 6, 'Adjacent clip pushed to frame 6');
     const b1RendersDuringMove = b1.getRenderCount();
-
-    // Normal terminal: pointerup
-    document.dispatchEvent(new PointerEvent('pointerup', { clientX: 164 }));
-    const b1FinalDuration = b1.clip.duration;
-    const b1History = b1.getHistoryCount();
-    const b1Commits = b1FinalDuration !== 4 ? 1 : 0;
-    const b1Cancels = 0;
-
-    console.log('B1 (normal pointerup):', {
-        resultingDuration: b1FinalDuration,
-        historyEntries: b1History,
+    document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 20, clientX: 132 }));
+    const b1Result = {
+        resultingDuration: b1.clip.duration,
+        adjacentStartFrame: b1.model.findClipEntry('clip-after').clip.startFrame,
+        terminalKeyFrame: b1.clip.transformKeyframes.findLast(key => key.x === 9)?.frame,
+        historyEntries: b1.getHistoryCount(),
         renderCount: b1RendersDuringMove,
-        commitCount: b1Commits,
-        cancelCount: b1Cancels
+        clean: b1.host._retimingData === null && !b1.host._isRetiming,
+        listenerLeak: b1.getListenerCount('pointerup') + b1.getListenerCount('pointercancel')
+    };
+    assert.deepEqual(b1Result, {
+        resultingDuration: 6,
+        adjacentStartFrame: 6,
+        terminalKeyFrame: 5,
+        historyEntries: 1,
+        renderCount: b1RendersDuringMove,
+        clean: true,
+        listenerLeak: 0
     });
+    assert.notEqual(laneSnapshot(b1.lane), b1Before, 'Normal retime changes the lane');
+    console.log('B1 (right-edge normal pointerup):', b1Result);
 
-    // B2: Abnormal terminal: pointercancel
-    const b2 = setupRetimeHost();
+    // B2: right-edge pointercancel restores the complete lane snapshot.
+    const b2 = setupRetimeHost({ edge: 'right', pointerId: 21 });
     b2.startRetime(100);
-    assert.equal(b2.clip.duration, 4, 'Original duration is 4');
+    const b2Before = laneSnapshot(b2.lane);
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 21, clientX: 132 }));
+    assert.equal(b2.clip.duration, 6, 'Duration mutated during move');
+    document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 999, clientX: 132 }));
+    assert.notEqual(b2.host._retimingData, null, 'Foreign terminal is ignored');
+    document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 21, clientX: 132 }));
+    const b2Result = {
+        restored: laneSnapshot(b2.lane) === b2Before,
+        history: b2.getHistoryCount(),
+        restoreCalls: b2.getRestoreCount(),
+        clean: b2.host._retimingData === null && !b2.host._isRetiming,
+        listenerLeak: b2.getListenerCount('pointerup') + b2.getListenerCount('pointercancel')
+    };
+    assert.deepEqual(b2Result, { restored: true, history: 0, restoreCalls: 1, clean: true, listenerLeak: 0 });
+    console.log('B2 (right-edge pointercancel + foreign terminal):', b2Result);
 
-    // Move: deltaX = 64 -> new duration = 8
-    document.dispatchEvent(new PointerEvent('pointermove', { clientX: 164 }));
-    assert.equal(b2.clip.duration, 8, 'Duration mutated during move');
-    const b2RendersDuringMove = b2.getRenderCount();
+    // B3: left-edge cancellation restores neighbor push and all metadata.
+    const b3 = setupRetimeHost({ edge: 'left', pointerId: 22 });
+    b3.startRetime(100);
+    const b3Before = laneSnapshot(b3.lane);
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 22, clientX: 68 }));
+    assert.notEqual(laneSnapshot(b3.lane), b3Before, 'Left retime mutates neighbor/target live');
+    document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 22, clientX: 68 }));
+    const b3Result = {
+        restored: laneSnapshot(b3.lane) === b3Before,
+        history: b3.getHistoryCount(),
+        restoreCalls: b3.getRestoreCount(),
+        clean: b3.host._retimingData === null && !b3.host._isRetiming
+    };
+    assert.deepEqual(b3Result, { restored: true, history: 0, restoreCalls: 1, clean: true });
+    console.log('B3 (left-edge pointercancel + metadata):', b3Result);
 
-    // Abnormal terminal: pointercancel
-    document.dispatchEvent(new PointerEvent('pointercancel', { clientX: 164 }));
-    const b2FinalDuration = b2.clip.duration;
-    const b2Restored = b2FinalDuration === 4;
-    const b2History = b2.getHistoryCount();
-    const b2Commits = b2FinalDuration !== 4 ? 1 : 0;
-    const b2Cancels = 0; // rollback was NOT called
-
-    console.log('B2 (abnormal pointercancel):', {
-        resultingDuration: b2FinalDuration,
-        originalLaneStateRestored: b2Restored,
-        historyEntries: b2History,
-        renderCount: b2RendersDuringMove,
-        commitCount: b2Commits,
-        cancelCount: b2Cancels
+    // B4: threshold-before cancel and the following normal gesture remain valid.
+    const b4 = setupRetimeHost({ edge: 'right', pointerId: 23 });
+    b4.startRetime(100);
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 23, clientX: 101 }));
+    document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 23, clientX: 101 }));
+    assert.equal(b4.getHistoryCount(), 0);
+    b4.startRetime(100);
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 23, clientX: 132 }));
+    document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 23, clientX: 132 }));
+    const b4Next = { duration: b4.clip.duration, history: b4.getHistoryCount(), clean: b4.host._retimingData === null };
+    assert.deepEqual(b4Next, { duration: 6, history: 1, clean: true });
+    console.log('B4 (threshold-before cancel, next gesture):', b4Next, {
+        lostCapture: 'not applicable: legacy path owns no pointer capture'
     });
-
-    const staticConfirmed = !b2Restored && b2FinalDuration === 8 && b2History === 1;
-    console.log('Retime static finding:', staticConfirmed ? 'CONFIRMED' : 'NOT REPRODUCED');
-    return { b1: { duration: b1FinalDuration, history: b1History, renders: b1RendersDuringMove, commits: b1Commits, cancels: b1Cancels }, b2: { duration: b2FinalDuration, restored: b2Restored, history: b2History, renders: b2RendersDuringMove, commits: b2Commits, cancels: b2Cancels }, staticConfirmed };
+    return { b1: b1Result, b2: b2Result, b3: b3Result, b4: b4Next };
 }
 
 // ---------------------------------------------------------------------------
@@ -550,6 +648,7 @@ function runMotionKeyDragDiagnostic() {
         let clickCommitCalls = 0;
         let rollbackCalls = 0;
         let historyCount = 0;
+        const selectedKeys = new Set(['preexisting-key']);
 
         const host = {
             _motionKeyDrag: null,
@@ -566,20 +665,33 @@ function runMotionKeyDragDiagnostic() {
                 return true;
             },
             _setMotionTimelineKeySelected(descriptor, selected, options) {
-                if (!selected) rollbackCalls += 1;
+                const id = descriptor?.id || 'drag-key';
+                if (selected) selectedKeys.add(id);
+                else {
+                    rollbackCalls += 1;
+                    selectedKeys.delete(id);
+                }
             }
         };
 
-        const createGesture = () => {
+        const createGesture = ({ path = 'marker', pointerId = 10, movedSelectionId = 'drag-key' } = {}) => {
             const keyMarker = new MockElement('div');
             keyMarker.className = 'anim-motion-key-marker';
+            keyMarker.style.setProperty('--motion-key-position', '12%');
             const sourceSlot = new MockElement('div');
             sourceSlot.className = 'anim-cell-slot';
+            const pendingSelection = {
+                addedForDrag: true,
+                descriptor: { id: movedSelectionId }
+            };
+            selectedKeys.add(movedSelectionId);
+            (path === 'marker' ? keyMarker : sourceSlot).classList.add('is-key-pressed', 'key-dragging');
 
             const gesture = {
-                pointerId: 10,
+                pointerId,
                 clipId: 'clip-1',
                 kind: 'motion',
+                path,
                 sourceFrame: 1,
                 targetFrame: 1,
                 startX: 50,
@@ -587,6 +699,8 @@ function runMotionKeyDragDiagnostic() {
                 rect: { left: 0, width: 200 },
                 marker: keyMarker,
                 sourceSlot,
+                markerPositionProperty: '--motion-key-position',
+                markerPositionBefore: keyMarker.style.getPropertyValue('--motion-key-position'),
                 anchorDescriptor: { clipId: 'clip-1', kind: 'motion', frame: 1 },
                 moved: false,
                 beforeState: { rev: 0 }
@@ -599,6 +713,12 @@ function runMotionKeyDragDiagnostic() {
                 if (!gesture.moved) return;
                 const ratio = Math.max(0, Math.min(1, (moveEvent.clientX - gesture.rect.left) / Math.max(1, gesture.rect.width)));
                 gesture.targetFrame = Math.round(ratio * (gesture.duration - 1));
+                if (path === 'marker') {
+                    gesture.marker.style.setProperty(
+                        gesture.markerPositionProperty,
+                        `${(gesture.targetFrame / (gesture.duration - 1)) * 100}%`
+                    );
+                }
                 moveEvent.preventDefault();
             };
 
@@ -607,11 +727,29 @@ function runMotionKeyDragDiagnostic() {
                 document.removeEventListener('pointermove', onMove);
                 document.removeEventListener('pointerup', onUp);
                 document.removeEventListener('pointercancel', onUp);
-                gesture.marker.classList.remove('is-key-pressed');
+                gesture.marker.classList.remove('is-key-pressed', 'key-dragging');
+                gesture.sourceSlot.classList.remove('is-key-pressed', 'key-dragging');
                 host._motionKeyDrag = null;
+                const cancelled = upEvent.type === 'pointercancel'
+                    || upEvent.type === 'lostpointercapture';
                 let clickCommitted = false;
-                // EXACT PRODUCTION LOGIC (lines 22038-22060):
-                if (gesture.moved) {
+                if (cancelled) {
+                    if (pendingSelection.addedForDrag) {
+                        host._setMotionTimelineKeySelected(
+                            pendingSelection.descriptor,
+                            false,
+                            { additive: true }
+                        );
+                    }
+                    host._motionKeyPendingClick = null;
+                    if (path === 'marker') {
+                        gesture.marker.style.setProperty(
+                            gesture.markerPositionProperty,
+                            gesture.markerPositionBefore
+                        );
+                    }
+                    host.render();
+                } else if (gesture.moved) {
                     host._motionKeyPendingClick = null;
                     const moved = host._moveMotionTimelineKeySelection(
                         gesture.anchorDescriptor,
@@ -621,10 +759,6 @@ function runMotionKeyDragDiagnostic() {
                     if (!moved) host.render();
                 } else if (upEvent.type === 'pointerup') {
                     clickCommitted = host._commitMotionTimelineKeyPointerClick(gesture, upEvent);
-                } else if (upEvent.type === 'pointercancel') {
-                    rollbackCalls += 1;
-                    host._motionKeyPendingClick = null;
-                    host.render();
                 }
                 host._motionKeyClickSuppressed = gesture.moved || clickCommitted;
             };
@@ -633,10 +767,15 @@ function runMotionKeyDragDiagnostic() {
             document.addEventListener('pointerup', onUp);
             document.addEventListener('pointercancel', onUp);
 
-            return { gesture, keyMarker };
+            return { gesture, keyMarker, sourceSlot, selectedKeys };
         };
 
-        return { host, createGesture, getCounts: () => ({ movedCommitCalls, clickCommitCalls, rollbackCalls, historyCount }) };
+        return {
+            host,
+            createGesture,
+            getCounts: () => ({ movedCommitCalls, clickCommitCalls, rollbackCalls, historyCount }),
+            getSelectedKeys: () => [...selectedKeys]
+        };
     }
 
     // C1: moved=true -> pointerup

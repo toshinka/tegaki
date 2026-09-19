@@ -21941,18 +21941,10 @@ export class AnimationTablePopup {
                         clearTargetStyle();
                         gesture.sourceSlot.classList.remove('key-dragging', 'is-key-pressed');
                         this._motionKeyDrag = null;
+                        const cancelled = upEvent.type === 'pointercancel'
+                            || upEvent.type === 'lostpointercapture';
                         let clickCommitted = false;
-                        if (gesture.moved) {
-                            this._motionKeyPendingClick = null;
-                            const moved = this._moveMotionTimelineKeySelection(
-                                gesture.anchorDescriptor,
-                                gesture.targetFrame,
-                                gesture.beforeState
-                            );
-                            if (!moved) this.render();
-                        } else if (upEvent.type === 'pointerup') {
-                            clickCommitted = this._commitMotionTimelineKeyPointerClick(gesture, upEvent);
-                        } else if (upEvent.type === 'pointercancel') {
+                        if (cancelled) {
                             if (pendingSelection?.addedForDrag) {
                                 this._setMotionTimelineKeySelected(
                                     pendingSelection.descriptor,
@@ -21962,6 +21954,16 @@ export class AnimationTablePopup {
                             }
                             this._motionKeyPendingClick = null;
                             this.render();
+                        } else if (gesture.moved) {
+                            this._motionKeyPendingClick = null;
+                            const moved = this._moveMotionTimelineKeySelection(
+                                gesture.anchorDescriptor,
+                                gesture.targetFrame,
+                                gesture.beforeState
+                            );
+                            if (!moved) this.render();
+                        } else if (upEvent.type === 'pointerup') {
+                            clickCommitted = this._commitMotionTimelineKeyPointerClick(gesture, upEvent);
                         }
                         this._motionKeyClickSuppressed = gesture.moved || clickCommitted;
                     };
@@ -22004,6 +22006,12 @@ export class AnimationTablePopup {
                         duration: Math.max(2, entry.clip.duration || 2),
                         rect,
                         marker: keyMarker,
+                        markerPositionProperty: kind === 'warp'
+                            ? '--warp-key-position'
+                            : '--motion-key-position',
+                        markerPositionBefore: keyMarker.style.getPropertyValue(
+                            kind === 'warp' ? '--warp-key-position' : '--motion-key-position'
+                        ),
                         anchorDescriptor,
                         moved: false,
                         beforeState: this._captureTimelineHistoryState()
@@ -22034,8 +22042,28 @@ export class AnimationTablePopup {
                         document.removeEventListener('pointercancel', onUp);
                         gesture.marker.classList.remove('is-key-pressed');
                         this._motionKeyDrag = null;
+                        const cancelled = upEvent.type === 'pointercancel'
+                            || upEvent.type === 'lostpointercapture';
                         let clickCommitted = false;
-                        if (gesture.moved) {
+                        if (cancelled) {
+                            if (pendingSelection?.addedForDrag) {
+                                this._setMotionTimelineKeySelected(
+                                    pendingSelection.descriptor,
+                                    false,
+                                    { additive: true }
+                                );
+                            }
+                            this._motionKeyPendingClick = null;
+                            if (gesture.markerPositionBefore) {
+                                gesture.marker.style.setProperty(
+                                    gesture.markerPositionProperty,
+                                    gesture.markerPositionBefore
+                                );
+                            } else {
+                                gesture.marker.style.removeProperty(gesture.markerPositionProperty);
+                            }
+                            this.render();
+                        } else if (gesture.moved) {
                             this._motionKeyPendingClick = null;
                             const moved = this._moveMotionTimelineKeySelection(
                                 gesture.anchorDescriptor,
@@ -22045,16 +22073,6 @@ export class AnimationTablePopup {
                             if (!moved) this.render();
                         } else if (upEvent.type === 'pointerup') {
                             clickCommitted = this._commitMotionTimelineKeyPointerClick(gesture, upEvent);
-                        } else if (upEvent.type === 'pointercancel') {
-                            if (pendingSelection?.addedForDrag) {
-                                this._setMotionTimelineKeySelected(
-                                    pendingSelection.descriptor,
-                                    false,
-                                    { additive: true }
-                                );
-                            }
-                            this._motionKeyPendingClick = null;
-                            this.render();
                         }
                         this._motionKeyClickSuppressed = gesture.moved || clickCommitted;
                     };
@@ -22112,6 +22130,7 @@ export class AnimationTablePopup {
                             cel: clip,
                             track: lane,
                             edge: handle.dataset.edge === 'left' ? 'left' : 'right',
+                            pointerId: e.pointerId,
                             startFrame: clip.startFrame,
                             startDuration: clip.duration,
                             startX: e.clientX,
@@ -22180,6 +22199,7 @@ export class AnimationTablePopup {
                     this._clipMoveMoved = false;
                     this._clipMoveData = {
                         clipId,
+                        pointerId: e.pointerId,
                         startX: e.clientX,
                         startY: e.clientY,
                         sourceLaneId: entry.lane.id,
@@ -22366,62 +22386,83 @@ export class AnimationTablePopup {
         };
 
         this._onRetimingMouseMove = (e) => {
-            if (!this._isRetiming || !this._retimingData) return;
+            const retimingData = this._retimingData;
+            if (!this._isRetiming || !retimingData) return;
+            if (e && e.pointerId !== undefined && e.pointerId !== retimingData.pointerId) return;
             e.preventDefault?.();
             this._retimingMoved = true;
 
-            const deltaX = e.clientX - this._retimingData.startX;
+            const deltaX = e.clientX - retimingData.startX;
             const deltaFrames = Math.round(deltaX / this.timelineCellWidth);
 
-            const applied = this._applyRetimingWithPush(this._retimingData, deltaFrames);
-            this._retimingData.blocked = !applied;
+            const applied = this._applyRetimingWithPush(retimingData, deltaFrames);
+            retimingData.blocked = !applied;
             this.render();
         };
 
-        this._onRetimingMouseUp = () => {
+        this._onRetimingMouseUp = (e = null) => {
             const retimingData = this._retimingData;
+            if (!this._isRetiming || !retimingData) return;
+            if (e && e.pointerId !== undefined && e.pointerId !== retimingData.pointerId) return;
+            const cancelled = e?.type === 'pointercancel' || e?.type === 'lostpointercapture';
+            const retimingMoved = this._retimingMoved;
             const retimingBlock = retimingData?.cel?.id
                 ? this.panel.querySelector(`.anim-cel-block[data-cel-id="${retimingData.cel.id}"]`)
                 : null;
-            retimingBlock?.classList.remove('retiming', 'retiming-left', 'retiming-right', 'retiming-blocked');
-            const startFrameChanged = retimingData?.cel?.startFrame !== retimingData?.startFrame;
-            const durationChanged = retimingData?.cel?.duration !== retimingData?.startDuration;
-            if (this._retimingMoved && retimingData?.cel && (startFrameChanged || durationChanged)) {
-                this._recordTimelineHistory(retimingData.beforeState, this._captureTimelineHistoryState(), 'caf-clip-retime', {
-                    type: 'caf-clip-retime',
-                    clipId: retimingData.cel.id,
-                    assetId: retimingData.cel.assetId || null,
-                    laneId: retimingData.track?.id || null,
-                    frameIndex: retimingData.cel.startFrame,
-                    beforeStartFrame: retimingData.startFrame,
-                    afterStartFrame: retimingData.cel.startFrame,
-                    beforeDuration: retimingData.startDuration,
-                    afterDuration: retimingData.cel.duration,
-                    edge: retimingData.edge || 'right'
-                });
-            }
             this._isRetiming = false;
             this._retimingData = null;
+            retimingBlock?.classList.remove('retiming', 'retiming-left', 'retiming-right', 'retiming-blocked');
             document.removeEventListener('pointermove', this._onRetimingMouseMove);
             document.removeEventListener('pointerup', this._onRetimingMouseUp);
             document.removeEventListener('pointercancel', this._onRetimingMouseUp);
-            setTimeout(() => {
-                this._retimingMoved = false;
-                this._requestLayerPanelSync(); // Phase 4z21
-            }, 0);
+            try {
+                if (cancelled) {
+                    this._restoreRetimingLaneSnapshot(retimingData.track, retimingData.laneSnapshot);
+                    this.render();
+                } else {
+                    const startFrameChanged = retimingData.cel?.startFrame !== retimingData.startFrame;
+                    const durationChanged = retimingData.cel?.duration !== retimingData.startDuration;
+                    if (retimingMoved && retimingData.cel && (startFrameChanged || durationChanged)) {
+                        this._recordTimelineHistory(
+                            retimingData.beforeState,
+                            this._captureTimelineHistoryState(),
+                            'caf-clip-retime',
+                            {
+                                type: 'caf-clip-retime',
+                                clipId: retimingData.cel.id,
+                                assetId: retimingData.cel.assetId || null,
+                                laneId: retimingData.track?.id || null,
+                                frameIndex: retimingData.cel.startFrame,
+                                beforeStartFrame: retimingData.startFrame,
+                                afterStartFrame: retimingData.cel.startFrame,
+                                beforeDuration: retimingData.startDuration,
+                                afterDuration: retimingData.cel.duration,
+                                edge: retimingData.edge || 'right'
+                            }
+                        );
+                    }
+                }
+            } finally {
+                setTimeout(() => {
+                    this._retimingMoved = false;
+                    this._requestLayerPanelSync(); // Phase 4z21
+                }, 0);
+            }
         };
 
         this._onClipMoveMouseMove = (e) => {
-            if (!this._isClipMoving || !this._clipMoveData) return;
+            const clipMoveData = this._clipMoveData;
+            if (!this._isClipMoving || !clipMoveData) return;
+            if (e && e.pointerId !== undefined && e.pointerId !== clipMoveData.pointerId) return;
             e.preventDefault?.();
 
-            const dx = e.clientX - this._clipMoveData.startX;
-            const dy = e.clientY - this._clipMoveData.startY;
+            const dx = e.clientX - clipMoveData.startX;
+            const dy = e.clientY - clipMoveData.startY;
             
             if (!this._clipMoveMoved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
                 this._clipMoveMoved = true;
                 // 移動開始のフィードバック
-                this._clipMoveData.moveItems.forEach(item => {
+                clipMoveData.moveItems.forEach(item => {
                     this.panel.querySelector(`.anim-cel-block[data-cel-id="${item.clipId}"]`)?.classList.add('moving');
                 });
             }
@@ -22429,85 +22470,100 @@ export class AnimationTablePopup {
             this._updateClipMovePreview(e.clientX, e.clientY);
         };
 
-        this._onClipMoveMouseUp = (e) => {
-            if (!this._isClipMoving || !this._clipMoveData) return;
+        this._onClipMoveMouseUp = (e = null) => {
+            const clipMoveData = this._clipMoveData;
+            if (!this._isClipMoving || !clipMoveData) return;
+            if (e && e.pointerId !== undefined && e.pointerId !== clipMoveData.pointerId) return;
 
-            if (this._clipMoveMoved) {
-                // ドロップ先の解決
-                const slot = this._getClipMoveTargetSlot(e.clientX, e.clientY);
-
+            const cancelled = e?.type === 'pointercancel' || e?.type === 'lostpointercapture';
+            const clipMoveMoved = this._clipMoveMoved;
+            let slot = null;
+            let movePlan = null;
+            let targetLaneId = null;
+            let targetFrame = null;
+            let movedToNewSlot = false;
+            if (!cancelled && clipMoveMoved && e) {
+                // ドロップ先の解決は、gesture stateを閉じる前に行う。
+                slot = this._getClipMoveTargetSlot(e.clientX, e.clientY);
                 if (slot) {
-                    const targetLaneId = slot.dataset.trackId;
-                    const targetFrame = parseInt(slot.dataset.frameIndex, 10);
-                    const movePlan = this._getClipMovePlan(targetLaneId, targetFrame);
-                    const movedToNewSlot = movePlan.ok && movePlan.moves.some(move => {
-                        const source = this._clipMoveData.moveItems.find(item => item.clipId === move.clipId);
+                    targetLaneId = slot.dataset.trackId;
+                    targetFrame = parseInt(slot.dataset.frameIndex, 10);
+                    movePlan = this._getClipMovePlan(targetLaneId, targetFrame);
+                    movedToNewSlot = movePlan.ok && movePlan.moves.some(move => {
+                        const source = clipMoveData.moveItems.find(item => item.clipId === move.clipId);
                         return source && (
                             move.targetLaneId !== source.sourceLaneId
                             || move.targetStartFrame !== source.sourceStartFrame
                         );
                     });
-                    const result = movePlan.ok
-                        ? (this._clipMoveData.isGroupMove
-                            ? this.model.moveClips(movePlan.moves)
-                            : this.model.moveClip(this._clipMoveData.clipId, targetLaneId, targetFrame))
-                        : { ok: false, reason: movePlan.reason || 'invalid-target' };
-                    if (result.ok) {
-                        const anchorEntry = this.model.findClipEntry(this._clipMoveData.clipId);
-                        if (!anchorEntry) return;
-                        this.selectedCelId = anchorEntry.clip.id;
-                        this.activeLaneId = anchorEntry.lane.id;
-                        this.model.setCurrentFrame(anchorEntry.clip.startFrame);
-                        this.model.tracks.forEach(track => {
-                            track.active = track.id === anchorEntry.lane.id;
-                        });
-                        this._syncClipAssetToWorkingLayers(anchorEntry.clip, { forceRestore: true });
-                        if (movedToNewSlot) {
-                            const historyMoves = movePlan.moves.map(move => {
-                                const source = this._clipMoveData.moveItems.find(item => item.clipId === move.clipId);
-                                return {
-                                    clipId: move.clipId,
-                                    fromLaneId: source?.sourceLaneId || null,
-                                    toLaneId: move.targetLaneId,
-                                    fromFrame: source?.sourceStartFrame ?? null,
-                                    toFrame: move.targetStartFrame
-                                };
-                            });
-                            const isGroupMove = this._clipMoveData.isGroupMove;
-                            this._recordTimelineHistory(
-                                this._clipMoveData.beforeState,
-                                this._captureTimelineHistoryState(),
-                                isGroupMove ? 'caf-clips-move' : 'caf-clip-move',
-                                isGroupMove
-                                    ? {
-                                        type: 'caf-clips-move',
-                                        clipIds: historyMoves.map(move => move.clipId),
-                                        moves: historyMoves
-                                    }
-                                    : {
-                                        type: 'caf-clip-move',
-                                        clipId: anchorEntry.clip.id,
-                                        assetId: anchorEntry.clip.assetId || null,
-                                        ...historyMoves[0]
-                                    }
-                            );
-                        }
-                    }
                 }
             }
 
             this._isClipMoving = false;
             this._clipMoveData = null;
-            this._clearClipMovePreview();
+            this._clearClipMoveActiveVisuals(clipMoveData);
             document.removeEventListener('pointermove', this._onClipMoveMouseMove);
             document.removeEventListener('pointerup', this._onClipMoveMouseUp);
             document.removeEventListener('pointercancel', this._onClipMoveMouseUp);
-            
-            // 少し遅延させてからフラグを下ろす（click誤爆防止）
-            setTimeout(() => {
-                this.render();
-                this._requestLayerPanelSync();
-            }, 0);
+
+            try {
+                if (cancelled) {
+                    this._restoreTimelineHistoryState?.(clipMoveData.beforeState);
+                } else if (clipMoveMoved && slot && movePlan?.ok) {
+                    const result = clipMoveData.isGroupMove
+                        ? this.model.moveClips(movePlan.moves)
+                        : this.model.moveClip(clipMoveData.clipId, targetLaneId, targetFrame);
+                    if (result.ok) {
+                        const anchorEntry = this.model.findClipEntry(clipMoveData.clipId);
+                        if (anchorEntry) {
+                            this.selectedCelId = anchorEntry.clip.id;
+                            this.activeLaneId = anchorEntry.lane.id;
+                            this.model.setCurrentFrame(anchorEntry.clip.startFrame);
+                            this.model.tracks.forEach(track => {
+                                track.active = track.id === anchorEntry.lane.id;
+                            });
+                            this._syncClipAssetToWorkingLayers(anchorEntry.clip, { forceRestore: true });
+                            if (movedToNewSlot) {
+                                const historyMoves = movePlan.moves.map(move => {
+                                    const source = clipMoveData.moveItems.find(item => item.clipId === move.clipId);
+                                    return {
+                                        clipId: move.clipId,
+                                        fromLaneId: source?.sourceLaneId || null,
+                                        toLaneId: move.targetLaneId,
+                                        fromFrame: source?.sourceStartFrame ?? null,
+                                        toFrame: move.targetStartFrame
+                                    };
+                                });
+                                const isGroupMove = clipMoveData.isGroupMove;
+                                this._recordTimelineHistory(
+                                    clipMoveData.beforeState,
+                                    this._captureTimelineHistoryState(),
+                                    isGroupMove ? 'caf-clips-move' : 'caf-clip-move',
+                                    isGroupMove
+                                        ? {
+                                            type: 'caf-clips-move',
+                                            clipIds: historyMoves.map(move => move.clipId),
+                                            moves: historyMoves
+                                        }
+                                        : {
+                                            type: 'caf-clip-move',
+                                            clipId: anchorEntry.clip.id,
+                                            assetId: anchorEntry.clip.assetId || null,
+                                            ...historyMoves[0]
+                                        }
+                                );
+                            }
+                        }
+                    }
+                }
+            } finally {
+                // 少し遅延させてからフラグを下ろす（click誤爆防止）
+                setTimeout(() => {
+                    this._clipMoveMoved = false;
+                    this.render();
+                    this._requestLayerPanelSync();
+                }, 0);
+            }
         };
     }
 
@@ -24743,6 +24799,14 @@ export class AnimationTablePopup {
         if (!this._clipMovePreviewSlot) return;
         this._clipMovePreviewSlot.classList.remove('move-target', 'move-target-blocked');
         this._clipMovePreviewSlot = null;
+    }
+
+    _clearClipMoveActiveVisuals(moveData = this._clipMoveData) {
+        moveData?.moveItems?.forEach(item => {
+            this.panel?.querySelector(`.anim-cel-block[data-cel-id="${item.clipId}"]`)
+                ?.classList.remove('moving');
+        });
+        this._clearClipMovePreview();
     }
 
     _getClipMovePlan(targetLaneId, targetFrame) {

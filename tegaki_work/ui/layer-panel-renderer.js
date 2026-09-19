@@ -684,6 +684,7 @@ export class LayerPanelRenderer {
         document.addEventListener('pointermove', this._handleLayerPanelCardPointerMove, { passive: false, capture: true });
         document.addEventListener('pointerup', this._handleLayerPanelCardPointerUp, { capture: true });
         document.addEventListener('pointercancel', this._handleLayerPanelCardPointerUp, { capture: true });
+        document.addEventListener('lostpointercapture', this._handleLayerPanelCardPointerUp, { capture: true });
         return true;
     }
 
@@ -924,18 +925,30 @@ export class LayerPanelRenderer {
         const drag = this._cardDrag;
         if (!drag || e.pointerId !== drag.pointerId) return;
 
-        if (drag.active) {
+        const cancelled = e.type === 'pointercancel' || e.type === 'lostpointercapture';
+        if (e.type === 'lostpointercapture'
+            && e.target
+            && e.target !== drag.captureTarget) {
+            return;
+        }
+        const shouldDrop = e.type === 'pointerup' && drag.active;
+
+        if (shouldDrop) {
             e.preventDefault();
             e.stopPropagation();
             this._cardDragSuppressClick = true;
             setTimeout(() => {
                 this._cardDragSuppressClick = false;
             }, 80);
-
-            this._applyLayerPanelCardDrop(drag);
         }
 
+        // Mark the gesture inactive and release visual/listener ownership before
+        // invoking the success callback. The release can itself emit a late
+        // lostpointercapture event, which must observe the already-closed state.
         this._finishLayerPanelCardDrag();
+        if (shouldDrop && !cancelled) {
+            this._applyLayerPanelCardDrop(drag);
+        }
     }
 
     _applyLayerPanelCardDrop(drag) {
@@ -965,10 +978,8 @@ export class LayerPanelRenderer {
         document.removeEventListener('pointermove', this._handleLayerPanelCardPointerMove, true);
         document.removeEventListener('pointerup', this._handleLayerPanelCardPointerUp, true);
         document.removeEventListener('pointercancel', this._handleLayerPanelCardPointerUp, true);
+        document.removeEventListener('lostpointercapture', this._handleLayerPanelCardPointerUp, true);
         this._clearLayerPanelCardDropTarget();
-        try {
-            drag?.captureTarget?.releasePointerCapture?.(drag.pointerId);
-        } catch (err) {}
         if (drag?.row) drag.row.classList.remove('is-dragging');
         if (drag?.ghost?.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
         this._cardDrag = null;
@@ -976,6 +987,9 @@ export class LayerPanelRenderer {
             this._pendingUpdateAfterDrag = false;
             this.requestUpdate();
         }
+        try {
+            drag?.captureTarget?.releasePointerCapture?.(drag.pointerId);
+        } catch (err) {}
     }
 
     _clearLayerPanelCardDropTarget() {
