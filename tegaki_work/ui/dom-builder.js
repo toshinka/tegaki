@@ -792,7 +792,7 @@ export const DOMBuilder = (function() {
             id: 'layer-panel-context-inspector',
             attributes: {
                 hidden: '',
-                'aria-label': 'Context Inspector'
+                'aria-label': 'Transform 作業面'
             }
         }));
         mainLayout.appendChild(rightPanel);

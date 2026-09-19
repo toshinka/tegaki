@@ -2,7 +2,7 @@
  * ============================================================================
  * ファイル名: ui/layer-panel-renderer.js
  * 責務: レイヤーパネルのUI（レイヤー一覧、選択、可視性、透明度、合成モード、クリッピング状態、並び替え）と
- *       Right Dock Context Inspectorの単一Transform DOM projectionを描画する
+ *       既存RIG概要を描画する。右作業面の置換はRightWorkspaceFrameへ委譲する。
  * 依存: layer-system.js, thumbnail-system.js, event-bus.js, config.js, rig-authoring-status-projection.js
  * 被依存: ui-panels.js, core-engine.js
  * 公開API: LayerPanelRenderer, getDiagnosticsSnapshot(), resetDiagnostics()
@@ -24,6 +24,7 @@
  */
 
 import { UI_ICONS } from './ui-icons.js';
+import { RightWorkspaceFrame } from './right-workspace-frame.js';
 import { TEGAKI_CONFIG } from '../config.js';
 import {
     cycleClippingMode,
@@ -65,25 +66,17 @@ export class LayerPanelRenderer {
         this._legacyNamePointerTap = null;
         this._clipMirrorNameClickTimer = null;
         this._contextDockView = 'layers';
-        this._contextInspectorClosed = false;
-        this._transformPanelHomeParent = null;
-        this._transformPanelHomeNextSibling = null;
-        this._transformPanelObserver = null;
-        this._transformPanelFocusSyncTimeout = null;
         this._handleAttributePopupOutsidePointerDown = this._handleAttributePopupOutsidePointerDown.bind(this);
         this._handleAttributePopupKeydown = this._handleAttributePopupKeydown.bind(this);
         this._handleAttributePopupDragMove = this._handleAttributePopupDragMove.bind(this);
         this._handleAttributePopupDragEnd = this._handleAttributePopupDragEnd.bind(this);
         this._handleLayerPanelKeydown = this._handleLayerPanelKeydown.bind(this);
         this._handleContextDockViewKeydown = this._handleContextDockViewKeydown.bind(this);
-        this._handleContextInspectorClick = this._handleContextInspectorClick.bind(this);
-        this._handleTransformFocusStateChanged = this._handleTransformFocusStateChanged.bind(this);
         this._handleLayerPanelCardPointerDown = this._handleLayerPanelCardPointerDown.bind(this);
         this._handleLayerPanelCardPointerMove = this._handleLayerPanelCardPointerMove.bind(this);
         this._handleLayerPanelCardPointerUp = this._handleLayerPanelCardPointerUp.bind(this);
 
-        this._setupContextInspectorObservation();
-        this._getContextInspectorHost()?.addEventListener('click', this._handleContextInspectorClick);
+        this.workspaceFrame = new RightWorkspaceFrame(container, () => this._getContextInspectorTarget(), layerSystem);
         this._setupEventListeners();
         document.addEventListener('keydown', this._handleLayerPanelKeydown, true);
         this.container.addEventListener('keydown', this._handleContextDockViewKeydown);
@@ -1020,109 +1013,6 @@ export class LayerPanelRenderer {
         });
     }
 
-    _getContextInspectorHost() {
-        const rightPanel = this.container?.closest?.('.right-panel');
-        return rightPanel?.querySelector?.('#layer-panel-context-inspector') || null;
-    }
-
-    _getTransformPanel() {
-        return this.layerSystem?.transform?.transformPanel
-            || document.getElementById('layer-transform-panel');
-    }
-
-    _setupContextInspectorObservation() {
-        const transformPanel = this._getTransformPanel();
-        if (!transformPanel || this._transformPanelObserver || typeof MutationObserver === 'undefined') {
-            return;
-        }
-        this._transformPanelObserver = new MutationObserver(() => {
-            this._scheduleContextInspectorSync();
-        });
-        this._transformPanelObserver.observe(transformPanel, {
-            attributes: true,
-            attributeFilter: ['class']
-        });
-    }
-
-    _scheduleContextInspectorSync() {
-        if (this._transformPanelFocusSyncTimeout) return;
-        this._transformPanelFocusSyncTimeout = setTimeout(() => {
-            this._transformPanelFocusSyncTimeout = null;
-            this._syncContextInspector();
-        }, 0);
-    }
-
-    _handleTransformFocusStateChanged() {
-        this._scheduleContextInspectorSync();
-    }
-
-    _handleContextInspectorClick(event) {
-        const restoreButton = event.target.closest?.(
-            '[data-context-inspector-action="toggle-projection"]'
-        );
-        const host = this._getContextInspectorHost();
-        if (!restoreButton || !host?.contains(restoreButton)) return;
-
-        event.preventDefault();
-        event.stopPropagation();
-        if (this._contextInspectorClosed) {
-            this._contextInspectorClosed = false;
-            this._syncContextInspector();
-            return;
-        }
-
-        this._contextInspectorClosed = true;
-        this._restoreTransformPanelToFloating({ keepInspectorShell: true });
-        this._renderContextInspectorHeader(this.layerSystem?.transform?.getTransformMode?.() || 'basic');
-        this._renderContextInspectorFloatingState();
-    }
-
-    _ensureContextInspectorShell() {
-        const host = this._getContextInspectorHost();
-        if (!host) return null;
-
-        let header = host.querySelector('.layer-panel-context-inspector-header');
-        let body = host.querySelector('.layer-panel-context-inspector-body');
-        if (!header || !body) {
-            host.replaceChildren();
-
-            header = document.createElement('header');
-            header.className = 'layer-panel-context-inspector-header';
-
-            const identity = document.createElement('div');
-            identity.className = 'layer-panel-context-inspector-identity';
-
-            const eyebrow = document.createElement('span');
-            eyebrow.className = 'layer-panel-context-inspector-eyebrow';
-            eyebrow.textContent = 'CONTEXT INSPECTOR';
-
-            const capability = document.createElement('span');
-            capability.className = 'layer-panel-context-inspector-capability';
-
-            const target = document.createElement('span');
-            target.className = 'layer-panel-context-inspector-target';
-
-            identity.append(eyebrow, capability, target);
-
-            const restoreButton = document.createElement('button');
-            restoreButton.type = 'button';
-            restoreButton.className = 'layer-panel-context-inspector-close';
-            restoreButton.dataset.contextInspectorAction = 'toggle-projection';
-            restoreButton.setAttribute('aria-label', 'Transform InspectorをFloating表示へ戻す');
-            restoreButton.textContent = 'FLOATINGへ戻す';
-
-            header.append(identity, restoreButton);
-
-            body = document.createElement('div');
-            body.className = 'layer-panel-context-inspector-body';
-            body.id = 'layer-panel-context-inspector-body';
-
-            host.append(header, body);
-        }
-
-        return { host, header, body };
-    }
-
     _getContextInspectorTarget() {
         const animationTable = window.PopupManager?.get?.('animationTable');
         const cafContext = this._resolveCafRigInspectorContext(animationTable);
@@ -1143,106 +1033,6 @@ export class LayerPanelRenderer {
             label: layerData?.name || layerData?.id || 'Active Layer'
         };
     }
-
-    _renderContextInspectorHeader(mode = 'basic') {
-        const shell = this._ensureContextInspectorShell();
-        if (!shell) return;
-
-        const normalizedMode = mode === 'warp' ? 'WARP' : 'BASIC';
-        const target = this._getContextInspectorTarget();
-        const capability = shell.header.querySelector('.layer-panel-context-inspector-capability');
-        const targetElement = shell.header.querySelector('.layer-panel-context-inspector-target');
-        const restoreButton = shell.header.querySelector('.layer-panel-context-inspector-close');
-        capability.textContent = `TRANSFORM · ${normalizedMode}`;
-        targetElement.textContent = target.label;
-        targetElement.title = target.label;
-        restoreButton.textContent = this._contextInspectorClosed ? 'DOCKへ表示' : 'FLOATINGへ戻す';
-        restoreButton.setAttribute(
-            'aria-label',
-            this._contextInspectorClosed
-                ? 'Transform InspectorをRight Dockへ表示'
-                : 'Transform InspectorをFloating表示へ戻す'
-        );
-        shell.host.setAttribute('aria-label', `Context Inspector — ${target.label}`);
-    }
-
-    _renderContextInspectorFloatingState() {
-        const shell = this._ensureContextInspectorShell();
-        if (!shell) return;
-
-        let status = shell.body.querySelector('.layer-panel-context-inspector-floating-state');
-        if (!this._contextInspectorClosed) {
-            status?.remove();
-            return;
-        }
-        if (!status) {
-            status = document.createElement('p');
-            status.className = 'layer-panel-context-inspector-floating-state';
-            shell.body.appendChild(status);
-        }
-        status.textContent = 'Transform controls are Floating. 編集sessionは継続中です。';
-    }
-
-    _rememberTransformPanelHome(panel) {
-        if (this._transformPanelHomeParent) return;
-        this._transformPanelHomeParent = panel.parentNode;
-        this._transformPanelHomeNextSibling = panel.nextSibling;
-    }
-
-    _restoreTransformPanelToFloating({ keepInspectorShell = false } = {}) {
-        const panel = this._getTransformPanel();
-        if (panel) {
-            panel.classList.remove('is-context-inspector');
-            if (this._transformPanelHomeParent) {
-                const nextSibling = this._transformPanelHomeNextSibling;
-                if (nextSibling?.parentNode === this._transformPanelHomeParent) {
-                    this._transformPanelHomeParent.insertBefore(panel, nextSibling);
-                } else if (panel.parentNode !== this._transformPanelHomeParent) {
-                    this._transformPanelHomeParent.appendChild(panel);
-                }
-            }
-        }
-
-        const host = this._getContextInspectorHost();
-        if (host) host.hidden = !keepInspectorShell;
-    }
-
-    _syncContextInspector() {
-        const host = this._getContextInspectorHost();
-        if (!host) return;
-        this._setupContextInspectorObservation();
-
-        const transform = this.layerSystem?.transform;
-        const isTransformFocusActive = transform?.isVKeyPressed === true;
-        if (!isTransformFocusActive) {
-            this._contextInspectorClosed = false;
-            this._restoreTransformPanelToFloating();
-            return;
-        }
-
-        if (this._contextInspectorClosed) {
-            const shell = this._ensureContextInspectorShell();
-            if (!shell) return;
-            host.hidden = false;
-            this._renderContextInspectorHeader(transform?.getTransformMode?.() || 'basic');
-            this._renderContextInspectorFloatingState();
-            return;
-        }
-
-        const transformPanel = this._getTransformPanel();
-        const shell = this._ensureContextInspectorShell();
-        if (!transformPanel || !shell) return;
-
-        this._rememberTransformPanelHome(transformPanel);
-        shell.body.querySelector('.layer-panel-context-inspector-floating-state')?.remove();
-        if (transformPanel.parentNode !== shell.body) {
-            shell.body.appendChild(transformPanel);
-        }
-        transformPanel.classList.add('is-context-inspector');
-        host.hidden = false;
-        this._renderContextInspectorHeader(transform?.getTransformMode?.() || 'basic');
-    }
-
     _getLegacyLayerCardInteractiveSelector(extraSelector = '') {
         const variant = this._getLayerPanelCardVariantConfig('legacy-layer-card');
         return [
@@ -1282,7 +1072,6 @@ export class LayerPanelRenderer {
     _setupEventListeners() {
         if (!this.eventBus) return;
 
-        this.eventBus.on('keyboard:vkey-state-changed', this._handleTransformFocusStateChanged);
         this.eventBus.on('layer:panel-update-requested', (payload = {}) => {
             if (payload.skipRender === true) return;
             this.requestUpdate({ force: true });
@@ -1486,7 +1275,7 @@ export class LayerPanelRenderer {
         });
 
         this._updateScrollState();
-        this._syncContextInspector();
+        this.workspaceFrame?.sync();
         if (diagnosticsEnabled) {
             this._recordLayerPanelDiagnostics({
                 layers,
@@ -5181,6 +4970,7 @@ export class LayerPanelRenderer {
     }
 
     destroy() {
+        this.workspaceFrame?.destroy();
         if (this._updateTimeout) {
             clearTimeout(this._updateTimeout);
         }
