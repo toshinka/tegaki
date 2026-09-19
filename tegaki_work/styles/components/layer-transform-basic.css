@@ -484,3 +484,205 @@
         r: 18px;
     }
 }
+
+/* Right Dock projection surface: keep the shared Transform DOM, but make its
+   local hierarchy and keyboard states read as one compact inspector surface. */
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-mode-strip {
+    gap: 4px;
+    padding: 3px 8px 4px;
+    background: color-mix(in srgb, var(--futaba-cream) 34%, transparent);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-mode-btn {
+    border-color: var(--futaba-light-medium);
+    background: color-mix(in srgb, var(--futaba-background) 72%, var(--futaba-cream));
+    color: var(--text-secondary);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-mode-btn:hover:not(:disabled) {
+    border-color: var(--futaba-medium);
+    background: var(--ui-layer-surface-hover);
+    color: var(--futaba-maroon);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-mode-btn[aria-selected="true"] {
+    border-color: var(--futaba-maroon);
+    background: var(--ui-layer-surface-selected);
+    color: var(--futaba-maroon);
+    box-shadow: inset 0 -2px 0 var(--futaba-maroon);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-precise .panel-sections {
+    min-width: 0;
+    gap: 6px;
+    padding: 2px 7px 5px;
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-extension-toggle {
+    border-color: var(--futaba-light-medium);
+    background: var(--ui-layer-surface-hover);
+    color: var(--futaba-maroon);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-extension-toggle:hover,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-extension-toggle[aria-expanded="true"] {
+    border-color: var(--futaba-maroon);
+    background: var(--ui-layer-surface-selected);
+    color: var(--futaba-maroon);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-extension {
+    gap: 4px;
+    margin-top: 0;
+    padding: 5px;
+    border: 1px solid var(--futaba-light-medium);
+    background: color-mix(in srgb, var(--futaba-cream) 72%, var(--futaba-background));
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-tool-btn,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-type-btn {
+    border-color: var(--futaba-light-medium);
+    background: var(--ui-layer-surface-hover);
+    color: var(--text-secondary);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-tool-btn:hover:not(:disabled),
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-type-btn:hover:not(:disabled) {
+    border-color: var(--futaba-medium);
+    background: var(--ui-layer-surface-selected);
+    color: var(--futaba-maroon);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-tool-btn.is-selected,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-type-btn.is-selected {
+    border-color: var(--futaba-maroon);
+    background: var(--ui-layer-surface-selected);
+    color: var(--futaba-maroon);
+    box-shadow: inset 0 -2px 0 var(--futaba-maroon);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-strip {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    margin-bottom: 5px;
+    padding: 3px;
+    border: 1px solid var(--futaba-medium);
+    background: var(--ui-layer-context-surface);
+    box-shadow: 0 2px 0 color-mix(in srgb, var(--futaba-maroon) 14%, transparent);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-step-btn,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-commit-btn {
+    border: 1px solid var(--futaba-light-medium);
+    background: color-mix(in srgb, var(--futaba-background) 76%, var(--futaba-cream));
+    color: var(--futaba-maroon);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-step-btn:hover:not(:disabled),
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-commit-btn:hover:not(:disabled) {
+    border-color: var(--futaba-medium);
+    background: var(--ui-layer-surface-hover);
+    outline: none;
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-strip[data-key-state="pending"] .layer-transform-key-commit-btn {
+    border-color: var(--futaba-maroon);
+    background: var(--ui-layer-surface-selected);
+    box-shadow: inset 0 -2px 0 var(--futaba-maroon);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-strip[data-key-state="pending"] .layer-transform-key-state-dot {
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-medium);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-strip[data-key-state="keyed"] .layer-transform-key-commit-btn {
+    border-color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--futaba-maroon) 10%, var(--futaba-background));
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-components {
+    border: 1px solid var(--futaba-light-medium);
+    background: color-mix(in srgb, var(--futaba-cream) 52%, transparent);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-range input[type="range"] {
+    width: 100%;
+    min-width: 0;
+    height: 16px;
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    accent-color: var(--futaba-maroon);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-range input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 999px;
+    background: var(--futaba-cream);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-range input[type="range"]::-moz-range-track {
+    height: 4px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 999px;
+    background: var(--futaba-cream);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-range input[type="range"]::-moz-range-progress {
+    height: 4px;
+    border-radius: 999px;
+    background: var(--futaba-medium);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-range input[type="range"]::-webkit-slider-thumb {
+    width: 12px;
+    height: 12px;
+    margin-top: -5px;
+    appearance: none;
+    -webkit-appearance: none;
+    border: 2px solid var(--futaba-background);
+    border-radius: 50%;
+    background: var(--futaba-maroon);
+    box-shadow: 0 0 0 1px var(--futaba-medium);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-range input[type="range"]::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--futaba-background);
+    border-radius: 50%;
+    background: var(--futaba-maroon);
+    box-shadow: 0 0 0 1px var(--futaba-medium);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-range input[type="range"]:hover::-webkit-slider-thumb,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-range input[type="range"]:hover::-moz-range-thumb {
+    background: var(--futaba-medium);
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-mode-btn:focus,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-extension-toggle:focus,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-tool-btn:focus,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-type-btn:focus,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-step-btn:focus,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-commit-btn:focus,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-range input[type="range"]:focus {
+    outline: none;
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-mode-btn:focus-visible,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-extension-toggle:focus-visible,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-tool-btn:focus-visible,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-type-btn:focus-visible,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-step-btn:focus-visible,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-commit-btn:focus-visible,
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-range input[type="range"]:focus-visible {
+    outline: 2px solid var(--active-border);
+    outline-offset: 1px;
+}

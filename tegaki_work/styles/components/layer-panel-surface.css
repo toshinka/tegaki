@@ -1,8 +1,173 @@
 /*
- * Phase 9j Layer Panel static surface authority and Phase 9n contextual RIG shell.
+ * Phase 9j Layer Panel static surface authority, Phase 9n contextual RIG shell,
+ * and the bounded Right Dock Context Inspector shell.
  * Geometry, D&D, data adapters and runtime width / indent remain in main.css
  * and layer-panel-renderer.js. Theme variants override the root tokens only.
  */
+
+.right-panel {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--ui-layer-panel-gap);
+}
+
+.right-panel .layer-panel-context-inspector {
+    box-sizing: border-box;
+    display: flex;
+    flex: 0 1 auto;
+    flex-direction: column;
+    width: min(var(--ui-transform-panel-width), 42vw);
+    max-width: 42vw;
+    max-height: calc(100vh - 96px);
+    min-width: 0;
+    overflow: hidden;
+    pointer-events: all;
+    color: var(--ui-layer-text);
+    background: var(--ui-layer-context-surface);
+    border: 1px solid var(--ui-layer-border-rest);
+    border-radius: 6px;
+    -webkit-backdrop-filter: var(--ui-layer-context-backdrop);
+    backdrop-filter: var(--ui-layer-context-backdrop);
+    box-shadow: var(--ui-layer-context-shadow);
+}
+
+.right-panel .layer-panel-context-inspector[hidden] {
+    display: none;
+}
+
+.right-panel .layer-panel-context-inspector-header {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    box-sizing: border-box;
+    min-height: 42px;
+    padding: 7px 8px 6px;
+    color: var(--futaba-maroon);
+    background: var(--ui-layer-context-surface);
+    border-bottom: 1px solid var(--ui-layer-border-rest);
+}
+
+.right-panel .layer-panel-context-inspector-identity {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.right-panel .layer-panel-context-inspector-eyebrow,
+.right-panel .layer-panel-context-inspector-capability {
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    line-height: 1.15;
+}
+
+.right-panel .layer-panel-context-inspector-eyebrow {
+    opacity: 0.66;
+}
+
+.right-panel .layer-panel-context-inspector-target {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--ui-layer-text);
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.right-panel .layer-panel-context-inspector-close {
+    flex: 0 0 auto;
+    min-height: 24px;
+    max-width: 112px;
+    padding: 3px 5px;
+    overflow: hidden;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--futaba-cream) 48%, transparent);
+    font-size: 8px;
+    font-weight: 800;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.right-panel .layer-panel-context-inspector-close:hover {
+    border-color: var(--futaba-medium);
+    background: var(--ui-layer-surface-hover);
+}
+
+.right-panel .layer-panel-context-inspector-close:focus-visible {
+    outline: 2px solid var(--active-border);
+    outline-offset: -2px;
+}
+
+.right-panel .layer-panel-context-inspector-body {
+    box-sizing: border-box;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+}
+
+.right-panel .layer-panel-context-inspector-floating-state {
+    margin: 0;
+    padding: 10px 8px;
+    color: var(--ui-layer-text);
+    background: var(--ui-layer-surface-hover);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    transform: none !important;
+    z-index: auto !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    animation: none !important;
+    cursor: default !important;
+    touch-action: auto !important;
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .transform-popup-header {
+    min-height: 30px;
+    gap: 6px;
+    padding: 3px 8px 2px;
+    border-bottom: 1px solid color-mix(in srgb, var(--futaba-light-medium) 64%, transparent);
+    cursor: default;
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .transform-popup-title {
+    display: none;
+}
+
+.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-context-note {
+    max-width: 100%;
+    min-height: 16px;
+    padding: 2px 6px;
+    overflow: hidden;
+    font-size: 8px;
+    text-overflow: ellipsis;
+}
 
 .right-panel .layer-controls-row {
     background: var(--ui-layer-surface-rail);

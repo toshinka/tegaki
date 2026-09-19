@@ -1738,6 +1738,9 @@ export class LayerTransform {
                 e.stopPropagation();
                 return;
             }
+            if (dragSurface.classList.contains('is-context-inspector')) {
+                return;
+            }
             if (e.target.closest('.slider-container') || 
                 e.target.closest('.slider') ||
                 e.target.closest('.slider-track') ||

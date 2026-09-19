@@ -787,6 +787,14 @@ export const DOMBuilder = (function() {
 
         const rightPanel = createElement('div', { className: 'right-panel' });
         rightPanel.appendChild(buildLayerPanel());
+        rightPanel.appendChild(createElement('section', {
+            className: 'layer-panel-context-inspector',
+            id: 'layer-panel-context-inspector',
+            attributes: {
+                hidden: '',
+                'aria-label': 'Context Inspector'
+            }
+        }));
         mainLayout.appendChild(rightPanel);
 
         return mainLayout;
