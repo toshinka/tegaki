@@ -20,6 +20,16 @@
  * T96 — Viewer operations History 0 (zoom/rotate/flip/switch/thumbnail do not increase History)
  * T97 — Existing shortcut routes (Ctrl+V, H / Shift+H, R / Shift+R, Shift+Q retain existing paths)
  * T98 — Viewer display state maintained after Undo / Redo
+ * T99 — Reference image restore on reload (single reference persisted to IndexedDB restored on new instance)
+ * T100 — Multiple references retain order, names, and image dimensions
+ * T101 — Huge reference persists only downscaled proxy buffer
+ * T102 — Original dimensions and downscaled flag preserved across restore
+ * T103 — Reference tab closed is deleted from store and not resurrected on next reload
+ * T104 — Hiding Viewer (hide()) preserves stored images
+ * T105 — Dynamic Preview tab is never written to IndexedDB store
+ * T106 — IndexedDB store failure does not crash Viewer or discard session image
+ * T107 — Concurrency: delete during save & add during restore preserve user intent
+ * T108 — Card A Undo/Redo routing and input isolation remain 100% functional with restored tabs
  * ============================================================================
  */
 
@@ -173,6 +183,29 @@ globalThis.document = {
                 return !event.defaultPrevented;
             }
         };
+
+        if (tag.toUpperCase() === 'CANVAS') {
+            el.width = 300;
+            el.height = 150;
+            el.getContext = () => ({
+                imageSmoothingEnabled: true,
+                imageSmoothingQuality: 'high',
+                drawImage: () => {}
+            });
+            el.toBlob = function(callback, type) {
+                const b = new Blob(['mock-canvas-data'], { type: type || 'image/png' });
+                b.mockWidth = this.width;
+                b.mockHeight = this.height;
+                if (typeof callback === 'function') callback(b);
+            };
+            el.convertToBlob = async function(opts) {
+                const b = new Blob(['mock-canvas-data'], { type: opts?.type || 'image/png' });
+                b.mockWidth = this.width;
+                b.mockHeight = this.height;
+                return b;
+            };
+        }
+
         return el;
     },
     getElementById: () => null,
@@ -205,6 +238,206 @@ globalThis.document = {
     body: { appendChild: () => {} }
 };
 
+if (typeof globalThis.createImageBitmap === 'undefined') {
+    globalThis.createImageBitmap = async function(source) {
+        return {
+            width: source?.mockWidth || source?.width || 800,
+            height: source?.mockHeight || source?.height || 600,
+            close: () => {}
+        };
+    };
+}
+
+class MockIDBTransaction {
+    constructor(db, storeNames, mode) {
+        this.db = db;
+        this.mode = mode;
+        this.oncomplete = null;
+        this.onerror = null;
+        this.onabort = null;
+        this.error = null;
+        this._active = true;
+        this._pending = 0;
+    }
+    objectStore(name) { return this.db._getStore(name, this); }
+    abort() { this._active = false; if (this.onabort) this.onabort({ target: this }); }
+    _incr() { this._pending++; }
+    _decr() {
+        this._pending--;
+        if (this._pending === 0 && this._active) {
+            queueMicrotask(() => {
+                if (this._pending === 0 && this._active) {
+                    this._active = false;
+                    if (this.oncomplete) this.oncomplete({ target: this });
+                }
+            });
+        }
+    }
+}
+
+class MockIDBObjectStore {
+    constructor(db, name, map, keyPath, tx) {
+        this.db = db;
+        this.name = name;
+        this._map = map;
+        this.keyPath = keyPath;
+        this.tx = tx;
+    }
+    createIndex() {}
+    put(value) {
+        if (this.db._simulateQuotaError) {
+            const req = { onsuccess: null, onerror: null, error: new Error('QuotaExceededError') };
+            queueMicrotask(() => {
+                if (req.onerror) req.onerror({ target: req, error: req.error });
+                if (this.tx && this.tx.onerror) this.tx.onerror({ target: this.tx, error: req.error });
+            });
+            return req;
+        }
+        const req = { onsuccess: null, onerror: null, result: undefined, error: null };
+        this.tx?._incr();
+        queueMicrotask(() => {
+            try {
+                const key = this.keyPath ? value[this.keyPath] : value.id;
+                this._map.set(key, structuredClone(value));
+                req.result = key;
+                if (req.onsuccess) req.onsuccess({ target: req });
+            } catch (err) {
+                req.error = err;
+                if (req.onerror) req.onerror({ target: req, error: err });
+                if (this.tx && this.tx.onerror) this.tx.onerror({ target: this.tx, error: err });
+            } finally {
+                this.tx?._decr();
+            }
+        });
+        return req;
+    }
+    get(key) {
+        const req = { onsuccess: null, onerror: null, result: undefined, error: null };
+        this.tx?._incr();
+        queueMicrotask(() => {
+            try {
+                const val = this._map.get(key);
+                req.result = val ? structuredClone(val) : undefined;
+                if (req.onsuccess) req.onsuccess({ target: req });
+            } catch (err) {
+                req.error = err;
+                if (req.onerror) req.onerror({ target: req, error: err });
+                if (this.tx && this.tx.onerror) this.tx.onerror({ target: this.tx, error: err });
+            } finally {
+                this.tx?._decr();
+            }
+        });
+        return req;
+    }
+    getAll() {
+        const req = { onsuccess: null, onerror: null, result: undefined, error: null };
+        this.tx?._incr();
+        queueMicrotask(() => {
+            try {
+                const list = Array.from(this._map.values()).map(v => structuredClone(v));
+                req.result = list;
+                if (req.onsuccess) req.onsuccess({ target: req });
+            } catch (err) {
+                req.error = err;
+                if (req.onerror) req.onerror({ target: req, error: err });
+                if (this.tx && this.tx.onerror) this.tx.onerror({ target: this.tx, error: err });
+            } finally {
+                this.tx?._decr();
+            }
+        });
+        return req;
+    }
+    delete(key) {
+        const req = { onsuccess: null, onerror: null, result: undefined, error: null };
+        this.tx?._incr();
+        queueMicrotask(() => {
+            try {
+                this._map.delete(key);
+                req.result = undefined;
+                if (req.onsuccess) req.onsuccess({ target: req });
+            } catch (err) {
+                req.error = err;
+                if (req.onerror) req.onerror({ target: req, error: err });
+                if (this.tx && this.tx.onerror) this.tx.onerror({ target: this.tx, error: err });
+            } finally {
+                this.tx?._decr();
+            }
+        });
+        return req;
+    }
+    clear() {
+        const req = { onsuccess: null, onerror: null, result: undefined, error: null };
+        this.tx?._incr();
+        queueMicrotask(() => {
+            try {
+                this._map.clear();
+                req.result = undefined;
+                if (req.onsuccess) req.onsuccess({ target: req });
+            } catch (err) {
+                req.error = err;
+                if (req.onerror) req.onerror({ target: req, error: err });
+                if (this.tx && this.tx.onerror) this.tx.onerror({ target: this.tx, error: err });
+            } finally {
+                this.tx?._decr();
+            }
+        });
+        return req;
+    }
+}
+
+class MockIDBDatabase {
+    constructor(name, version) {
+        this.name = name;
+        this.version = version;
+        this._stores = new Map();
+        this._storeMeta = new Map();
+        this._simulateQuotaError = false;
+        this.objectStoreNames = { contains: (n) => this._stores.has(n) };
+    }
+    createObjectStore(name, options = {}) {
+        if (!this._stores.has(name)) {
+            this._stores.set(name, new Map());
+            this._storeMeta.set(name, options);
+        }
+        return new MockIDBObjectStore(this, name, this._stores.get(name), options.keyPath, null);
+    }
+    _getStore(name, tx) {
+        return new MockIDBObjectStore(this, name, this._stores.get(name), (this._storeMeta.get(name) || {}).keyPath, tx);
+    }
+    transaction(storeNames, mode = 'readonly') {
+        return new MockIDBTransaction(this, storeNames, mode);
+    }
+    close() {}
+}
+
+const mockDatabases = new Map();
+globalThis.indexedDB = {
+    open: (name, version = 1) => {
+        const req = { onsuccess: null, onerror: null, onupgradeneeded: null, result: null, error: null };
+        queueMicrotask(() => {
+            let db = mockDatabases.get(name);
+            let isNew = false;
+            if (!db) {
+                db = new MockIDBDatabase(name, version);
+                mockDatabases.set(name, db);
+                isNew = true;
+            }
+            req.result = db;
+            if (isNew && req.onupgradeneeded) req.onupgradeneeded({ target: req });
+            if (req.onsuccess) req.onsuccess({ target: req });
+        });
+        return req;
+    },
+    deleteDatabase: (name) => {
+        const req = { onsuccess: null, onerror: null };
+        queueMicrotask(() => {
+            mockDatabases.delete(name);
+            if (req.onsuccess) req.onsuccess({ target: req });
+        });
+        return req;
+    }
+};
+
 const {
     ReferencePreviewViewer,
     calculateReferenceProxyDimensions,
@@ -214,6 +447,11 @@ const {
     REFERENCE_PROXY_BUDGET,
     MIRROR_PREVIEW_BUDGET
 } = await import('../ui/reference-preview-viewer.js');
+
+const {
+    ReferenceImageStore,
+    referenceImageStore
+} = await import('../system/reference-image-store.js');
 
 console.log('--- Starting Reference / Preview Viewer UX Polish 01 Verification (T1 - T12) ---');
 
@@ -3311,4 +3549,382 @@ console.log('--- Starting Reference / Preview Viewer UX Polish 01 Verification (
     console.log('T98: Viewer display state maintained after Undo / Redo PASS');
 }
 
-console.log('\nverify-reference-preview-viewer: ALL 98 SCENARIOS (T1 - T98) PASS');
+// T99 — Reference image restore on reload
+{
+    await referenceImageStore.clearAll();
+
+    const viewer1 = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    await viewer1.waitForRestoration();
+    assert.equal(viewer1.tabs.length, 1, 'T99: Initially only preview tab');
+
+    const blob1 = new Blob(['mock-data-1'], { type: 'image/png' });
+    blob1.mockWidth = 640;
+    blob1.mockHeight = 480;
+
+    const added = await viewer1.addReferenceFromBlob(blob1, 'ref_photo1.png');
+    assert.equal(added, true, 'T99: Image added successfully');
+    await viewer1.waitForPendingSaves();
+
+    // Instantiate new viewer simulating page reload
+    const viewer2 = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    await viewer2.waitForRestoration();
+
+    assert.equal(viewer2.tabs.length, 2, 'T99: Restored tab count is 2 (preview + 1 reference)');
+    const restoredTab = viewer2.tabs[1];
+    assert.equal(restoredTab.name, 'ref_photo1.png', 'T99: Restored tab name matches');
+    assert.equal(restoredTab.width, 640, 'T99: Restored width matches');
+    assert.equal(restoredTab.height, 480, 'T99: Restored height matches');
+    assert.equal(restoredTab.downscaled, false, 'T99: Not downscaled');
+    assert.ok(restoredTab.canvas, 'T99: Canvas is created for restored tab');
+
+    console.log('T99: Reference image restore on reload PASS');
+}
+
+// T100 — Multiple references retain order, names, and image dimensions
+{
+    await referenceImageStore.clearAll();
+
+    const viewer1 = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    await viewer1.waitForRestoration();
+
+    const b1 = new Blob(['imgA']); b1.mockWidth = 500; b1.mockHeight = 300;
+    const b2 = new Blob(['imgB']); b2.mockWidth = 400; b2.mockHeight = 400;
+    const b3 = new Blob(['imgC']); b3.mockWidth = 300; b3.mockHeight = 600;
+
+    await viewer1.addReferenceFromBlob(b1, 'image_alpha.png');
+    await viewer1.addReferenceFromBlob(b2, 'image_beta.png');
+    await viewer1.addReferenceFromBlob(b3, 'image_gamma.png');
+    await viewer1.waitForPendingSaves();
+
+    // Reload
+    const viewer2 = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    await viewer2.waitForRestoration();
+
+    assert.equal(viewer2.tabs.length, 4, 'T100: Total 4 tabs');
+    assert.equal(viewer2.tabs[0].id, 'preview', 'T100: Tab 0 is preview');
+    assert.equal(viewer2.tabs[1].name, 'image_alpha.png', 'T100: Tab 1 name matches');
+    assert.equal(viewer2.tabs[2].name, 'image_beta.png', 'T100: Tab 2 name matches');
+    assert.equal(viewer2.tabs[3].name, 'image_gamma.png', 'T100: Tab 3 name matches');
+    assert.equal(viewer2.tabs[1].width, 500, 'T100: Tab 1 width matches');
+    assert.equal(viewer2.tabs[2].width, 400, 'T100: Tab 2 width matches');
+    assert.equal(viewer2.tabs[3].width, 300, 'T100: Tab 3 width matches');
+
+    console.log('T100: Multiple references retain order, names, and image dimensions PASS');
+}
+
+// T101 — Huge reference persists only downscaled proxy buffer
+{
+    await referenceImageStore.clearAll();
+
+    const viewer1 = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    await viewer1.waitForRestoration();
+
+    const hugeBlob = new Blob(['huge-raw-buffer']);
+    hugeBlob.mockWidth = 4000;
+    hugeBlob.mockHeight = 3000;
+
+    await viewer1.addReferenceFromBlob(hugeBlob, 'huge_landscape.png');
+    await viewer1.waitForPendingSaves();
+
+    const records = await referenceImageStore.getAllReferences();
+    assert.equal(records.length, 1, 'T101: 1 record in store');
+    const record = records[0];
+
+    assert.equal(record.origWidth, 4000, 'T101: origWidth is 4000');
+    assert.equal(record.origHeight, 3000, 'T101: origHeight is 3000');
+    assert.equal(record.downscaled, true, 'T101: Marked as downscaled');
+    assert.ok(record.width <= 2048 && record.height <= 2048, 'T101: Proxy max edge <= 2048');
+    assert.ok(record.width * record.height <= 4 * 1024 * 1024, 'T101: Proxy pixels <= 4MP');
+    assert.equal(record.width, viewer1.tabs[1].width, 'T101: Persisted width matches viewer proxy width');
+    assert.equal(record.height, viewer1.tabs[1].height, 'T101: Persisted height matches viewer proxy height');
+
+    console.log('T101: Huge reference persists only downscaled proxy buffer PASS');
+}
+
+// T102 — Original dimensions and downscaled flag preserved across restore
+{
+    // Reload viewer using the saved record from T101
+    const viewer2 = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    await viewer2.waitForRestoration();
+
+    assert.equal(viewer2.tabs.length, 2, 'T102: Restored 1 huge reference');
+    const restoredHuge = viewer2.tabs[1];
+    assert.equal(restoredHuge.origWidth, 4000, 'T102: Restored origWidth preserved');
+    assert.equal(restoredHuge.origHeight, 3000, 'T102: Restored origHeight preserved');
+    assert.equal(restoredHuge.downscaled, true, 'T102: Restored downscaled flag preserved');
+    assert.ok(restoredHuge.width <= 2048, 'T102: Restored width is proxy width');
+    assert.ok(restoredHuge.height <= 2048, 'T102: Restored height is proxy height');
+
+    console.log('T102: Original dimensions and downscaled flag preserved across restore PASS');
+}
+
+// T103 — Reference tab closed is deleted from store and not resurrected on next reload
+{
+    // Start with viewer containing the restored huge reference
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    await viewer.waitForRestoration();
+
+    const b2 = new Blob(['keep-me']);
+    b2.mockWidth = 200;
+    b2.mockHeight = 200;
+    await viewer.addReferenceFromBlob(b2, 'keep_me.png');
+    await viewer.waitForPendingSaves();
+
+    const allBefore = await referenceImageStore.getAllReferences();
+    assert.equal(allBefore.length, 2, 'T103: Store has 2 records before close');
+
+    const closedTabId = viewer.tabs[1].id;
+    viewer.closeTab(closedTabId);
+
+    // Allow async store deletion to complete
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    const allAfter = await referenceImageStore.getAllReferences();
+    assert.equal(allAfter.length, 1, 'T103: Store has 1 record after close');
+    assert.equal(allAfter[0].name, 'keep_me.png', 'T103: Only keep_me.png remains in store');
+
+    // Reload in new viewer
+    const viewerReloaded = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    await viewerReloaded.waitForRestoration();
+
+    assert.equal(viewerReloaded.tabs.length, 2, 'T103: Restored tabs count is 2 (preview + keep_me)');
+    assert.equal(viewerReloaded.tabs[1].name, 'keep_me.png', 'T103: Restored tab is keep_me.png');
+    assert.ok(!viewerReloaded.tabs.some(t => t.id === closedTabId), 'T103: Closed tab was not resurrected');
+
+    console.log('T103: Reference tab closed is deleted from store and not resurrected on next reload PASS');
+}
+
+// T104 — Hiding Viewer (hide()) preserves stored images
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    await viewer.waitForRestoration();
+    viewer.isVisible = true;
+
+    viewer.hide();
+    assert.equal(viewer.isVisible, false, 'T104: Viewer is hidden');
+
+    const records = await referenceImageStore.getAllReferences();
+    assert.equal(records.length, 1, 'T104: Stored records intact after hide');
+
+    viewer.show();
+    assert.equal(viewer.tabs.length, 2, 'T104: Tabs intact after show');
+
+    console.log('T104: Hiding Viewer (hide()) preserves stored images PASS');
+}
+
+// T105 — Dynamic Preview tab is never written to IndexedDB store
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    await viewer.waitForRestoration();
+
+    viewer.switchTab('preview');
+    viewer.captureMirrorPreview();
+
+    const records = await referenceImageStore.getAllReferences();
+    assert.ok(!records.some(r => r.id === 'preview' || r.type === 'preview'), 'T105: Preview tab is never written to store');
+
+    console.log('T105: Dynamic Preview tab is never written to IndexedDB store PASS');
+}
+
+// T106 — IndexedDB store failure does not crash Viewer or discard session image
+{
+    mockDatabases.get('TegakiReferenceImages')._simulateQuotaError = true;
+
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    await viewer.waitForRestoration();
+
+    const b = new Blob(['quota-fail']);
+    b.mockWidth = 350;
+    b.mockHeight = 250;
+
+    let threw = false;
+    try {
+        const added = await viewer.addReferenceFromBlob(b, 'unpersisted_session.png');
+        assert.equal(added, true, 'T106: addReferenceFromBlob returned true for current session');
+        await viewer.waitForPendingSaves();
+    } catch (e) {
+        threw = true;
+    }
+
+    assert.equal(threw, false, 'T106: No uncaught exception on store failure');
+    const addedTab = viewer.tabs.find(t => t.name === 'unpersisted_session.png');
+    assert.ok(addedTab, 'T106: Tab remains in memory for current session despite store failure');
+
+    mockDatabases.get('TegakiReferenceImages')._simulateQuotaError = false;
+
+    console.log('T106: IndexedDB store failure does not crash Viewer or discard session image PASS');
+}
+
+// T107 — Concurrency: delete during save & add during restore preserve user intent
+{
+    await referenceImageStore.clearAll();
+
+    // Case A: Rapid delete during save
+    {
+        const viewer = new ReferencePreviewViewer({
+            app: {},
+            layerSystem: { currentFrameContainer: {} },
+            eventBus: { on: () => {}, emit: () => {} }
+        });
+        await viewer.waitForRestoration();
+
+        const b = new Blob(['rapid-delete']);
+        b.mockWidth = 100;
+        b.mockHeight = 100;
+
+        await viewer.addReferenceFromBlob(b, 'rapid_delete.png');
+        const rapidTabId = viewer.tabs[1].id;
+        viewer.closeTab(rapidTabId); // immediately close before waitForPendingSaves
+
+        await viewer.waitForPendingSaves();
+        await new Promise(r => setTimeout(r, 20));
+
+        const records = await referenceImageStore.getAllReferences();
+        assert.ok(!records.some(r => r.id === rapidTabId), 'T107A: Rapidly closed tab is not saved in store');
+
+        const reloaded = new ReferencePreviewViewer({
+            app: {},
+            layerSystem: { currentFrameContainer: {} },
+            eventBus: { on: () => {}, emit: () => {} }
+        });
+        await reloaded.waitForRestoration();
+        assert.ok(!reloaded.tabs.some(t => t.id === rapidTabId), 'T107A: Rapidly closed tab not resurrected on reload');
+    }
+
+    // Case B: Add tab during restore
+    {
+        // First save a baseline tab to store
+        const bBase = new Blob(['base']);
+        bBase.mockWidth = 150;
+        bBase.mockHeight = 150;
+        await referenceImageStore.saveReference({
+            id: 'ref_baseline',
+            name: 'baseline.png',
+            order: 1,
+            width: 150,
+            height: 150,
+            origWidth: 150,
+            origHeight: 150,
+            downscaled: false,
+            blob: bBase,
+            mimeType: 'image/png'
+        });
+
+        const viewer = new ReferencePreviewViewer({
+            app: {},
+            layerSystem: { currentFrameContainer: {} },
+            eventBus: { on: () => {}, emit: () => {} }
+        });
+
+        // Add a new tab while restoration is in-flight
+        const bConcurrent = new Blob(['concurrent']);
+        bConcurrent.mockWidth = 220;
+        bConcurrent.mockHeight = 220;
+        const addPromise = viewer.addReferenceFromBlob(bConcurrent, 'concurrent_add.png');
+
+        await Promise.all([viewer.waitForRestoration(), addPromise]);
+        await viewer.waitForPendingSaves();
+
+        assert.equal(viewer.tabs.length, 3, 'T107B: 3 tabs total (preview + baseline + concurrent)');
+        assert.equal(viewer.tabs[0].id, 'preview');
+        assert.equal(viewer.tabs[1].id, 'ref_baseline');
+        assert.equal(viewer.tabs[2].name, 'concurrent_add.png');
+    }
+
+    console.log('T107: Concurrency: delete during save & add during restore preserve user intent PASS');
+}
+
+// T108 — Card A Undo/Redo routing and input isolation remain 100% functional with restored tabs
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    await viewer.waitForRestoration();
+    viewer.isVisible = true;
+
+    const viewerPopup = document.createElement('div');
+    viewerPopup.className = 'popup-panel reference-preview-viewer';
+    viewerPopup.classList.add('reference-preview-viewer');
+    viewer.popup = viewerPopup;
+    viewerPopup.focus();
+
+    let undoRan = false;
+    let redoRan = false;
+    globalThis.window.History = {
+        canUndo: () => true,
+        undo: () => { undoRan = true; },
+        canRedo: () => true,
+        redo: () => { redoRan = true; }
+    };
+
+    // 1. Undo route from viewer with restored tabs
+    viewerPopup.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, cancelable: true }));
+    assert.equal(undoRan, true, 'T108: Undo routed to main History');
+
+    // 2. Redo route from viewer with restored tabs
+    viewerPopup.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyY', ctrlKey: true, cancelable: true }));
+    assert.equal(redoRan, true, 'T108: Redo routed to main History');
+
+    // 3. Input field inside viewer isolates Ctrl+Z
+    let inputUndoRan = false;
+    globalThis.window.History.undo = () => { inputUndoRan = true; };
+
+    const inputField = document.createElement('input');
+    inputField.type = 'number';
+    viewerPopup.appendChild(inputField);
+    inputField.focus();
+
+    const inputEvt = new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, cancelable: true });
+    inputField.dispatchEvent(inputEvt);
+    assert.equal(inputUndoRan, false, 'T108: Input field isolated Ctrl+Z from main History');
+
+    console.log('T108: Card A Undo/Redo routing and input isolation remain 100% functional with restored tabs PASS');
+}
+
+console.log('\nverify-reference-preview-viewer: ALL 108 SCENARIOS (T1 - T108) PASS');

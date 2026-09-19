@@ -14,6 +14,7 @@ import { TegakiEventBus } from '../system/event-bus.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { showFeedbackToast } from './feedback-toast.js';
 import { UI_ICONS } from './ui-icons.js';
+import { referenceImageStore, ReferenceImageStore } from '../system/reference-image-store.js';
 
 export const REFERENCE_PROXY_BUDGET = Object.freeze({
     maxEdge: 2048,
@@ -135,6 +136,7 @@ export class ReferencePreviewViewer {
         this.exportManager = dependencies.exportManager || window.exportManager;
         this.cameraSystem = dependencies.cameraSystem || window.cameraSystem;
         this.eventBus = dependencies.eventBus || TegakiEventBus;
+        this.imageStore = dependencies.imageStore !== undefined ? dependencies.imageStore : referenceImageStore;
 
         this.popup = null;
         this.isVisible = false;
@@ -144,6 +146,9 @@ export class ReferencePreviewViewer {
         this.previewMicroAutoFit = true;
         this._savedFullRect = null;
         this._hasUserResized = false;
+
+        this._deletedTabIds = new Set();
+        this._pendingSaves = new Map();
 
         this.tabs = [
             {
@@ -179,6 +184,264 @@ export class ReferencePreviewViewer {
         this._ensurePopupElement();
         this._setupEventListeners();
         this._bindArtworkEvents();
+
+        this._restorationPromise = this._restoreSavedReferences();
+    }
+
+    /**
+     * 復元完了を待機するPromiseを取得（テスト・初期化連携用）
+     * @returns {Promise<Array<object>>}
+     */
+    async waitForRestoration() {
+        return this._restorationPromise;
+    }
+
+    /**
+     * 進行中の保存タスクの完了を待機（テスト・確実な永続化確認用）
+     * @returns {Promise<Array<any>>}
+     */
+    async waitForPendingSaves() {
+        return Promise.all(Array.from(this._pendingSaves.values()));
+    }
+
+    /**
+     * ブラウザ内保存領域から参照画像を非同期復元
+     */
+    async _restoreSavedReferences() {
+        if (!this.imageStore) return [];
+        try {
+            const records = await this.imageStore.getAllReferences();
+            if (!Array.isArray(records) || records.length === 0) return [];
+
+            const restoredTabs = [];
+            for (const record of records) {
+                if (!record || !record.id) continue;
+                // 復元完了前にユーザーが明示削除した場合はスキップし、DBからも削除を保証
+                if (this._deletedTabIds.has(record.id)) {
+                    this.imageStore.deleteReference(record.id).catch(() => {});
+                    continue;
+                }
+                // 既に同IDが存在する場合は重複追加しない
+                if (this.tabs.some(t => t.id === record.id)) {
+                    continue;
+                }
+
+                const canvas = await this._createCanvasFromRecord(record);
+                if (!canvas) {
+                    console.warn('[ReferencePreviewViewer] Skipping un-decodable reference:', record.id);
+                    continue;
+                }
+
+                // デコード完了時に再度削除状態を確認
+                if (this._deletedTabIds.has(record.id)) {
+                    this.imageStore.deleteReference(record.id).catch(() => {});
+                    continue;
+                }
+
+                const tab = {
+                    id: record.id,
+                    type: 'reference',
+                    name: record.name || 'Reference',
+                    canvas,
+                    origWidth: record.origWidth || record.width || 1,
+                    origHeight: record.origHeight || record.height || 1,
+                    width: record.width || 1,
+                    height: record.height || 1,
+                    downscaled: Boolean(record.downscaled),
+                    closeable: true,
+                    viewState: {
+                        zoom: 1,
+                        panX: 0,
+                        panY: 0,
+                        rotationDeg: 0,
+                        flipX: false,
+                        flipY: false,
+                        initialized: false
+                    }
+                };
+
+                restoredTabs.push(tab);
+            }
+
+            if (restoredTabs.length > 0) {
+                // プレビュータブ（index 0）の直後に復元タブを順序維持で挿入し、
+                // 復元待ち中にユーザーが手動追加した新規タブを末尾に保持する
+                const previewTab = this.tabs.find(t => t.id === 'preview');
+                const userAddedTabs = this.tabs.filter(t => t.id !== 'preview' && !restoredTabs.some(r => r.id === t.id));
+                this.tabs = [previewTab || this.tabs[0], ...restoredTabs, ...userAddedTabs];
+
+                if (this.popup) {
+                    this._renderTabsHeader();
+                    this._renderSourceRail();
+                    if (this.isVisible && this.activeTabId === 'preview') {
+                        // プレビュー表示中ならプレビュー内容を再描画
+                        this._renderActiveTabContent();
+                    }
+                }
+            }
+
+            return restoredTabs;
+        } catch (err) {
+            console.warn('[ReferencePreviewViewer] Error restoring references:', err);
+            return [];
+        }
+    }
+
+    /**
+     * 保存レコードのBlobから描画用Canvasを生成
+     */
+    async _createCanvasFromRecord(record) {
+        if (!record) return null;
+        const w = Math.max(1, Math.round(record.width || 1));
+        const h = Math.max(1, Math.round(record.height || 1));
+
+        let canvas = null;
+        if (typeof document !== 'undefined') {
+            canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+        } else {
+            return null;
+        }
+
+        const ctx = canvas.getContext?.('2d');
+
+        // テスト用モック対応
+        if (record.blob?.mockCanvas && ctx) {
+            try {
+                ctx.drawImage(record.blob.mockCanvas, 0, 0, w, h);
+                return canvas;
+            } catch (e) {}
+        }
+
+        if (record.blob) {
+            let imgBitmap = null;
+            let imgElement = null;
+            try {
+                if (typeof createImageBitmap === 'function') {
+                    imgBitmap = await createImageBitmap(record.blob);
+                    if (ctx) {
+                        ctx.imageSmoothingEnabled = true;
+                        ctx.imageSmoothingQuality = 'high';
+                        ctx.drawImage(imgBitmap, 0, 0, w, h);
+                    }
+                    imgBitmap?.close?.();
+                    return canvas;
+                } else if (typeof Image !== 'undefined' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+                    const url = URL.createObjectURL(record.blob);
+                    imgElement = await new Promise((resolve, reject) => {
+                        const image = new Image();
+                        image.onload = () => resolve(image);
+                        image.onerror = reject;
+                        image.src = url;
+                    });
+                    if (ctx) {
+                        ctx.imageSmoothingEnabled = true;
+                        ctx.imageSmoothingQuality = 'high';
+                        ctx.drawImage(imgElement, 0, 0, w, h);
+                    }
+                    URL.revokeObjectURL(url);
+                    return canvas;
+                }
+            } catch (err) {
+                console.warn('[ReferencePreviewViewer] Failed to decode restored image blob:', record.id, err);
+                return null;
+            }
+        }
+
+        return canvas;
+    }
+
+    /**
+     * 参照画像を非同期に保存
+     */
+    async _saveTabToStore(tab, sourceBlob, proxyInfo) {
+        if (!tab || !this.imageStore) return false;
+        const tabId = tab.id;
+
+        if (this._deletedTabIds.has(tabId)) {
+            return false;
+        }
+
+        const saveTask = (async () => {
+            try {
+                let proxyBlob = null;
+                if (tab.canvas) {
+                    proxyBlob = await this._canvasToBlob(tab.canvas);
+                }
+
+                if (!proxyBlob && !proxyInfo?.downscaled && sourceBlob) {
+                    proxyBlob = sourceBlob;
+                }
+
+                if (!proxyBlob) {
+                    console.warn('[ReferencePreviewViewer] Could not generate proxy blob for tab:', tabId);
+                    return false;
+                }
+
+                if (this._deletedTabIds.has(tabId)) {
+                    this.imageStore.deleteReference(tabId).catch(() => {});
+                    return false;
+                }
+
+                const tabIndex = this.tabs.findIndex(t => t.id === tabId);
+                const order = tabIndex >= 0 ? tabIndex : Date.now();
+
+                const success = await this.imageStore.saveReference({
+                    id: tab.id,
+                    name: tab.name,
+                    order,
+                    origWidth: tab.origWidth,
+                    origHeight: tab.origHeight,
+                    width: tab.width,
+                    height: tab.height,
+                    downscaled: tab.downscaled,
+                    blob: proxyBlob,
+                    mimeType: 'image/png'
+                });
+
+                if (this._deletedTabIds.has(tabId)) {
+                    this.imageStore.deleteReference(tabId).catch(() => {});
+                    return false;
+                }
+
+                if (!success) {
+                    showFeedbackToast('資料画像のローカル保存に失敗しました', { duration: 2500 });
+                    return false;
+                }
+
+                return true;
+            } catch (err) {
+                console.warn('[ReferencePreviewViewer] Failed to save reference image:', err);
+                showFeedbackToast('資料画像のローカル保存に失敗しました', { duration: 2500 });
+                return false;
+            } finally {
+                this._pendingSaves.delete(tabId);
+            }
+        })();
+
+        this._pendingSaves.set(tabId, saveTask);
+        return saveTask;
+    }
+
+    /**
+     * CanvasからBlobを生成
+     */
+    async _canvasToBlob(canvas, mimeType = 'image/png') {
+        if (!canvas) return null;
+        if (typeof canvas.convertToBlob === 'function') {
+            try {
+                return await canvas.convertToBlob({ type: mimeType });
+            } catch (e) {}
+        }
+        if (typeof canvas.toBlob === 'function') {
+            try {
+                return await new Promise((resolve) => {
+                    canvas.toBlob((b) => resolve(b), mimeType);
+                });
+            } catch (e) {}
+        }
+        return null;
     }
 
     _ensurePopupElement() {
@@ -910,6 +1173,14 @@ export class ReferencePreviewViewer {
         const tab = this.tabs[index];
         if (!tab.closeable) return; // Preview tab cannot be closed
 
+        // Track deletion so in-flight restore/saves do not resurrect or write
+        this._deletedTabIds?.add(tabId);
+        if (this.imageStore?.deleteReference) {
+            this.imageStore.deleteReference(tabId).catch((err) => {
+                console.warn('[ReferencePreviewViewer] Failed to delete reference from store:', tabId, err);
+            });
+        }
+
         // Release canvas buffer
         if (tab.canvas) {
             tab.canvas.width = 1;
@@ -1028,6 +1299,12 @@ export class ReferencePreviewViewer {
 
         this._renderTabsHeader();
         this.switchTab(tabId);
+
+        // Save reference image to browser-local IndexedDB asynchronously
+        this._saveTabToStore(tab, blob, proxyInfo).catch((err) => {
+            console.warn('[ReferencePreviewViewer] Background save failed for tab:', tabId, err);
+        });
+
         return true;
     }
 

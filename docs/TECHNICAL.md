@@ -26,7 +26,7 @@
 - Frame/CAF切替だけでHistoryをresetしない。Project全体loadのclearとは別。
 - Raster履歴は変更対象の前後snapshot/patch。無関係なCAF全体を毎stroke複製しない。
 - runtime selection、GPU buffer、評価頂点、scan cacheをProjectへ保存しない。
-- Reference / Preview Viewer（資料 / プレビュー）は閲覧専用・session-onlyの補助機能。Project保存、Layer生成、History、Export、Emergency Recoveryへ一切関与しない。Previewタブは既存WebGLレンダラーから有界解像度（最長辺1024px以下）でサンプリングし、第2レンダラーや第2レイヤーツリーを新設しない。大容量参照画像は2048px/4MP以下へ縮小プロキシ化し、元の巨大デコードバッファを保持しない。クリップボード（Ctrl+V）はViewerフォーカス時のみ参照画像追加として扱い、Canvas側の貼り付け権限を横取りしない。
+- Reference / Preview Viewer（資料 / プレビュー）は閲覧専用の補助機能。資料画像はブラウザ内ローカル（IndexedDB）に永続化され、動的プレビューはruntime-only。Project保存、Layer生成、History、Export、Emergency Recoveryへ一切関与しない。Previewタブは既存WebGLレンダラーから有界解像度（最長辺1024px以下）でサンプリングし、第2レンダラーや第2レイヤーツリーを新設しない。大容量参照画像は2048px/4MP以下へ縮小プロキシ化し、元の巨大デコードバッファを保持しない。クリップボード（Ctrl+V）はViewerフォーカス時のみ参照画像追加として扱い、Canvas側の貼り付け権限を横取りしない。
 
 ## Transform / Motion / WARP / Rig
 
