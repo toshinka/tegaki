@@ -686,7 +686,8 @@
         }
         
         goToPreviousFrameSafe() {
-            if (this.goToAnimationTableFrameByDelta(-1)) return;
+            const tableRoute = this.goToAnimationTableFrameByDelta(-1);
+            if (tableRoute.handled) return tableRoute.moved;
 
             const animData = this.animationSystem.getAnimationData();
             if (animData.frames.length === 0) return;
@@ -706,7 +707,8 @@
         }
         
         goToNextFrameSafe() {
-            if (this.goToAnimationTableFrameByDelta(1)) return;
+            const tableRoute = this.goToAnimationTableFrameByDelta(1);
+            if (tableRoute.handled) return tableRoute.moved;
 
             const animData = this.animationSystem.getAnimationData();
             if (animData.frames.length === 0) return;
@@ -728,9 +730,16 @@
         goToAnimationTableFrameByDelta(delta) {
             const popupManager = window.coreEngine?.popupManager || window.PopupManager;
             const animTable = popupManager?.get?.('animationTable');
-            if (!animTable?.model || typeof animTable.model.playback?.currentFrame !== 'number') return false;
+            if (!animTable?.model
+                || typeof animTable.model.playback?.currentFrame !== 'number'
+                || typeof animTable.moveTimelineFrameByDelta !== 'function') {
+                return { handled: false, moved: false };
+            }
 
-            return animTable.moveTimelineFrameByDelta?.(delta) === true;
+            return {
+                handled: true,
+                moved: animTable.moveTimelineFrameByDelta(delta) === true
+            };
         }
         
         setupAnimationEvents() {
