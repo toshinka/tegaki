@@ -15,6 +15,11 @@
  * T10 — tab state retained (Reference tab zoom/rotate/flip unchanged through Thumbnail -> Full)
  * T11 — Preview state retained (Preview tab view state unchanged through Thumbnail -> Full)
  * T12 — History 0 / model 0 (toggle Viewer, toggle thumbnail, outside click -> no History or Project schema changes)
+ * T94 — Viewer focus Undo / Redo routing (normal region, tabs, Micro Source Rail)
+ * T95 — Input field Ctrl+Z isolation (native input priority, contentEditable safety)
+ * T96 — Viewer operations History 0 (zoom/rotate/flip/switch/thumbnail do not increase History)
+ * T97 — Existing shortcut routes (Ctrl+V, H / Shift+H, R / Shift+R, Shift+Q retain existing paths)
+ * T98 — Viewer display state maintained after Undo / Redo
  * ============================================================================
  */
 
@@ -22,17 +27,51 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 // Mock minimal browser globals for Node.js test execution
+if (typeof globalThis.KeyboardEvent === 'undefined') {
+    globalThis.KeyboardEvent = class KeyboardEvent extends Event {
+        constructor(type, init = {}) {
+            super(type, { bubbles: init.bubbles ?? true, cancelable: init.cancelable ?? true });
+            this.code = init.code || '';
+            this.key = init.key || '';
+            this.ctrlKey = Boolean(init.ctrlKey);
+            this.shiftKey = Boolean(init.shiftKey);
+            this.altKey = Boolean(init.altKey);
+            this.metaKey = Boolean(init.metaKey);
+            this.repeat = Boolean(init.repeat);
+        }
+    };
+}
+
 globalThis.window = {
     innerWidth: 1280,
     innerHeight: 800,
-    addEventListener: () => {},
-    removeEventListener: () => {}
+    _listeners: new Map(),
+    addEventListener: function(evt, fn, options = {}) {
+        const capture = typeof options === 'boolean' ? options : Boolean(options?.capture);
+        const key = `${evt}:${capture}`;
+        if (!this._listeners.has(key)) this._listeners.set(key, []);
+        this._listeners.get(key).push(fn);
+    },
+    removeEventListener: function(evt, fn, options = {}) {
+        const capture = typeof options === 'boolean' ? options : Boolean(options?.capture);
+        const key = `${evt}:${capture}`;
+        if (!this._listeners.has(key)) return;
+        this._listeners.set(key, this._listeners.get(key).filter(cb => cb !== fn));
+    }
 };
+
 globalThis.document = {
+    documentElement: {
+        dataset: {}
+    },
+    activeElement: null,
+    _listeners: new Map(),
     createElement: (tag) => {
         const el = {
             tagName: tag.toUpperCase(),
             style: {},
+            parentNode: null,
+            _children: [],
             classList: {
                 _classes: new Set(),
                 add: function(c) { this._classes.add(c); },
@@ -52,22 +91,86 @@ globalThis.document = {
             _attrs: new Map(),
             setAttribute: function(k, v) { this._attrs.set(k, String(v)); },
             getAttribute: function(k) { return this._attrs.has(k) ? this._attrs.get(k) : null; },
-            appendChild: () => {},
-            querySelector: () => null,
-            querySelectorAll: () => [],
-            _listeners: new Map(),
-            addEventListener: function(evt, fn) {
-                if (!this._listeners.has(evt)) this._listeners.set(evt, []);
-                this._listeners.get(evt).push(fn);
+            appendChild: function(child) {
+                if (child && typeof child === 'object') {
+                    child.parentNode = this;
+                    this._children.push(child);
+                }
+                return child;
             },
-            removeEventListener: function(evt, fn) {
-                if (!this._listeners.has(evt)) return;
-                this._listeners.set(evt, this._listeners.get(evt).filter(cb => cb !== fn));
+            querySelector: function(sel) {
+                for (const child of this._children) {
+                    if (child.matches?.(sel)) return child;
+                    const found = child.querySelector?.(sel);
+                    if (found) return found;
+                }
+                return null;
+            },
+            querySelectorAll: function(sel) {
+                const results = [];
+                for (const child of this._children) {
+                    if (child.matches?.(sel)) results.push(child);
+                    if (child.querySelectorAll) results.push(...child.querySelectorAll(sel));
+                }
+                return results;
+            },
+            matches: function(sel) {
+                if (sel.startsWith('.')) {
+                    return this.classList.contains(sel.slice(1));
+                }
+                if (sel.toUpperCase() === this.tagName) return true;
+                if (sel === '[contenteditable="true"]') return this.isContentEditable === true;
+                return false;
+            },
+            closest: function(sel) {
+                let curr = this;
+                while (curr) {
+                    if (sel === '.reference-preview-viewer' && curr.classList?.contains?.('reference-preview-viewer')) return curr;
+                    if (sel.includes('input') && (curr.tagName === 'INPUT' || curr.tagName === 'TEXTAREA' || curr.tagName === 'SELECT' || curr.isContentEditable)) return curr;
+                    if (curr.matches?.(sel)) return curr;
+                    curr = curr.parentNode;
+                }
+                return null;
+            },
+            contains: function(other) {
+                let curr = other;
+                while (curr) {
+                    if (curr === this) return true;
+                    curr = curr.parentNode;
+                }
+                return false;
+            },
+            focus: function() {
+                globalThis.document.activeElement = this;
+            },
+            _listeners: new Map(),
+            addEventListener: function(evt, fn, options = {}) {
+                const capture = typeof options === 'boolean' ? options : Boolean(options?.capture);
+                const key = `${evt}:${capture}`;
+                if (!this._listeners.has(key)) this._listeners.set(key, []);
+                this._listeners.get(key).push(fn);
+            },
+            removeEventListener: function(evt, fn, options = {}) {
+                const capture = typeof options === 'boolean' ? options : Boolean(options?.capture);
+                const key = `${evt}:${capture}`;
+                if (!this._listeners.has(key)) return;
+                this._listeners.set(key, this._listeners.get(key).filter(cb => cb !== fn));
             },
             dispatchEvent: function(event) {
-                const list = this._listeners.get(event.type) || [];
+                try {
+                    Object.defineProperty(event, 'target', { value: this, configurable: true, writable: true });
+                } catch (e) {
+                    event.target = this;
+                }
+                // Dispatch capture listeners on document
+                if (globalThis.document?._listeners) {
+                    const captureListeners = globalThis.document._listeners.get(`${event.type}:true`) || [];
+                    for (const fn of captureListeners) fn(event);
+                }
+                // Target listeners
+                const list = this._listeners.get(`${event.type}:false`) || this._listeners.get(event.type) || [];
                 for (const fn of list) fn(event);
-                return true;
+                return !event.defaultPrevented;
             }
         };
         return el;
@@ -75,8 +178,30 @@ globalThis.document = {
     getElementById: () => null,
     querySelector: () => null,
     querySelectorAll: () => [],
-    addEventListener: () => {},
-    removeEventListener: () => {},
+    addEventListener: function(evt, fn, options = {}) {
+        const capture = typeof options === 'boolean' ? options : Boolean(options?.capture);
+        const key = `${evt}:${capture}`;
+        if (!this._listeners.has(key)) this._listeners.set(key, []);
+        this._listeners.get(key).push(fn);
+    },
+    removeEventListener: function(evt, fn, options = {}) {
+        const capture = typeof options === 'boolean' ? options : Boolean(options?.capture);
+        const key = `${evt}:${capture}`;
+        if (!this._listeners.has(key)) return;
+        this._listeners.set(key, this._listeners.get(key).filter(cb => cb !== fn));
+    },
+    dispatchEvent: function(event) {
+        try {
+            if (!event.target) Object.defineProperty(event, 'target', { value: this, configurable: true, writable: true });
+        } catch (e) {
+            event.target = event.target || this;
+        }
+        const captureListeners = this._listeners.get(`${event.type}:true`) || [];
+        for (const fn of captureListeners) fn(event);
+        const bubbleListeners = this._listeners.get(`${event.type}:false`) || [];
+        for (const fn of bubbleListeners) fn(event);
+        return !event.defaultPrevented;
+    },
     body: { appendChild: () => {} }
 };
 
@@ -2866,4 +2991,324 @@ console.log('--- Starting Reference / Preview Viewer UX Polish 01 Verification (
     console.log('T93 (W18): No Shift+drag transform added PASS');
 }
 
-console.log('\nverify-reference-preview-viewer: ALL 93 SCENARIOS (T1 - T93) PASS');
+// --- Card A Verification (T94 - T98) ---
+
+// T94 — Viewer focus Undo / Redo routing (normal region, tabs, Micro Source Rail)
+{
+    const { KeyboardHandler } = await import('../ui/keyboard-handler.js');
+    KeyboardHandler.init();
+
+    let undoCalls = 0;
+    let redoCalls = 0;
+    globalThis.window.History = {
+        canUndo: () => true,
+        undo: () => { undoCalls++; },
+        canRedo: () => true,
+        redo: () => { redoCalls++; }
+    };
+
+    // Construct realistic DOM hierarchy for ReferencePreviewViewer
+    const viewerPopup = document.createElement('div');
+    viewerPopup.className = 'popup-panel reference-preview-viewer';
+    viewerPopup.classList.add('reference-preview-viewer');
+
+    const viewerBody = document.createElement('div');
+    viewerBody.className = 'viewer-body';
+    viewerPopup.appendChild(viewerBody);
+
+    const viewerSurface = document.createElement('div');
+    viewerSurface.className = 'viewer-surface';
+    viewerBody.appendChild(viewerSurface);
+
+    const tabBtn = document.createElement('button');
+    tabBtn.className = 'viewer-tab';
+    viewerPopup.appendChild(tabBtn);
+
+    const markerBtn = document.createElement('button');
+    markerBtn.className = 'viewer-source-marker';
+    viewerPopup.appendChild(markerBtn);
+
+    // 1. Focus on Normal region (viewerSurface)
+    viewerSurface.focus();
+    assert.equal(document.activeElement, viewerSurface);
+
+    undoCalls = 0;
+    redoCalls = 0;
+    const evtUndo = new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, shiftKey: false, cancelable: true });
+    viewerSurface.dispatchEvent(evtUndo);
+    assert.equal(undoCalls, 1, 'T94: Normal region Ctrl+Z calls main undo exactly once');
+    assert.equal(evtUndo.defaultPrevented, true, 'T94: Normal region Ctrl+Z prevents browser default');
+
+    const evtRedoY = new KeyboardEvent('keydown', { code: 'KeyY', ctrlKey: true, shiftKey: false, cancelable: true });
+    viewerSurface.dispatchEvent(evtRedoY);
+    assert.equal(redoCalls, 1, 'T94: Normal region Ctrl+Y calls main redo exactly once');
+    assert.equal(evtRedoY.defaultPrevented, true, 'T94: Normal region Ctrl+Y prevents browser default');
+
+    const evtRedoZ = new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, shiftKey: true, cancelable: true });
+    viewerSurface.dispatchEvent(evtRedoZ);
+    assert.equal(redoCalls, 2, 'T94: Normal region Ctrl+Shift+Z calls main redo exactly once');
+    assert.equal(evtRedoZ.defaultPrevented, true, 'T94: Normal region Ctrl+Shift+Z prevents browser default');
+
+    // 2. Focus on Tab (tabBtn)
+    tabBtn.focus();
+    assert.equal(document.activeElement, tabBtn);
+
+    undoCalls = 0;
+    redoCalls = 0;
+    const evtTabUndo = new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, shiftKey: false, cancelable: true });
+    tabBtn.dispatchEvent(evtTabUndo);
+    assert.equal(undoCalls, 1, 'T94: Tab focus Ctrl+Z calls main undo exactly once');
+
+    const evtTabRedo = new KeyboardEvent('keydown', { code: 'KeyY', ctrlKey: true, shiftKey: false, cancelable: true });
+    tabBtn.dispatchEvent(evtTabRedo);
+    assert.equal(redoCalls, 1, 'T94: Tab focus Ctrl+Y calls main redo exactly once');
+
+    const evtTabRedoShiftZ = new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, shiftKey: true, cancelable: true });
+    tabBtn.dispatchEvent(evtTabRedoShiftZ);
+    assert.equal(redoCalls, 2, 'T94: Tab focus Ctrl+Shift+Z calls main redo exactly once');
+
+    // 3. Focus on Micro Source Rail (markerBtn)
+    markerBtn.focus();
+    assert.equal(document.activeElement, markerBtn);
+
+    undoCalls = 0;
+    redoCalls = 0;
+    const evtMarkerUndo = new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, shiftKey: false, cancelable: true });
+    markerBtn.dispatchEvent(evtMarkerUndo);
+    assert.equal(undoCalls, 1, 'T94: Micro Source Rail Ctrl+Z calls main undo exactly once');
+
+    const evtMarkerRedo = new KeyboardEvent('keydown', { code: 'KeyY', ctrlKey: true, shiftKey: false, cancelable: true });
+    markerBtn.dispatchEvent(evtMarkerRedo);
+    assert.equal(redoCalls, 1, 'T94: Micro Source Rail Ctrl+Y calls main redo exactly once');
+
+    const evtMarkerRedoShiftZ = new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, shiftKey: true, cancelable: true });
+    markerBtn.dispatchEvent(evtMarkerRedoShiftZ);
+    assert.equal(redoCalls, 2, 'T94: Micro Source Rail Ctrl+Shift+Z calls main redo exactly once');
+
+    console.log('T94: Viewer focus Undo / Redo routing PASS');
+}
+
+// T95 — Input field Ctrl+Z isolation (native input priority)
+{
+    let undoCalls = 0;
+    globalThis.window.History = {
+        canUndo: () => true,
+        undo: () => { undoCalls++; }
+    };
+
+    const viewerPopup = document.createElement('div');
+    viewerPopup.className = 'popup-panel reference-preview-viewer';
+    viewerPopup.classList.add('reference-preview-viewer');
+
+    const angleInput = document.createElement('input');
+    angleInput.className = 'viewer-angle-input';
+    viewerPopup.appendChild(angleInput);
+
+    angleInput.focus();
+    assert.equal(document.activeElement, angleInput);
+
+    const evtInputUndo = new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, shiftKey: false, cancelable: true });
+    angleInput.dispatchEvent(evtInputUndo);
+
+    assert.equal(undoCalls, 0, 'T95: Input field Ctrl+Z does NOT invoke main History undo');
+    assert.equal(evtInputUndo.defaultPrevented, false, 'T95: Input field Ctrl+Z does not prevent default, preserving native input undo');
+
+    // Also verify contenteditable inside Viewer
+    const editableDiv = document.createElement('div');
+    editableDiv.isContentEditable = true;
+    viewerPopup.appendChild(editableDiv);
+
+    editableDiv.focus();
+    const evtEditableUndo = new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, shiftKey: false, cancelable: true });
+    editableDiv.dispatchEvent(evtEditableUndo);
+
+    assert.equal(undoCalls, 0, 'T95: contentEditable Ctrl+Z does NOT invoke main History undo');
+    assert.equal(evtEditableUndo.defaultPrevented, false, 'T95: contentEditable Ctrl+Z does not prevent default');
+
+    console.log('T95: Input field Ctrl+Z isolation PASS');
+}
+
+// T96 — Viewer operations do NOT mutate or increase History
+{
+    let historyRecorded = 0;
+    globalThis.window.History = {
+        record: () => { historyRecorded++; },
+        canUndo: () => false,
+        canRedo: () => false
+    };
+
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+
+    const refTab = {
+        id: 'ref-test-hist',
+        type: 'reference',
+        name: 'sample.png',
+        width: 600,
+        height: 400,
+        viewState: { zoom: 1.0, panX: 0, panY: 0, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    };
+    viewer.tabs.push(refTab);
+    viewer.switchTab('ref-test-hist');
+
+    viewer.popup = {
+        offsetWidth: 480,
+        offsetHeight: 520,
+        style: { width: '480px', height: '520px' },
+        classList: { toggle: () => {}, add: () => {}, remove: () => {}, contains: () => false },
+        querySelector: () => ({ style: {} })
+    };
+
+    viewer.show();
+    viewer.toggleFlipH();
+    viewer.toggleFlipV();
+    viewer.rotateActiveTab(15);
+    viewer.rotateActiveTab(-15);
+    viewer.zoomActiveTab(1.2);
+    viewer.fitActiveTab();
+    viewer.set100PercentActiveTab();
+    viewer.resetActiveTabView();
+    viewer.setThumbnailMode(true);
+    viewer.setThumbnailMode(false);
+    viewer.hide();
+
+    assert.equal(historyRecorded, 0, 'T96: Viewer operations generated 0 history records');
+    console.log('T96: Viewer operations History 0 PASS');
+}
+
+// T97 — Ctrl+V, H / Shift+H, R / Shift+R, Shift+Q retain existing routes
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+
+    const refTab = {
+        id: 'ref-shortcut-check',
+        type: 'reference',
+        name: 'ref.png',
+        width: 500,
+        height: 400,
+        viewState: { zoom: 1.0, panX: 0, panY: 0, rotationDeg: 0, flipX: false, flipY: false, initialized: true }
+    };
+    viewer.tabs.push(refTab);
+    viewer.activeTabId = 'ref-shortcut-check';
+
+    const viewerPopup = document.createElement('div');
+    viewerPopup.className = 'popup-panel reference-preview-viewer';
+    viewerPopup.classList.add('reference-preview-viewer');
+    viewer.popup = viewerPopup;
+    globalThis.document.activeElement = viewerPopup;
+
+    // 1. Shift+Q toggles viewer via REFERENCE_PREVIEW_TOGGLE
+    const initialVisibility = viewer.isVisible;
+    window.referencePreviewViewer = viewer;
+    const evtShiftQ = new KeyboardEvent('keydown', { code: 'KeyQ', shiftKey: true, ctrlKey: false, cancelable: true });
+    viewerPopup.dispatchEvent(evtShiftQ);
+    assert.equal(viewer.isVisible, !initialVisibility, 'T97: Shift+Q toggled Viewer');
+    viewer.show();
+
+    // 2. H flips horizontal (KeyboardHandler yields, Viewer handles)
+    assert.equal(refTab.viewState.flipX, false);
+    const evtH = new KeyboardEvent('keydown', { code: 'KeyH', shiftKey: false, ctrlKey: false, cancelable: true });
+    viewerPopup.dispatchEvent(evtH);
+    const hHandled = viewer.handleKeyDown(evtH);
+    assert.equal(hHandled, true, 'T97: H handled by Viewer');
+    assert.equal(refTab.viewState.flipX, true, 'T97: flipX toggled by H');
+
+    // 3. R rotates clockwise +15
+    const evtR = new KeyboardEvent('keydown', { code: 'KeyR', shiftKey: false, ctrlKey: false, cancelable: true });
+    viewerPopup.dispatchEvent(evtR);
+    const rHandled = viewer.handleKeyDown(evtR);
+    assert.equal(rHandled, true, 'T97: R handled by Viewer');
+    assert.equal(refTab.viewState.rotationDeg, 15, 'T97: rotationDeg +15 by R');
+
+    // 4. Ctrl+V is yielded by KeyboardHandler (does NOT invoke canvas paste or undo)
+    let mainUndoTriggered = false;
+    globalThis.window.History = {
+        canUndo: () => true,
+        undo: () => { mainUndoTriggered = true; }
+    };
+    const evtCtrlV = new KeyboardEvent('keydown', { code: 'KeyV', ctrlKey: true, shiftKey: false, cancelable: true });
+    viewerPopup.dispatchEvent(evtCtrlV);
+    assert.equal(mainUndoTriggered, false, 'T97: Ctrl+V did not trigger Undo');
+
+    console.log('T97: Existing shortcut routes PASS');
+}
+
+// T98 — Viewer display state maintained after Undo / Redo
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    viewer.isVisible = true;
+
+    const refTab = {
+        id: 'ref-display-state',
+        type: 'reference',
+        name: 'detail_study.png',
+        width: 1200,
+        height: 800,
+        viewState: {
+            zoom: 2.25,
+            panX: 42,
+            panY: -35,
+            rotationDeg: 45,
+            flipX: true,
+            flipY: false,
+            initialized: true
+        }
+    };
+    viewer.tabs.push(refTab);
+    viewer.activeTabId = 'ref-display-state';
+
+    const viewerPopup = document.createElement('div');
+    viewerPopup.className = 'popup-panel reference-preview-viewer';
+    viewerPopup.classList.add('reference-preview-viewer');
+    viewer.popup = viewerPopup;
+    viewerPopup.focus();
+
+    let undoRan = false;
+    let redoRan = false;
+    globalThis.window.History = {
+        canUndo: () => true,
+        undo: () => { undoRan = true; },
+        canRedo: () => true,
+        redo: () => { redoRan = true; }
+    };
+
+    // Execute Undo
+    viewerPopup.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, cancelable: true }));
+    assert.equal(undoRan, true, 'T98: Undo ran');
+    assert.equal(viewer.isVisible, true, 'T98: Viewer remains visible after Undo');
+    assert.equal(viewer.activeTabId, 'ref-display-state', 'T98: Active tab unchanged after Undo');
+    assert.equal(refTab.viewState.zoom, 2.25, 'T98: zoom preserved after Undo');
+    assert.equal(refTab.viewState.panX, 42, 'T98: panX preserved after Undo');
+    assert.equal(refTab.viewState.panY, -35, 'T98: panY preserved after Undo');
+    assert.equal(refTab.viewState.rotationDeg, 45, 'T98: rotationDeg preserved after Undo');
+    assert.equal(refTab.viewState.flipX, true, 'T98: flipX preserved after Undo');
+    assert.equal(refTab.viewState.flipY, false, 'T98: flipY preserved after Undo');
+
+    // Execute Redo
+    viewerPopup.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyY', ctrlKey: true, cancelable: true }));
+    assert.equal(redoRan, true, 'T98: Redo ran');
+    assert.equal(viewer.isVisible, true, 'T98: Viewer remains visible after Redo');
+    assert.equal(viewer.activeTabId, 'ref-display-state', 'T98: Active tab unchanged after Redo');
+    assert.equal(refTab.viewState.zoom, 2.25, 'T98: zoom preserved after Redo');
+    assert.equal(refTab.viewState.panX, 42, 'T98: panX preserved after Redo');
+    assert.equal(refTab.viewState.panY, -35, 'T98: panY preserved after Redo');
+    assert.equal(refTab.viewState.rotationDeg, 45, 'T98: rotationDeg preserved after Redo');
+    assert.equal(refTab.viewState.flipX, true, 'T98: flipX preserved after Redo');
+    assert.equal(refTab.viewState.flipY, false, 'T98: flipY preserved after Redo');
+
+    console.log('T98: Viewer display state maintained after Undo / Redo PASS');
+}
+
+console.log('\nverify-reference-preview-viewer: ALL 98 SCENARIOS (T1 - T98) PASS');

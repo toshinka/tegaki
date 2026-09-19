@@ -70,8 +70,15 @@ export const KeyboardHandler = (function() {
         if (!eventBus || !keymap) return;
         if (isInputFocused()) return;
         if (e.target?.closest?.('.reference-preview-viewer') || document.activeElement?.closest?.('.reference-preview-viewer')) {
+            const isTargetEditable = e.target?.tagName === 'INPUT'
+                || e.target?.tagName === 'TEXTAREA'
+                || e.target?.tagName === 'SELECT'
+                || e.target?.isContentEditable === true
+                || Boolean(e.target?.closest?.('input, textarea, select, [contenteditable="true"]'));
+            if (isTargetEditable) return;
+
             const action = keymap.getAction(e, { vMode: vKeyPressed });
-            if (action === 'REFERENCE_PREVIEW_TOGGLE') {
+            if (action === 'REFERENCE_PREVIEW_TOGGLE' || action === 'UNDO' || action === 'REDO') {
                 handleAction(action, e, eventBus);
             }
             return;
