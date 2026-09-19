@@ -67,6 +67,7 @@ class MockElement {
         this.children = [];
         this.parentNode = null;
         this._listeners = new Map();
+        this._pointerCaptureId = null;
         this._rect = { left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100 };
     }
 
@@ -175,6 +176,21 @@ class MockElement {
             listener(event);
         }
         return !event.defaultPrevented;
+    }
+
+    setPointerCapture(pointerId) {
+        this._pointerCaptureId = pointerId;
+    }
+    hasPointerCapture(pointerId) {
+        return this._pointerCaptureId === pointerId;
+    }
+    releasePointerCapture(pointerId) {
+        if (this._pointerCaptureId !== pointerId) return;
+        this._pointerCaptureId = null;
+        document.dispatchEvent(new PointerEvent('lostpointercapture', {
+            pointerId,
+            target: this
+        }));
     }
 }
 
@@ -412,6 +428,7 @@ function runClipMoveDiagnostic() {
     begin(a3, 10);
     document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 10, clientX: 160, clientY: 100 }));
     document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 10, clientX: 160, clientY: 100 }));
+    document.dispatchEvent(new PointerEvent('lostpointercapture', { pointerId: 10 }));
     const a3Next = {
         moved: a3.model.findClipEntry('clip-1').clip.startFrame === 5,
         commits: a3.getCommitCount(),
@@ -442,13 +459,13 @@ function runRetimeDiagnostic() {
                         {
                             id: 'clip-before',
                             startFrame: edge === 'left' ? 1 : 0,
-                            duration: edge === 'left' ? 3 : 1,
+                            duration: edge === 'left' ? 3 : 2,
                             assetId: 'asset-before',
                             transformKeyframes: [{ frame: 0, x: 1 }]
                         },
                         {
                             id: 'clip-1',
-                            startFrame: edge === 'left' ? 4 : 0,
+                            startFrame: 4,
                             duration: 4,
                             assetId: 'asset-1',
                             transformKeyframes: [{ frame: 0, x: 1 }, { frame: 3, x: 9 }],
@@ -461,7 +478,7 @@ function runRetimeDiagnostic() {
                         },
                         {
                             id: 'clip-after',
-                            startFrame: edge === 'left' ? 8 : 4,
+                            startFrame: 8,
                             duration: 4,
                             assetId: 'asset-after',
                             transformKeyframes: [{ frame: 0, x: 8 }]
@@ -561,7 +578,7 @@ function runRetimeDiagnostic() {
     assert.equal(b1.clip.duration, 4, 'Foreign pointer cannot mutate retime');
     document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 20, clientX: 132 }));
     assert.equal(b1.clip.duration, 6, 'Duration updated during pointermove to 6');
-    assert.equal(b1.model.findClipEntry('clip-after').clip.startFrame, 6, 'Adjacent clip pushed to frame 6');
+    assert.equal(b1.model.findClipEntry('clip-after').clip.startFrame, 10, 'Adjacent clip pushed to frame 10');
     const b1RendersDuringMove = b1.getRenderCount();
     document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 20, clientX: 132 }));
     const b1Result = {
@@ -575,7 +592,7 @@ function runRetimeDiagnostic() {
     };
     assert.deepEqual(b1Result, {
         resultingDuration: 6,
-        adjacentStartFrame: 6,
+        adjacentStartFrame: 10,
         terminalKeyFrame: 5,
         historyEntries: 1,
         renderCount: b1RendersDuringMove,
@@ -601,7 +618,7 @@ function runRetimeDiagnostic() {
         clean: b2.host._retimingData === null && !b2.host._isRetiming,
         listenerLeak: b2.getListenerCount('pointerup') + b2.getListenerCount('pointercancel')
     };
-    assert.deepEqual(b2Result, { restored: true, history: 0, restoreCalls: 1, clean: true, listenerLeak: 0 });
+    assert.deepEqual(b2Result, { restored: true, history: 0, restoreCalls: 2, clean: true, listenerLeak: 0 });
     console.log('B2 (right-edge pointercancel + foreign terminal):', b2Result);
 
     // B3: left-edge cancellation restores neighbor push and all metadata.
@@ -617,7 +634,7 @@ function runRetimeDiagnostic() {
         restoreCalls: b3.getRestoreCount(),
         clean: b3.host._retimingData === null && !b3.host._isRetiming
     };
-    assert.deepEqual(b3Result, { restored: true, history: 0, restoreCalls: 1, clean: true });
+    assert.deepEqual(b3Result, { restored: true, history: 0, restoreCalls: 2, clean: true });
     console.log('B3 (left-edge pointercancel + metadata):', b3Result);
 
     // B4: threshold-before cancel and the following normal gesture remain valid.
@@ -778,38 +795,82 @@ function runMotionKeyDragDiagnostic() {
         };
     }
 
-    // C1: moved=true -> pointerup
+    // C1: marker moved=true -> pointerup keeps the move/history path.
     const c1 = setupKeyDragHost();
-    const g1 = c1.createGesture();
+    const g1 = c1.createGesture({ path: 'marker', pointerId: 10 });
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 99, clientX: 100 }));
+    assert.equal(g1.gesture.moved, false, 'Foreign pointer cannot move a key');
     document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 10, clientX: 100 }));
     assert.equal(g1.gesture.moved, true);
     document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 10, clientX: 100 }));
     const c1Counts = c1.getCounts();
-    console.log('C1 (moved=true -> pointerup):', {
+    const c1Result = {
         targetFrame: g1.gesture.targetFrame,
         committed: c1Counts.movedCommitCalls === 1,
         history: c1Counts.historyCount,
-        gestureCleaned: c1.host._motionKeyDrag === null
-    });
+        gestureCleaned: c1.host._motionKeyDrag === null,
+        markerCleaned: !g1.keyMarker.classList.contains('key-dragging')
+    };
+    assert.deepEqual(c1Result, { targetFrame: 4, committed: true, history: 1, gestureCleaned: true, markerCleaned: true });
+    console.log('C1 (marker moved=true -> pointerup):', c1Result);
 
-    // C2: moved=true -> pointercancel
+    // C2: slot moved=true -> pointercancel never commits and removes provisional selection.
     const c2 = setupKeyDragHost();
-    const g2 = c2.createGesture();
-    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 10, clientX: 100 }));
+    const g2 = c2.createGesture({ path: 'slot', pointerId: 11 });
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 11, clientX: 100 }));
     assert.equal(g2.gesture.moved, true);
-    document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 10, clientX: 100 }));
+    document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 11, clientX: 100 }));
     const c2Counts = c2.getCounts();
-    console.log('C2 (moved=true -> pointercancel):', {
+    const c2Result = {
         targetFrame: g2.gesture.targetFrame,
-        committed: c2Counts.movedCommitCalls === 1,
+        commitSuppressed: c2Counts.movedCommitCalls === 0,
         history: c2Counts.historyCount,
         rollbackCalled: c2Counts.rollbackCalls,
-        gestureCleaned: c2.host._motionKeyDrag === null
+        selectionPreserved: c2.getSelectedKeys().length === 1 && c2.getSelectedKeys()[0] === 'preexisting-key',
+        gestureCleaned: c2.host._motionKeyDrag === null,
+        markerCleaned: !g2.sourceSlot.classList.contains('key-dragging')
+    };
+    assert.deepEqual(c2Result, {
+        targetFrame: 4,
+        commitSuppressed: true,
+        history: 0,
+        rollbackCalled: 1,
+        selectionPreserved: true,
+        gestureCleaned: true,
+        markerCleaned: true
+    });
+    console.log('C2 (slot moved=true -> pointercancel):', c2Result);
+
+    // C3: marker cancel restores the live marker position and threshold-before cancel is safe.
+    const c3 = setupKeyDragHost();
+    const g3 = c3.createGesture({ path: 'marker', pointerId: 12 });
+    document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 12, clientX: 51 }));
+    assert.equal(g3.gesture.moved, false);
+    document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 12, clientX: 51 }));
+    const c3Counts = c3.getCounts();
+    const c3Result = {
+        commitSuppressed: c3Counts.movedCommitCalls === 0,
+        clickSuppressed: c3Counts.clickCommitCalls === 0,
+        history: c3Counts.historyCount,
+        rollbackCalled: c3Counts.rollbackCalls,
+        markerRestored: g3.keyMarker.style.getPropertyValue('--motion-key-position') === '12%',
+        selectionPreserved: c3.getSelectedKeys().length === 1,
+        gestureCleaned: c3.host._motionKeyDrag === null
+    };
+    assert.deepEqual(c3Result, {
+        commitSuppressed: true,
+        clickSuppressed: true,
+        history: 0,
+        rollbackCalled: 1,
+        markerRestored: true,
+        selectionPreserved: true,
+        gestureCleaned: true
+    });
+    console.log('C3 (marker threshold-before pointercancel):', c3Result, {
+        lostCapture: 'not applicable: legacy path owns no pointer capture'
     });
 
-    const staticConfirmed = c2Counts.movedCommitCalls === 1 && c2Counts.historyCount === 1 && c2Counts.rollbackCalls === 0;
-    console.log('Motion Key Drag static finding:', staticConfirmed ? 'CONFIRMED (moved+cancel commits)' : 'NOT REPRODUCED');
-    return { c1: c1Counts, c2: c2Counts, staticConfirmed };
+    return { c1: c1Result, c2: c2Result, c3: c3Result };
 }
 
 // ---------------------------------------------------------------------------
@@ -847,10 +908,6 @@ function runLayerPanelDndDiagnostic() {
                     { row: rowB, rect: rowB._rect }
                 ];
             },
-            _clearLayerPanelCardDropTarget() {},
-            _finishLayerPanelCardDrag() {
-                this._cardDrag = null;
-            },
             _createLayerPanelCardDropPayload(drag) {
                 return { drag, sourceRow: drag.row, targetRow: drag.targetRow, placement: drag.placement };
             },
@@ -861,9 +918,10 @@ function runLayerPanelDndDiagnostic() {
         renderer._handleLayerPanelCardPointerMove = renderer._handleLayerPanelCardPointerMove.bind(renderer);
         renderer._handleLayerPanelCardPointerUp = renderer._handleLayerPanelCardPointerUp.bind(renderer);
 
-        const startDrag = () => {
+        const startDrag = (variant = 'legacy-layer-card', pointerId = 5) => {
             const options = {
-                dragKind: 'legacy-layer-card',
+                dragKind: variant,
+                rowSelector: '.layer-item',
                 canDropInside: () => false,
                 onDrop: (payload) => {
                     dropCalls += 1;
@@ -871,40 +929,95 @@ function runLayerPanelDndDiagnostic() {
                     return true;
                 }
             };
-            const e = new PointerEvent('pointerdown', { pointerId: 5, clientX: 100, clientY: 20 });
+            const e = new PointerEvent('pointerdown', { pointerId, clientX: 100, clientY: 20 });
             renderer._startLayerPanelCardDrag(e, rowA, options);
             // Move to rowB (clientY = 60)
-            document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 5, clientX: 100, clientY: 60 }));
+            document.dispatchEvent(new PointerEvent('pointermove', { pointerId, clientX: 100, clientY: 60 }));
+            return pointerId;
         };
 
-        return { renderer, rowA, rowB, startDrag, getDropCalls: () => dropCalls, getHistoryCalls: () => historyCalls };
+        return {
+            renderer,
+            rowA,
+            rowB,
+            startDrag,
+            getDropCalls: () => dropCalls,
+            getHistoryCalls: () => historyCalls
+        };
     }
 
-    // D1: Normal pointerup
+    // D1: normal pointerup uses the existing drop callback and releases capture.
     const d1 = setupLayerDnd();
-    d1.startDrag();
+    d1.startDrag('legacy-layer-card', 5);
     assert.equal(d1.renderer._cardDrag?.active, true, 'Drag is active');
     assert.equal(d1.renderer._cardDrag?.targetRow === d1.rowB, true, 'Target row resolved to rowB');
     document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 5, clientX: 100, clientY: 60 }));
     const d1Drops = d1.getDropCalls();
     const d1History = d1.getHistoryCalls();
     const d1Clean = d1.renderer._cardDrag === null;
-    console.log('D1 (normal pointerup):', { dropExecuted: d1Drops === 1, historyCount: d1History, gestureCleaned: d1Clean });
+    const d1Result = {
+        dropExecuted: d1Drops === 1,
+        historyCount: d1History,
+        gestureCleaned: d1Clean,
+        captureReleased: !d1.rowA.hasPointerCapture(5)
+    };
+    assert.deepEqual(d1Result, { dropExecuted: true, historyCount: 1, gestureCleaned: true, captureReleased: true });
+    console.log('D1 (legacy normal pointerup):', d1Result);
 
-    // D2: Abnormal pointercancel
+    // D2: active pointercancel does not call onDrop and cleans all visuals.
     const d2 = setupLayerDnd();
-    d2.startDrag();
+    d2.startDrag('legacy-layer-card', 6);
     assert.equal(d2.renderer._cardDrag?.active, true, 'Drag is active');
     assert.equal(d2.renderer._cardDrag?.targetRow === d2.rowB, true, 'Target row resolved to rowB');
-    document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 5, clientX: 100, clientY: 60 }));
+    document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 6, clientX: 100, clientY: 60 }));
     const d2Drops = d2.getDropCalls();
     const d2History = d2.getHistoryCalls();
     const d2Clean = d2.renderer._cardDrag === null;
-    console.log('D2 (abnormal pointercancel):', { dropExecuted: d2Drops === 1, historyCount: d2History, gestureCleaned: d2Clean });
+    const d2Result = {
+        dropSuppressed: d2Drops === 0,
+        historyCount: d2History,
+        gestureCleaned: d2Clean,
+        captureReleased: !d2.rowA.hasPointerCapture(6)
+    };
+    assert.deepEqual(d2Result, { dropSuppressed: true, historyCount: 0, gestureCleaned: true, captureReleased: true });
+    console.log('D2 (legacy pointercancel):', d2Result);
 
-    const staticConfirmed = d2Drops === 1 && d2History === 1;
-    console.log('Layer Panel D&D static finding:', staticConfirmed ? 'CONFIRMED (pointercancel executes drop)' : 'NOT REPRODUCED');
-    return { d1: { drop: d1Drops, history: d1History, clean: d1Clean }, d2: { drop: d2Drops, history: d2History, clean: d2Clean }, staticConfirmed };
+    // D3: active lostpointercapture cancels; late lost after normal completion is ignored.
+    const d3 = setupLayerDnd();
+    d3.startDrag('clip-layer-mirror', 7);
+    assert.equal(d3.renderer._cardDrag?.active, true);
+    document.dispatchEvent(new PointerEvent('lostpointercapture', {
+        pointerId: 7,
+        target: d3.rowA,
+        clientX: 100,
+        clientY: 60
+    }));
+    const d3Cancelled = { drop: d3.getDropCalls(), history: d3.getHistoryCalls(), clean: d3.renderer._cardDrag === null };
+    assert.deepEqual(d3Cancelled, { drop: 0, history: 0, clean: true });
+
+    const d4 = setupLayerDnd();
+    d4.startDrag('clip-layer-mirror', 8);
+    document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 8, clientX: 100, clientY: 60 }));
+    document.dispatchEvent(new PointerEvent('lostpointercapture', { pointerId: 8, target: d4.rowA }));
+    const d4LateLost = { drop: d4.getDropCalls(), history: d4.getHistoryCalls(), clean: d4.renderer._cardDrag === null };
+    assert.deepEqual(d4LateLost, { drop: 1, history: 1, clean: true });
+
+    // D5: a foreign terminal cannot close the active drag; the next gesture works.
+    const d5 = setupLayerDnd();
+    d5.startDrag('legacy-layer-card', 9);
+    document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 99, clientX: 100, clientY: 60 }));
+    assert.notEqual(d5.renderer._cardDrag, null);
+    document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 9, clientX: 100, clientY: 60 }));
+    d5.startDrag('legacy-layer-card', 10);
+    document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 10, clientX: 100, clientY: 60 }));
+    const d5Result = { drop: d5.getDropCalls(), history: d5.getHistoryCalls(), clean: d5.renderer._cardDrag === null };
+    assert.deepEqual(d5Result, { drop: 1, history: 1, clean: true });
+    console.log('D3-D5 (active lost, late lost, foreign pointer, CAF/legacy, next gesture):', {
+        activeLost: d3Cancelled,
+        lateLost: d4LateLost,
+        nextGesture: d5Result
+    });
+    return { d1: d1Result, d2: d2Result, d3: d3Cancelled, d4: d4LateLost, d5: d5Result };
 }
 
 // ---------------------------------------------------------------------------

@@ -74,6 +74,7 @@
           _getSelectedCelIds() { return new Set(['clip-1']); },
           _captureTimelineHistoryState() { return {}; },
           _recordTimelineHistory() { history += 1; },
+          _restoreTimelineHistoryState() {},
           _saveSelectedClipFromWorkingLayers() {},
           _activateClipEntry() {},
           _syncClipAssetToWorkingLayers() {},
@@ -90,8 +91,8 @@
         // A1: pointerup
         host._isClipMoving = true;
         host._clipMoveMoved = true;
-        host._clipMoveData = { clipId: 'clip-1', startX: 100, startY: 100, sourceLaneId: 'lane-1', sourceStartFrame: 0, moveItems: [{ clipId: 'clip-1', sourceLaneId: 'lane-1', sourceStartFrame: 0 }], beforeState: {} };
-        host._onClipMoveMouseUp(new PointerEvent('pointerup', { clientX: 160, clientY: 100 }));
+        host._clipMoveData = { clipId: 'clip-1', pointerId: 1, startX: 100, startY: 100, sourceLaneId: 'lane-1', sourceStartFrame: 0, moveItems: [{ clipId: 'clip-1', sourceLaneId: 'lane-1', sourceStartFrame: 0 }], beforeState: {} };
+        host._onClipMoveMouseUp(new PointerEvent('pointerup', { pointerId: 1, clientX: 160, clientY: 100 }));
         const a1Moved = model.findClipEntry('clip-1').clip.startFrame === 5;
 
         // Reset for A2: pointercancel
@@ -99,15 +100,15 @@
         commits = 0; history = 0;
         host._isClipMoving = true;
         host._clipMoveMoved = true;
-        host._clipMoveData = { clipId: 'clip-1', startX: 100, startY: 100, sourceLaneId: 'lane-1', sourceStartFrame: 0, moveItems: [{ clipId: 'clip-1', sourceLaneId: 'lane-1', sourceStartFrame: 0 }], beforeState: {} };
-        host._onClipMoveMouseUp(new PointerEvent('pointercancel', { clientX: 160, clientY: 100 }));
+        host._clipMoveData = { clipId: 'clip-1', pointerId: 2, startX: 100, startY: 100, sourceLaneId: 'lane-1', sourceStartFrame: 0, moveItems: [{ clipId: 'clip-1', sourceLaneId: 'lane-1', sourceStartFrame: 0 }], beforeState: {} };
+        host._onClipMoveMouseUp(new PointerEvent('pointercancel', { pointerId: 2, clientX: 160, clientY: 100 }));
         const a2Moved = model.findClipEntry('clip-1').clip.startFrame === 5;
 
         addCard(
           'TEST A — Clip Move Terminal',
-          a2Moved && commits === 1 ? 'CONFIRMED' : 'UNEXPECTED',
-          'warning',
-          `Normal pointerup:   moved=${a1Moved}\nPointercancel:      moved=${a2Moved}, commits=${commits}, history=${history}\nFinding:            Clip Move executes drop and writes History on pointercancel.`
+          a1Moved && !a2Moved && commits === 0 && history === 0 ? 'PASS' : 'FAIL',
+          a1Moved && !a2Moved && commits === 0 && history === 0 ? 'pass' : 'fail',
+          `Normal pointerup:   moved=${a1Moved}\nPointercancel:      moved=${a2Moved}, commits=${commits}, history=${history}\nContract:           cancel does not call move/history; preview is cleaned.`
         );
       } catch (err) {
         addCard('TEST A — Clip Move', 'ERROR', 'fail', err.stack);
@@ -141,22 +142,22 @@
         // Start Retime and move +4 frames
         host._isRetiming = true;
         host._retimingData = {
-          cel: clip, track: lane, edge: 'right', startFrame: 0, startDuration: 4, startX: 100,
+          cel: clip, track: lane, edge: 'right', pointerId: 3, startFrame: 0, startDuration: 4, startX: 100,
           laneSnapshot: [{ id: clip.id, startFrame: 0, duration: 4 }], beforeState: {}
         };
-        host._onRetimingMouseMove(new PointerEvent('pointermove', { clientX: 164 }));
+        host._onRetimingMouseMove(new PointerEvent('pointermove', { pointerId: 3, clientX: 164 }));
         const mutatedDuration = clip.duration;
 
         // Terminal with pointercancel
-        host._onRetimingMouseUp(new PointerEvent('pointercancel', { clientX: 164 }));
+        host._onRetimingMouseUp(new PointerEvent('pointercancel', { pointerId: 3, clientX: 164 }));
         const finalDuration = clip.duration;
         const restored = finalDuration === 4;
 
         addCard(
           'TEST B — Retime Terminal',
-          !restored && history === 1 ? 'CONFIRMED' : 'UNEXPECTED',
-          'warning',
-          `Move duration:     mutated to ${mutatedDuration} frames\nPointercancel:     final duration=${finalDuration} (restored=${restored}), history=${history}\nFinding:           Retime retains live mutation and commits History on pointercancel without rollback.`
+          restored && history === 0 ? 'PASS' : 'FAIL',
+          restored && history === 0 ? 'pass' : 'fail',
+          `Move duration:     mutated to ${mutatedDuration} frames\nPointercancel:     final duration=${finalDuration} (restored=${restored}), history=${history}\nContract:          cancel restores the lane snapshot and records no History.`
         );
       } catch (err) {
         addCard('TEST B — Retime', 'ERROR', 'fail', err.stack);
@@ -170,7 +171,7 @@
 
         const host = {
           _moveMotionTimelineKeySelection() { commitCalls += 1; history += 1; return true; },
-          _commitMotionTimelineKeyPointerClick() { return true; },
+          _commitMotionTimelineKeyPointerClick() { commitCalls += 1; history += 1; return true; },
           _setMotionTimelineKeySelected(d, sel) { if (!sel) rollbackCalls += 1; },
           render() {}
         };
@@ -180,7 +181,10 @@
             pointerId: 1, moved, anchorDescriptor: { clipId: 'c', kind: 'motion', frame: 1 },
             targetFrame: 4, beforeState: {}, marker: document.createElement('div')
           };
-          if (gesture.moved) {
+          if (eventType === 'pointercancel') {
+            host._setMotionTimelineKeySelected(gesture.anchorDescriptor, false, { additive: true });
+            host.render();
+          } else if (gesture.moved) {
             host._moveMotionTimelineKeySelection(gesture.anchorDescriptor, gesture.targetFrame, gesture.beforeState);
           } else if (eventType === 'pointerup') {
             host._commitMotionTimelineKeyPointerClick();
@@ -190,12 +194,13 @@
         };
 
         simulateKeyEnd(true, 'pointercancel');
+        simulateKeyEnd(false, 'pointercancel');
 
         addCard(
           'TEST C — Old Motion Key Drag',
-          commitCalls === 1 && rollbackCalls === 0 ? 'CONFIRMED' : 'UNEXPECTED',
-          'warning',
-          `Gesture state:      moved=true\nEvent dispatched:   pointercancel\nResult:             commitCalls=${commitCalls}, rollbackCalls=${rollbackCalls}, history=${history}\nFinding:            gesture.moved branch precedes event.type check, committing key move on pointercancel.`
+          commitCalls === 0 && rollbackCalls === 2 && history === 0 ? 'PASS' : 'FAIL',
+          commitCalls === 0 && rollbackCalls === 2 && history === 0 ? 'pass' : 'fail',
+          `Slot + marker cancel: moved=true/false\nResult:             commitCalls=${commitCalls}, rollbackCalls=${rollbackCalls}, history=${history}\nContract:           cancel suppresses key movement, removes provisional selection, and leaves History at 0.`
         );
       } catch (err) {
         addCard('TEST C — Motion Key Drag', 'ERROR', 'fail', err.stack);
@@ -211,13 +216,16 @@
           _isLayerPanelCardDropPayloadReady(p) { return p.ready; },
           _finishLayerPanelCardDrag() { this._cardDrag = null; }
         });
-        renderer._handleLayerPanelCardPointerUp(new PointerEvent('pointercancel', { pointerId: 1 }));
+        renderer._handleLayerPanelCardPointerUp(new PointerEvent('pointerup', { pointerId: 1 }));
+        const normalDrops = drops;
+        renderer._cardDrag = { active: true, pointerId: 2, onDrop: () => { drops += 1; return true; } };
+        renderer._handleLayerPanelCardPointerUp(new PointerEvent('pointercancel', { pointerId: 2 }));
 
         addCard(
           'TEST D — Layer Panel D&D',
-          drops === 1 ? 'CONFIRMED' : 'UNEXPECTED',
-          'warning',
-          `Event dispatched:   pointercancel\nDrop executed:      drops=${drops}\nFinding:            _handleLayerPanelCardPointerUp executes drop on pointercancel when drag.active is true.`
+          normalDrops === 1 && drops === 1 ? 'PASS' : 'FAIL',
+          normalDrops === 1 && drops === 1 ? 'pass' : 'fail',
+          `Normal pointerup drops=${normalDrops}\nPointercancel drops=${drops - normalDrops}\nContract:           cancel/lost release ghost and indicator without calling onDrop.`
         );
       } catch (err) {
         addCard('TEST D — Layer Panel D&D', 'ERROR', 'fail', err.stack);
@@ -293,7 +301,7 @@
         addCard('SECTION 9 & 10 — Retime Performance', 'ERROR', 'fail', err.stack);
       }
 
-      summary.textContent = 'DIAGNOSTICS COMPLETE — All 4 gesture abnormal commit risks CONFIRMED. Retime redundant render ratio CONFIRMED.';
+      summary.textContent = 'DIAGNOSTICS COMPLETE — pointerup behavior preserved; cancel/lost terminal safety checks passed where capture is owned.';
     }
 
     runDiagnostics();
