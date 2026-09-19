@@ -20,6 +20,11 @@ import { albumStorage } from '../system/album-storage.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import {
+    referenceImageStore,
+    DEFAULT_WORKSPACE_ID,
+    DEFAULT_WORKSPACE_NAME
+} from '../system/reference-image-store.js';
+import {
     ClipAssetInternalLayerModel,
     DrawingSnapshotModel
 } from '../system/animation/animation-data-model.js';
@@ -30,7 +35,9 @@ export class AlbumPopup {
         this.layerSystem = dependencies.layerSystem;
         this.animationSystem = dependencies.animationSystem;
         this.eventBus = TegakiEventBus;
-        
+        this.referenceImageStore = dependencies.referenceImageStore || (typeof window !== 'undefined' ? window.referenceImageStore : null) || referenceImageStore;
+        this.referencePreviewViewer = dependencies.referencePreviewViewer || (typeof window !== 'undefined' ? window.referencePreviewViewer : null);
+
         this.popup = null;
         this.isVisible = false;
         this.snapshots = [];
@@ -38,6 +45,10 @@ export class AlbumPopup {
         this.lastSelectedSnapshotId = null;
         this.selectionMode = false;
         this.sortable = null;
+
+        this._currentMode = 'snapshots'; // 'snapshots' | 'references'
+        this._managedWorkspaceId = DEFAULT_WORKSPACE_ID;
+        this._refBlobUrls = [];
         
         this._storageReady = this._initStorage();
         this._ensurePopupElement();
@@ -85,9 +96,16 @@ export class AlbumPopup {
             <button class="ui-close-button ui-close-button--medium" id="album-close-btn" title="閉じる">
                 ${UI_ICONS.close}
             </button>
-            <div class="popup-title">アルバム</div>
+            <div class="album-header-row">
+                <div class="popup-title" style="margin-bottom: 0;">アルバム</div>
+                <div class="album-mode-tabs" role="tablist">
+                    <button type="button" class="album-mode-tab active" id="albumModeSnapshots" data-mode="snapshots" role="tab" aria-selected="true">作品スナップショット</button>
+                    <button type="button" class="album-mode-tab" id="albumModeReferences" data-mode="references" role="tab" aria-selected="false">参照画像</button>
+                </div>
+            </div>
             
-            <!-- アルバムツールバー -->
+            <div id="albumSnapshotContainer" class="album-snapshot-container">
+                <!-- アルバムツールバー -->
             <div class="album-toolbar">
                 <div class="album-toolbar-group">
                     <button id="albumSave" class="ui-icon-button ui-icon-button--large" title="現在の状態をアルバムに追加">
@@ -139,7 +157,24 @@ export class AlbumPopup {
                 </button>
             </div>
             <div id="albumStorageStatus" class="album-storage-status" data-pressure="unknown">保存領域: 計算中...</div>
-            <div id="albumGallery" style="flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px 0; display: grid; grid-template-columns: repeat(auto-fill, 130px); gap: 12px; align-content: start; justify-content: start;"></div>
+                <div id="albumGallery" style="flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px 0; display: grid; grid-template-columns: repeat(auto-fill, 130px); gap: 12px; align-content: start; justify-content: start;"></div>
+            </div>
+
+            <div id="albumReferenceSection" class="album-reference-section" style="display: none;">
+                <div class="album-ref-toolbar">
+                    <div class="album-ref-toolbar-group">
+                        <label for="albumRefWorkspaceSelect" class="album-ref-label">Workspace:</label>
+                        <select id="albumRefWorkspaceSelect" class="album-ref-select"></select>
+                        <button type="button" id="albumRefNewWorkspace" class="album-ref-action-btn" title="新規Workspaceを作成">＋ 新規作成</button>
+                        <span id="albumRefActiveBadge" class="album-ref-active-badge" style="display: none;">(Viewer表示中)</span>
+                    </div>
+                    <div class="album-ref-toolbar-group album-ref-toolbar-right">
+                        <button type="button" id="albumRefOpenInViewer" class="album-ref-action-btn" title="選択中のWorkspaceをViewerで開く">Viewerで開く</button>
+                    </div>
+                </div>
+                <div id="albumRefStatus" class="album-ref-status">参照画像: 0件</div>
+                <div id="albumRefGallery" class="album-ref-gallery"></div>
+            </div>
         `;
         
         container.appendChild(popupDiv);
@@ -148,6 +183,12 @@ export class AlbumPopup {
         // イベントバインド
         const closeBtn = document.getElementById('album-close-btn');
         if (closeBtn) closeBtn.onclick = () => this.hide();
+
+        const snapModeBtn = document.getElementById('albumModeSnapshots');
+        if (snapModeBtn) snapModeBtn.onclick = () => this._switchAlbumMode('snapshots');
+
+        const refModeBtn = document.getElementById('albumModeReferences');
+        if (refModeBtn) refModeBtn.onclick = () => this._switchAlbumMode('references');
 
         const saveBtn = document.getElementById('albumSave');
         if (saveBtn) saveBtn.onclick = () => this._saveSnapshot();
@@ -183,6 +224,24 @@ export class AlbumPopup {
         const saveTargetChangeBtn = document.getElementById('albumProjectSaveTargetChange');
         if (saveTargetChangeBtn) {
             saveTargetChangeBtn.onclick = () => this._changeProjectSaveTarget();
+        }
+
+        const wsSelect = document.getElementById('albumRefWorkspaceSelect');
+        if (wsSelect) {
+            wsSelect.onchange = async (e) => {
+                this._managedWorkspaceId = e.target.value;
+                await this._renderReferenceManager();
+            };
+        }
+
+        const newWsBtn = document.getElementById('albumRefNewWorkspace');
+        if (newWsBtn) {
+            newWsBtn.onclick = () => this._createNewWorkspace();
+        }
+
+        const openViewerBtn = document.getElementById('albumRefOpenInViewer');
+        if (openViewerBtn) {
+            openViewerBtn.onclick = () => this._applyWorkspaceToViewer();
         }
     }
 
@@ -363,6 +422,11 @@ export class AlbumPopup {
             
             try {
                 await albumStorage.deleteSnapshots(deleteIds);
+                if (this.referenceImageStore?.deleteSnapshotWorkspace) {
+                    for (const delId of deleteIds) {
+                        await this.referenceImageStore.deleteSnapshotWorkspace(delId).catch(() => {});
+                    }
+                }
                 this.snapshots = this.snapshots.filter(s => !deleteSet.has(s.id));
                 this.selectedSnapshotIds.clear();
                 this.lastSelectedSnapshotId = null;
@@ -642,6 +706,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
                 }
                 snapshot.order = this.snapshots.length;
                 const summary = await albumStorage.putSnapshot(snapshot);
+                await this._linkCurrentReferenceWorkspace(snapshot.id);
                 this.snapshots.push(summary || {
                     id: snapshot.id,
                     order: snapshot.order,
@@ -733,6 +798,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
 
         try {
             const summary = await albumStorage.putSnapshot(snapshot);
+            await this._linkCurrentReferenceWorkspace(snapshot.id);
             this.snapshots.push(summary || {
                 id: snapshot.id,
                 order: snapshot.order,
@@ -782,6 +848,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
 
         try {
             const summary = await albumStorage.putSnapshot(snapshot);
+            await this._linkCurrentReferenceWorkspace(snapshot.id);
             this.snapshots.push(summary || {
                 id: snapshot.id,
                 order: snapshot.order,
@@ -1008,9 +1075,11 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             }
             await window.projectManager?.loadProject?.(projectData);
             this.hide();
+            return true;
         } catch (error) {
             console.error('[AlbumPopup] Project reference load failed:', error);
             alert('参照先Projectの読み込みに失敗しました。ファイルが移動・削除されたか、権限が失効している可能性があります。');
+            return false;
         }
     }
 
@@ -1070,6 +1139,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
         );
         if (normalizedSnapshot.projectData && window.projectManager?.loadProject && mode !== 'active-caf') {
             await window.projectManager.loadProject(normalizedSnapshot.projectData);
+            await this._syncLinkedReferenceWorkspace(snapshot?.id);
             this.hide();
             return;
         }
@@ -1077,7 +1147,10 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
         if (normalizedSnapshot.activeCafData) {
             if (mode === 'project') {
                 const loaded = await this._loadActiveCafDataAsNormalProject(normalizedSnapshot.activeCafData);
-                if (loaded) this.hide();
+                if (loaded) {
+                    await this._syncLinkedReferenceWorkspace(snapshot?.id);
+                    this.hide();
+                }
             } else {
                 const imported = this._importActiveCafDataToSelectedCaf(normalizedSnapshot.activeCafData);
                 if (imported) this.hide();
@@ -1086,7 +1159,10 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
         }
 
         if (normalizedSnapshot.projectReference) {
-            await this._loadProjectReference(normalizedSnapshot.projectReference);
+            const loaded = await this._loadProjectReference(normalizedSnapshot.projectReference);
+            if (loaded === true) {
+                await this._syncLinkedReferenceWorkspace(snapshot?.id);
+            }
             return;
         }
 
@@ -1175,6 +1251,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             this.animationSystem.switchToActiveFrame(snapshot.currentFrame);
         }
 
+        await this._syncLinkedReferenceWorkspace(snapshot?.id);
         this.hide();
     }
 
@@ -1378,6 +1455,11 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
         
         try {
             await albumStorage.deleteSnapshots(deleteIds);
+            if (this.referenceImageStore?.deleteSnapshotWorkspace) {
+                for (const delId of deleteIds) {
+                    await this.referenceImageStore.deleteSnapshotWorkspace(delId).catch(() => {});
+                }
+            }
             this.snapshots = this.snapshots.filter(s => !deleteSet.has(s.id));
             deleteIds.forEach(deleteId => this.selectedSnapshotIds.delete(deleteId));
             if (this.lastSelectedSnapshotId && deleteSet.has(this.lastSelectedSnapshotId)) {
@@ -1617,10 +1699,15 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
         this.popup.style.display = 'flex';
         this.popup.classList.add('show');
         this.isVisible = true;
-        this._updateToolbarState();
-        this._renderGallery();
-        this._updateStorageStatus();
-        this._updateProjectSaveTargetStatus();
+
+        if (this._currentMode === 'references') {
+            await this._renderReferenceManager();
+        } else {
+            this._updateToolbarState();
+            this._renderGallery();
+            this._updateStorageStatus();
+            this._updateProjectSaveTargetStatus();
+        }
         if (!wasVisible) {
             this.eventBus.emit('popup:shown', { name: 'album' });
         }
@@ -1630,6 +1717,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
         if (!this.popup) return;
         const wasVisible = this.isVisible === true;
         
+        this._cleanupRefBlobUrls();
         this._setSelectionMode(false);
         this.selectedSnapshotIds.clear();
         this.lastSelectedSnapshotId = null;
@@ -1650,6 +1738,271 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
         }
     }
     
+    _getReferenceViewer() {
+        return this.referencePreviewViewer || (typeof window !== 'undefined' ? (window.referencePreviewViewer || window.coreEngine?.popupManager?.get?.('referencePreview')) : null);
+    }
+
+    async _linkCurrentReferenceWorkspace(snapshotId) {
+        if (!snapshotId) return;
+        const viewer = this._getReferenceViewer();
+        const currentWsId = viewer?.currentWorkspaceId || DEFAULT_WORKSPACE_ID;
+        const store = this.referenceImageStore || (typeof window !== 'undefined' ? window.referenceImageStore : null) || referenceImageStore;
+        if (store?.setSnapshotWorkspace) {
+            try {
+                await store.setSnapshotWorkspace(snapshotId, currentWsId);
+            } catch (e) {
+                console.warn('[AlbumPopup] Failed to link reference workspace:', e);
+            }
+        }
+    }
+
+    async _syncLinkedReferenceWorkspace(snapshotId) {
+        const viewer = this._getReferenceViewer();
+        if (!viewer?.setWorkspace) return;
+
+        try {
+            const store = this.referenceImageStore || (typeof window !== 'undefined' ? window.referenceImageStore : null) || referenceImageStore;
+            let linkedWsId = null;
+            if (snapshotId && store?.getSnapshotWorkspace) {
+                linkedWsId = await store.getSnapshotWorkspace(snapshotId);
+            }
+            await viewer.setWorkspace(linkedWsId || DEFAULT_WORKSPACE_ID);
+        } catch (e) {
+            console.warn('[AlbumPopup] Failed to sync reference workspace for snapshot:', snapshotId, e);
+        }
+    }
+
+    _cleanupRefBlobUrls() {
+        if (this._refBlobUrls && this._refBlobUrls.length > 0) {
+            this._refBlobUrls.forEach(url => {
+                try {
+                    if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+                        URL.revokeObjectURL(url);
+                    }
+                } catch {}
+            });
+            this._refBlobUrls = [];
+        }
+    }
+
+    async _switchAlbumMode(mode) {
+        if (this._currentMode === mode) return;
+        this._currentMode = mode;
+
+        const snapTab = document.getElementById('albumModeSnapshots');
+        const refTab = document.getElementById('albumModeReferences');
+        const snapContainer = document.getElementById('albumSnapshotContainer');
+        const refSection = document.getElementById('albumReferenceSection');
+
+        if (mode === 'snapshots') {
+            snapTab?.classList.add('active');
+            snapTab?.setAttribute('aria-selected', 'true');
+            refTab?.classList.remove('active');
+            refTab?.setAttribute('aria-selected', 'false');
+
+            if (snapContainer) snapContainer.style.display = 'flex';
+            if (refSection) refSection.style.display = 'none';
+
+            this._cleanupRefBlobUrls();
+            this._updateToolbarState();
+            this._renderGallery();
+            this._updateStorageStatus();
+        } else {
+            refTab?.classList.add('active');
+            refTab?.setAttribute('aria-selected', 'true');
+            snapTab?.classList.remove('active');
+            snapTab?.setAttribute('aria-selected', 'false');
+
+            if (snapContainer) snapContainer.style.display = 'none';
+            if (refSection) refSection.style.display = 'flex';
+
+            const viewer = this._getReferenceViewer();
+            if (viewer?.currentWorkspaceId) {
+                this._managedWorkspaceId = viewer.currentWorkspaceId;
+            }
+            await this._renderReferenceManager();
+        }
+    }
+
+    async _renderReferenceManager() {
+        this._cleanupRefBlobUrls();
+
+        const selectEl = document.getElementById('albumRefWorkspaceSelect');
+        const badgeEl = document.getElementById('albumRefActiveBadge');
+        const statusEl = document.getElementById('albumRefStatus');
+        const galleryEl = document.getElementById('albumRefGallery');
+        if (!galleryEl) return;
+
+        const store = this.referenceImageStore || (typeof window !== 'undefined' ? window.referenceImageStore : null) || referenceImageStore;
+        const viewer = this._getReferenceViewer();
+        const activeViewerWsId = viewer?.currentWorkspaceId || DEFAULT_WORKSPACE_ID;
+
+        // 1. Workspaces取得・プルダウン同期
+        let workspaces = [];
+        try {
+            workspaces = await store.getAllWorkspaces();
+        } catch (e) {
+            console.warn('[AlbumPopup] Failed to load workspaces:', e);
+        }
+        if (!workspaces || workspaces.length === 0) {
+            workspaces = [{ id: DEFAULT_WORKSPACE_ID, name: DEFAULT_WORKSPACE_NAME, isDefault: true }];
+        }
+
+        if (!workspaces.some(w => w.id === this._managedWorkspaceId)) {
+            this._managedWorkspaceId = workspaces[0].id;
+        }
+
+        if (selectEl) {
+            selectEl.innerHTML = '';
+            workspaces.forEach(ws => {
+                const opt = document.createElement('option');
+                opt.value = ws.id;
+                opt.textContent = ws.name;
+                if (ws.id === this._managedWorkspaceId) opt.selected = true;
+                selectEl.appendChild(opt);
+            });
+        }
+
+        // 2. Active Badge
+        const isViewerActive = (this._managedWorkspaceId === activeViewerWsId);
+        if (badgeEl) {
+            badgeEl.style.display = isViewerActive ? 'inline-flex' : 'none';
+        }
+
+        // 3. 参照画像取得と表示
+        let records = [];
+        try {
+            records = await store.getAllReferences(this._managedWorkspaceId);
+        } catch (e) {
+            console.warn('[AlbumPopup] Failed to load references:', e);
+        }
+
+        if (statusEl) {
+            statusEl.textContent = `参照画像: ${records.length}件`;
+        }
+
+        galleryEl.innerHTML = '';
+        if (records.length === 0) {
+            const emptyEl = document.createElement('div');
+            emptyEl.className = 'album-ref-empty';
+            emptyEl.innerHTML = `このWorkspaceには参照画像がありません。<br>Viewerから画像を追加するか、「Viewerで開く」を押してこのWorkspaceで作業してください。`;
+            galleryEl.appendChild(emptyEl);
+            return;
+        }
+
+        records.forEach(record => {
+            const card = document.createElement('div');
+            card.className = 'album-ref-card';
+            card.dataset.id = record.id;
+
+            const thumbBox = document.createElement('div');
+            thumbBox.className = 'album-ref-thumb-container';
+
+            const img = document.createElement('img');
+            const blobUrl = (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function')
+                ? URL.createObjectURL(record.blob)
+                : 'mock-blob-url';
+            this._refBlobUrls.push(blobUrl);
+            img.src = blobUrl;
+            img.alt = record.name || '参照画像';
+            thumbBox.appendChild(img);
+
+            if (record.downscaled) {
+                const downscaledBadge = document.createElement('div');
+                downscaledBadge.className = 'album-ref-downscaled-badge';
+                downscaledBadge.textContent = '縮小済';
+                downscaledBadge.title = '閲覧用に縮小保存されています';
+                thumbBox.appendChild(downscaledBadge);
+            }
+
+            const infoBox = document.createElement('div');
+            infoBox.className = 'album-ref-card-info';
+
+            const titleEl = document.createElement('div');
+            titleEl.className = 'album-ref-card-title';
+            titleEl.textContent = record.name || '無題';
+            titleEl.title = record.name || '無題';
+
+            const metaEl = document.createElement('div');
+            metaEl.className = 'album-ref-card-meta';
+            metaEl.textContent = (record.width && record.height) ? `${record.width}×${record.height}` : '';
+
+            infoBox.appendChild(titleEl);
+            infoBox.appendChild(metaEl);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'album-ref-delete-btn';
+            deleteBtn.title = '参照画像を削除';
+            deleteBtn.innerHTML = UI_ICONS.trash;
+            deleteBtn.onclick = async (e) => {
+                e.stopPropagation();
+                await this._deleteReferenceImage(record.id, record.name);
+            };
+
+            card.appendChild(thumbBox);
+            card.appendChild(infoBox);
+            card.appendChild(deleteBtn);
+
+            galleryEl.appendChild(card);
+        });
+    }
+
+    async _createNewWorkspace() {
+        const promptFn = (typeof window !== 'undefined' && typeof window.prompt === 'function') ? window.prompt : null;
+        const name = promptFn ? promptFn('新規Reference Workspace名を入力してください:') : '新規Workspace';
+        if (!name || !name.trim()) return;
+
+        const store = this.referenceImageStore || (typeof window !== 'undefined' ? window.referenceImageStore : null) || referenceImageStore;
+        try {
+            const ws = await store.saveWorkspace({ name: name.trim() });
+            if (ws?.id) {
+                this._managedWorkspaceId = ws.id;
+                await this._renderReferenceManager();
+            }
+        } catch (e) {
+            console.error('[AlbumPopup] Failed to create workspace:', e);
+            if (typeof alert === 'function') alert('Workspaceの作成に失敗しました。');
+        }
+    }
+
+    async _applyWorkspaceToViewer() {
+        const viewer = this._getReferenceViewer();
+        if (!viewer) {
+            if (typeof alert === 'function') alert('Reference Viewerが利用できません。');
+            return;
+        }
+        try {
+            await viewer.setWorkspace(this._managedWorkspaceId);
+            if (typeof viewer.show === 'function' && !viewer.isVisible) {
+                viewer.show();
+            }
+            await this._renderReferenceManager();
+        } catch (e) {
+            console.error('[AlbumPopup] Failed to open workspace in viewer:', e);
+            if (typeof alert === 'function') alert('ViewerのWorkspace切り替えに失敗しました。');
+        }
+    }
+
+    async _deleteReferenceImage(recordId, recordName) {
+        const promptMsg = recordName ? `参照画像「${recordName}」を削除しますか？` : 'この参照画像を削除しますか？';
+        const confirmFn = (typeof window !== 'undefined' && typeof window.confirm === 'function') ? window.confirm : () => true;
+        if (!confirmFn(promptMsg)) return;
+
+        const store = this.referenceImageStore || (typeof window !== 'undefined' ? window.referenceImageStore : null) || referenceImageStore;
+        try {
+            const viewer = this._getReferenceViewer();
+            if (viewer?.currentWorkspaceId === this._managedWorkspaceId && viewer.tabs?.some?.(t => t.id === recordId)) {
+                viewer.closeTab(recordId);
+            } else {
+                await store.deleteReference(recordId);
+            }
+            await this._renderReferenceManager();
+        } catch (e) {
+            console.error('[AlbumPopup] Failed to delete reference image:', e);
+            if (typeof alert === 'function') alert('参照画像の削除に失敗しました。');
+        }
+    }
+
     isReady() {
         return !!this.popup;
     }

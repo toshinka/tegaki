@@ -3776,6 +3776,265 @@ canvas {
     height: 15px;
 }
 
+/* ===== アルバム モード切り替えタブ ===== */
+.album-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    padding-right: 28px; /* close button space */
+}
+
+.album-mode-tabs {
+    display: flex;
+    gap: 4px;
+    background: rgba(207, 156, 151, 0.25);
+    padding: 3px;
+    border-radius: 6px;
+    border: 1px solid rgba(207, 156, 151, 0.4);
+}
+
+.album-mode-tab {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--futaba-maroon);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.album-mode-tab:hover {
+    background: rgba(255, 255, 238, 0.6);
+}
+
+.album-mode-tab.active {
+    background: var(--futaba-background, #ffffee);
+    color: var(--futaba-maroon);
+    box-shadow: 0 1px 4px rgba(128, 0, 0, 0.15);
+}
+
+.album-snapshot-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+/* ===== 参照画像管理セクション ===== */
+.album-reference-section {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.album-ref-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0 12px 0;
+    border-bottom: 2px solid rgba(207, 156, 151, 0.4);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.album-ref-toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.album-ref-toolbar-right {
+    margin-left: auto;
+}
+
+.album-ref-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--futaba-maroon);
+}
+
+.album-ref-select {
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(207, 156, 151, 0.7);
+    background: var(--futaba-background, #ffffee);
+    color: var(--futaba-maroon);
+    font-size: 12px;
+    font-weight: 600;
+    outline: none;
+    cursor: pointer;
+    max-width: 200px;
+}
+
+.album-ref-action-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 4px;
+    border: 1px solid rgba(207, 156, 151, 0.7);
+    background: var(--futaba-background, #ffffee);
+    color: var(--futaba-maroon);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.album-ref-action-btn:hover {
+    background: var(--futaba-maroon);
+    color: var(--text-inverse, #ffffff);
+}
+
+.album-ref-active-badge {
+    font-size: 11px;
+    font-weight: 700;
+    color: #2e7d32;
+    background: rgba(46, 125, 50, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(46, 125, 50, 0.3);
+}
+
+.album-ref-status {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--futaba-maroon);
+    padding: 4px 10px;
+    border-bottom: 1px solid rgba(207, 156, 151, 0.45);
+    flex-shrink: 0;
+}
+
+.album-ref-gallery {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 140px);
+    gap: 12px;
+    align-content: start;
+    justify-content: start;
+}
+
+.album-ref-empty {
+    grid-column: 1 / -1;
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--futaba-muted, #8a706b);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.album-ref-card {
+    background: rgba(255, 255, 238, 0.5);
+    border: 1px solid rgba(207, 156, 151, 0.3);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(128, 0, 0, 0.05);
+    width: 140px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+.album-ref-card:hover {
+    background: rgba(255, 255, 238, 0.85);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(128, 0, 0, 0.12);
+    border-color: var(--futaba-maroon);
+}
+
+.album-ref-thumb-container {
+    width: 100%;
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    position: relative;
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.album-ref-thumb-container img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 2px;
+}
+
+.album-ref-downscaled-badge {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    background: var(--futaba-maroon);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.album-ref-card-info {
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: rgba(255, 255, 238, 0.6);
+    border-top: 1px solid rgba(207, 156, 151, 0.2);
+    font-size: 11px;
+}
+
+.album-ref-card-title {
+    font-weight: 700;
+    color: var(--futaba-maroon);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.album-ref-card-meta {
+    font-size: 10px;
+    color: var(--futaba-muted, #8a706b);
+}
+
+.album-ref-delete-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    border: 1px solid rgba(207, 156, 151, 0.6);
+    background: rgba(255, 255, 238, 0.85);
+    color: var(--futaba-maroon);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: all 0.15s ease;
+    padding: 0;
+}
+
+.album-ref-delete-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+.album-ref-card:hover .album-ref-delete-btn {
+    opacity: 1;
+}
+
+.album-ref-delete-btn:hover {
+    background: #d00000;
+    color: #ffffff;
+    border-color: #d00000;
+}
+
+
 .project-save-toast,
 .tegaki-feedback-toast {
     position: fixed;

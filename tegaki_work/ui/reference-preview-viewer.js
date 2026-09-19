@@ -14,7 +14,7 @@ import { TegakiEventBus } from '../system/event-bus.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { showFeedbackToast } from './feedback-toast.js';
 import { UI_ICONS } from './ui-icons.js';
-import { referenceImageStore, ReferenceImageStore } from '../system/reference-image-store.js';
+import { referenceImageStore, ReferenceImageStore, DEFAULT_WORKSPACE_ID, DEFAULT_WORKSPACE_NAME } from '../system/reference-image-store.js';
 
 export const REFERENCE_PROXY_BUDGET = Object.freeze({
     maxEdge: 2048,
@@ -149,6 +149,15 @@ export class ReferencePreviewViewer {
 
         this._deletedTabIds = new Set();
         this._pendingSaves = new Map();
+        this.currentWorkspaceId = dependencies.workspaceId || DEFAULT_WORKSPACE_ID;
+        this._workspaceLoaded = true;
+
+        if (typeof window !== 'undefined') {
+            window.ReferencePreviewViewer = ReferencePreviewViewer;
+            if (!window.referencePreviewViewer) {
+                window.referencePreviewViewer = this;
+            }
+        }
 
         this.tabs = [
             {
@@ -185,7 +194,7 @@ export class ReferencePreviewViewer {
         this._setupEventListeners();
         this._bindArtworkEvents();
 
-        this._restorationPromise = this._restoreSavedReferences();
+        this._restorationPromise = this._restoreSavedReferences(this.currentWorkspaceId);
     }
 
     /**
@@ -205,12 +214,59 @@ export class ReferencePreviewViewer {
     }
 
     /**
-     * ブラウザ内保存領域から参照画像を非同期復元
+     * 表示対象のWorkspaceを切り替え、対象の参照画像を再読み込み
+     * @param {string} workspaceId
+     * @returns {Promise<boolean>}
      */
-    async _restoreSavedReferences() {
+    async setWorkspace(workspaceId) {
+        const targetWorkspaceId = String(workspaceId || DEFAULT_WORKSPACE_ID);
+        // 切替前の進行中保存タスクの完了を待機して混入や消失を防ぐ
+        await this.waitForPendingSaves();
+
+        if (this.currentWorkspaceId === targetWorkspaceId && this._workspaceLoaded) {
+            return true;
+        }
+
+        this.currentWorkspaceId = targetWorkspaceId;
+        this._workspaceLoaded = true;
+
+        // プレビュータブ（index 0）以外の既存参照タブをクリーンアップ
+        const previewTab = this.tabs.find(t => t.id === 'preview') || this.tabs[0];
+        for (let i = 1; i < this.tabs.length; i++) {
+            const t = this.tabs[i];
+            if (t.canvas) {
+                t.canvas.width = 1;
+                t.canvas.height = 1;
+                t.canvas = null;
+            }
+        }
+        this.tabs = [previewTab];
+
+        if (this.activeTabId !== 'preview') {
+            this.activeTabId = 'preview';
+        }
+
+        this._restorationPromise = this._restoreSavedReferences(this.currentWorkspaceId);
+        await this._restorationPromise;
+
+        if (this.popup) {
+            this._renderTabsHeader();
+            this._renderSourceRail();
+            this._renderActiveTabContent();
+        }
+
+        return true;
+    }
+
+    /**
+     * ブラウザ内保存領域から参照画像を非同期復元
+     * @param {string|null} [workspaceId]
+     */
+    async _restoreSavedReferences(workspaceId = null) {
         if (!this.imageStore) return [];
+        const targetWorkspaceId = workspaceId || this.currentWorkspaceId || DEFAULT_WORKSPACE_ID;
         try {
-            const records = await this.imageStore.getAllReferences();
+            const records = await this.imageStore.getAllReferences(targetWorkspaceId);
             if (!Array.isArray(records) || records.length === 0) return [];
 
             const restoredTabs = [];
@@ -363,6 +419,9 @@ export class ReferencePreviewViewer {
             return false;
         }
 
+        // 保存処理開始時のWorkspace IDを固定（切替後の別Workspaceへの誤保存を防止）
+        const targetWorkspaceId = this.currentWorkspaceId || DEFAULT_WORKSPACE_ID;
+
         const saveTask = (async () => {
             try {
                 let proxyBlob = null;
@@ -389,6 +448,7 @@ export class ReferencePreviewViewer {
 
                 const success = await this.imageStore.saveReference({
                     id: tab.id,
+                    workspaceId: targetWorkspaceId,
                     name: tab.name,
                     order,
                     origWidth: tab.origWidth,

@@ -30,6 +30,12 @@
  * T106 — IndexedDB store failure does not crash Viewer or discard session image
  * T107 — Concurrency: delete during save & add during restore preserve user intent
  * T108 — Card A Undo/Redo routing and input isolation remain 100% functional with restored tabs
+ * T109 — Legacy references without workspaceId default to 'default' workspace
+ * T110 — Workspace isolation (images in Workspace A do not leak into Workspace B)
+ * T111 — Workspace switching (A -> B -> A restores respective image tabs)
+ * T112 — In-flight save during switch locks to origin workspace without cross-contamination
+ * T113 — Dynamic Preview tab survives workspace switch
+ * T114 — Viewer keyboard Undo/Redo unaffected by workspace operations
  * ============================================================================
  */
 
@@ -282,6 +288,7 @@ class MockIDBObjectStore {
         this._map = map;
         this.keyPath = keyPath;
         this.tx = tx;
+        this.indexNames = { contains: () => false };
     }
     createIndex() {}
     put(value) {
@@ -402,6 +409,9 @@ class MockIDBDatabase {
         return new MockIDBObjectStore(this, name, this._stores.get(name), options.keyPath, null);
     }
     _getStore(name, tx) {
+        if (!this._stores.has(name)) {
+            this._stores.set(name, new Map());
+        }
         return new MockIDBObjectStore(this, name, this._stores.get(name), (this._storeMeta.get(name) || {}).keyPath, tx);
     }
     transaction(storeNames, mode = 'readonly') {
@@ -417,13 +427,19 @@ globalThis.indexedDB = {
         queueMicrotask(() => {
             let db = mockDatabases.get(name);
             let isNew = false;
+            let needsUpgrade = false;
             if (!db) {
                 db = new MockIDBDatabase(name, version);
                 mockDatabases.set(name, db);
                 isNew = true;
+                needsUpgrade = true;
+            } else if (db.version < version) {
+                db.version = version;
+                needsUpgrade = true;
             }
             req.result = db;
-            if (isNew && req.onupgradeneeded) req.onupgradeneeded({ target: req });
+            req.transaction = new MockIDBTransaction(db, Array.from(db._stores.keys()), 'versionchange');
+            if (needsUpgrade && req.onupgradeneeded) req.onupgradeneeded({ target: req });
             if (req.onsuccess) req.onsuccess({ target: req });
         });
         return req;
@@ -450,8 +466,14 @@ const {
 
 const {
     ReferenceImageStore,
-    referenceImageStore
+    referenceImageStore,
+    DEFAULT_WORKSPACE_ID,
+    DEFAULT_WORKSPACE_NAME
 } = await import('../system/reference-image-store.js');
+
+const {
+    AlbumPopup
+} = await import('../ui/album-popup.js');
 
 console.log('--- Starting Reference / Preview Viewer UX Polish 01 Verification (T1 - T12) ---');
 
@@ -3927,4 +3949,552 @@ console.log('--- Starting Reference / Preview Viewer UX Polish 01 Verification (
     console.log('T108: Card A Undo/Redo routing and input isolation remain 100% functional with restored tabs PASS');
 }
 
-console.log('\nverify-reference-preview-viewer: ALL 108 SCENARIOS (T1 - T108) PASS');
+// T109 — Legacy references without workspaceId default to 'default' workspace
+{
+    await referenceImageStore.clearAll();
+
+    // Directly put a record simulating legacy format (workspaceId omitted/undefined)
+    const tx = referenceImageStore.db.transaction([referenceImageStore.storeName], 'readwrite');
+    const store = tx.objectStore(referenceImageStore.storeName);
+    const legacyBlob = new Blob(['legacy-data']);
+    legacyBlob.mockWidth = 320;
+    legacyBlob.mockHeight = 240;
+    store.put({
+        id: 'legacy_ref_1',
+        name: 'legacy_study.png',
+        order: 1,
+        width: 320,
+        height: 240,
+        origWidth: 320,
+        origHeight: 240,
+        downscaled: false,
+        blob: legacyBlob,
+        mimeType: 'image/png'
+    });
+    await new Promise(resolve => { tx.oncomplete = resolve; });
+
+    // 1. getAllReferences('default') retrieves legacy record
+    const defaultRefs = await referenceImageStore.getAllReferences(DEFAULT_WORKSPACE_ID);
+    assert.equal(defaultRefs.length, 1, 'T109: Legacy record retrieved in default workspace');
+    assert.equal(defaultRefs[0].id, 'legacy_ref_1');
+
+    // 2. Viewer initialized in default workspace restores legacy record
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} }
+    });
+    await viewer.waitForRestoration();
+    assert.equal(viewer.tabs.length, 2, 'T109: Viewer has preview + legacy tab');
+    assert.equal(viewer.tabs[1].id, 'legacy_ref_1');
+    assert.equal(viewer.tabs[1].name, 'legacy_study.png');
+
+    console.log('T109: Legacy references without workspaceId default to default workspace PASS');
+}
+
+// T110 — Workspace isolation (images in Workspace A do not leak into Workspace B)
+{
+    await referenceImageStore.clearAll();
+
+    // 1. Create viewer in workspace_alpha
+    const viewerA = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} },
+        workspaceId: 'workspace_alpha'
+    });
+    await viewerA.waitForRestoration();
+    assert.equal(viewerA.currentWorkspaceId, 'workspace_alpha');
+
+    const blobA = new Blob(['alpha-data']);
+    blobA.mockWidth = 400;
+    blobA.mockHeight = 300;
+    await viewerA.addReferenceFromBlob(blobA, 'alpha_ref.png');
+    await viewerA.waitForPendingSaves();
+    assert.equal(viewerA.tabs.length, 2);
+
+    // 2. Switch viewer to workspace_beta
+    await viewerA.setWorkspace('workspace_beta');
+    assert.equal(viewerA.currentWorkspaceId, 'workspace_beta');
+    assert.equal(viewerA.tabs.length, 1, 'T110: Beta workspace initially has only preview tab');
+
+    // 3. Add image in workspace_beta
+    const blobB = new Blob(['beta-data']);
+    blobB.mockWidth = 500;
+    blobB.mockHeight = 500;
+    await viewerA.addReferenceFromBlob(blobB, 'beta_ref.png');
+    await viewerA.waitForPendingSaves();
+    assert.equal(viewerA.tabs.length, 2);
+    assert.equal(viewerA.tabs[1].name, 'beta_ref.png');
+
+    // 4. Verify store data isolation
+    const refsA = await referenceImageStore.getAllReferences('workspace_alpha');
+    const refsB = await referenceImageStore.getAllReferences('workspace_beta');
+    assert.equal(refsA.length, 1, 'T110: Workspace Alpha has 1 reference');
+    assert.equal(refsA[0].name, 'alpha_ref.png');
+    assert.equal(refsB.length, 1, 'T110: Workspace Beta has 1 reference');
+    assert.equal(refsB[0].name, 'beta_ref.png');
+
+    console.log('T110: Workspace isolation PASS');
+}
+
+// T111 — Workspace switching (A -> B -> A restores respective image tabs)
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} },
+        workspaceId: 'workspace_alpha'
+    });
+    await viewer.waitForRestoration();
+    assert.equal(viewer.tabs.length, 2);
+    assert.equal(viewer.tabs[1].name, 'alpha_ref.png');
+
+    // Switch A -> B
+    await viewer.setWorkspace('workspace_beta');
+    assert.equal(viewer.tabs.length, 2);
+    assert.equal(viewer.tabs[1].name, 'beta_ref.png');
+
+    // Switch B -> A
+    await viewer.setWorkspace('workspace_alpha');
+    assert.equal(viewer.tabs.length, 2);
+    assert.equal(viewer.tabs[1].name, 'alpha_ref.png');
+
+    console.log('T111: Workspace switching PASS');
+}
+
+// T112 — In-flight save during switch locks to origin workspace without cross-contamination
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} },
+        workspaceId: 'workspace_alpha'
+    });
+    await viewer.waitForRestoration();
+
+    const blobInflight = new Blob(['inflight-data']);
+    blobInflight.mockWidth = 250;
+    blobInflight.mockHeight = 250;
+
+    // Start adding reference in workspace_alpha, then immediately trigger switch to workspace_beta
+    const addPromise = viewer.addReferenceFromBlob(blobInflight, 'inflight_alpha.png');
+    const switchPromise = viewer.setWorkspace('workspace_beta');
+
+    await Promise.all([addPromise, switchPromise]);
+    await viewer.waitForPendingSaves();
+
+    // In workspace_beta: only beta_ref.png should be present
+    assert.equal(viewer.currentWorkspaceId, 'workspace_beta');
+    assert.equal(viewer.tabs.length, 2);
+    assert.equal(viewer.tabs[1].name, 'beta_ref.png');
+
+    // Check store for workspace_alpha: must contain alpha_ref.png AND inflight_alpha.png
+    const refsA = await referenceImageStore.getAllReferences('workspace_alpha');
+    assert.equal(refsA.length, 2, 'T112: Workspace Alpha has both items');
+    assert.ok(refsA.some(r => r.name === 'inflight_alpha.png'), 'T112: Inflight item saved to Alpha');
+
+    // Check store for workspace_beta: must NOT contain inflight_alpha.png
+    const refsB = await referenceImageStore.getAllReferences('workspace_beta');
+    assert.equal(refsB.length, 1, 'T112: Workspace Beta has only its own item');
+    assert.equal(refsB[0].name, 'beta_ref.png');
+
+    console.log('T112: In-flight save during switch locks to origin workspace PASS');
+}
+
+// T113 — Dynamic Preview tab survives workspace switch
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} },
+        workspaceId: 'workspace_alpha'
+    });
+    await viewer.waitForRestoration();
+    viewer.activeTabId = 'preview';
+
+    assert.equal(viewer.tabs[0].id, 'preview');
+    assert.equal(viewer.tabs[0].type, 'preview');
+
+    await viewer.setWorkspace('workspace_beta');
+    assert.equal(viewer.tabs[0].id, 'preview', 'T113: Preview tab remains at index 0 after switch');
+    assert.equal(viewer.tabs[0].type, 'preview');
+
+    // Confirm store has no preview tab
+    const allRecords = await referenceImageStore.getAllReferences();
+    assert.ok(!allRecords.some(r => r.id === 'preview' || r.type === 'preview'), 'T113: Preview tab not saved to store');
+
+    console.log('T113: Dynamic Preview tab survives workspace switch PASS');
+}
+
+// T114 — Viewer keyboard Undo/Redo unaffected by workspace operations
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} },
+        workspaceId: 'workspace_alpha'
+    });
+    await viewer.waitForRestoration();
+    viewer.isVisible = true;
+
+    const viewerPopup = document.createElement('div');
+    viewerPopup.className = 'popup-panel reference-preview-viewer';
+    viewerPopup.classList.add('reference-preview-viewer');
+    viewer.popup = viewerPopup;
+    viewerPopup.focus();
+
+    let undoRan = false;
+    let redoRan = false;
+    globalThis.window.History = {
+        canUndo: () => true,
+        undo: () => { undoRan = true; },
+        canRedo: () => true,
+        redo: () => { redoRan = true; }
+    };
+
+    // Trigger Undo/Redo in custom workspace
+    viewerPopup.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, cancelable: true }));
+    assert.equal(undoRan, true, 'T114: Undo routed from custom workspace');
+
+    viewerPopup.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyY', ctrlKey: true, cancelable: true }));
+    assert.equal(redoRan, true, 'T114: Redo routed from custom workspace');
+
+    console.log('T114: Viewer keyboard Undo/Redo unaffected by workspace operations PASS');
+}
+
+// T115 — Album mode toggle & workspace listing
+{
+    const album = Object.create(AlbumPopup.prototype);
+    album.referenceImageStore = referenceImageStore;
+    album._currentMode = 'snapshots';
+    album._managedWorkspaceId = DEFAULT_WORKSPACE_ID;
+    album._refBlobUrls = [];
+    album.selectedSnapshotIds = new Set();
+    album.snapshots = [];
+
+    const mockSnapTab = { classList: { add: () => {}, remove: () => {} }, setAttribute: () => {} };
+    const mockRefTab = { classList: { add: () => {}, remove: () => {} }, setAttribute: () => {} };
+    const mockSnapContainer = { style: {} };
+    const mockRefSection = { style: {} };
+    const mockSelectEl = { innerHTML: '', appendChild: (opt) => {} };
+    const mockBadgeEl = { style: {} };
+    const mockStatusEl = { textContent: '' };
+    const mockGalleryEl = { innerHTML: '', appendChild: () => {} };
+
+    globalThis.document.getElementById = (id) => {
+        if (id === 'albumModeSnapshots') return mockSnapTab;
+        if (id === 'albumModeReferences') return mockRefTab;
+        if (id === 'albumSnapshotContainer') return mockSnapContainer;
+        if (id === 'albumReferenceSection') return mockRefSection;
+        if (id === 'albumRefWorkspaceSelect') return mockSelectEl;
+        if (id === 'albumRefActiveBadge') return mockBadgeEl;
+        if (id === 'albumRefStatus') return mockStatusEl;
+        if (id === 'albumRefGallery') return mockGalleryEl;
+        return null;
+    };
+
+    assert.equal(album._currentMode, 'snapshots');
+    await album._switchAlbumMode('references');
+    assert.equal(album._currentMode, 'references', 'T115: Switched to references mode');
+    assert.equal(mockSnapContainer.style.display, 'none');
+    assert.equal(mockRefSection.style.display, 'flex');
+
+    await album._renderReferenceManager();
+    const workspaces = await referenceImageStore.getAllWorkspaces();
+    assert.ok(workspaces.length >= 1, 'T115: Workspaces loaded');
+    assert.ok(workspaces.some(w => w.id === DEFAULT_WORKSPACE_ID), 'T115: Default workspace included');
+
+    await album._switchAlbumMode('snapshots');
+    assert.equal(album._currentMode, 'snapshots', 'T115: Switched back to snapshots mode');
+    assert.equal(mockSnapContainer.style.display, 'flex');
+    assert.equal(mockRefSection.style.display, 'none');
+
+    console.log('T115: Album mode toggle & workspace listing PASS');
+}
+
+// T116 — Album reference management & deletion across workspaces
+{
+    // Setup references in workspace_alpha and workspace_beta
+    const blobA = new Blob(['alpha-data']);
+    await referenceImageStore.saveReference({
+        id: 'ref-album-a1',
+        name: 'alpha1.png',
+        blob: blobA,
+        workspaceId: 'workspace_alpha',
+        width: 100,
+        height: 100,
+        downscaled: false,
+        timestamp: Date.now()
+    });
+
+    const blobB = new Blob(['beta-data']);
+    await referenceImageStore.saveReference({
+        id: 'ref-album-b1',
+        name: 'beta1.png',
+        blob: blobB,
+        workspaceId: 'workspace_beta',
+        width: 200,
+        height: 200,
+        downscaled: true,
+        timestamp: Date.now()
+    });
+
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} },
+        workspaceId: 'workspace_alpha'
+    });
+    await viewer.waitForRestoration();
+
+    const album = Object.create(AlbumPopup.prototype);
+    album.referenceImageStore = referenceImageStore;
+    album.referencePreviewViewer = viewer;
+    album._currentMode = 'references';
+    album._managedWorkspaceId = 'workspace_beta'; // Managing inactive workspace Beta
+    album._refBlobUrls = [];
+
+    // Delete ref-album-b1 in inactive workspace
+    globalThis.window.confirm = () => true;
+    await album._deleteReferenceImage('ref-album-b1', 'beta1.png');
+
+    const betaRefsAfter = await referenceImageStore.getAllReferences('workspace_beta');
+    assert.ok(!betaRefsAfter.some(r => r.id === 'ref-album-b1'), 'T116: Reference deleted from Beta in store');
+
+    // Workspace Alpha references and viewer tabs remain intact
+    const alphaRefsAfter = await referenceImageStore.getAllReferences('workspace_alpha');
+    assert.ok(alphaRefsAfter.some(r => r.id === 'ref-album-a1'), 'T116: Alpha references untouched');
+    assert.ok(viewer.tabs.some(t => t.id === 'ref-album-a1'), 'T116: Viewer tabs intact for Alpha');
+
+    // Now delete ref-album-a1 while active in viewer
+    album._managedWorkspaceId = 'workspace_alpha';
+    await album._deleteReferenceImage('ref-album-a1', 'alpha1.png');
+
+    assert.ok(!viewer.tabs.some(t => t.id === 'ref-album-a1'), 'T116: Tab closed in active viewer');
+    const alphaRefsAfter2 = await referenceImageStore.getAllReferences('workspace_alpha');
+    assert.ok(!alphaRefsAfter2.some(r => r.id === 'ref-album-a1'), 'T116: Reference deleted from store');
+
+    console.log('T116: Album reference management & deletion across workspaces PASS');
+}
+
+// T117 — Object URL cleanup / memory safety
+{
+    const album = Object.create(AlbumPopup.prototype);
+    album._refBlobUrls = ['blob:http://localhost/test1', 'blob:http://localhost/test2'];
+    album.selectedSnapshotIds = new Set();
+    album.popup = { classList: { remove: () => {} }, style: {} };
+
+    let revokedCount = 0;
+    globalThis.URL.revokeObjectURL = (url) => {
+        revokedCount++;
+    };
+
+    album._cleanupRefBlobUrls();
+    assert.equal(revokedCount, 2, 'T117: Both blob URLs revoked');
+    assert.equal(album._refBlobUrls.length, 0, 'T117: _refBlobUrls array cleared');
+
+    album._refBlobUrls = ['blob:http://localhost/test3'];
+    album.hide();
+    assert.equal(revokedCount, 3, 'T117: hide() revokes blob URLs');
+    assert.equal(album._refBlobUrls.length, 0);
+
+    console.log('T117: Object URL cleanup / memory safety PASS');
+}
+
+// T118 — "Viewerで開く" (open in viewer)
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} },
+        workspaceId: 'workspace_alpha'
+    });
+    await viewer.waitForRestoration();
+    viewer.isVisible = false;
+
+    const album = Object.create(AlbumPopup.prototype);
+    album.referenceImageStore = referenceImageStore;
+    album.referencePreviewViewer = viewer;
+    album._managedWorkspaceId = 'workspace_custom_target';
+    album._refBlobUrls = [];
+
+    await album._applyWorkspaceToViewer();
+    assert.equal(viewer.currentWorkspaceId, 'workspace_custom_target', 'T118: Viewer workspace changed');
+    assert.equal(viewer.isVisible, true, 'T118: Viewer shown');
+
+    console.log('T118: Viewer open from Album PASS');
+}
+
+// T119 — Album save links snapshot to current Reference Workspace
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} },
+        workspaceId: 'workspace_work_01'
+    });
+    await viewer.waitForRestoration();
+
+    const album = Object.create(AlbumPopup.prototype);
+    album.referenceImageStore = referenceImageStore;
+    album.referencePreviewViewer = viewer;
+
+    const snapshotId = 987654321;
+    await album._linkCurrentReferenceWorkspace(snapshotId);
+
+    const linkedWsId = await referenceImageStore.getSnapshotWorkspace(snapshotId);
+    assert.equal(linkedWsId, 'workspace_work_01', 'T119: Snapshot ID linked to active workspace');
+
+    console.log('T119: Album save links snapshot to current Reference Workspace PASS');
+}
+
+// T120 — Album restore switches Reference Viewer to linked Workspace
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} },
+        workspaceId: 'workspace_other'
+    });
+    await viewer.waitForRestoration();
+
+    const album = Object.create(AlbumPopup.prototype);
+    album.referenceImageStore = referenceImageStore;
+    album.referencePreviewViewer = viewer;
+    album.hide = () => {};
+
+    // Restore snapshot linked to workspace_work_01
+    let projectLoaded = false;
+    globalThis.window.projectManager = {
+        loadProject: async () => { projectLoaded = true; }
+    };
+
+    const snapshot = {
+        id: 987654321,
+        timestamp: Date.now(),
+        projectData: { app: 'tegaki', version: 1 }
+    };
+
+    await album._loadSnapshot(snapshot);
+    assert.equal(projectLoaded, true);
+    assert.equal(viewer.currentWorkspaceId, 'workspace_work_01', 'T120: Viewer switched to linked workspace');
+
+    // Restore unlinked / legacy snapshot falls back to DEFAULT_WORKSPACE_ID
+    const legacySnapshot = {
+        id: 1122334455,
+        timestamp: Date.now(),
+        projectData: { app: 'tegaki', version: 1 }
+    };
+    await album._loadSnapshot(legacySnapshot);
+    assert.equal(viewer.currentWorkspaceId, DEFAULT_WORKSPACE_ID, 'T120: Legacy snapshot restores default workspace');
+
+    console.log('T120: Album restore switches Reference Viewer to linked Workspace PASS');
+}
+
+// T121 — Failed/cancelled project load leaves Viewer workspace unchanged
+{
+    const viewer = new ReferencePreviewViewer({
+        app: {},
+        layerSystem: { currentFrameContainer: {} },
+        eventBus: { on: () => {}, emit: () => {} },
+        workspaceId: 'workspace_stable'
+    });
+    await viewer.waitForRestoration();
+
+    const album = Object.create(AlbumPopup.prototype);
+    album.referenceImageStore = referenceImageStore;
+    album.referencePreviewViewer = viewer;
+    album.hide = () => {};
+
+    // Link snapshot to a different workspace
+    await referenceImageStore.setSnapshotWorkspace(888888, 'workspace_fail_target');
+
+    // Simulate load failure
+    globalThis.window.projectManager = {
+        loadProject: async () => { throw new Error('Corrupt project data'); }
+    };
+
+    const snapshot = {
+        id: 888888,
+        timestamp: Date.now(),
+        projectData: { app: 'tegaki', version: 1 }
+    };
+
+    let caughtError = false;
+    try {
+        await album._loadSnapshot(snapshot);
+    } catch {
+        caughtError = true;
+    }
+
+    assert.equal(viewer.currentWorkspaceId, 'workspace_stable', 'T121: Viewer workspace remains unchanged on failed load');
+
+    console.log('T121: Failed/cancelled load preserves Viewer workspace PASS');
+}
+
+// T122 — Album snapshot deletion retains reference images & workspaces
+{
+    const wsId = 'workspace_persisted';
+    await referenceImageStore.saveWorkspace({ id: wsId, name: 'Persisted Workspace' });
+    await referenceImageStore.saveReference({
+        id: 'ref-keep-1',
+        name: 'keep.png',
+        blob: new Blob(['keep-data']),
+        workspaceId: wsId,
+        width: 100,
+        height: 100,
+        timestamp: Date.now()
+    });
+
+    const snapId = 777777;
+    await referenceImageStore.setSnapshotWorkspace(snapId, wsId);
+
+    // Delete snapshot workspace link
+    await referenceImageStore.deleteSnapshotWorkspace(snapId);
+
+    // Link is gone
+    const linkAfter = await referenceImageStore.getSnapshotWorkspace(snapId);
+    assert.equal(linkAfter, null, 'T122: Snapshot link removed');
+
+    // But reference images and workspace remain intact
+    const refs = await referenceImageStore.getAllReferences(wsId);
+    assert.equal(refs.length, 1, 'T122: Reference images preserved');
+    assert.equal(refs[0].id, 'ref-keep-1');
+
+    const ws = await referenceImageStore.getWorkspace(wsId);
+    assert.ok(ws, 'T122: Workspace preserved');
+    assert.equal(ws.name, 'Persisted Workspace');
+
+    console.log('T122: Album snapshot deletion retains reference images & workspaces PASS');
+}
+
+// T123 — Album export / import cleanliness
+{
+    const album = Object.create(AlbumPopup.prototype);
+    const exportData = {
+        app: 'tegaki-album',
+        version: 1,
+        exportedAt: Date.now(),
+        count: 1,
+        snapshots: [
+            {
+                id: 987654321,
+                timestamp: Date.now(),
+                order: 0,
+                thumbnail: 'data:image/png;base64,mock',
+                projectData: { app: 'tegaki', version: 1, layers: [] }
+            }
+        ]
+    };
+
+    const html = album._createAlbumHTML(exportData);
+    assert.ok(html.includes('tegaki-album-data'), 'T123: Export contains tegaki-album-data script');
+    assert.ok(!html.includes('workspaceId'), 'T123: Export contains no workspaceId');
+    assert.ok(!html.includes('snapshot_workspaces'), 'T123: Export contains no snapshot_workspaces table');
+    assert.ok(!html.includes('blob:'), 'T123: Export contains no blob URLs');
+
+    console.log('T123: Album export / import cleanliness PASS');
+}
+
+console.log('\nverify-reference-preview-viewer: ALL 123 SCENARIOS (T1 - T123) PASS');
