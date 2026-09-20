@@ -14,9 +14,12 @@ export class RightWorkspaceFrame {
         this.panel = document.getElementById('layer-transform-panel');
         this.getTarget = getTarget;
         this.layerSystem = layerSystem;
+        this.statusPanel = document.querySelector('.status-panel');
+        this.statusAnchor = null;
         if (!this.root || !this.drawing || !this.host || !this.panel) return;
 
         this.root.classList.add('right-workspace-frame');
+        this._mountStatusPanel();
         this.host.setAttribute('aria-label', 'Transform 作業面');
         this.title = document.createElement('div');
         this.title.className = 'right-workspace-target';
@@ -57,6 +60,28 @@ export class RightWorkspaceFrame {
         this.resizeObserver.observe(this.drawing);
         this.measure();
         this.sync();
+    }
+
+    _mountStatusPanel() {
+        if (!this.statusPanel) return;
+        if (this.statusPanel.parentElement !== this.root) {
+            this.statusAnchor = document.createComment('right-workspace-status-anchor');
+            this.statusPanel.parentNode?.insertBefore(this.statusAnchor, this.statusPanel);
+            this.root.appendChild(this.statusPanel);
+        }
+        this.statusPanel.classList.add('right-workspace-status');
+        document.documentElement.classList.add('right-workspace-status-active');
+    }
+
+    _restoreStatusPanel() {
+        if (!this.statusPanel) return;
+        if (this.statusAnchor?.parentNode) {
+            this.statusAnchor.parentNode.insertBefore(this.statusPanel, this.statusAnchor.nextSibling);
+        }
+        this.statusPanel.classList.remove('right-workspace-status');
+        document.documentElement.classList.remove('right-workspace-status-active');
+        this.statusAnchor?.remove();
+        this.statusAnchor = null;
     }
 
     measure() {
@@ -104,6 +129,7 @@ export class RightWorkspaceFrame {
     destroy() {
         this.observer?.disconnect();
         this.resizeObserver?.disconnect();
+        this._restoreStatusPanel();
         // Teardown does not move a live editing DOM or finish its transaction.
     }
 }

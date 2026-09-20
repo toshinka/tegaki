@@ -153,6 +153,7 @@
     --ui-status-gap: 14px;
     --ui-status-bottom: 8px;
     --ui-status-slot-height: 26px;
+    --ui-right-workspace-status-height: 22px;
     --ui-bottom-dock-height: 0px;
     --ui-bottom-dock-left: calc(var(--ui-rail-width) + 8px);
     --ui-right-workspace-inset: 6px;
@@ -180,6 +181,10 @@
 
 :root.animation-table-bottom-dock-active {
     --ui-bottom-dock-height: var(--ui-bottom-dock-open-height, var(--ui-anim-panel-height));
+}
+
+:root.right-workspace-status-active {
+    --ui-status-slot-height: 0px;
 }
 
 body { 
@@ -3305,6 +3310,43 @@ canvas {
     overflow-x: auto;
     text-overflow: clip;
     scrollbar-width: none;
+}
+
+/* The existing Status node is rehosted by RightWorkspaceFrame so the
+   compact Canvas/History readout uses the same width without reserving a
+   second full-width shell row. */
+.status-panel.right-workspace-status {
+    position: static;
+    inset: auto;
+    box-sizing: border-box;
+    grid-area: 2 / 1;
+    width: 100%;
+    height: var(--ui-right-workspace-status-height);
+    min-height: var(--ui-right-workspace-status-height);
+    padding: 0 6px;
+    background: var(--ui-glass-shell-surface);
+    border: 0;
+    border-top: 1px solid var(--ui-glass-shell-border);
+    border-radius: 0 0 var(--ui-radius-panel) var(--ui-radius-panel);
+    gap: 6px;
+    font-size: 9px;
+    justify-content: space-between;
+    pointer-events: none;
+    z-index: auto;
+}
+.status-panel.right-workspace-status .status-group {
+    min-width: 0;
+    gap: 6px;
+}
+.status-panel.right-workspace-status .status-group:first-child {
+    flex: 1 1 auto;
+}
+.status-panel.right-workspace-status .status-group:last-child {
+    flex: 0 0 auto;
+}
+.status-panel.right-workspace-status .status-item:has(#current-tool),
+.status-panel.right-workspace-status .status-item:has(#current-layer) {
+    display: none;
 }
 
 .format-selection {
