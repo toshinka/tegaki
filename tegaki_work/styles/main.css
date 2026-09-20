@@ -49,6 +49,13 @@
     /* WP-005 reversible glass prototype: surface alpha keeps controls opaque. */
     --ui-panel-glass-surface: rgba(255, 255, 238, 0.72);
     --ui-panel-glass-backdrop: blur(3px);
+    --ui-surface-glass-panel: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--futaba-background) 78%, transparent),
+        color-mix(in srgb, var(--futaba-cream) 64%, transparent)
+    ), var(--ui-panel-glass-surface);
+    --ui-panel-glass-border: color-mix(in srgb, var(--futaba-light-medium) 76%, transparent);
+    --ui-panel-glass-shadow: 0 4px 14px color-mix(in srgb, var(--futaba-maroon) 12%, transparent);
     --ui-opacity-disabled: 0.5;
     /* Phase 9j Layer Panel bridge; only its detached operation rail joins Phase 9k. */
     --ui-layer-surface-rail: var(--ui-rail-surface-dark);
@@ -123,7 +130,7 @@
     --ui-frame-play-size: 18px;
     --ui-frame-icon-size: 11px;
     --ui-anim-panel-height: 266px;
-    --ui-anim-track-width: 112px;
+    --ui-anim-track-width: 96px;
     --ui-anim-timeline-header-height: 20px;
     --ui-anim-lane-row-height: 26px;
     --ui-anim-cel-height: 18px;
@@ -139,7 +146,7 @@
     --ui-status-bottom: 8px;
     --ui-status-slot-height: 26px;
     --ui-bottom-dock-height: 0px;
-    --ui-bottom-dock-left: 70px;
+    --ui-bottom-dock-left: calc(var(--ui-rail-width) + 8px);
     --ui-right-workspace-inset: 6px;
     --ui-bottom-dock-right: calc(var(--right-workspace-width, 0px) + var(--ui-right-workspace-inset));
     --ui-resize-popup-min-width: 420px;

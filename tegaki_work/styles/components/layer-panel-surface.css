@@ -11,6 +11,11 @@
     display: grid;
     grid-template-columns: max-content;
     align-items: center;
+    background: var(--ui-surface-glass-panel);
+    border-radius: var(--ui-radius-panel);
+    box-shadow: 0 0 0 1px var(--ui-panel-glass-border), var(--ui-panel-glass-shadow);
+    backdrop-filter: var(--ui-panel-glass-backdrop);
+    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
 }
 .right-workspace-frame > .layer-panel-container,
 .right-workspace-frame > .layer-panel-context-inspector {
@@ -30,10 +35,11 @@
     overflow: hidden;
     pointer-events: auto;
     color: var(--ui-layer-text);
-    background: var(--ui-layer-context-surface);
-    border: 1px solid var(--ui-layer-border-rest);
-    border-radius: 6px;
-    backdrop-filter: var(--ui-layer-context-backdrop);
+    background: var(--ui-surface-glass-panel);
+    border: 1px solid var(--ui-panel-glass-border);
+    border-radius: var(--ui-radius-panel);
+    backdrop-filter: var(--ui-panel-glass-backdrop);
+    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
 }
 .right-workspace-frame > .layer-panel-context-inspector[hidden] {
     display: none;
@@ -43,7 +49,7 @@
     flex: 0 0 auto;
     padding: 6px;
     color: var(--futaba-maroon);
-    background: var(--ui-layer-context-surface);
+    background: color-mix(in srgb, var(--ui-panel-glass-surface) 82%, transparent);
     font-size: 11px;
     line-height: 1.4;
     overflow-wrap: anywhere;
@@ -80,7 +86,7 @@
 }
 .right-workspace-terminal [hidden] { display: none; }
 .right-workspace-terminal {
-    border-top: 1px solid var(--futaba-light-medium);
+    border-top: 1px solid var(--ui-panel-glass-border);
 }
 .right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector {
     position: static !important;
@@ -164,9 +170,11 @@
     box-sizing: border-box;
     padding: 2px;
     color: var(--ui-layer-text);
-    background: var(--ui-layer-context-surface);
-    -webkit-backdrop-filter: var(--ui-layer-context-backdrop);
-    backdrop-filter: var(--ui-layer-context-backdrop);
+    background: color-mix(in srgb, var(--ui-panel-glass-surface) 72%, transparent);
+    border: 1px solid var(--ui-panel-glass-border);
+    border-radius: var(--ui-radius-control);
+    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
+    backdrop-filter: var(--ui-panel-glass-backdrop);
 }
 
 .right-panel .layer-panel-context-view-button {

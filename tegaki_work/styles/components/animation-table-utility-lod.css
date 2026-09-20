@@ -680,3 +680,140 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
         min-height: 42px;
     }
 }
+
+/*
+ * Visual density / glass surface integration.
+ * The Dock remains the existing layout and interaction owner; these rules only
+ * refine its surface, spacing, and the shared label/grid alignment.
+ */
+#animation-table-popup.is-bottom-dock {
+    --ui-anim-track-width: 96px;
+    --ui-anim-timeline-header-height: 18px;
+    --ui-anim-lane-row-height: 24px;
+    background: var(--ui-surface-glass-panel);
+    border: 1px solid var(--ui-panel-glass-border);
+    border-radius: var(--ui-radius-panel) var(--ui-radius-panel) 0 0;
+    box-shadow: var(--ui-panel-glass-shadow);
+    backdrop-filter: var(--ui-panel-glass-backdrop);
+    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-header {
+    padding: 4px 6px 2px;
+    gap: 3px;
+    background: color-mix(in srgb, var(--ui-panel-glass-surface) 84%, transparent);
+    border-bottom: 1px solid var(--ui-panel-glass-border);
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-header-row--playback {
+    min-height: 26px;
+    gap: 3px;
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-header-left,
+#animation-table-popup.is-bottom-dock .anim-table-header-center,
+#animation-table-popup.is-bottom-dock .anim-table-header-right {
+    gap: 3px;
+}
+
+#animation-table-popup.is-bottom-dock .anim-playback-controls {
+    gap: 3px;
+    padding: 0;
+    background: transparent;
+}
+
+#animation-table-popup.is-bottom-dock .anim-dock-frame-controls {
+    padding-inline: 2px;
+    border-color: var(--ui-panel-glass-border);
+    background: color-mix(in srgb, var(--ui-panel-glass-surface) 78%, transparent);
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-viewport {
+    background: color-mix(in srgb, var(--futaba-background) 46%, transparent);
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-utility-row {
+    min-height: 30px;
+    padding: 2px 6px;
+    gap: 4px;
+    background: color-mix(in srgb, var(--ui-panel-glass-surface) 78%, transparent);
+    border-top: 1px solid var(--ui-panel-glass-border);
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-utility-row .anim-table-header-center {
+    gap: 3px;
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-utility-row .anim-zoom-controls {
+    padding-inline: 2px;
+    border-color: var(--ui-panel-glass-border);
+    background: color-mix(in srgb, var(--ui-panel-glass-surface) 84%, transparent);
+}
+
+#animation-table-popup.is-bottom-dock .anim-zoom-btn {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+}
+
+#animation-table-popup.is-bottom-dock .anim-track-list {
+    background: color-mix(in srgb, var(--ui-panel-glass-surface) 82%, transparent);
+    border-right-color: var(--ui-panel-glass-border);
+}
+
+#animation-table-popup.is-bottom-dock .anim-track-header,
+#animation-table-popup.is-bottom-dock .anim-timeline-header {
+    background: color-mix(in srgb, var(--futaba-cream) 52%, transparent);
+    border-bottom-color: var(--ui-panel-glass-border);
+}
+
+#animation-table-popup.is-bottom-dock .anim-track-header {
+    padding-inline: 4px;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    column-gap: 4px;
+}
+
+#animation-table-popup.is-bottom-dock .anim-track-header::before {
+    left: 58%;
+    height: calc(var(--ui-anim-timeline-header-height) - 4px);
+    background: var(--ui-panel-glass-border);
+}
+
+#animation-table-popup.is-bottom-dock .anim-track-item {
+    gap: 3px;
+    padding-inline: 4px;
+    background: color-mix(in srgb, var(--ui-panel-glass-surface) 86%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--ui-panel-glass-border) 78%, transparent);
+}
+
+#animation-table-popup.is-bottom-dock .anim-track-name {
+    min-width: 0;
+}
+
+#animation-table-popup.is-bottom-dock .anim-lane-visibility-btn,
+#animation-table-popup.is-bottom-dock .anim-lane-include-btn {
+    flex: 0 0 14px;
+}
+
+#animation-table-popup.is-bottom-dock .anim-timeline-row {
+    height: var(--ui-anim-lane-row-height);
+    border-bottom-color: color-mix(in srgb, var(--ui-panel-glass-border) 62%, transparent);
+}
+
+#animation-table-popup.is-bottom-dock .anim-frame-num {
+    background: color-mix(in srgb, var(--futaba-background) 70%, transparent);
+    border-right-color: color-mix(in srgb, var(--ui-panel-glass-border) 62%, transparent);
+}
+
+#animation-table-popup.is-bottom-dock .anim-dock-secondary-body {
+    border-color: var(--ui-panel-glass-border);
+    background: var(--ui-panel-glass-surface);
+}
+
+@media (pointer: coarse) {
+    #animation-table-popup.is-bottom-dock .anim-table-utility-row {
+        min-height: 42px;
+        padding-block: 6px;
+    }
+}
