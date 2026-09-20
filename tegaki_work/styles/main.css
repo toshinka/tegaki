@@ -74,6 +74,23 @@
         color-mix(in srgb, var(--futaba-light-medium) 36%, transparent) 100%
     );
     --ui-right-workspace-surface: var(--ui-workspace-atmosphere);
+    /* Right Workspace-only feasibility prototype. The tint, blur and mask
+       remain separate so the controlled test can distinguish their effects. */
+    --ui-right-workspace-frosted-tint: linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--futaba-background) 3%, transparent) 0%,
+        color-mix(in srgb, var(--futaba-cream) 8%, transparent) 46%,
+        color-mix(in srgb, var(--futaba-light-medium) 22%, transparent) 100%
+    );
+    --ui-right-workspace-frosted-blur: blur(12px);
+    --ui-right-workspace-frosted-mask: linear-gradient(
+        to bottom,
+        transparent 0%,
+        transparent 18%,
+        rgba(0, 0, 0, 0.14) 42%,
+        rgba(0, 0, 0, 0.58) 72%,
+        #000 100%
+    );
     --ui-opacity-disabled: 0.5;
     /* Phase 9j Layer Panel bridge; only its detached operation rail joins Phase 9k. */
     --ui-layer-surface-rail: var(--ui-rail-surface-dark);
