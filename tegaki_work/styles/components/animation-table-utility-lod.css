@@ -376,7 +376,14 @@
 }
 .anim-dock-states button[aria-pressed="true"] { border-color: var(--active-border); background: var(--futaba-cream); }
 .anim-dock-states button:focus-visible { outline: 2px solid var(--active-border); outline-offset: -2px; }
-#animation-table-popup.is-bottom-dock .anim-table-viewport { min-height: 0; background: var(--futaba-background); }
+#animation-table-popup.is-bottom-dock .anim-table-viewport {
+    min-height: 0;
+    background: var(--ui-workspace-atmosphere);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    backdrop-filter: var(--ui-panel-glass-backdrop);
+    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
+}
 #animation-table-popup.is-bottom-dock .anim-table-utility-row {
     display: flex;
     gap: 6px;
@@ -729,7 +736,11 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
 }
 
 #animation-table-popup.is-bottom-dock .anim-table-viewport {
-    background: color-mix(in srgb, var(--futaba-background) 46%, transparent);
+    background: var(--ui-workspace-atmosphere);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    backdrop-filter: var(--ui-panel-glass-backdrop);
+    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
 }
 
 #animation-table-popup.is-bottom-dock .anim-table-utility-row {
@@ -866,7 +877,11 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
 #animation-table-popup.is-bottom-dock {
     --ui-anim-timeline-header-height: 18px;
     --ui-anim-lane-row-height: 22px;
-    background: var(--ui-glass-shell-surface);
+    background: var(--ui-workspace-atmosphere);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    backdrop-filter: var(--ui-panel-glass-backdrop);
+    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
     border-color: var(--ui-glass-shell-border);
     box-shadow: var(--ui-glass-shell-shadow);
 }

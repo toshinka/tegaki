@@ -64,16 +64,16 @@
     ), color-mix(in srgb, var(--futaba-background) 52%, transparent);
     --ui-glass-shell-border: color-mix(in srgb, var(--futaba-light-medium) 62%, transparent);
     --ui-glass-shell-shadow: none;
-    /* The right work area owns a continuous, low-alpha surface behind both
-       the Layer content and its operation rail. Keep the gradient here so
-       the surface remains one token authority rather than an element-wide
-       opacity treatment. */
-    --ui-right-workspace-surface: linear-gradient(
+    /* One screen-space atmosphere is sampled by the Right Workspace and the
+       Bottom Dock. Keep it on the background surfaces only: cards, controls,
+       labels, and artwork retain their existing contrast. */
+    --ui-workspace-atmosphere: linear-gradient(
         to bottom right,
-        color-mix(in srgb, var(--futaba-background) 2%, transparent) 0%,
-        color-mix(in srgb, var(--futaba-cream) 8%, transparent) 56%,
-        color-mix(in srgb, var(--futaba-light-medium) 20%, transparent) 100%
+        color-mix(in srgb, var(--futaba-background) 8%, transparent) 0%,
+        color-mix(in srgb, var(--futaba-cream) 20%, transparent) 54%,
+        color-mix(in srgb, var(--futaba-light-medium) 36%, transparent) 100%
     );
+    --ui-right-workspace-surface: var(--ui-workspace-atmosphere);
     --ui-opacity-disabled: 0.5;
     /* Phase 9j Layer Panel bridge; only its detached operation rail joins Phase 9k. */
     --ui-layer-surface-rail: var(--ui-rail-surface-dark);
@@ -136,6 +136,7 @@
     --ui-layer-card-name-size: 9px;
     --ui-layer-card-meta-size: 8px;
     --ui-layer-control-size: 30px;
+    --ui-layer-panel-rail-column: calc(var(--ui-layer-control-size) + (2 * var(--ui-rail-padding-inline)));
     --ui-layer-control-icon-size: 16px;
     --ui-caf-header-min-height: 40px;
     --ui-caf-icon-box-size: 26px;
@@ -6086,23 +6087,14 @@ button.anim-motion-graph-legend-item.is-primary {
     cursor: pointer;
 }
 
-/* Child rows reuse the same frame cells as the parent lane. Mark the first
-   in-Clip cell so the guide follows the authoritative startFrame projection,
-   including Timeline zoom and horizontal scrolling. This is decorative only
-   and never becomes a pointer target. */
-.animation-table-panel .anim-part-cell-slot.is-clip-start::before,
-.animation-table-panel .anim-rig-folder-cell-slot.is-clip-start::before,
-.animation-table-panel .anim-bone-cell-slot.is-clip-start::before {
-    content: '';
-    position: absolute;
-    top: -1px;
-    bottom: -1px;
-    left: calc(var(--anim-cel-inset, 6px) / 2);
-    width: 1px;
-    z-index: 4;
-    background: color-mix(in srgb, var(--active-border) 72%, var(--futaba-maroon));
-    opacity: 0.78;
-    pointer-events: none;
+/* Child rows reuse the same frame cells as the parent lane. The existing
+   is-clip-start projection identifies the authoritative first cell; expose
+   that cell's left boundary with the same quiet grid vocabulary instead of a
+   second playhead-like overlay. The class remains decorative and inert. */
+.animation-table-panel .anim-part-cell-slot.is-clip-start,
+.animation-table-panel .anim-rig-folder-cell-slot.is-clip-start,
+.animation-table-panel .anim-bone-cell-slot.is-clip-start {
+    border-left: 1px solid color-mix(in srgb, var(--ui-panel-glass-border) 72%, var(--futaba-maroon));
 }
 
 .animation-table-panel .anim-bone-timeline-row.is-selected .anim-bone-cell-slot.is-clip-range {
