@@ -37,7 +37,6 @@
     z-index: 0;
     inset: 0 calc(-1 * var(--ui-right-workspace-inset)) 0 0;
     background: var(--ui-right-workspace-surface);
-    box-shadow: inset 1px 0 0 var(--ui-glass-shell-border);
     pointer-events: none;
 }
 .right-workspace-frame > .layer-panel-container,
@@ -79,14 +78,18 @@
 }
 .right-workspace-frame > .layer-panel-container .layer-panel-items {
     min-height: 0;
-    max-height: 100%;
+    /* Give the existing renderer a finite viewport so its scroll-state
+       measurement can switch the long-list layout before content overflows. */
+    max-height: calc(100vh - 73px);
 }
 
-/* A short list is a single authoring group. The scrollable state is kept
+/* A short list is a single authoring group. The first grid row is intentionally
+   empty in the legacy panel grid; collapse it so the list and the compact
+   action rail share the same visual start. The scrollable state is kept
    top-aligned so a long list gets all available height instead of decorative
    empty space. The existing renderer owns the class toggle. */
 .right-workspace-frame > .layer-panel-container:not(.layer-panel-container--scrollable) {
-    grid-template-rows: max-content max-content;
+    grid-template-rows: 0 max-content;
     align-content: center;
 }
 

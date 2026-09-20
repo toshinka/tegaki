@@ -2809,6 +2809,7 @@ export class AnimationTablePopup {
         for (let frame = 0; frame < totalFrames; frame++) {
             const localFrame = frame - clip.startFrame;
             const isInside = localFrame >= 0 && localFrame < Math.max(1, clip.duration || 1);
+            const isClipStart = isInside && localFrame === 0 ? ' is-clip-start' : '';
             const isCurrent = showCurrentFrame && frame === currentFrame ? ' current-col' : '';
             const key = isInside
                 ? getRigPartKeyAtFrame(clip.rigMotion, context.part.partId, localFrame)
@@ -2819,7 +2820,7 @@ export class AnimationTablePopup {
                 targetId: context.part.partId,
                 frame: localFrame
             });
-            html += `<div class="anim-cell-slot anim-part-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}${key ? ' has-part-key' : ''}${keySelected ? ' is-key-selected' : ''}"
+            html += `<div class="anim-cell-slot anim-part-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}${isClipStart}${key ? ' has-part-key' : ''}${keySelected ? ' is-key-selected' : ''}"
                 data-track-id="${context.entry.lane.id}"
                 data-clip-id="${clip.id}"
                 data-part-id="${context.part.partId}"
@@ -2887,6 +2888,7 @@ export class AnimationTablePopup {
         for (let frame = 0; frame < totalFrames; frame++) {
             const localFrame = frame - clip.startFrame;
             const isInside = localFrame >= 0 && localFrame < Math.max(1, clip.duration || 1);
+            const isClipStart = isInside && localFrame === 0 ? ' is-clip-start' : '';
             const isCurrent = showCurrentFrame && frame === currentFrame ? ' current-col' : '';
             const hasLayerMotionKey = isSelected && isInside
                 && (layerMotionTrack?.keyframes || []).some(key => key?.frame === localFrame);
@@ -2921,7 +2923,7 @@ export class AnimationTablePopup {
                 && previewTransaction.clipId === clip.id
                 && previewTransaction.internalLayerId === context.layer.id
                 && previewTransaction.localFrame === localFrame;
-            html += `<div class="anim-cell-slot anim-rig-folder-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}"
+            html += `<div class="anim-cell-slot anim-rig-folder-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}${isClipStart}"
                 data-track-id="${context.entry.lane.id}"
                 data-clip-id="${clip.id}"
                 data-folder-id="${context.layer.id}"
@@ -3019,6 +3021,7 @@ export class AnimationTablePopup {
         for (let frame = 0; frame < totalFrames; frame++) {
             const localFrame = frame - clip.startFrame;
             const isInside = localFrame >= 0 && localFrame < Math.max(1, clip.duration || 1);
+            const isClipStart = isInside && localFrame === 0 ? ' is-clip-start' : '';
             const isCurrent = showCurrentFrame && frame === currentFrame ? ' current-col' : '';
             const key = isInside
                 ? getRigBoneKeyAtFrame(clip.rigMotion, context.bone.boneId, localFrame)
@@ -3029,7 +3032,7 @@ export class AnimationTablePopup {
                 targetId: context.bone.boneId,
                 frame: localFrame
             });
-            html += `<div class="anim-cell-slot anim-bone-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}${key ? ' has-part-key' : ''}${keySelected ? ' is-key-selected' : ''}"
+            html += `<div class="anim-cell-slot anim-bone-cell-slot${isCurrent}${isInside ? ' is-clip-range' : ' is-outside-clip'}${isClipStart}${key ? ' has-part-key' : ''}${keySelected ? ' is-key-selected' : ''}"
                 data-track-id="${context.entry.lane.id}"
                 data-clip-id="${clip.id}"
                 data-bone-id="${context.bone.boneId}"

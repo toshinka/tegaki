@@ -69,10 +69,10 @@
        the surface remains one token authority rather than an element-wide
        opacity treatment. */
     --ui-right-workspace-surface: linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--futaba-background) 8%, transparent) 0%,
-        color-mix(in srgb, var(--futaba-cream) 18%, transparent) 64%,
-        color-mix(in srgb, var(--futaba-light-medium) 28%, transparent) 100%
+        to bottom right,
+        color-mix(in srgb, var(--futaba-background) 2%, transparent) 0%,
+        color-mix(in srgb, var(--futaba-cream) 8%, transparent) 56%,
+        color-mix(in srgb, var(--futaba-light-medium) 20%, transparent) 100%
     );
     --ui-opacity-disabled: 0.5;
     /* Phase 9j Layer Panel bridge; only its detached operation rail joins Phase 9k. */
@@ -6084,6 +6084,25 @@ button.anim-motion-graph-legend-item.is-primary {
 
 .anim-bone-cell-slot.is-clip-range {
     cursor: pointer;
+}
+
+/* Child rows reuse the same frame cells as the parent lane. Mark the first
+   in-Clip cell so the guide follows the authoritative startFrame projection,
+   including Timeline zoom and horizontal scrolling. This is decorative only
+   and never becomes a pointer target. */
+.animation-table-panel .anim-part-cell-slot.is-clip-start::before,
+.animation-table-panel .anim-rig-folder-cell-slot.is-clip-start::before,
+.animation-table-panel .anim-bone-cell-slot.is-clip-start::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    bottom: -1px;
+    left: calc(var(--anim-cel-inset, 6px) / 2);
+    width: 1px;
+    z-index: 4;
+    background: color-mix(in srgb, var(--active-border) 72%, var(--futaba-maroon));
+    opacity: 0.78;
+    pointer-events: none;
 }
 
 .animation-table-panel .anim-bone-timeline-row.is-selected .anim-bone-cell-slot.is-clip-range {
