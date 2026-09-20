@@ -723,6 +723,48 @@ export class AnimationTablePopup {
         if (typeof requestAnimationFrame === 'function') {
             requestAnimationFrame(resizeCanvasToLayout);
         }
+        if (active) this._queueBottomDockLayout();
+    }
+
+    // Presentation only: no Frame, selection, playback or edit terminal changes.
+    _setBottomDockState(state) {
+        if (!['collapsed', 'compact', 'expanded'].includes(state)) return;
+        this._bottomDockState = state;
+        this.panel.dataset.dockState = state;
+        const collapsed = state === 'collapsed';
+        for (const surface of this.panel.querySelectorAll('.anim-table-viewport, .anim-table-utility-row, .anim-asset-library')) {
+            if (collapsed && surface.contains(document.activeElement)) {
+                this.panel.querySelector('[data-dock-state-button="compact"]')?.focus();
+            }
+            surface.inert = collapsed;
+        }
+        for (const button of this.panel.querySelectorAll('[data-dock-state-button]')) {
+            button.setAttribute('aria-pressed', String(button.dataset.dockStateButton === state));
+        }
+        this._queueBottomDockLayout();
+    }
+
+    _queueBottomDockLayout() {
+        if (!this._bottomDockMode || !this.isVisible || this._dockLayoutRaf) return;
+        this._dockLayoutRaf = requestAnimationFrame(() => {
+            this._dockLayoutRaf = null;
+            if (!this.isVisible) return;
+            this._updateHeaderNarrowState();
+            const header = this.panel.querySelector('.anim-table-header');
+            const utility = this.panel.querySelector('.anim-table-utility-row');
+            const content = this.panel.querySelector('.anim-table-content');
+            const state = this._bottomDockState || 'compact';
+            const chrome = header.getBoundingClientRect().height + 2;
+            const ceiling = Math.max(chrome, Math.min(440, window.innerHeight * 0.52));
+            const desired = state === 'collapsed' ? chrome : state === 'expanded' ? ceiling
+                : chrome + utility.getBoundingClientRect().height + content.getBoundingClientRect().height + 14;
+            const height = Math.ceil(Math.min(desired, state === 'compact' ? Math.min(ceiling, window.innerHeight * 0.4) : ceiling));
+            const value = `${height}px`;
+            if (document.documentElement.style.getPropertyValue('--ui-bottom-dock-open-height') !== value) {
+                document.documentElement.style.setProperty('--ui-bottom-dock-open-height', value);
+                window.coreEngine?.getApp?.()?.resize?.();
+            }
+        });
     }
 
     show() {
@@ -18262,6 +18304,9 @@ export class AnimationTablePopup {
 
     render() {
         if (!this.panel || !this.isVisible) return;
+        const dockFrame = this.panel.querySelector('.anim-dock-current-frame');
+        if (dockFrame) dockFrame.textContent = `F${this.model.playback.currentFrame + 1}`;
+        this._queueBottomDockLayout();
         this.panel.style.setProperty('--anim-cell-width', `${this.timelineCellWidth}px`);
         this.panel.style.setProperty('--anim-cel-inset', '6px');
         this.panel.classList.toggle('timeline-compact-labels', this.timelineCellWidth < 18);
@@ -19690,6 +19735,33 @@ export class AnimationTablePopup {
         viewport.after(utilityRow);
         utilityRow.setAttribute('role', 'toolbar');
         utilityRow.setAttribute('aria-label', 'Timeline and selected Clip utility');
+        if (this._bottomDockMode) {
+            const zoom = utilityRow.querySelector('.anim-zoom-controls');
+            if (zoom) utilityRow.appendChild(zoom);
+            const frame = document.createElement('span');
+            frame.className = 'anim-dock-current-frame';
+            frame.setAttribute('aria-label', '現在Frame');
+            playbackRow.querySelector('.anim-playback-primary-slot').appendChild(frame);
+            const states = document.createElement('div');
+            states.className = 'anim-dock-states';
+            states.setAttribute('role', 'group');
+            states.setAttribute('aria-label', 'Table表示サイズ');
+            for (const [state, label, icon] of [['collapsed', '収納', '↓'], ['compact', '通常', '≡'], ['expanded', '時間編集', '↑']]) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.dataset.dockStateButton = state;
+                button.textContent = icon;
+                button.title = `Tableを${label}表示にする`;
+                button.setAttribute('aria-label', button.title);
+                button.addEventListener('click', () => this._setBottomDockState(state));
+                states.appendChild(button);
+            }
+            playbackRow.insertBefore(states, closeButton);
+            this._setBottomDockState(this._bottomDockState || 'compact');
+            // Reuse the existing viewport-resize listener lifetime: this panel
+            // is application-owned, like the existing Motion viewport listener.
+            window.addEventListener('resize', () => this._queueBottomDockLayout());
+        }
         return true;
     }
 
@@ -22602,6 +22674,10 @@ export class AnimationTablePopup {
 
     _updatePanelPosition() {
         if (!this.panel) return;
+        if (this._bottomDockMode) {
+            this._queueBottomDockLayout();
+            return;
+        }
         this.panel.style.left = `${this._panelPos.x}px`;
         this.panel.style.top = `${this._panelPos.y}px`;
         if (this._panelSize.width !== null) {

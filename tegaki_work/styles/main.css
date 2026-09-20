@@ -164,7 +164,7 @@
 }
 
 :root.animation-table-bottom-dock-active {
-    --ui-bottom-dock-height: var(--ui-anim-panel-height);
+    --ui-bottom-dock-height: var(--ui-bottom-dock-open-height, var(--ui-anim-panel-height));
 }
 
 body { 
@@ -3258,6 +3258,38 @@ canvas {
     gap: 5px;
     color: var(--futaba-maroon); 
     font-weight: 600; 
+}
+
+/* Common Status owns one fixed-height slot, independent of Dock content. */
+.status-panel {
+    right: var(--ui-bottom-dock-right);
+    bottom: 0;
+    height: var(--ui-status-slot-height);
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    align-items: center;
+    justify-content: flex-start;
+}
+.status-group, .status-item { min-width: 0; }
+.status-group:first-child { flex: 1 1 auto; }
+.status-group:last-child { flex: 0 0 auto; }
+.status-item:has(#coordinates),
+.status-item:has(#fps-info) { display: none; }
+.status-item:has(#current-layer) { flex: 1 1 0; }
+.status-item:has(#current-tool) { flex: 0 1 30%; }
+.status-item span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: auto;
+}
+.status-item span:focus-visible {
+    outline: 1px solid var(--active-border);
+    outline-offset: -1px;
+    overflow-x: auto;
+    text-overflow: clip;
+    scrollbar-width: none;
 }
 
 .format-selection {

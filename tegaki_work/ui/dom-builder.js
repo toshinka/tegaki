@@ -662,6 +662,14 @@ export const DOMBuilder = (function() {
 
     function buildStatusPanel() {
         const panel = createElement('div', { className: 'status-panel' });
+        // Keep the existing Status updater as the sole text owner.
+        const revealStatusValue = (event) => {
+            if (event.target.matches('.status-item span')) {
+                event.target.title = event.target.textContent;
+            }
+        };
+        panel.addEventListener('pointerover', revealStatusValue);
+        panel.addEventListener('focusin', revealStatusValue);
 
         const group1 = createElement('div', { className: 'status-group' });
         const items1 = [
@@ -673,7 +681,7 @@ export const DOMBuilder = (function() {
         items1.forEach(item => {
             const statusItem = createElement('div', { className: 'status-item' });
             statusItem.appendChild(document.createTextNode(item.label + ' '));
-            statusItem.appendChild(createElement('span', { id: item.id, textContent: item.value }));
+            statusItem.appendChild(createElement('span', { id: item.id, textContent: item.value, attributes: { tabindex: '0' } }));
             group1.appendChild(statusItem);
         });
         panel.appendChild(group1);
@@ -686,7 +694,7 @@ export const DOMBuilder = (function() {
         items2.forEach(item => {
             const statusItem = createElement('div', { className: 'status-item' });
             statusItem.appendChild(document.createTextNode(item.label + ' '));
-            statusItem.appendChild(createElement('span', { id: item.id, textContent: item.value }));
+            statusItem.appendChild(createElement('span', { id: item.id, textContent: item.value, attributes: { tabindex: '0' } }));
             group2.appendChild(statusItem);
         });
         panel.appendChild(group2);
