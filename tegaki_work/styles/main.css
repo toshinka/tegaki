@@ -56,6 +56,14 @@
     ), var(--ui-panel-glass-surface);
     --ui-panel-glass-border: color-mix(in srgb, var(--futaba-light-medium) 76%, transparent);
     --ui-panel-glass-shadow: 0 4px 14px color-mix(in srgb, var(--futaba-maroon) 12%, transparent);
+    /* Shared shell treatment for the Bottom Dock and Right Workspace only. */
+    --ui-glass-shell-surface: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--futaba-background) 58%, transparent),
+        color-mix(in srgb, var(--futaba-cream) 42%, transparent)
+    ), color-mix(in srgb, var(--futaba-background) 52%, transparent);
+    --ui-glass-shell-border: color-mix(in srgb, var(--futaba-light-medium) 62%, transparent);
+    --ui-glass-shell-shadow: none;
     --ui-opacity-disabled: 0.5;
     /* Phase 9j Layer Panel bridge; only its detached operation rail joins Phase 9k. */
     --ui-layer-surface-rail: var(--ui-rail-surface-dark);

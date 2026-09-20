@@ -11,9 +11,9 @@
     display: grid;
     grid-template-columns: max-content;
     align-items: center;
-    background: var(--ui-surface-glass-panel);
+    background: var(--ui-glass-shell-surface);
     border-radius: var(--ui-radius-panel);
-    box-shadow: 0 0 0 1px var(--ui-panel-glass-border), var(--ui-panel-glass-shadow);
+    box-shadow: 0 0 0 1px var(--ui-glass-shell-border), var(--ui-glass-shell-shadow);
     backdrop-filter: var(--ui-panel-glass-backdrop);
     -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
 }
@@ -35,14 +35,24 @@
     overflow: hidden;
     pointer-events: auto;
     color: var(--ui-layer-text);
-    background: var(--ui-surface-glass-panel);
-    border: 1px solid var(--ui-panel-glass-border);
+    background: var(--ui-glass-shell-surface);
+    border: 1px solid var(--ui-glass-shell-border);
     border-radius: var(--ui-radius-panel);
     backdrop-filter: var(--ui-panel-glass-backdrop);
     -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
 }
 .right-workspace-frame > .layer-panel-context-inspector[hidden] {
     display: none;
+}
+
+/* Short layer lists should not carry the full trailing shell reservation;
+   scrollable lists keep their existing room for the scrollbar gutter. */
+.right-workspace-frame > .layer-panel-container:not(.layer-panel-container--scrollable) .layer-panel-items {
+    padding-bottom: 4px;
+}
+
+.right-workspace-frame > .layer-panel-container.layer-panel-container--scrollable .layer-panel-items {
+    padding-bottom: 8px;
 }
 .right-workspace-target,
 .right-workspace-terminal {

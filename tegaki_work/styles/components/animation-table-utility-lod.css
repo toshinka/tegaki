@@ -817,3 +817,95 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
         padding-block: 6px;
     }
 }
+
+/*
+ * Visual density / transparency tuning.
+ * Shell transparency is kept separate from content surfaces so lane labels,
+ * clips, and actionable controls retain their existing contrast.
+ */
+#animation-table-popup.is-bottom-dock {
+    --ui-anim-timeline-header-height: 18px;
+    --ui-anim-lane-row-height: 23px;
+    background: var(--ui-glass-shell-surface);
+    border-color: var(--ui-glass-shell-border);
+    box-shadow: var(--ui-glass-shell-shadow);
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-header {
+    padding: 2px 6px 1px;
+    background: color-mix(in srgb, var(--ui-panel-glass-surface) 66%, transparent);
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-header-row--playback {
+    min-height: 24px;
+}
+
+#animation-table-popup.is-bottom-dock .anim-playback-primary-slot {
+    min-height: 24px;
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-utility-row {
+    min-height: 27px;
+    padding: 1px 6px;
+    background: color-mix(in srgb, var(--ui-panel-glass-surface) 62%, transparent);
+}
+
+#animation-table-popup.is-bottom-dock .anim-zoom-controls {
+    gap: 2px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+#animation-table-popup.is-bottom-dock .anim-zoom-btn {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    min-height: 22px;
+    border-color: transparent;
+    background: transparent;
+}
+
+#animation-table-popup.is-bottom-dock .anim-zoom-btn:hover:not(:disabled) {
+    border-color: var(--ui-border-hover);
+    background: var(--ui-surface-control-hover);
+}
+
+#animation-table-popup.is-bottom-dock .anim-zoom-btn:focus-visible {
+    outline: 2px solid var(--active-border);
+    outline-offset: 1px;
+}
+
+#animation-table-popup.is-bottom-dock .anim-zoom-value {
+    min-width: 30px;
+    font-size: 10px;
+    opacity: 0.9;
+}
+
+#animation-table-popup.is-bottom-dock .anim-track-list {
+    background: color-mix(in srgb, var(--ui-panel-glass-surface) 68%, transparent);
+}
+
+#animation-table-popup.is-bottom-dock .anim-track-item {
+    gap: 2px;
+    padding-inline: 3px;
+}
+
+#animation-table-popup.is-bottom-dock .anim-timeline-row {
+    height: var(--ui-anim-lane-row-height);
+}
+
+@media (pointer: coarse) {
+    #animation-table-popup.is-bottom-dock {
+        --ui-anim-timeline-header-height: 24px;
+        --ui-anim-lane-row-height: 26px;
+    }
+
+    #animation-table-popup.is-bottom-dock .anim-zoom-btn {
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        min-height: 32px;
+    }
+}
