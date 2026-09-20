@@ -140,7 +140,8 @@
     --ui-status-slot-height: 26px;
     --ui-bottom-dock-height: 0px;
     --ui-bottom-dock-left: 70px;
-    --ui-bottom-dock-right: 190px;
+    --ui-right-workspace-inset: 6px;
+    --ui-bottom-dock-right: calc(var(--right-workspace-width, 0px) + var(--ui-right-workspace-inset));
     --ui-resize-popup-min-width: 420px;
     --ui-resize-popup-max-width: 520px;
     --ui-resize-popup-padding: 8px;
@@ -257,6 +258,7 @@ body {
     position: fixed; 
     inset: 0;
     bottom: calc(var(--ui-status-slot-height) + var(--ui-bottom-dock-height));
+    right: var(--ui-bottom-dock-right);
     overflow: hidden; 
     display: flex; 
     justify-content: center; 
@@ -340,7 +342,7 @@ canvas {
 
 .right-panel {
     position: fixed;
-    right: 6px;
+    right: var(--ui-right-workspace-inset);
     top: 50%;
     transform: translateY(-50%);
     max-height: calc(100vh - 96px);

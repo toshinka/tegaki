@@ -64,7 +64,12 @@ export class RightWorkspaceFrame {
         // Its natural grid therefore remains the live budget, including coarse
         // input and scrollbar changes, without transiently exposing its controls.
         const width = this.drawing?.getBoundingClientRect().width;
-        if (width > 0) this.root.style.setProperty('--right-workspace-width', `${width}px`);
+        if (width > 0) {
+            // Publish the existing single measurement to all layout surfaces.
+            // Dock and Canvas inherit this budget; neither measures the rail.
+            document.documentElement.style.setProperty('--right-workspace-width', `${width}px`);
+            window.coreEngine?.getApp?.()?.resize?.();
+        }
     }
 
     sync() {
