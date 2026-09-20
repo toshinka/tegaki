@@ -137,6 +137,10 @@
     --ui-status-font-size: 10px;
     --ui-status-gap: 14px;
     --ui-status-bottom: 8px;
+    --ui-status-slot-height: 26px;
+    --ui-bottom-dock-height: 0px;
+    --ui-bottom-dock-left: 70px;
+    --ui-bottom-dock-right: 190px;
     --ui-resize-popup-min-width: 420px;
     --ui-resize-popup-max-width: 520px;
     --ui-resize-popup-padding: 8px;
@@ -156,6 +160,10 @@
     --ui-transform-slider-group-height: 37px;
     --ui-transform-slider-row-height: 18px;
     --ui-transform-slider-width: 64px;
+}
+
+:root.animation-table-bottom-dock-active {
+    --ui-bottom-dock-height: var(--ui-anim-panel-height);
 }
 
 body { 
@@ -248,6 +256,7 @@ body {
     background: var(--futaba-background); 
     position: fixed; 
     inset: 0;
+    bottom: calc(var(--ui-status-slot-height) + var(--ui-bottom-dock-height));
     overflow: hidden; 
     display: flex; 
     justify-content: center; 

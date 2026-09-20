@@ -470,6 +470,7 @@ export class AnimationTablePopup {
         this.animationSystem = dependencies.animationSystem;
         
         this.panel = null;
+        this._bottomDockMode = true;
         this.motionPanel = null;
         this.motionPanelDragCleanup = null;
         this.motionPanelViewportCleanup = null;
@@ -701,6 +702,29 @@ export class AnimationTablePopup {
         this.initialized = true;
     }
 
+    _setBottomDockActive(active) {
+        if (!this._bottomDockMode) return;
+
+        document.documentElement?.classList.toggle(
+            'animation-table-bottom-dock-active',
+            active === true
+        );
+        if (this.panel && active === true) {
+            this.panel.classList.add('is-bottom-dock');
+            ['left', 'top', 'right', 'bottom', 'width', 'height'].forEach(property => {
+                this.panel.style.removeProperty(property);
+            });
+        }
+
+        const resizeCanvasToLayout = () => {
+            window.coreEngine?.getApp?.()?.resize?.();
+        };
+        resizeCanvasToLayout();
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(resizeCanvasToLayout);
+        }
+    }
+
     show() {
         if (!this.initialized) this.initialize();
         if (this.isVisible || this._pendingShowTransformGate) return;
@@ -711,13 +735,17 @@ export class AnimationTablePopup {
         this.panel.style.display = 'flex';
         this.isVisible = true;
         
-        // 初回表示時に位置が未設定（null）なら下部デフォルト位置へ
-        if (this._panelPos.y === null) {
-            const rect = this.panel.getBoundingClientRect();
-            this._panelPos.y = window.innerHeight - rect.height - 20;
+        if (this._bottomDockMode) {
+            this._setBottomDockActive(true);
+        } else {
+            // 初回表示時に位置が未設定（null）なら下部デフォルト位置へ
+            if (this._panelPos.y === null) {
+                const rect = this.panel.getBoundingClientRect();
+                this._panelPos.y = window.innerHeight - rect.height - 20;
+            }
+            this._clampPanelPlacement();
+            this._updatePanelPosition();
         }
-        this._clampPanelPlacement();
-        this._updatePanelPosition();
 
         this.render();
         this._requestLayerPanelSync();
@@ -820,6 +848,7 @@ export class AnimationTablePopup {
         this._restoreVisibility();
         this._invalidateSnapshotTextureCache();
         this.panel.style.display = 'none';
+        this._setBottomDockActive(false);
         this.setMotionWindowOpen(false);
         this._exitWarpGridEditMode();
         partTransformOverlay.deactivate();
@@ -19508,7 +19537,7 @@ export class AnimationTablePopup {
         
         this.panel = document.createElement('div');
         this.panel.id = 'animation-table-popup';
-        this.panel.className = 'animation-table-panel popup-panel--translucent';
+        this.panel.className = 'animation-table-panel popup-panel--translucent is-bottom-dock';
         this.panel.style.display = 'none';
         
         this.panel.innerHTML = `
@@ -22228,8 +22257,9 @@ export class AnimationTablePopup {
         }
 
         // ドラッグ移動の実装
-        const header = this.panel.querySelector('.anim-table-header');
-        header.addEventListener('pointerdown', (e) => {
+        if (!this._bottomDockMode) {
+            const header = this.panel.querySelector('.anim-table-header');
+            header.addEventListener('pointerdown', (e) => {
             if (e.button !== undefined && e.button !== 0) return;
             if (e.target.closest('button, input, label, .anim-scope-controls, .anim-playback-controls, .anim-capture-controls, .anim-copy-paste-controls, .anim-selected-clip-actions, .anim-timeline-settings')) return;
             
@@ -22246,9 +22276,9 @@ export class AnimationTablePopup {
             document.addEventListener('pointerup', this._onMouseUp);
             document.addEventListener('pointercancel', this._onMouseUp);
             e.preventDefault();
-        });
+            });
 
-        this._onMouseMove = (e) => {
+            this._onMouseMove = (e) => {
             if (!this._isDragging) return;
             if (this._dragPointerId !== undefined && e.pointerId !== this._dragPointerId) return;
             e.preventDefault?.();
@@ -22261,9 +22291,9 @@ export class AnimationTablePopup {
             this._panelPos.y = Math.max(0, Math.min(window.innerHeight - 40, this._panelPos.y));
             
             this._updatePanelPosition();
-        };
+            };
 
-        this._onMouseUp = (e = null) => {
+            this._onMouseUp = (e = null) => {
             if (e && this._dragPointerId !== undefined && e.pointerId !== this._dragPointerId) return;
             this._isDragging = false;
             try {
@@ -22278,7 +22308,8 @@ export class AnimationTablePopup {
             setTimeout(() => {
                 this._dragMoved = false;
             }, 0);
-        };
+            };
+        }
 
         this._onTimelineViewportPointerMove = (e) => {
             const gesture = this._timelineViewportGesture;
@@ -22329,9 +22360,10 @@ export class AnimationTablePopup {
             }
         };
 
-        const resizeHandle = this.panel.querySelector('.anim-resize-handle');
-        if (resizeHandle) {
-            resizeHandle.addEventListener('pointerdown', (e) => {
+        if (!this._bottomDockMode) {
+            const resizeHandle = this.panel.querySelector('.anim-resize-handle');
+            if (resizeHandle) {
+                resizeHandle.addEventListener('pointerdown', (e) => {
                 if (e.button !== undefined && e.button !== 0) return;
                 const rect = this.panel.getBoundingClientRect();
                 this._isResizing = true;
@@ -22350,10 +22382,10 @@ export class AnimationTablePopup {
                 document.addEventListener('pointercancel', this._onResizeMouseUp);
                 e.preventDefault();
                 e.stopPropagation();
-            });
-        }
+                });
+            }
 
-        this._onResizeMouseMove = (e) => {
+            this._onResizeMouseMove = (e) => {
             if (!this._isResizing || !this._resizeStart) return;
             if (this._resizePointerId !== undefined && e.pointerId !== this._resizePointerId) return;
             e.preventDefault?.();
@@ -22367,9 +22399,9 @@ export class AnimationTablePopup {
             this._panelSize.width = nextWidth;
             this._panelSize.height = nextHeight;
             this._updatePanelPosition();
-        };
+            };
 
-        this._onResizeMouseUp = (e = null) => {
+            this._onResizeMouseUp = (e = null) => {
             if (e && this._resizePointerId !== undefined && e.pointerId !== this._resizePointerId) return;
             this._isResizing = false;
             this._resizeStart = null;
@@ -22383,7 +22415,8 @@ export class AnimationTablePopup {
             this._clampPanelPlacement();
             this._updatePanelPosition();
             this._saveUiPreferences();
-        };
+            };
+        }
 
         this._onRetimingMouseMove = (e) => {
             const retimingData = this._retimingData;
@@ -22650,7 +22683,7 @@ export class AnimationTablePopup {
 
     _updateHeaderNarrowState() {
         if (!this.panel) return;
-        const preferredWidth = Number(this._panelSize.width) || 0;
+        const preferredWidth = this._bottomDockMode ? 0 : (Number(this._panelSize.width) || 0);
         const renderedWidth = this.panel.getBoundingClientRect().width || 0;
         const width = renderedWidth > 0
             ? (preferredWidth > 0 ? Math.min(preferredWidth, renderedWidth) : renderedWidth)
@@ -23095,6 +23128,26 @@ export class AnimationTablePopup {
                 -webkit-backdrop-filter: var(--ui-backdrop-float);
                 -webkit-backdrop-filter: var(--ui-panel-glass-backdrop, var(--ui-backdrop-float));
                 overflow: hidden;
+            }
+
+            .animation-table-panel.is-bottom-dock {
+                left: var(--ui-bottom-dock-left);
+                right: var(--ui-bottom-dock-right);
+                top: auto;
+                bottom: var(--ui-status-slot-height);
+                width: auto;
+                height: var(--ui-anim-panel-height);
+                min-width: 460px;
+                max-width: none;
+            }
+
+            .animation-table-panel.is-bottom-dock .anim-resize-handle {
+                display: none;
+                pointer-events: none;
+            }
+
+            .animation-table-panel.is-bottom-dock .anim-table-header {
+                cursor: default;
             }
 
             .anim-table-header {

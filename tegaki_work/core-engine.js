@@ -200,6 +200,14 @@ export class CoreEngine {
                     glCanvas.style.height = '100%';
                     glCanvas.style.pointerEvents = 'none';
                 }
+
+                // The Canvas viewport now follows the layout slot below it. Keep Pixi's
+                // resize authority on that slot so Bottom Dock/Status changes resize the
+                // renderer surface instead of only clipping the canvas.
+                const canvasLayout = document.querySelector('.canvas-area');
+                if (canvasLayout) {
+                    this.app.resizeTo = canvasLayout;
+                }
             }
             
             const statusPanel = DOMBuilder.buildStatusPanel();
