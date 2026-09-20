@@ -395,7 +395,285 @@
 #animation-table-popup[data-dock-state="collapsed"] .anim-table-viewport,
 #animation-table-popup[data-dock-state="collapsed"] .anim-table-utility-row,
 #animation-table-popup[data-dock-state="collapsed"] .anim-asset-library,
-#animation-table-popup[data-dock-state="collapsed"] .anim-table-playback-cluster { display: none; }
+#animation-table-popup[data-dock-state="collapsed"] .anim-table-playback-cluster,
+#animation-table-popup[data-dock-state="collapsed"] .anim-dock-secondary { display: none; }
+
+/* The Dock owns the visible temporal group while it is open. The existing
+ * indicator remains the closed-Table route and is inert here, so no second
+ * Frame/Playback authority is introduced. */
+html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+#animation-table-popup.is-bottom-dock {
+    overflow: hidden;
+}
+
+#animation-table-popup.is-bottom-dock .anim-dock-resize-edge {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 8px;
+    z-index: 40;
+    border-top: 1px solid color-mix(in srgb, var(--futaba-light-medium) 72%, transparent);
+    cursor: ns-resize;
+    touch-action: none;
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-header {
+    padding-block: 8px 3px;
+    cursor: default;
+    touch-action: manipulation;
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-header-left {
+    align-items: center;
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-playback-cluster--leading,
+#animation-table-popup.is-bottom-dock .anim-table-playback-cluster--trailing {
+    display: none;
+}
+
+#animation-table-popup.is-bottom-dock .anim-playback-primary-slot {
+    min-width: 0;
+    min-height: 24px;
+    margin-inline: 0;
+    gap: 5px;
+}
+
+#animation-table-popup.is-bottom-dock #anim-play-toggle-btn {
+    width: 27px;
+    height: 24px;
+    min-width: 27px;
+    padding: 2px;
+}
+
+#animation-table-popup.is-bottom-dock #anim-play-toggle-btn::before {
+    width: 25px;
+    height: 23px;
+}
+
+.anim-dock-frame-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 0 auto;
+    min-height: 24px;
+    padding: 1px 3px;
+    border: 1px solid color-mix(in srgb, var(--futaba-maroon) 18%, transparent);
+    border-radius: var(--ui-radius-control);
+    background: color-mix(in srgb, var(--futaba-cream) 70%, transparent);
+    color: var(--futaba-maroon);
+}
+
+.anim-dock-frame-btn {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius-control);
+    background: transparent;
+    color: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.anim-dock-frame-btn:hover,
+.anim-dock-frame-btn:focus-visible {
+    border-color: var(--ui-border-hover);
+    background: var(--ui-surface-control-hover);
+}
+
+.anim-dock-frame-btn:focus-visible,
+.anim-dock-window-control:focus-visible,
+.anim-dock-lane-reference:focus-visible,
+.anim-dock-secondary-summary:focus-visible {
+    outline: 2px solid var(--active-border);
+    outline-offset: 1px;
+}
+
+.anim-dock-current-frame {
+    min-width: 34px;
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.anim-dock-secondary {
+    display: flex;
+    align-items: center;
+    flex: 0 1 auto;
+    min-width: 0;
+    color: var(--futaba-maroon);
+}
+
+.anim-dock-secondary-summary {
+    min-width: 34px;
+    padding: 4px 5px;
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius-control);
+    color: var(--futaba-maroon);
+    background: transparent;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+
+.anim-dock-secondary-summary::-webkit-details-marker {
+    display: none;
+}
+
+.anim-dock-secondary-summary::before {
+    content: '+';
+    display: inline-block;
+    margin-right: 2px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.anim-dock-secondary[open] .anim-dock-secondary-summary::before {
+    content: '−';
+}
+
+.anim-dock-secondary-summary:hover,
+.anim-dock-secondary[open] .anim-dock-secondary-summary {
+    border-color: var(--ui-border-hover);
+    background: var(--ui-surface-control-hover);
+}
+
+.anim-dock-secondary-body {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 3px 4px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: var(--ui-radius-control);
+    background: var(--futaba-cream);
+}
+
+.anim-dock-secondary:not([open]) .anim-dock-secondary-body {
+    display: none;
+}
+
+.anim-dock-secondary-body .anim-timeline-settings,
+.anim-dock-secondary-body .anim-scope-controls,
+.anim-dock-secondary-body .anim-playback-controls,
+.anim-dock-secondary-body .anim-preview-toggle,
+.anim-dock-secondary-body .anim-onion-toggle,
+.anim-dock-lane-reference {
+    margin: 0;
+}
+
+.anim-dock-lane-reference {
+    width: 24px;
+    height: 22px;
+    min-width: 24px;
+    padding: 2px;
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius-control);
+    background: transparent;
+    color: var(--futaba-maroon);
+    cursor: pointer;
+}
+
+.anim-dock-lane-reference:hover,
+.anim-dock-lane-reference.is-active {
+    border-color: var(--ui-border-hover);
+    background: var(--ui-surface-control-hover);
+}
+
+.anim-dock-lane-reference.is-active {
+    box-shadow: var(--ui-shadow-control-active);
+}
+
+.anim-dock-lane-reference-icon,
+.anim-dock-lane-reference-icon svg {
+    display: inline-flex;
+    width: 13px;
+    height: 13px;
+}
+
+.anim-dock-window-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+.anim-dock-window-control {
+    width: 28px;
+    height: 24px;
+    min-width: 28px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius-control);
+    background: transparent;
+    color: var(--futaba-maroon);
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.anim-dock-window-control:hover {
+    border-color: var(--ui-border-hover);
+    background: var(--ui-surface-control-hover);
+}
+
+.anim-dock-window-control[aria-pressed="true"] {
+    background: var(--ui-surface-control-active);
+}
+
+.anim-dock-window-control svg {
+    display: block;
+    width: 13px;
+    height: 13px;
+    margin: auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+#animation-table-popup.is-bottom-dock #anim-table-close-btn {
+    position: static !important;
+    width: 28px;
+    height: 24px;
+    min-width: 28px;
+    margin-left: 1px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius-control);
+    color: var(--futaba-maroon);
+    background: transparent;
+    font-size: 17px;
+    line-height: 1;
+}
+
+#animation-table-popup.is-bottom-dock #anim-table-close-btn:hover,
+#animation-table-popup.is-bottom-dock #anim-table-close-btn:focus-visible {
+    border-color: var(--ui-border-hover);
+    background: var(--ui-surface-control-hover);
+}
+
+#animation-table-popup.is-bottom-dock .anim-dock-window-controls + #anim-table-close-btn {
+    flex: 0 0 28px;
+}
 
 @media (pointer: coarse) {
     .animation-table-panel .anim-table-utility-row {

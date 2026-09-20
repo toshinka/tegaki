@@ -471,6 +471,11 @@ export class AnimationTablePopup {
         
         this.panel = null;
         this._bottomDockMode = true;
+        this._bottomDockState = 'compact';
+        this._bottomDockNormalHeight = null;
+        this._bottomDockExpandedHeight = null;
+        this._bottomDockResizeSession = null;
+        this._bottomDockWindowResizeHandler = null;
         this.motionPanel = null;
         this.motionPanelDragCleanup = null;
         this.motionPanelViewportCleanup = null;
@@ -705,10 +710,17 @@ export class AnimationTablePopup {
     _setBottomDockActive(active) {
         if (!this._bottomDockMode) return;
 
+        const preserveCameraCenter = this._isBottomDockCameraCentered();
+
         document.documentElement?.classList.toggle(
             'animation-table-bottom-dock-active',
             active === true
         );
+        const legacyFrameIndicator = document.querySelector('#layer-panel-container .frame-indicator');
+        if (legacyFrameIndicator) {
+            legacyFrameIndicator.inert = active === true;
+            legacyFrameIndicator.toggleAttribute?.('inert', active === true);
+        }
         if (this.panel && active === true) {
             this.panel.classList.add('is-bottom-dock');
             ['left', 'top', 'right', 'bottom', 'width', 'height'].forEach(property => {
@@ -717,32 +729,219 @@ export class AnimationTablePopup {
         }
 
         const resizeCanvasToLayout = () => {
-            window.coreEngine?.getApp?.()?.resize?.();
+            this._getBottomDockApp()?.resize?.();
+            if (preserveCameraCenter) {
+                this._recenterBottomDockCameraToLayout();
+            }
         };
         resizeCanvasToLayout();
         if (typeof requestAnimationFrame === 'function') {
-            requestAnimationFrame(resizeCanvasToLayout);
+            requestAnimationFrame(() => {
+                resizeCanvasToLayout();
+            });
         }
         if (active) this._queueBottomDockLayout();
+    }
+
+    _getBottomDockApp() {
+        return this.layerSystem?.app || window.coreEngine?.getApp?.() || window.coreEngine?.app || null;
+    }
+
+    _getBottomDockCamera() {
+        return this.layerSystem?.cameraSystem
+            || window.coreEngine?.getCameraSystem?.()
+            || window.coreEngine?.cameraSystem
+            || window.cameraSystem
+            || null;
+    }
+
+    _isBottomDockCameraCentered() {
+        const camera = this._getBottomDockCamera();
+        const center = camera?.getCameraFrameCenter?.();
+        if (!center) return false;
+        const screen = camera?.app?.renderer?.screen;
+        const rendererCentered = !!screen
+            && Math.abs(center.x - screen.width / 2) < 2
+            && Math.abs(center.y - screen.height / 2) < 2;
+        const viewportCentered = Math.abs(center.x - window.innerWidth / 2) < 2
+            && Math.abs(center.y - window.innerHeight / 2) < 2;
+        return rendererCentered || viewportCentered;
+    }
+
+    _recenterBottomDockCameraToLayout() {
+        const camera = this._getBottomDockCamera();
+        const canvasArea = document.querySelector('.canvas-area')?.getBoundingClientRect?.();
+        const center = camera?.getCameraFrameCenter?.();
+        if (!canvasArea || !center || typeof camera?.pan !== 'function') return;
+        const targetX = canvasArea.left + canvasArea.width / 2;
+        const targetY = canvasArea.top + canvasArea.height / 2;
+        camera.pan(targetX - center.x, targetY - center.y);
+    }
+
+    _getBottomDockHeightBounds(chrome = null) {
+        const viewportHeight = Math.max(1, Number(window.innerHeight) || 1);
+        const resolvedChrome = Math.max(32, Math.ceil(chrome || 0));
+        const statusHeight = Number.parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--ui-status-slot-height')
+        ) || 26;
+        // Keep a viewport-aware Canvas floor. This is deliberately proportional
+        // rather than a fixed 320px minimum, so short workspaces retain a usable
+        // drawing area without changing camera or artwork authority.
+        const canvasFloor = Math.max(140, Math.min(320, Math.floor(viewportHeight * 0.3)));
+        const layoutCeiling = viewportHeight - statusHeight - canvasFloor;
+        return {
+            min: resolvedChrome,
+            max: Math.max(
+                resolvedChrome,
+                Math.min(440, Math.floor(viewportHeight * 0.52), layoutCeiling)
+            )
+        };
+    }
+
+    _getBottomDockChromeHeight() {
+        const headerHeight = this.panel?.querySelector('.anim-table-header')?.getBoundingClientRect?.().height;
+        return Math.max(32, Math.ceil(Number(headerHeight) || 0) + 2);
+    }
+
+    _setBottomDockHeight(height) {
+        const nextHeight = Math.max(0, Math.ceil(Number(height) || 0));
+        const value = `${nextHeight}px`;
+        if (document.documentElement.style.getPropertyValue('--ui-bottom-dock-open-height') === value) return;
+        const preserveCameraCenter = this._isBottomDockCameraCentered();
+        document.documentElement.style.setProperty('--ui-bottom-dock-open-height', value);
+        this._getBottomDockApp()?.resize?.();
+        if (preserveCameraCenter) {
+            this._recenterBottomDockCameraToLayout();
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(() => this._recenterBottomDockCameraToLayout());
+            }
+        }
+    }
+
+    _rememberBottomDockNormalHeight() {
+        if (this._bottomDockNormalHeight !== null) return;
+        const currentHeight = Number.parseFloat(
+            document.documentElement.style.getPropertyValue('--ui-bottom-dock-open-height')
+        );
+        if (Number.isFinite(currentHeight) && currentHeight > 0) {
+            this._bottomDockNormalHeight = currentHeight;
+            return;
+        }
+        const panelHeight = this.panel?.getBoundingClientRect?.().height;
+        if (Number.isFinite(panelHeight) && panelHeight > 0) {
+            this._bottomDockNormalHeight = panelHeight;
+        }
     }
 
     // Presentation only: no Frame, selection, playback or edit terminal changes.
     _setBottomDockState(state) {
         if (!['collapsed', 'compact', 'expanded'].includes(state)) return;
+        const previousState = this._bottomDockState;
+        if (previousState === 'compact' && state !== 'compact') {
+            this._rememberBottomDockNormalHeight();
+        }
+        if (state === 'compact' && previousState !== 'compact') {
+            this._bottomDockExpandedHeight = null;
+        }
         this._bottomDockState = state;
-        this.panel.dataset.dockState = state;
+        this.panel?.dataset && (this.panel.dataset.dockState = state);
         const collapsed = state === 'collapsed';
         for (const surface of this.panel.querySelectorAll('.anim-table-viewport, .anim-table-utility-row, .anim-asset-library')) {
             if (collapsed && surface.contains(document.activeElement)) {
-                this.panel.querySelector('[data-dock-state-button="compact"]')?.focus();
+                this.panel.querySelector('[data-dock-maximize-toggle]')?.focus();
             }
             surface.inert = collapsed;
+            surface.toggleAttribute?.('inert', collapsed);
         }
-        for (const button of this.panel.querySelectorAll('[data-dock-state-button]')) {
-            button.setAttribute('aria-pressed', String(button.dataset.dockStateButton === state));
+        const minimizeButton = this.panel.querySelector('[data-dock-state-button="collapsed"]');
+        if (minimizeButton) minimizeButton.setAttribute('aria-pressed', String(collapsed));
+        const maximizeButton = this.panel.querySelector('[data-dock-maximize-toggle]');
+        if (maximizeButton) {
+            const expanded = state === 'expanded';
+            const restoresNormal = expanded || collapsed;
+            maximizeButton.setAttribute('aria-pressed', String(expanded));
+            maximizeButton.setAttribute('aria-label', restoresNormal ? 'Restore Animation Table' : 'Maximize Animation Table');
+            maximizeButton.title = restoresNormal ? 'Tableを通常表示へ戻す' : 'Tableを最大表示にする';
+            const icon = maximizeButton.querySelector('[data-dock-window-icon]');
+            if (icon) icon.innerHTML = expanded
+                ? '<path d="M8 3H3v5"/><path d="M3 8 9 2"/><path d="M16 21h5v-5"/><path d="m21 16-6 6"/>'
+                : '<rect x="5" y="5" width="14" height="14" rx="1.5"/>';
         }
         this._queueBottomDockLayout();
     }
+
+    _toggleBottomDockMaximize() {
+        if (this._bottomDockState === 'expanded' || this._bottomDockState === 'collapsed') this._setBottomDockState('compact');
+        else this._setBottomDockState('expanded');
+    }
+
+    _beginBottomDockResize(event) {
+        if (!this.isVisible || this._bottomDockState === 'collapsed' || this._bottomDockResizeSession) return;
+        if (event.button !== undefined && event.button !== 0) return;
+        const panelRect = this.panel.getBoundingClientRect();
+        const chrome = this._getBottomDockChromeHeight();
+        const bounds = this._getBottomDockHeightBounds(chrome);
+        const currentHeight = Math.ceil(panelRect.height);
+        this._bottomDockResizeSession = {
+            pointerId: event.pointerId,
+            startY: event.clientY,
+            startHeight: currentHeight,
+            initialState: this._bottomDockState,
+            initialNormalHeight: this._bottomDockNormalHeight,
+            initialExpandedHeight: this._bottomDockExpandedHeight,
+            height: Math.max(bounds.min, Math.min(bounds.max, currentHeight))
+        };
+        try {
+            event.currentTarget?.setPointerCapture?.(event.pointerId);
+        } catch (error) {}
+        document.addEventListener('pointermove', this._onBottomDockResizeMove, { passive: false });
+        document.addEventListener('pointerup', this._onBottomDockResizeUp);
+        document.addEventListener('pointercancel', this._onBottomDockResizeCancel);
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
+    _onBottomDockResizeMove = (event) => {
+        const session = this._bottomDockResizeSession;
+        if (!session || event.pointerId !== session.pointerId) return;
+        const bounds = this._getBottomDockHeightBounds(this._getBottomDockChromeHeight());
+        session.height = Math.max(
+            bounds.min,
+            Math.min(bounds.max, session.startHeight - (event.clientY - session.startY))
+        );
+        this._setBottomDockHeight(session.height);
+        event.preventDefault();
+    };
+
+    _finishBottomDockResize = (event = null, cancelled = false) => {
+        const session = this._bottomDockResizeSession;
+        if (!session || (event && event.pointerId !== undefined && event.pointerId !== session.pointerId)) return;
+        this._bottomDockResizeSession = null;
+        document.removeEventListener('pointermove', this._onBottomDockResizeMove);
+        document.removeEventListener('pointerup', this._onBottomDockResizeUp);
+        document.removeEventListener('pointercancel', this._onBottomDockResizeCancel);
+        const edge = this.panel?.querySelector('.anim-dock-resize-edge');
+        try {
+            edge?.releasePointerCapture?.(session.pointerId);
+        } catch (error) {}
+        if (cancelled) {
+            this._bottomDockNormalHeight = session.initialNormalHeight;
+            this._bottomDockExpandedHeight = session.initialExpandedHeight;
+            this._setBottomDockState(session.initialState);
+            this._setBottomDockHeight(session.startHeight);
+            return;
+        }
+        if (session.initialState === 'compact') {
+            this._bottomDockNormalHeight = session.height;
+        } else if (session.initialState === 'expanded') {
+            this._bottomDockExpandedHeight = session.height;
+        }
+        this._setBottomDockHeight(session.height);
+        this._queueBottomDockLayout();
+    };
+
+    _onBottomDockResizeUp = (event) => this._finishBottomDockResize(event, false);
+    _onBottomDockResizeCancel = (event) => this._finishBottomDockResize(event, true);
 
     _queueBottomDockLayout() {
         if (!this._bottomDockMode || !this.isVisible || this._dockLayoutRaf) return;
@@ -754,16 +953,40 @@ export class AnimationTablePopup {
             const utility = this.panel.querySelector('.anim-table-utility-row');
             const content = this.panel.querySelector('.anim-table-content');
             const state = this._bottomDockState || 'compact';
-            const chrome = header.getBoundingClientRect().height + 2;
-            const ceiling = Math.max(chrome, Math.min(440, window.innerHeight * 0.52));
-            const desired = state === 'collapsed' ? chrome : state === 'expanded' ? ceiling
-                : chrome + utility.getBoundingClientRect().height + content.getBoundingClientRect().height + 14;
-            const height = Math.ceil(Math.min(desired, state === 'compact' ? Math.min(ceiling, window.innerHeight * 0.4) : ceiling));
-            const value = `${height}px`;
-            if (document.documentElement.style.getPropertyValue('--ui-bottom-dock-open-height') !== value) {
-                document.documentElement.style.setProperty('--ui-bottom-dock-open-height', value);
-                window.coreEngine?.getApp?.()?.resize?.();
+            const chrome = this._getBottomDockChromeHeight();
+            const bounds = this._getBottomDockHeightBounds(chrome);
+            const laneCount = Math.max(1, content.querySelectorAll('.anim-timeline-row').length);
+            const laneHeight = Number.parseFloat(
+                getComputedStyle(document.documentElement).getPropertyValue('--ui-anim-lane-row-height')
+            ) || 26;
+            const timelineHeader = content.querySelector('.anim-track-header')?.getBoundingClientRect().height || 24;
+            const naturalBodyHeight = Math.max(
+                timelineHeader + Math.min(laneCount, 4) * laneHeight + 8,
+                content.scrollHeight || 0
+            );
+            const compactBodyHeight = Math.min(naturalBodyHeight, timelineHeader + Math.min(laneCount, 4) * laneHeight + 8);
+            const compactDesired = chrome
+                + (utility?.getBoundingClientRect().height || 0)
+                + compactBodyHeight
+                + (this.panel.querySelector('.anim-asset-library.is-visible')?.getBoundingClientRect().height || 0)
+                + 4;
+            let height;
+            if (this._bottomDockResizeSession) {
+                height = this._bottomDockResizeSession.height;
+            } else if (state === 'collapsed') {
+                height = chrome;
+            } else if (state === 'expanded') {
+                height = this._bottomDockExpandedHeight ?? bounds.max;
+            } else if (this._bottomDockNormalHeight !== null) {
+                height = this._bottomDockNormalHeight;
+            } else {
+                height = compactDesired;
             }
+            height = Math.ceil(Math.max(bounds.min, Math.min(bounds.max, height)));
+            if (state === 'compact' && this._bottomDockNormalHeight === null) {
+                this._bottomDockNormalHeight = height;
+            }
+            this._setBottomDockHeight(height);
         });
     }
 
@@ -838,6 +1061,7 @@ export class AnimationTablePopup {
 
     hide() {
         if (!this.panel) return;
+        if (this._bottomDockResizeSession) this._finishBottomDockResize(null, true);
         const wasVisible = this.isVisible === true;
         if (this.layerSystem?.getLayerWarpEditSession?.()) {
             // Table closeはANIMATE Layer WARPのWHEN消失。runtime candidateを保存へ漏らさない。
@@ -18386,6 +18610,14 @@ export class AnimationTablePopup {
             if (countNode) countNode.textContent = String(count);
         }
 
+        const laneReferenceBtn = this.panel.querySelector('.anim-dock-lane-reference');
+        if (laneReferenceBtn) {
+            const active = this.isLaneReferenceActive();
+            laneReferenceBtn.classList.toggle('is-active', active);
+            laneReferenceBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            laneReferenceBtn.title = active ? '他レーン参照: ON' : '他レーン参照: OFF';
+        }
+
         const previewToggleBtn = this.panel.querySelector('#anim-preview-toggle-btn');
         if (previewToggleBtn) {
             previewToggleBtn.classList.toggle('active', this.isPreviewActive === true);
@@ -19586,6 +19818,7 @@ export class AnimationTablePopup {
         this.panel.style.display = 'none';
         
         this.panel.innerHTML = `
+            <div class="anim-dock-resize-edge" title="Dockの高さを調整" aria-label="Resize Animation Table Dock" role="separator" aria-orientation="horizontal" tabindex="-1"></div>
             <div class="anim-table-header">
                 <div class="anim-table-header-row anim-table-header-row--playback">
                     <div class="anim-table-header-left">
@@ -19738,29 +19971,107 @@ export class AnimationTablePopup {
         if (this._bottomDockMode) {
             const zoom = utilityRow.querySelector('.anim-zoom-controls');
             if (zoom) utilityRow.appendChild(zoom);
-            const frame = document.createElement('span');
-            frame.className = 'anim-dock-current-frame';
-            frame.setAttribute('aria-label', '現在Frame');
-            playbackRow.querySelector('.anim-playback-primary-slot').appendChild(frame);
-            const states = document.createElement('div');
-            states.className = 'anim-dock-states';
-            states.setAttribute('role', 'group');
-            states.setAttribute('aria-label', 'Table表示サイズ');
-            for (const [state, label, icon] of [['collapsed', '収納', '↓'], ['compact', '通常', '≡'], ['expanded', '時間編集', '↑']]) {
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.dataset.dockStateButton = state;
-                button.textContent = icon;
-                button.title = `Tableを${label}表示にする`;
-                button.setAttribute('aria-label', button.title);
-                button.addEventListener('click', () => this._setBottomDockState(state));
-                states.appendChild(button);
+            const primarySlot = playbackRow.querySelector('.anim-playback-primary-slot');
+            if (primarySlot) {
+                const frameControls = document.createElement('div');
+                frameControls.className = 'anim-dock-frame-controls';
+                frameControls.setAttribute('role', 'group');
+                frameControls.setAttribute('aria-label', 'Frame navigation');
+                const framePrev = document.createElement('button');
+                framePrev.type = 'button';
+                framePrev.className = 'anim-dock-frame-btn';
+                framePrev.dataset.dockFrameAction = 'previous';
+                framePrev.textContent = '<';
+                framePrev.title = '前Frame';
+                framePrev.setAttribute('aria-label', '前Frame');
+                const frame = document.createElement('span');
+                frame.className = 'anim-dock-current-frame';
+                frame.setAttribute('aria-label', '現在Frame');
+                framePrev.addEventListener('click', () => {
+                    const legacyButton = document.getElementById('frame-prev-btn');
+                    if (legacyButton) legacyButton.click();
+                    else this.moveTimelineFrameByDelta(-1);
+                });
+                const frameNext = document.createElement('button');
+                frameNext.type = 'button';
+                frameNext.className = 'anim-dock-frame-btn';
+                frameNext.dataset.dockFrameAction = 'next';
+                frameNext.textContent = '>';
+                frameNext.title = '次Frame';
+                frameNext.setAttribute('aria-label', '次Frame');
+                frameNext.addEventListener('click', () => {
+                    const legacyButton = document.getElementById('frame-next-btn');
+                    if (legacyButton) legacyButton.click();
+                    else this.moveTimelineFrameByDelta(1);
+                });
+                frameControls.append(framePrev, frame, frameNext);
+                primarySlot.insertBefore(frameControls, primarySlot.firstChild);
+                frameControls.addEventListener('wheel', (event) => {
+                    if (event.ctrlKey || event.metaKey || event.altKey || event.deltaY === 0) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.moveTimelineFrameByDelta(event.deltaY < 0 ? -1 : 1);
+                }, { passive: false });
             }
-            playbackRow.insertBefore(states, closeButton);
+
+            const secondary = document.createElement('details');
+            secondary.className = 'anim-dock-secondary';
+            const secondarySummary = document.createElement('summary');
+            secondarySummary.className = 'anim-dock-secondary-summary';
+            secondarySummary.textContent = 'MORE';
+            secondarySummary.setAttribute('aria-label', 'Secondary animation controls');
+            const secondaryBody = document.createElement('div');
+            secondaryBody.className = 'anim-dock-secondary-body';
+            for (const selector of [
+                '.anim-timeline-settings',
+                '.anim-scope-controls',
+                '.anim-playback-controls',
+                '.anim-preview-toggle',
+                '.anim-onion-toggle'
+            ]) {
+                const control = playbackRow.querySelector(selector);
+                if (control) secondaryBody.appendChild(control);
+            }
+            const laneReference = document.createElement('button');
+            laneReference.type = 'button';
+            laneReference.className = 'anim-dock-lane-reference';
+            laneReference.innerHTML = `<span class="anim-dock-lane-reference-icon" aria-hidden="true">${UI_ICONS.laneReference}</span>`;
+            laneReference.title = '他レーン参照: OFF';
+            laneReference.setAttribute('aria-label', '他レーン参照');
+            laneReference.setAttribute('aria-pressed', 'false');
+            laneReference.addEventListener('click', () => {
+                this.toggleLaneReferenceMode();
+                this.render();
+            });
+            secondaryBody.appendChild(laneReference);
+            secondary.append(secondarySummary, secondaryBody);
+            playbackRow.querySelector('.anim-table-header-left')?.appendChild(secondary);
+
+            const windowControls = document.createElement('div');
+            windowControls.className = 'anim-dock-window-controls';
+            windowControls.setAttribute('role', 'group');
+            windowControls.setAttribute('aria-label', 'Animation Table window controls');
+            const minimize = document.createElement('button');
+            minimize.type = 'button';
+            minimize.className = 'anim-dock-window-control';
+            minimize.dataset.dockStateButton = 'collapsed';
+            minimize.textContent = '−';
+            minimize.title = 'Tableを最小化';
+            minimize.setAttribute('aria-label', 'Minimize Animation Table');
+            minimize.addEventListener('click', () => this._setBottomDockState('collapsed'));
+            const maximize = document.createElement('button');
+            maximize.type = 'button';
+            maximize.className = 'anim-dock-window-control';
+            maximize.dataset.dockMaximizeToggle = 'true';
+            maximize.title = 'Tableを最大表示にする';
+            maximize.setAttribute('aria-label', 'Maximize Animation Table');
+            maximize.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" data-dock-window-icon><rect x="5" y="5" width="14" height="14" rx="1.5"/></svg>';
+            maximize.addEventListener('click', () => this._toggleBottomDockMaximize());
+            windowControls.append(minimize, maximize);
+            playbackRow.insertBefore(windowControls, closeButton);
             this._setBottomDockState(this._bottomDockState || 'compact');
-            // Reuse the existing viewport-resize listener lifetime: this panel
-            // is application-owned, like the existing Motion viewport listener.
-            window.addEventListener('resize', () => this._queueBottomDockLayout());
+            this._bottomDockWindowResizeHandler = () => this._queueBottomDockLayout();
+            window.addEventListener('resize', this._bottomDockWindowResizeHandler);
         }
         return true;
     }
@@ -20621,6 +20932,14 @@ export class AnimationTablePopup {
         const closeBtn = this.panel.querySelector('#anim-table-close-btn');
         if (closeBtn) {
             closeBtn.addEventListener('click', () => this.hide());
+        }
+
+        const bottomDockResizeEdge = this.panel.querySelector('.anim-dock-resize-edge');
+        if (bottomDockResizeEdge && this._bottomDockMode) {
+            bottomDockResizeEdge.addEventListener('pointerdown', (event) => this._beginBottomDockResize(event));
+            bottomDockResizeEdge.addEventListener('lostpointercapture', (event) => {
+                if (this._bottomDockResizeSession) this._finishBottomDockResize(event, true);
+            });
         }
 
         const playBtn = this.panel.querySelector('#anim-play-toggle-btn');
