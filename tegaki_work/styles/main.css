@@ -64,6 +64,16 @@
     ), color-mix(in srgb, var(--futaba-background) 52%, transparent);
     --ui-glass-shell-border: color-mix(in srgb, var(--futaba-light-medium) 62%, transparent);
     --ui-glass-shell-shadow: none;
+    /* The right work area owns a continuous, low-alpha surface behind both
+       the Layer content and its operation rail. Keep the gradient here so
+       the surface remains one token authority rather than an element-wide
+       opacity treatment. */
+    --ui-right-workspace-surface: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--futaba-background) 8%, transparent) 0%,
+        color-mix(in srgb, var(--futaba-cream) 18%, transparent) 64%,
+        color-mix(in srgb, var(--futaba-light-medium) 28%, transparent) 100%
+    );
     --ui-opacity-disabled: 0.5;
     /* Phase 9j Layer Panel bridge; only its detached operation rail joins Phase 9k. */
     --ui-layer-surface-rail: var(--ui-rail-surface-dark);
@@ -153,7 +163,8 @@
     --ui-status-gap: 14px;
     --ui-status-bottom: 8px;
     --ui-status-slot-height: 26px;
-    --ui-right-workspace-status-height: 22px;
+    --ui-bottom-dock-footer-height: 25px;
+    --ui-right-workspace-status-height: var(--ui-bottom-dock-footer-height);
     --ui-bottom-dock-height: 0px;
     --ui-bottom-dock-left: calc(var(--ui-rail-width) + 8px);
     --ui-right-workspace-inset: 6px;
@@ -3324,7 +3335,7 @@ canvas {
     height: var(--ui-right-workspace-status-height);
     min-height: var(--ui-right-workspace-status-height);
     padding: 0 6px;
-    background: var(--ui-glass-shell-surface);
+    background: color-mix(in srgb, var(--futaba-background) 24%, transparent);
     border: 0;
     border-top: 1px solid var(--ui-glass-shell-border);
     border-radius: 0 0 var(--ui-radius-panel) var(--ui-radius-panel);

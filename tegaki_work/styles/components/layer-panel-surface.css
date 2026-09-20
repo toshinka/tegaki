@@ -10,22 +10,43 @@
 .right-panel.right-workspace-frame {
     display: grid;
     grid-template-columns: max-content;
-    grid-template-rows: minmax(0, max-content) max-content;
-    align-items: center;
+    grid-template-rows: minmax(0, 1fr) max-content;
+    align-items: stretch;
     min-height: 0;
-    max-height: calc(100vh - 96px);
-    overflow: hidden;
-    background: var(--ui-glass-shell-surface);
-    border-radius: var(--ui-radius-panel);
-    box-shadow: 0 0 0 1px var(--ui-glass-shell-border), var(--ui-glass-shell-shadow);
+    box-sizing: border-box;
+    height: auto;
+    top: 48px;
+    bottom: 0;
+    right: var(--ui-right-workspace-inset);
+    transform: none;
+    max-height: none;
+    overflow: visible;
+    background: transparent;
+    border-radius: 0;
+    isolation: isolate;
     backdrop-filter: var(--ui-panel-glass-backdrop);
     -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
+}
+
+/* Extend only the non-interactive paint layer. The child grid keeps its
+   measured left boundary and Canvas/Dock width budget; the surface continues
+   behind the rail through the existing right inset to the viewport edge. */
+.right-panel.right-workspace-frame::before {
+    content: '';
+    position: absolute;
+    z-index: 0;
+    inset: 0 calc(-1 * var(--ui-right-workspace-inset)) 0 0;
+    background: var(--ui-right-workspace-surface);
+    box-shadow: inset 1px 0 0 var(--ui-glass-shell-border);
+    pointer-events: none;
 }
 .right-workspace-frame > .layer-panel-container,
 .right-workspace-frame > .layer-panel-context-inspector {
     grid-area: 1 / 1;
     min-height: 0;
-    max-height: 100%;
+    height: 100%;
+    max-height: none;
+    align-self: stretch;
 }
 .right-workspace-frame.has-transform-workspace > .layer-panel-container {
     height: 0;
@@ -39,17 +60,19 @@
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    justify-content: center;
     width: var(--right-workspace-width, 0px);
     min-width: 0;
-    max-height: calc(100vh - 96px);
+    height: 100%;
+    max-height: none;
     overflow: hidden;
     pointer-events: auto;
     color: var(--ui-layer-text);
-    background: var(--ui-glass-shell-surface);
-    border: 1px solid var(--ui-glass-shell-border);
-    border-radius: var(--ui-radius-panel);
-    backdrop-filter: var(--ui-panel-glass-backdrop);
-    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 }
 .right-workspace-frame > .layer-panel-context-inspector[hidden] {
     display: none;
@@ -58,6 +81,19 @@
     min-height: 0;
     max-height: 100%;
 }
+
+/* A short list is a single authoring group. The scrollable state is kept
+   top-aligned so a long list gets all available height instead of decorative
+   empty space. The existing renderer owns the class toggle. */
+.right-workspace-frame > .layer-panel-container:not(.layer-panel-container--scrollable) {
+    grid-template-rows: max-content max-content;
+    align-content: center;
+}
+
+.right-workspace-frame > .layer-panel-container.layer-panel-container--scrollable {
+    align-content: stretch;
+}
+
 .right-workspace-frame > .right-workspace-status {
     grid-area: 2 / 1;
     min-width: 0;
@@ -150,6 +186,13 @@
 .right-workspace-frame .transform-popup-actions {
     justify-content: space-between;
     flex-wrap: wrap;
+}
+
+/* Keep a short Transform control group centered with its target label and
+   terminal actions. Flex shrink still hands the panel an internal scroll when
+   BASIC/WARP content is taller than the available work area. */
+.right-workspace-frame > .layer-panel-context-inspector .layer-transform-panel.is-context-inspector {
+    flex: 0 1 auto;
 }
 
 .right-panel .layer-controls-row {

@@ -801,6 +801,42 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
     border-bottom-color: color-mix(in srgb, var(--ui-panel-glass-border) 62%, transparent);
 }
 
+/* The dock and the rehosted common Status share one derived lower slot. Keep
+   the panel's bottom open so both outer edges terminate on the viewport edge. */
+#animation-table-popup.is-bottom-dock {
+    box-sizing: border-box;
+    border-bottom: 0;
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-utility-row {
+    box-sizing: border-box;
+    flex: 0 0 var(--ui-bottom-dock-footer-height);
+    height: var(--ui-bottom-dock-footer-height);
+    min-height: var(--ui-bottom-dock-footer-height);
+    padding-block: 0;
+    border-top: 1px solid var(--ui-glass-shell-border);
+}
+
+/* Both columns are independent flex stacks. Explicit border-box rows prevent
+   a one-pixel cumulative drift between labels and timeline cells, including
+   projected child Layer / Bone rows. */
+#animation-table-popup.is-bottom-dock .anim-track-header,
+#animation-table-popup.is-bottom-dock .anim-timeline-header {
+    box-sizing: border-box;
+    flex: 0 0 var(--ui-anim-timeline-header-height);
+    height: var(--ui-anim-timeline-header-height);
+    min-height: var(--ui-anim-timeline-header-height);
+}
+
+#animation-table-popup.is-bottom-dock .anim-track-item,
+#animation-table-popup.is-bottom-dock .anim-timeline-row {
+    box-sizing: border-box;
+    flex: 0 0 var(--ui-anim-lane-row-height);
+    height: var(--ui-anim-lane-row-height);
+    min-height: var(--ui-anim-lane-row-height);
+    line-height: 1;
+}
+
 #animation-table-popup.is-bottom-dock .anim-frame-num {
     background: color-mix(in srgb, var(--futaba-background) 70%, transparent);
     border-right-color: color-mix(in srgb, var(--ui-panel-glass-border) 62%, transparent);
@@ -812,6 +848,10 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
 }
 
 @media (pointer: coarse) {
+    :root {
+        --ui-bottom-dock-footer-height: 42px;
+    }
+
     #animation-table-popup.is-bottom-dock .anim-table-utility-row {
         min-height: 42px;
         padding-block: 6px;
@@ -825,28 +865,28 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
  */
 #animation-table-popup.is-bottom-dock {
     --ui-anim-timeline-header-height: 18px;
-    --ui-anim-lane-row-height: 23px;
+    --ui-anim-lane-row-height: 22px;
     background: var(--ui-glass-shell-surface);
     border-color: var(--ui-glass-shell-border);
     box-shadow: var(--ui-glass-shell-shadow);
 }
 
 #animation-table-popup.is-bottom-dock .anim-table-header {
-    padding: 2px 6px 1px;
+    padding: 1px 6px 0;
     background: color-mix(in srgb, var(--ui-panel-glass-surface) 66%, transparent);
 }
 
 #animation-table-popup.is-bottom-dock .anim-table-header-row--playback {
-    min-height: 24px;
+    min-height: 23px;
 }
 
 #animation-table-popup.is-bottom-dock .anim-playback-primary-slot {
-    min-height: 24px;
+    min-height: 23px;
 }
 
 #animation-table-popup.is-bottom-dock .anim-table-utility-row {
-    min-height: 27px;
-    padding: 1px 6px;
+    min-height: 25px;
+    padding: 0 6px;
     background: color-mix(in srgb, var(--ui-panel-glass-surface) 62%, transparent);
 }
 
