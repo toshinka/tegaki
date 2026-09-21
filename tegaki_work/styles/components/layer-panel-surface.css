@@ -10,7 +10,7 @@
 .right-panel.right-workspace-frame {
     display: grid;
     grid-template-columns: max-content;
-    grid-template-rows: minmax(0, 1fr) max-content;
+    grid-template-rows: max-content minmax(0, 1fr) max-content;
     align-items: stretch;
     min-height: 0;
     box-sizing: border-box;
@@ -25,6 +25,9 @@
     border-radius: 0;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    /* Canvas Transform overlays stop at 2700; the interactive inspector and
+       primary switch remain the topmost workspace controls. */
+    z-index: 2701;
 }
 
 /* The Frame is a transparent layout boundary. Its empty area must expose the
@@ -32,7 +35,7 @@
    ownership one surface at a time. */
 .right-workspace-frame > .layer-panel-container,
 .right-workspace-frame > .layer-panel-context-inspector {
-    grid-area: 1 / 1;
+    grid-area: 2 / 1;
     min-height: 0;
     height: 100%;
     max-height: none;
@@ -151,10 +154,82 @@
 }
 
 .right-workspace-frame > .right-workspace-status {
-    grid-area: 2 / 1;
+    grid-area: 3 / 1;
     min-width: 0;
     position: relative;
     z-index: 1;
+}
+
+/* Primary Layer / Transform presentation switch. The selected capsule follows
+   the existing Transform panel state; this surface never owns edit state. */
+.right-workspace-frame > .right-workspace-mode-switch {
+    grid-area: 1 / 1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px;
+    box-sizing: border-box;
+    width: min(178px, 100%);
+    min-width: 0;
+    min-height: 32px;
+    padding: 2px;
+    justify-self: center;
+    pointer-events: auto;
+    border: 1px solid var(--ui-panel-glass-border);
+    border-radius: 999px;
+    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--futaba-background) 58%, transparent);
+    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
+    backdrop-filter: var(--ui-panel-glass-backdrop);
+}
+
+.right-workspace-mode-segment {
+    min-width: 0;
+    min-height: 26px;
+    padding: 3px 5px;
+    overflow: hidden;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    color: var(--text-secondary);
+    background: transparent;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.right-workspace-mode-segment:hover:not(.is-selected) {
+    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--futaba-cream) 42%, transparent);
+}
+
+.right-workspace-mode-segment.is-selected,
+.right-workspace-mode-segment[aria-pressed="true"] {
+    color: var(--futaba-background);
+    background: color-mix(in srgb, var(--futaba-maroon) 68%, transparent);
+    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
+    backdrop-filter: var(--ui-panel-glass-backdrop);
+}
+
+.right-workspace-mode-segment:focus-visible {
+    outline: 2px solid var(--active-border);
+    outline-offset: -1px;
+}
+
+.right-workspace-terminal.is-exit-choice-requested {
+    box-shadow: inset 0 0 0 2px var(--active-border);
+}
+
+@media (pointer: coarse) {
+    .right-workspace-frame > .right-workspace-mode-switch {
+        min-height: 50px;
+    }
+
+    .right-workspace-mode-segment {
+        min-height: 42px;
+    }
 }
 
 /* Short layer lists should not carry the full trailing shell reservation;

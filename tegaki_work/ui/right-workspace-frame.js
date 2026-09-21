@@ -24,6 +24,7 @@ export class RightWorkspaceFrame {
         if (!this.root || !this.drawing || !this.host || !this.panel) return;
 
         this.root.classList.add('right-workspace-frame');
+        this._mountModeSwitch();
         this._mountStatusPanel();
         this._subscribeLayoutEvents();
         this.host.setAttribute('aria-label', 'Transform 作業面');
@@ -65,6 +66,69 @@ export class RightWorkspaceFrame {
         this.resizeObserver = new ResizeObserver(() => this.measure());
         this.resizeObserver.observe(this.drawing);
         this.measure();
+        this.sync();
+    }
+
+    _mountModeSwitch() {
+        this.modeSwitch = this.root.querySelector(':scope > .right-workspace-mode-switch');
+        if (!this.modeSwitch) {
+            this.modeSwitch = document.createElement('div');
+            this.modeSwitch.className = 'right-workspace-mode-switch';
+            this.modeSwitch.setAttribute('role', 'group');
+            this.modeSwitch.setAttribute('aria-label', '右Workspaceの表示');
+
+            this.layerModeButton = document.createElement('button');
+            this.layerModeButton.type = 'button';
+            this.layerModeButton.className = 'right-workspace-mode-segment';
+            this.layerModeButton.dataset.workspaceMode = 'layer';
+            this.layerModeButton.textContent = 'LAYER';
+
+            this.transformModeButton = document.createElement('button');
+            this.transformModeButton.type = 'button';
+            this.transformModeButton.className = 'right-workspace-mode-segment';
+            this.transformModeButton.dataset.workspaceMode = 'transform';
+            this.transformModeButton.textContent = 'TRANSFORM';
+
+            this.modeSwitch.append(this.layerModeButton, this.transformModeButton);
+            this.root.insertBefore(this.modeSwitch, this.drawing);
+        } else {
+            this.layerModeButton = this.modeSwitch.querySelector('[data-workspace-mode="layer"]');
+            this.transformModeButton = this.modeSwitch.querySelector('[data-workspace-mode="transform"]');
+        }
+
+        this._layerModeClickHandler = () => this._requestWorkspaceMode('layer');
+        this._transformModeClickHandler = () => this._requestWorkspaceMode('transform');
+        this.layerModeButton?.addEventListener('click', this._layerModeClickHandler);
+        this.transformModeButton?.addEventListener('click', this._transformModeClickHandler);
+    }
+
+    _requestWorkspaceMode(mode) {
+        const transformActive = this.panel?.classList.contains('show') === true;
+        if (mode === 'transform') {
+            if (transformActive) return;
+            // The existing V entry remains the sole guard and state owner.
+            window.KeyboardHandler?.toggleLayerTransform?.('right-workspace-segment');
+            this.sync();
+            return;
+        }
+        if (!transformActive) return;
+
+        const layerEditing = this.layerSystem?.transform?.isVKeyPressed === true;
+        const commitState = this.layerSystem?.getLayerMoveCommitState?.() || null;
+        if (layerEditing && commitState?.hasPendingTransform === true) {
+            // A segment change must not choose confirm or cancel for the user.
+            // Keep Transform projected and move focus to the existing terminal.
+            this.hint?.classList.add('is-exit-choice-requested');
+            this.endButton?.focus?.({ preventScroll: true });
+            return;
+        }
+        if (!layerEditing) {
+            // Selection Transform owns its own terminal; do not route it through
+            // the Layer V contract merely because the shared panel is visible.
+            this.title?.focus?.({ preventScroll: true });
+            return;
+        }
+        window.KeyboardHandler?.toggleLayerTransform?.('right-workspace-segment');
         this.sync();
     }
 
@@ -148,6 +212,11 @@ export class RightWorkspaceFrame {
         const active = this.panel.classList.contains('show');
         const outgoing = active ? this.drawing : this.host;
         const hadFocus = outgoing.contains(document.activeElement);
+        this.layerModeButton?.classList.toggle('is-selected', !active);
+        this.layerModeButton?.setAttribute('aria-pressed', String(!active));
+        this.transformModeButton?.classList.toggle('is-selected', active);
+        this.transformModeButton?.setAttribute('aria-pressed', String(active));
+        if (!active) this.hint?.classList.remove('is-exit-choice-requested');
         this.root.classList.toggle('has-transform-workspace', active);
         document.documentElement.classList.toggle('right-workspace-transform-active', active);
         this.drawing.inert = active;
@@ -177,6 +246,9 @@ export class RightWorkspaceFrame {
     destroy() {
         this.observer?.disconnect();
         this.resizeObserver?.disconnect();
+        this.layerModeButton?.removeEventListener('click', this._layerModeClickHandler);
+        this.transformModeButton?.removeEventListener('click', this._transformModeClickHandler);
+        this.modeSwitch?.remove();
         if (this.eventBus?.off) {
             this.eventBus.off('popup:shown', this._popupShownHandler);
             this.eventBus.off('popup:hidden', this._popupHiddenHandler);
