@@ -868,6 +868,10 @@ export class AnimationTablePopup {
                 : '<rect x="5" y="5" width="14" height="14" rx="1.5"/>';
         }
         this._queueBottomDockLayout();
+        this.eventBus.emit('animation-table:dock-state-changed', {
+            state,
+            previousState
+        });
     }
 
     _toggleBottomDockMaximize() {
@@ -19967,6 +19971,15 @@ export class AnimationTablePopup {
         const closeButton = utilityRow?.querySelector('#anim-table-close-btn');
         if (!playbackRow || !utilityRow || !viewport || !closeButton) return false;
 
+        const compactStatusSlot = document.createElement('div');
+        compactStatusSlot.className = 'anim-dock-status-slot anim-dock-status-slot--compact';
+        compactStatusSlot.setAttribute('aria-label', 'Common Status');
+        playbackRow.appendChild(compactStatusSlot);
+
+        const footerStatusSlot = document.createElement('div');
+        footerStatusSlot.className = 'anim-dock-status-slot anim-dock-status-slot--footer';
+        footerStatusSlot.setAttribute('aria-label', 'Common Status');
+
         playbackRow.appendChild(closeButton);
         viewport.after(utilityRow);
         utilityRow.setAttribute('role', 'toolbar');
@@ -19974,6 +19987,7 @@ export class AnimationTablePopup {
         if (this._bottomDockMode) {
             const zoom = utilityRow.querySelector('.anim-zoom-controls');
             if (zoom) utilityRow.appendChild(zoom);
+            utilityRow.appendChild(footerStatusSlot);
             const primarySlot = playbackRow.querySelector('.anim-playback-primary-slot');
             if (primarySlot) {
                 const frameControls = document.createElement('div');

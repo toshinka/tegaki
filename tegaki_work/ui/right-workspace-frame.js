@@ -14,12 +14,18 @@ export class RightWorkspaceFrame {
         this.panel = document.getElementById('layer-transform-panel');
         this.getTarget = getTarget;
         this.layerSystem = layerSystem;
+        this.eventBus = this.layerSystem?.eventBus || window.TegakiEventBus;
         this.statusPanel = document.querySelector('.status-panel');
         this.statusAnchor = null;
+        this.dock = document.getElementById('animation-table-popup');
+        this._popupShownHandler = null;
+        this._popupHiddenHandler = null;
+        this._dockStateHandler = null;
         if (!this.root || !this.drawing || !this.host || !this.panel) return;
 
         this.root.classList.add('right-workspace-frame');
         this._mountStatusPanel();
+        this._subscribeLayoutEvents();
         this.host.setAttribute('aria-label', 'Transform 作業面');
         this.title = document.createElement('div');
         this.title.className = 'right-workspace-target';
@@ -71,6 +77,46 @@ export class RightWorkspaceFrame {
         }
         this.statusPanel.classList.add('right-workspace-status');
         document.documentElement.classList.add('right-workspace-status-active');
+        this._syncStatusMount();
+    }
+
+    _subscribeLayoutEvents() {
+        if (!this.eventBus?.on) return;
+        this._popupShownHandler = (payload = {}) => {
+            if (payload.name === 'animationTable') this._syncStatusMount();
+        };
+        this._popupHiddenHandler = (payload = {}) => {
+            if (payload.name === 'animationTable') this._syncStatusMount();
+        };
+        this._dockStateHandler = () => this._syncStatusMount();
+        this.eventBus.on('popup:shown', this._popupShownHandler);
+        this.eventBus.on('popup:hidden', this._popupHiddenHandler);
+        this.eventBus.on('animation-table:dock-state-changed', this._dockStateHandler);
+    }
+
+    _getDockStatusSlot(state) {
+        if (!this.dock) return null;
+        const selector = state === 'collapsed'
+            ? '.anim-dock-status-slot--compact'
+            : '.anim-dock-status-slot--footer';
+        return this.dock.querySelector(selector);
+    }
+
+    _syncStatusMount() {
+        if (!this.statusPanel || !this.root) return;
+        const dockVisible = this.dock
+            && this.dock.classList.contains('is-bottom-dock')
+            && this.dock.style.display !== 'none';
+        const transformActive = this.panel?.classList.contains('show') === true;
+        const dockState = this.dock?.dataset?.dockState || 'compact';
+        const dockSlot = dockVisible && !transformActive
+            ? this._getDockStatusSlot(dockState)
+            : null;
+        const target = dockSlot || this.root;
+        const inDock = target !== this.root;
+        if (this.statusPanel.parentElement !== target) target.appendChild(this.statusPanel);
+        this.statusPanel.classList.toggle('right-workspace-status', !inDock);
+        this.statusPanel.classList.toggle('animation-table-dock-status', inDock);
     }
 
     _restoreStatusPanel() {
@@ -78,7 +124,7 @@ export class RightWorkspaceFrame {
         if (this.statusAnchor?.parentNode) {
             this.statusAnchor.parentNode.insertBefore(this.statusPanel, this.statusAnchor.nextSibling);
         }
-        this.statusPanel.classList.remove('right-workspace-status');
+        this.statusPanel.classList.remove('right-workspace-status', 'animation-table-dock-status');
         document.documentElement.classList.remove('right-workspace-status-active');
         this.statusAnchor?.remove();
         this.statusAnchor = null;
@@ -103,6 +149,7 @@ export class RightWorkspaceFrame {
         const outgoing = active ? this.drawing : this.host;
         const hadFocus = outgoing.contains(document.activeElement);
         this.root.classList.toggle('has-transform-workspace', active);
+        document.documentElement.classList.toggle('right-workspace-transform-active', active);
         this.drawing.inert = active;
         if (active) this.drawing.setAttribute('aria-hidden', 'true');
         else this.drawing.removeAttribute('aria-hidden');
@@ -120,6 +167,7 @@ export class RightWorkspaceFrame {
         this.endButton.hidden = !layerEditing;
         this.cancelButton.hidden = !layerEditing;
         this.selectionHint.hidden = layerEditing;
+        this._syncStatusMount();
         if (hadFocus) {
             if (active) this.title.focus({ preventScroll: true });
             else document.getElementById('layer-transform-tool')?.focus({ preventScroll: true });
@@ -129,6 +177,12 @@ export class RightWorkspaceFrame {
     destroy() {
         this.observer?.disconnect();
         this.resizeObserver?.disconnect();
+        if (this.eventBus?.off) {
+            this.eventBus.off('popup:shown', this._popupShownHandler);
+            this.eventBus.off('popup:hidden', this._popupHiddenHandler);
+            this.eventBus.off('animation-table:dock-state-changed', this._dockStateHandler);
+        }
+        document.documentElement.classList.remove('right-workspace-transform-active');
         this._restoreStatusPanel();
         // Teardown does not move a live editing DOM or finish its transaction.
     }

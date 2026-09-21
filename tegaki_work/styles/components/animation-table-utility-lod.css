@@ -80,6 +80,62 @@
     gap: 3px;
 }
 
+/* The single common Status node is projected into one of these empty hosts.
+   The host changes with Dock visibility/state; the Status DOM and updater do
+   not. Footer placement comes after Timeline Zoom and never changes height. */
+.animation-table-panel .anim-dock-status-slot {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+}
+.animation-table-panel .anim-dock-status-slot--footer {
+    display: none;
+    flex: 0 1 min(42%, 300px);
+    justify-content: flex-end;
+    order: 20;
+}
+.animation-table-panel .anim-dock-status-slot--compact {
+    display: none;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    order: 20;
+}
+#animation-table-popup.is-bottom-dock .anim-dock-status-slot--footer:has(.animation-table-dock-status) {
+    display: flex;
+}
+.status-panel.animation-table-dock-status {
+    position: static;
+    inset: auto;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: 0 4px;
+    justify-content: flex-end;
+    gap: 6px;
+    font-size: 9px;
+    white-space: nowrap;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: auto;
+}
+.status-panel.animation-table-dock-status .status-group {
+    min-width: 0;
+    gap: 6px;
+}
+.status-panel.animation-table-dock-status .status-group:first-child {
+    flex: 1 1 auto;
+}
+.status-panel.animation-table-dock-status .status-group:last-child {
+    flex: 0 0 auto;
+}
+.status-panel.animation-table-dock-status .status-item:has(#current-tool),
+.status-panel.animation-table-dock-status .status-item:has(#current-layer) {
+    display: none;
+}
+
 .animation-table-panel.is-narrow .anim-table-header-row.anim-table-utility-row {
     flex-wrap: nowrap;
     gap: 3px;
@@ -404,6 +460,12 @@
 #animation-table-popup[data-dock-state="collapsed"] .anim-asset-library,
 #animation-table-popup[data-dock-state="collapsed"] .anim-table-playback-cluster,
 #animation-table-popup[data-dock-state="collapsed"] .anim-dock-secondary { display: none; }
+#animation-table-popup[data-dock-state="collapsed"] .anim-dock-status-slot--footer {
+    display: none;
+}
+#animation-table-popup[data-dock-state="collapsed"] .anim-dock-status-slot--compact:has(.animation-table-dock-status) {
+    display: flex;
+}
 
 /* The Dock owns the visible temporal group while it is open. The existing
  * indicator remains the closed-Table route and is inert here, so no second
