@@ -167,7 +167,8 @@
     --ui-bottom-dock-footer-height: 25px;
     --ui-right-workspace-status-height: var(--ui-bottom-dock-footer-height);
     --ui-bottom-dock-height: 0px;
-    --ui-bottom-dock-left: calc(var(--ui-rail-width) + 8px);
+    --ui-rail-inline-inset: 6px;
+    --ui-bottom-dock-left: calc(var(--ui-rail-inline-inset) + var(--ui-rail-width));
     --ui-right-workspace-inset: 6px;
     --ui-canvas-right: calc(var(--right-workspace-width, 0px) + var(--ui-right-workspace-inset));
     --ui-bottom-dock-right: var(--ui-canvas-right);
@@ -195,7 +196,7 @@
 
 :root.animation-table-bottom-dock-active {
     --ui-bottom-dock-height: var(--ui-bottom-dock-open-height, var(--ui-anim-panel-height));
-    --ui-bottom-dock-right: 0px;
+    --ui-bottom-dock-right: calc(var(--ui-right-workspace-inset) + var(--ui-layer-panel-rail-column));
     --ui-right-workspace-bottom: var(--ui-bottom-dock-height);
 }
 
@@ -233,7 +234,7 @@ body {
 /* ===== サイドバー ===== */
 .sidebar { 
     position: fixed;
-    left: 6px;
+    left: var(--ui-rail-inline-inset);
     top: 50%;
     transform: translateY(-50%);
     width: var(--ui-rail-width);
