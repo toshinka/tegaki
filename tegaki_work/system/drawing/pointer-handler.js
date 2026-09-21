@@ -79,7 +79,8 @@ export class PointerHandler {
 
         const {
             preventDefault = true,
-            capture = false
+            capture = false,
+            shouldAcquirePointer = null
         } = options;
 
         const activePointers = new Map();
@@ -322,6 +323,24 @@ export class PointerHandler {
 
             // 右クリック除外（ペン以外の場合のみ。ペンの button===2 は副ボタン/消しゴム側）
             if (e.button === 2 && e.pointerType !== 'pen') return;
+
+            // The Pixi canvas may now cover the visual area behind HTML panels.
+            // Reject a gesture before registration/capture when the hit point is
+            // owned by an interactive surface.  This is intentionally an
+            // acquire-time hook, not a post-stroke cancellation path.
+            if (typeof shouldAcquirePointer === 'function') {
+                let allowed = true;
+                try {
+                    allowed = shouldAcquirePointer(e) !== false;
+                } catch (error) {
+                    console.warn('[PointerHandler] pointer acquisition guard failed:', error);
+                    allowed = false;
+                }
+                if (!allowed) {
+                    if (preventDefault) e.preventDefault();
+                    return;
+                }
+            }
 
             const info = normalizeEvent(e);
             activePointers.set(e.pointerId, info);

@@ -299,11 +299,14 @@ body {
 }
 
 .canvas-area {
+    /* The Pixi canvas is the visual backdrop for the whole workspace.  Layout
+       reservations still belong to the Dock/Workspace variables below, but
+       the renderer itself must not stop at those UI edges. */
     background: var(--futaba-background); 
     position: fixed; 
     inset: 0;
-    bottom: calc(var(--ui-status-slot-height) + var(--ui-bottom-dock-height));
-    right: var(--ui-canvas-right);
+    bottom: 0;
+    right: 0;
     overflow: hidden; 
     display: flex; 
     justify-content: center; 

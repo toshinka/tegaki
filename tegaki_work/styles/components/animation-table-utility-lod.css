@@ -750,6 +750,33 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
     }
 }
 
+/* Artwork-under-glass: the Dock shell is intentionally fully transparent.
+   Controls and selected Clip/KEY cells keep their own readable surfaces; the
+   table background, lane rows and viewport do not veil the Pixi artwork. */
+#animation-table-popup.is-bottom-dock {
+    background: transparent !important;
+    background-image: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+}
+
+#animation-table-popup.is-bottom-dock .anim-table-header,
+#animation-table-popup.is-bottom-dock .anim-table-viewport,
+#animation-table-popup.is-bottom-dock .anim-table-utility-row,
+#animation-table-popup.is-bottom-dock .anim-track-list,
+#animation-table-popup.is-bottom-dock .anim-track-header,
+#animation-table-popup.is-bottom-dock .anim-timeline-header,
+#animation-table-popup.is-bottom-dock .anim-track-item,
+#animation-table-popup.is-bottom-dock .anim-timeline-row,
+#animation-table-popup.is-bottom-dock .anim-frame-num,
+#animation-table-popup.is-bottom-dock .anim-dock-secondary-body {
+    background: transparent !important;
+    background-image: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
 /*
  * Visual density / glass surface integration.
  * The Dock remains the existing layout and interaction owner; these rules only

@@ -75,7 +75,8 @@ export class DrawingEngine {
             up: this._handlePointerUp.bind(this),
             cancel: this._handlePointerCancel.bind(this)
         }, {
-            preventDefault: true
+            preventDefault: true,
+            shouldAcquirePointer: this._shouldAcquireCanvasPointer.bind(this)
         });
 
         // マウス移動（ホバー・描画時両方）の座標をステータスバーに通知
@@ -91,6 +92,18 @@ export class DrawingEngine {
             }
         };
         canvas.addEventListener('pointermove', this._onCanvasPointerMove);
+    }
+
+    /**
+     * Keep the visual Canvas full-viewport without giving drawing ownership to
+     * HTML controls layered above it.  Empty Right Workspace gaps deliberately
+     * remain pass-through because the frame itself is pointer-transparent.
+     */
+    _shouldAcquireCanvasPointer(event) {
+        if (typeof document === 'undefined' || typeof document.elementFromPoint !== 'function') return true;
+        const hit = document.elementFromPoint(event.clientX, event.clientY);
+        if (!hit || typeof hit.closest !== 'function') return true;
+        return !hit.closest('.sidebar, .right-panel, #animation-table-popup, .popup-panel');
     }
 
     _handlePointerDown(info, e) {
