@@ -23,24 +23,13 @@
     overflow: visible;
     background: transparent;
     border-radius: 0;
-    isolation: isolate;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
 }
 
-/* Extend only a restrained non-interactive paint layer. The child grid keeps
-   its measured left boundary and Canvas/Dock width budget; no artwork surface
-   or drawing-input architecture is introduced here. */
-.right-panel.right-workspace-frame::before {
-    content: '';
-    position: absolute;
-    z-index: 0;
-    inset: 0 calc(-1 * var(--ui-right-workspace-inset)) 0 0;
-    background: color-mix(in srgb, var(--futaba-background) 12%, transparent);
-    backdrop-filter: blur(3px);
-    -webkit-backdrop-filter: blur(3px);
-    pointer-events: none;
-}
+/* The Frame is a transparent layout boundary. Its empty area must expose the
+   full-viewport Canvas directly; cards and controls below opt back into input
+   ownership one surface at a time. */
 .right-workspace-frame > .layer-panel-container,
 .right-workspace-frame > .layer-panel-context-inspector {
     grid-area: 1 / 1;
@@ -832,4 +821,60 @@
     color: var(--ui-rail-foreground);
     border-color: transparent;
     background: var(--ui-rail-control-rest);
+}
+
+/* -------------------------------------------------------------------------
+ * Pointer ownership and local Layer-card glass
+ *
+ * The list/group shells are layout-only. Their descendants that represent a
+ * card or an actual operation surface opt back into hit testing. This keeps
+ * the gaps between cards and the area below the list pass-through without
+ * changing the existing delegated Layer/D&D listeners.
+ * ------------------------------------------------------------------------- */
+.right-workspace-frame > .layer-panel-container:not(.layer-panel-container--rig-view)
+    > .layer-panel-items,
+.right-workspace-frame:not(.has-transform-workspace) .layer-panel-card-group,
+.right-workspace-frame:not(.has-transform-workspace) .layer-panel-card-list,
+.right-workspace-frame:not(.has-transform-workspace) .caf-simple-header,
+.right-workspace-frame:not(.has-transform-workspace) .clip-layer-mirror {
+    pointer-events: none;
+}
+
+.right-workspace-frame > .layer-panel-container.layer-panel-container--rig-view
+    > .layer-panel-items,
+.right-workspace-frame .layer-panel-card-row,
+.right-workspace-frame .caf-simple-group-title,
+.right-workspace-frame .caf-simple-asset,
+.right-workspace-frame .layer-panel-context-view-switch,
+.right-workspace-frame .layer-panel-context-view-button,
+.right-workspace-frame .context-rig-inspector,
+.right-workspace-frame .context-rig-method-actions,
+.right-workspace-frame .layer-controls-row,
+.right-workspace-frame .layer-controls-row > * {
+    pointer-events: auto;
+}
+
+/* Backdrop-filter is deliberately local to the card background. Do not use a
+   parent opacity/filter, which would soften names, icons, and action states. */
+.right-panel .legacy-layer-card-row:not(.is-hidden),
+.right-panel .clip-layer-mirror-row:not(.is-hidden) {
+    --card-row-bg: rgba(255, 255, 238, 0.70);
+    --card-row-selected-bg: rgba(255, 255, 238, 0.74);
+    --card-row-active-bg: rgba(255, 255, 238, 0.74);
+    background: var(--card-row-bg);
+    opacity: 1;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.right-panel .legacy-layer-card-row.is-folder:not(.is-hidden) {
+    --card-row-bg: rgba(240, 224, 214, 0.70);
+    --card-row-selected-bg: rgba(240, 224, 214, 0.74);
+    --card-row-active-bg: rgba(240, 224, 214, 0.74);
+}
+
+.right-panel .legacy-layer-card-row.background-layer:not(.is-hidden) {
+    --card-row-bg: rgba(255, 255, 238, 0.70);
+    --card-row-selected-bg: rgba(255, 255, 238, 0.74);
+    --card-row-active-bg: rgba(255, 255, 238, 0.74);
 }
