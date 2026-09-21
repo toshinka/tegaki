@@ -36,9 +36,7 @@
     position: absolute;
     z-index: 0;
     inset: 0 calc(-1 * var(--ui-right-workspace-inset)) 0 0;
-    background: var(--ui-right-workspace-frosted-tint);
-    background-attachment: fixed;
-    background-repeat: no-repeat;
+    background: transparent;
     pointer-events: none;
 }
 .right-panel.right-workspace-frame::after {
@@ -130,10 +128,10 @@
     max-height: none;
 }
 
-/* Once the Layer list reaches its scrollable state, the rail becomes a
-   fixed-height control group independent of the list's height. Compact lists
-   stay in the legacy grid so their CAF/Layer group keeps the shared top edge. */
-.right-workspace-frame > .layer-panel-container.layer-panel-container--scrollable > .layer-controls-row {
+/* The action rail is a viewport-owned control group in every Layer state.
+   Its center is derived from the full Right Workspace content area, not from
+   the current Layer list height or the list's scroll position. */
+.right-workspace-frame > .layer-panel-container > .layer-controls-row {
     position: absolute;
     inset-block-start: 50%;
     inset-inline-end: 0;
@@ -149,6 +147,8 @@
 .right-workspace-frame > .right-workspace-status {
     grid-area: 2 / 1;
     min-width: 0;
+    position: relative;
+    z-index: 1;
 }
 
 /* Short layer lists should not carry the full trailing shell reservation;

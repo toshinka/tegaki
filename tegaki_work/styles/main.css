@@ -74,14 +74,8 @@
         color-mix(in srgb, var(--futaba-light-medium) 36%, transparent) 100%
     );
     --ui-right-workspace-surface: var(--ui-workspace-atmosphere);
-    /* Right Workspace-only feasibility prototype. The tint, blur and mask
-       remain separate so the controlled test can distinguish their effects. */
-    --ui-right-workspace-frosted-tint: linear-gradient(
-        to bottom,
-        color-mix(in srgb, var(--futaba-background) 3%, transparent) 0%,
-        color-mix(in srgb, var(--futaba-cream) 8%, transparent) 46%,
-        color-mix(in srgb, var(--futaba-light-medium) 22%, transparent) 100%
-    );
+    /* Right Workspace-only feasibility prototype. The application background
+       owns the atmosphere; the Workspace contributes blur and mask only. */
     --ui-right-workspace-frosted-blur: blur(12px);
     --ui-right-workspace-frosted-mask: linear-gradient(
         to bottom,
@@ -218,7 +212,9 @@
 
 body { 
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif; 
-    background: var(--futaba-background); 
+    background: var(--ui-workspace-atmosphere), var(--futaba-background);
+    background-attachment: fixed, fixed;
+    background-repeat: no-repeat, no-repeat;
     height: 100vh; 
     overflow: hidden; 
 }
