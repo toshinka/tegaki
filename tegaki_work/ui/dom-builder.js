@@ -657,6 +657,34 @@ export const DOMBuilder = (function() {
         ));
         warpExtension.appendChild(brushControls);
         panel.appendChild(warpExtension);
+
+        // Presentation-only vocabulary is layered onto the established class
+        // strings so legacy source verifiers and all runtime selectors retain
+        // their original authority.
+        panel.querySelectorAll('.flip-button').forEach((control) => {
+            control.classList.add('gui-control', 'gui-control--s', 'gui-control--icon');
+        });
+        modeStrip.classList.add('gui-segmented', 'gui-segmented--secondary');
+        modeStrip.querySelectorAll('.layer-transform-mode-btn').forEach((control) => {
+            control.classList.add('gui-control', 'gui-control--m');
+        });
+        keyStrip.classList.add('gui-surface', 'gui-surface--compact');
+        keyStrip.querySelectorAll('.layer-transform-key-step-btn').forEach((control) => {
+            control.classList.add('gui-control', 'gui-control--s', 'gui-control--icon');
+        });
+        keyCommitButton.classList.add('gui-control', 'gui-control--m');
+        panel.querySelector('#layer-transform-key-components')?.classList.add('gui-surface', 'gui-surface--compact');
+        extensionToggle.classList.add('gui-control', 'gui-control--m', 'gui-control--quiet');
+        preciseDetails.classList.add('gui-surface');
+        warpExtension.classList.add('gui-surface', 'gui-surface--compact');
+        warpToolStrip.classList.add('gui-segmented', 'gui-segmented--tertiary');
+        warpToolStrip.querySelectorAll('.layer-transform-warp-tool-btn').forEach((control) => {
+            control.classList.add('gui-control', 'gui-control--m');
+        });
+        brushTypeStrip.classList.add('gui-segmented', 'gui-segmented--tertiary');
+        brushTypeStrip.querySelectorAll('.layer-transform-warp-brush-type-btn').forEach((control) => {
+            control.classList.add('gui-control', 'gui-control--m');
+        });
         return panel;
     }
 

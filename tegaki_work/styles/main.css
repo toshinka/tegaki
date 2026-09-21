@@ -193,6 +193,157 @@
     --ui-transform-slider-group-height: 37px;
     --ui-transform-slider-row-height: 18px;
     --ui-transform-slider-width: 64px;
+    /* Shared opt-in control vocabulary. Components adopt these classes
+       explicitly; native/global form controls retain their existing owners. */
+    --ui-control-height-s: 24px;
+    --ui-control-height-m: 31px;
+    --ui-control-height-l: 38px;
+    --ui-control-font-s: 9px;
+    --ui-control-font-m: 10px;
+    --ui-control-font-l: 11px;
+    --ui-control-border: color-mix(in srgb, var(--futaba-light-medium) 72%, transparent);
+    --ui-control-surface: color-mix(in srgb, var(--futaba-background) 56%, transparent);
+    --ui-control-surface-hover: color-mix(in srgb, var(--futaba-cream) 54%, transparent);
+    --ui-control-surface-selected: color-mix(in srgb, var(--futaba-maroon) 66%, transparent);
+    --ui-control-backdrop: blur(3px);
+}
+
+/* Shared GUI controls are deliberately class-bound. This keeps the vocabulary
+   reusable without restyling every button/input/select in the application. */
+.gui-control {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    padding-inline: 8px;
+    border: 1px solid var(--ui-control-border);
+    border-radius: 7px;
+    color: var(--futaba-maroon);
+    background: var(--ui-control-surface);
+    -webkit-backdrop-filter: var(--ui-control-backdrop);
+    backdrop-filter: var(--ui-control-backdrop);
+    font-family: inherit;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.gui-control--s {
+    min-height: var(--ui-control-height-s);
+    font-size: var(--ui-control-font-s);
+}
+
+.gui-control--m {
+    min-height: var(--ui-control-height-m);
+    font-size: var(--ui-control-font-m);
+}
+
+.gui-control--l {
+    min-height: var(--ui-control-height-l);
+    font-size: var(--ui-control-font-l);
+}
+
+.gui-control--icon {
+    flex: 0 0 auto;
+    width: var(--ui-control-height-s);
+    padding-inline: 0;
+}
+
+.gui-control:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: color-mix(in srgb, var(--futaba-medium) 78%, transparent);
+    background: var(--ui-control-surface-hover);
+}
+
+.gui-control:focus-visible {
+    outline: 2px solid var(--active-border);
+    outline-offset: 1px;
+}
+
+.gui-control:disabled,
+.gui-control[aria-disabled="true"] {
+    opacity: var(--ui-opacity-disabled);
+    cursor: default;
+}
+
+.gui-control--primary,
+.gui-control.is-selected,
+.gui-control.active,
+.gui-control[aria-selected="true"],
+.gui-control[aria-pressed="true"] {
+    border-color: color-mix(in srgb, var(--futaba-maroon) 58%, transparent);
+    color: var(--futaba-background);
+    background: var(--ui-control-surface-selected);
+}
+
+.gui-control--quiet {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--futaba-background) 34%, transparent);
+}
+
+.gui-segmented {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 2px;
+    min-width: 0;
+    padding: 2px;
+    border: 1px solid var(--ui-control-border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--futaba-background) 46%, transparent);
+    -webkit-backdrop-filter: var(--ui-control-backdrop);
+    backdrop-filter: var(--ui-control-backdrop);
+}
+
+.gui-segmented > .gui-control {
+    width: 100%;
+    border-color: transparent;
+    border-radius: 999px;
+    background: transparent;
+}
+
+.gui-segmented--secondary > .gui-control.is-selected,
+.gui-segmented--secondary > .gui-control.active,
+.gui-segmented--secondary > .gui-control[aria-selected="true"],
+.gui-segmented--secondary > .gui-control[aria-pressed="true"] {
+    border-color: transparent;
+    color: var(--futaba-background);
+    background: color-mix(in srgb, var(--futaba-maroon) 58%, transparent);
+}
+
+.gui-segmented--tertiary {
+    border-radius: 8px;
+}
+
+.gui-segmented--tertiary > .gui-control {
+    border-radius: 6px;
+}
+
+.gui-surface {
+    border: 1px solid var(--ui-control-border);
+    border-radius: 9px;
+    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--futaba-background) 50%, transparent);
+    -webkit-backdrop-filter: var(--ui-control-backdrop);
+    backdrop-filter: var(--ui-control-backdrop);
+}
+
+.gui-surface--compact {
+    padding: 5px;
+}
+
+@media (pointer: coarse) {
+    .gui-control--s,
+    .gui-control--m,
+    .gui-control--l {
+        min-height: 42px;
+    }
+
+    .gui-control--icon {
+        width: 42px;
+    }
 }
 
 :root.animation-table-bottom-dock-active {

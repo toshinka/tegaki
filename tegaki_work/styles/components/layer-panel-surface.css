@@ -81,13 +81,14 @@
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
+    gap: 4px;
     width: var(--right-workspace-width, 0px);
     min-width: 0;
     height: 100%;
     max-height: none;
     overflow: hidden;
-    pointer-events: auto;
+    pointer-events: none;
     color: var(--ui-layer-text);
     background: transparent;
     border: 0;
@@ -246,9 +247,7 @@
 .right-workspace-target,
 .right-workspace-terminal {
     flex: 0 0 auto;
-    padding: 6px;
     color: var(--futaba-maroon);
-    background: color-mix(in srgb, var(--ui-panel-glass-surface) 82%, transparent);
     font-size: 11px;
     line-height: 1.4;
     overflow-wrap: anywhere;
@@ -257,8 +256,15 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    min-height: var(--ui-control-height-m);
+    padding: 4px 6px;
+    pointer-events: auto;
     font-weight: 700;
-    border-bottom: 1px solid var(--futaba-light-medium);
+    border: 1px solid var(--ui-control-border);
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--futaba-background) 50%, transparent);
+    -webkit-backdrop-filter: var(--ui-control-backdrop);
+    backdrop-filter: var(--ui-control-backdrop);
 }
 .right-workspace-target img {
     width: 24px;
@@ -268,24 +274,26 @@
 }
 .right-workspace-target img[hidden] { display: none; }
 .right-workspace-target span { min-width: 0; }
-.right-workspace-terminal button {
+.right-workspace-terminal .gui-control {
     width: 100%;
-    min-height: 30px;
-    margin: 2px 0;
-    border: 1px solid var(--futaba-light-medium);
-    border-radius: var(--ui-radius-control);
-    color: var(--futaba-maroon);
-    background: var(--futaba-cream);
-    font-size: 11px;
-    cursor: pointer;
-}
-.right-workspace-terminal button:focus-visible {
-    outline: 2px solid var(--active-border);
-    outline-offset: -2px;
+    pointer-events: auto;
 }
 .right-workspace-terminal [hidden] { display: none; }
 .right-workspace-terminal {
-    border-top: 1px solid var(--ui-panel-glass-border);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    pointer-events: none;
+}
+.right-workspace-terminal > span {
+    grid-column: 1 / -1;
+    padding: 5px 6px;
+    pointer-events: auto;
+    border: 1px solid var(--ui-control-border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--futaba-background) 46%, transparent);
+    -webkit-backdrop-filter: var(--ui-control-backdrop);
+    backdrop-filter: var(--ui-control-backdrop);
 }
 .right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector {
     position: static !important;
@@ -309,6 +317,7 @@
     animation: none !important;
     cursor: default !important;
     touch-action: auto !important;
+    pointer-events: none;
 }
 .right-workspace-frame .transform-popup-header {
     flex-direction: column;
@@ -323,11 +332,15 @@
     flex-wrap: wrap;
 }
 
-/* Keep a short Transform control group centered with its target label and
-   terminal actions. Flex shrink still hands the panel an internal scroll when
-   BASIC/WARP content is taller than the available work area. */
+/* Header and terminal remain fixed while BASIC/WARP content owns the single
+   internal scroll boundary. Empty gaps stay transparent to Canvas input. */
 .right-workspace-frame > .layer-panel-context-inspector .layer-transform-panel.is-context-inspector {
-    flex: 0 1 auto;
+    flex: 1 1 auto;
+}
+
+.right-workspace-frame > .layer-panel-context-inspector
+    .layer-transform-panel.is-context-inspector > * {
+    pointer-events: auto;
 }
 
 .right-panel .layer-controls-row {

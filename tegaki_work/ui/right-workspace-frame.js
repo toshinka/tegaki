@@ -39,13 +39,19 @@ export class RightWorkspaceFrame {
         this.hint.className = 'right-workspace-terminal';
         this.endButton = document.createElement('button');
         this.endButton.type = 'button';
-        this.endButton.textContent = '確定して終了 · V';
+        this.endButton.className = 'gui-control gui-control--l gui-control--primary';
+        this.endButton.textContent = '✓ 確定';
+        this.endButton.title = 'Transformを確定して終了（V）';
+        this.endButton.setAttribute('aria-keyshortcuts', 'V');
         this.endButton.addEventListener('click', () => {
             window.KeyboardHandler?.toggleLayerTransform?.('right-workspace');
         });
         this.cancelButton = document.createElement('button');
         this.cancelButton.type = 'button';
-        this.cancelButton.textContent = '取消 · Esc';
+        this.cancelButton.className = 'gui-control gui-control--l';
+        this.cancelButton.textContent = '× 取消';
+        this.cancelButton.title = 'Transformを取り消して終了（Esc）';
+        this.cancelButton.setAttribute('aria-keyshortcuts', 'Escape');
         this.cancelButton.addEventListener('click', () => {
             // Same capture rescue and event payload as the existing Escape route.
             const selection = window.pixelSelectionSystem || window.drawingApp?.pixelSelectionSystem;
