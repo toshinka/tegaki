@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 
 const frameSource = readFileSync(new URL('../ui/right-workspace-frame.js', import.meta.url), 'utf8');
 const styleSource = readFileSync(new URL('../styles/components/layer-panel-surface.css', import.meta.url), 'utf8');
+const mainStyleSource = readFileSync(new URL('../styles/main.css', import.meta.url), 'utf8');
 
 assert.match(frameSource, /_mountModeSwitch\(\)/,
     'Right Workspace mounts one shared mode switch');
@@ -73,4 +74,31 @@ assert.match(styleSource, /\.right-workspace-frame > \.right-workspace-status \{
 assert.match(switchStyle, /pointer-events: auto/,
     'only the visible switch surface opts into pointer ownership');
 
-console.log('verify-right-workspace-layer-transform-switch: single mount, V authority, pending terminal, capsule tokens and grid ownership OK');
+const railStyle = styleSource.match(
+    /\.right-workspace-frame > \.layer-panel-container > \.layer-controls-row \{[\s\S]*?\n\}/u
+)?.[0] || '';
+assert.ok(railStyle, 'right action rail keeps a scoped geometry owner');
+assert.match(railStyle, /position: fixed/,
+    'right action rail is positioned against the viewport, not the Dock-bound Layer container');
+assert.match(railStyle, /inset-inline-end: var\(--ui-right-workspace-inset\)/,
+    'right action rail keeps the shared viewport inset');
+assert.match(railStyle, /max-block-size: calc\(100dvh - 96px\)/,
+    'small viewports retain a rail-local vertical reachability fallback');
+assert.match(railStyle, /overflow-x: hidden/,
+    'rail-local vertical fallback cannot create a horizontal scrollbar');
+assert.match(railStyle, /overflow-y: auto/,
+    'short viewports may still scroll the rail without moving it');
+
+assert.match(mainStyleSource, /--ui-dock-rail-clearance: 2px/,
+    'Dock edge clearance has one shared layout token');
+assert.match(mainStyleSource,
+    /--ui-bottom-dock-left: calc\(var\(--ui-rail-inline-inset\) \+ var\(--ui-rail-width\) \+ var\(--ui-dock-rail-clearance\)\)/,
+    'Dock left edge derives clearance from the left rail geometry');
+assert.match(mainStyleSource,
+    /--ui-bottom-dock-right: calc\(var\(--ui-right-workspace-inset\) \+ var\(--ui-layer-panel-rail-column\) \+ var\(--ui-dock-rail-clearance\)\)/,
+    'Drawing Dock right edge derives the same clearance from the right rail geometry');
+assert.match(mainStyleSource,
+    /:root\.animation-table-bottom-dock-active\.right-workspace-transform-active[\s\S]*?--ui-bottom-dock-right: var\(--ui-canvas-right\)/u,
+    'Transform keeps its existing context-adaptive Dock geometry');
+
+console.log('verify-right-workspace-layer-transform-switch: single mount, V authority, fixed rail geometry, Dock clearance and pointer ownership OK');

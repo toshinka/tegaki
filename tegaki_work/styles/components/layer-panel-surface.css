@@ -125,15 +125,17 @@
 }
 
 /* The action rail is a viewport-owned control group in every Layer state.
-   Its center is derived from the full Right Workspace content area, not from
-   the current Layer list height or the list's scroll position. */
+   The Layer list remains Dock-bound, but the rail is fixed to the viewport so
+   Dock height, list length and list scrolling cannot move its center. */
 .right-workspace-frame > .layer-panel-container > .layer-controls-row {
-    position: absolute;
+    position: fixed;
     inset-block-start: 50%;
-    inset-inline-end: 0;
+    inset-inline-end: var(--ui-right-workspace-inset);
     z-index: 2;
     width: var(--ui-layer-panel-rail-column);
-    max-block-size: 100%;
+    max-block-size: calc(100vh - 96px);
+    max-block-size: calc(100dvh - 96px);
+    overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
