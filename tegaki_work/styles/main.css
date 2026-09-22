@@ -205,6 +205,8 @@
     --ui-control-surface: color-mix(in srgb, var(--futaba-background) 56%, transparent);
     --ui-control-surface-hover: color-mix(in srgb, var(--futaba-cream) 54%, transparent);
     --ui-control-surface-selected: color-mix(in srgb, var(--futaba-maroon) 66%, transparent);
+    --ui-segment-selected-secondary: color-mix(in srgb, var(--futaba-light-maroon) 72%, transparent);
+    --ui-segment-selected-hover: color-mix(in srgb, var(--futaba-light-maroon) 82%, transparent);
     --ui-control-backdrop: blur(3px);
 }
 
@@ -252,7 +254,7 @@
     padding-inline: 0;
 }
 
-.gui-control:hover:not(:disabled):not([aria-disabled="true"]) {
+.gui-control:hover:not(:disabled):not([aria-disabled="true"]):not(.is-selected):not(.active):not([aria-selected="true"]):not([aria-pressed="true"]):not(.gui-control--primary) {
     border-color: color-mix(in srgb, var(--futaba-medium) 78%, transparent);
     background: var(--ui-control-surface-hover);
 }
@@ -260,12 +262,6 @@
 .gui-control:focus-visible {
     outline: 2px solid var(--active-border);
     outline-offset: 1px;
-}
-
-.gui-control:disabled,
-.gui-control[aria-disabled="true"] {
-    opacity: var(--ui-opacity-disabled);
-    cursor: default;
 }
 
 .gui-control--primary,
@@ -304,21 +300,46 @@
     background: transparent;
 }
 
-.gui-segmented--secondary > .gui-control.is-selected,
-.gui-segmented--secondary > .gui-control.active,
-.gui-segmented--secondary > .gui-control[aria-selected="true"],
-.gui-segmented--secondary > .gui-control[aria-pressed="true"] {
+.gui-segmented > .gui-control:hover:not(:disabled):not(.is-selected):not(.active):not([aria-selected="true"]):not([aria-pressed="true"]) {
+    border-color: transparent;
+    color: var(--futaba-maroon);
+    background: var(--ui-control-surface-hover);
+}
+
+.gui-segmented--secondary > .gui-control:is(.is-selected, .active, [aria-selected="true"], [aria-pressed="true"]),
+.gui-segmented--compact > .gui-control:is(.is-selected, .active, [aria-selected="true"], [aria-pressed="true"]) {
     border-color: transparent;
     color: var(--futaba-background);
-    background: color-mix(in srgb, var(--futaba-maroon) 58%, transparent);
+    background: var(--ui-segment-selected-secondary);
 }
 
-.gui-segmented--tertiary {
-    border-radius: 8px;
+.gui-segmented--secondary > .gui-control:is(.is-selected, .active, [aria-selected="true"], [aria-pressed="true"]):hover,
+.gui-segmented--compact > .gui-control:is(.is-selected, .active, [aria-selected="true"], [aria-pressed="true"]):hover {
+    color: var(--futaba-background);
+    background: var(--ui-segment-selected-hover);
 }
 
-.gui-segmented--tertiary > .gui-control {
-    border-radius: 6px;
+.gui-segmented > .gui-control:focus-visible {
+    outline: 2px solid var(--active-border);
+    outline-offset: -2px;
+}
+
+.gui-segmented--compact > .gui-control {
+    min-height: var(--ui-control-height-s);
+    padding-inline: 3px;
+    font-size: var(--ui-control-font-s);
+}
+
+.gui-segmented > .gui-control:active:not(:disabled):not([aria-disabled="true"]) {
+    transform: translateY(1px);
+}
+
+.gui-control:is(:disabled, [aria-disabled="true"]),
+.gui-segmented > .gui-control:is(:disabled, [aria-disabled="true"]) {
+    border-color: var(--ui-control-border);
+    color: var(--text-secondary);
+    background: color-mix(in srgb, var(--futaba-cream) 30%, transparent);
+    cursor: default;
 }
 
 .gui-surface {

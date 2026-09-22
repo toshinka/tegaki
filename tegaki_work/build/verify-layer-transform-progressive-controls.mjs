@@ -42,12 +42,15 @@ assert.match(mainStyleSource, /\.gui-control--s/);
 assert.match(mainStyleSource, /\.gui-control--m/);
 assert.match(mainStyleSource, /\.gui-control--l/);
 assert.match(mainStyleSource, /\.gui-segmented--secondary/);
+assert.match(mainStyleSource, /\.gui-segmented--compact/);
 assert.match(mainStyleSource, /\.gui-surface--compact/);
 assert.doesNotMatch(mainStyleSource, /\.gui-control\s*,\s*(?:button|input|select)/);
 assert.match(domSource, /modeStrip\.classList\.add\('gui-segmented', 'gui-segmented--secondary'\)/);
 assert.match(domSource, /control\.classList\.add\('gui-control', 'gui-control--s', 'gui-control--icon'\)/);
 assert.match(domSource, /extensionToggle\.classList\.add\('gui-control', 'gui-control--m', 'gui-control--quiet'\)/);
-assert.match(domSource, /warpToolStrip\.classList\.add\('gui-segmented', 'gui-segmented--tertiary'\)/);
+assert.match(domSource, /warpToolStrip\.classList\.add\('gui-segmented', 'gui-segmented--secondary'\)/);
+assert.match(domSource, /brushTypeStrip\.classList\.add\('gui-segmented', 'gui-segmented--compact'\)/);
+assert.match(mainStyleSource, /\.gui-segmented--secondary > \.gui-control:is\(\.is-selected, \.active, \[aria-selected="true"\], \[aria-pressed="true"\]\):hover/);
 
 // The extension is bound independently of the optional slider helper, and the
 // selected mode is the only extension made visible by the sync method.
@@ -74,8 +77,10 @@ assert.match(mainStyleSource, /--ui-panel-glass-surface: rgba\(255, 255, 238, 0\
 assert.match(mainStyleSource, /--ui-panel-glass-backdrop: blur\(3px\)/);
 assert.match(styleSource, /layer-transform-extension-shell/);
 assert.match(styleSource, /layer-transform-warp-brush-controls/);
-assert.match(styleSource, /background: color-mix\(in srgb, var\(--futaba-maroon\) 58%, transparent\)/);
 assert.match(styleSource, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+assert.match(styleSource, /::-webkit-slider-thumb \{[\s\S]*?border: 0;[\s\S]*?box-shadow: none;/);
+assert.match(styleSource, /::-moz-range-thumb \{[\s\S]*?border: 0;[\s\S]*?box-shadow: none;/);
+assert.match(workspaceStyleSource, /\.layer-panel-context-inspector \{[\s\S]*?padding-top: 9px/);
 
 // The terminal stays on the existing V/Escape routes. Presentation changes to
 // a same-row L-sized pair, but KEY confirmation remains a separate operation.

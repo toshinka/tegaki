@@ -677,13 +677,13 @@ export const DOMBuilder = (function() {
         extensionToggle.classList.add('gui-control', 'gui-control--m', 'gui-control--quiet');
         preciseDetails.classList.add('gui-surface');
         warpExtension.classList.add('gui-surface', 'gui-surface--compact');
-        warpToolStrip.classList.add('gui-segmented', 'gui-segmented--tertiary');
+        warpToolStrip.classList.add('gui-segmented', 'gui-segmented--secondary');
         warpToolStrip.querySelectorAll('.layer-transform-warp-tool-btn').forEach((control) => {
             control.classList.add('gui-control', 'gui-control--m');
         });
-        brushTypeStrip.classList.add('gui-segmented', 'gui-segmented--tertiary');
+        brushTypeStrip.classList.add('gui-segmented', 'gui-segmented--compact');
         brushTypeStrip.querySelectorAll('.layer-transform-warp-brush-type-btn').forEach((control) => {
-            control.classList.add('gui-control', 'gui-control--m');
+            control.classList.add('gui-control', 'gui-control--s');
         });
         return panel;
     }

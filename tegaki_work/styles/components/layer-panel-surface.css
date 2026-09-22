@@ -83,6 +83,7 @@
     flex-direction: column;
     justify-content: flex-start;
     gap: 4px;
+    padding-top: 9px;
     width: var(--right-workspace-width, 0px);
     min-width: 0;
     height: 100%;
