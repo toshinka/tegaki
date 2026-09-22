@@ -4,6 +4,10 @@
 **Status:** REFERENCE / Research Bank / Not production authority / Not an implementation Card.  
 **Read selectively.** This folder is not a required context load for every implementation task. The current Work Package, STATUS/TECHNICAL, product code, and scoped Card govern implementation. Older study hypotheses do not override explicit later Owner decisions.
 
+## Browser drawing WebSOL handoff
+
+For a new WebSOL chat taking over the browser drawing tool (not ComfyUIPortable/Manga/H3), read [the browser drawing handoff](TEGAKI_BROWSER_DRAWING_WEBSOL_HANDOFF.md), then the [GUI component conventions](TEGAKI_GUI_COMPONENT_CONVENTIONS.md). Check the latest Codex report and live HEAD/worktree before choosing one next Card. The component conventions describe current Transform practice, not a permanent app-wide style specification.
+
 ## Reading map
 
 | Task | Read first | Optional background |
