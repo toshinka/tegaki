@@ -84,12 +84,12 @@ assert.match(layerTransform, /allowAnchorEdit !== false/);
 assert.match(layerTransform, /if \(!this\._canEditTransformAnchor\(\)\) return false;/);
 assert.match(domBuilder, /textContent: 'SOURCE · 原画'/);
 assert.ok(
-    domBuilder.indexOf("id: 'layer-transform-key-strip'")
-        > domBuilder.indexOf("className: 'layer-transform-mode-strip'")
+    domBuilder.indexOf('panel.appendChild(keyStrip)')
+        < domBuilder.indexOf('panel.appendChild(modeStrip)')
 );
 assert.ok(
-    domBuilder.indexOf("id: 'layer-transform-key-strip'")
-        < domBuilder.indexOf("className: 'layer-transform-precise'")
+    domBuilder.indexOf('panel.appendChild(modeStrip)')
+        < domBuilder.indexOf('panel.appendChild(preciseDetails)')
 );
 assert.match(domBuilder, /id: 'layer-transform-key-commit-btn'/);
 assert.match(domBuilder, /id: 'layer-transform-key-prev-btn'/);

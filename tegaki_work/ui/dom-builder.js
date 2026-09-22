@@ -420,8 +420,6 @@ export const DOMBuilder = (function() {
                 'data-transform-mode': 'warp'
             }
         }));
-        panel.appendChild(modeStrip);
-
         const keyStrip = createElement('div', {
             className: 'layer-transform-key-strip',
             id: 'layer-transform-key-strip',
@@ -476,6 +474,8 @@ export const DOMBuilder = (function() {
                 hidden: ''
             }
         }));
+
+        panel.appendChild(modeStrip);
 
         // Progressive Controls: Level 1 keeps the BASIC/WARP surface light;
         // the active mode exposes one runtime-only Level 2 entry point.

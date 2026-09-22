@@ -569,7 +569,10 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
 
 .anim-dock-current-frame {
     min-width: 34px;
-    color: var(--futaba-maroon);
+    color: var(--futaba-cream);
+    background: var(--futaba-maroon);
+    box-shadow: inset 0 0 0 1px var(--futaba-cream);
+    border-radius: 4px;
     font-size: 10px;
     font-weight: 700;
     line-height: 1;
@@ -1035,6 +1038,13 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
 
 #animation-table-popup.is-bottom-dock .anim-frame-num {
     background: rgba(255, 255, 238, 0.48);
+}
+
+#animation-table-popup.is-bottom-dock .anim-frame-num.current {
+    box-sizing: border-box;
+    background: var(--futaba-maroon);
+    color: var(--futaba-cream);
+    border: 1px solid var(--futaba-cream);
 }
 
 #animation-table-popup.is-bottom-dock .anim-dock-secondary-body {

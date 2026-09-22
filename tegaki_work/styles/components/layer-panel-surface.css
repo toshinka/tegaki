@@ -279,6 +279,10 @@
     width: 100%;
     pointer-events: auto;
 }
+/* Keep V / Escape as the existing terminal contract without duplicate buttons. */
+.right-workspace-frame .right-workspace-terminal > .gui-control[aria-keyshortcuts] {
+    display: none;
+}
 .right-workspace-terminal [hidden] { display: none; }
 .right-workspace-terminal {
     display: grid;
