@@ -11,6 +11,8 @@ import { readFileSync } from 'node:fs';
 const frameSource = readFileSync(new URL('../ui/right-workspace-frame.js', import.meta.url), 'utf8');
 const styleSource = readFileSync(new URL('../styles/components/layer-panel-surface.css', import.meta.url), 'utf8');
 const mainStyleSource = readFileSync(new URL('../styles/main.css', import.meta.url), 'utf8');
+const domSource = readFileSync(new URL('../ui/dom-builder.js', import.meta.url), 'utf8');
+const transformStyleSource = readFileSync(new URL('../styles/components/layer-transform-basic.css', import.meta.url), 'utf8');
 
 assert.match(frameSource, /_mountModeSwitch\(\)/,
     'Right Workspace mounts one shared mode switch');
@@ -29,6 +31,19 @@ assert.match(frameSource, /commitState\?\.hasPendingTransform === true/,
     'existing commit projection guards pending Layer return');
 assert.match(frameSource, /this\.endButton\?\.focus\?\.\(\{ preventScroll: true \}\)/,
     'pending Layer return focuses the existing terminal');
+assert.match(frameSource, /_syncTransformActions\(layerEditing\)/,
+    'terminal labels follow the active Transform edit context');
+assert.match(frameSource, /isTransformTimelineKeyTarget\(target\)/,
+    'the terminal distinguishes SOURCE from Animation KEY ownership');
+assert.match(frameSource, /対象FrameのKEYへ確定/);
+assert.match(frameSource, /SOURCE変形をRasterへ確定/);
+assert.match(frameSource, /resetButton\?\.setAttribute\('aria-label', '変形をリセット'\)/,
+    'reset feedback does not infer dirty state from an unreliable shared projection');
+assert.doesNotMatch(styleSource, /right-workspace-terminal\s*>\s*\.gui-control\[aria-keyshortcuts\]\s*\{\s*display:\s*none/s,
+    'existing V and Escape buttons remain available in the Transform workspace');
+assert.match(domSource, /createElement\('button',\s*\{\s*className: 'flip-button flip-button--icon',[\s\S]*?id: 'layer-transform-reset-btn',[\s\S]*?'aria-label': '変形をリセット'/);
+assert.doesNotMatch(transformStyleSource, /#layer-transform-reset-btn\.is-transform-pending/,
+    'no dirty color is presented without a reliable resettable pending state');
 assert.doesNotMatch(frameSource, /panel\?\.classList\.(?:add|remove|toggle)\('show'/,
     'the segmented switch never writes Transform visibility state');
 

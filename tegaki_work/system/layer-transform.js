@@ -131,6 +131,14 @@ export class LayerTransform {
         const anchorEditable = projection?.allowAnchorEdit !== false;
         anchorButton?.classList.toggle('is-context-disabled', !anchorEditable);
         anchorButton?.setAttribute('aria-disabled', anchorEditable ? 'false' : 'true');
+        if (anchorButton) {
+            anchorButton.title = anchorEditable
+                ? '中心軸のドラッグ編集を切り替え。ダブルクリックで描画範囲中央へ戻す'
+                : 'この編集Contextでは中心軸を変更できません（ANIMATEのFrame-local KEY対象外／WARP）';
+            anchorButton.setAttribute('aria-label', anchorEditable
+                ? '中心軸のドラッグ編集を切り替え'
+                : '中心軸の編集不可：この編集Contextの対象外');
+        }
         if (!anchorEditable) {
             transformAnchorSite.setEditable('layer-transform', false);
             anchorButton?.classList.remove('active');

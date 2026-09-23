@@ -268,7 +268,9 @@ assert.match(domBuilder, /textContent: 'DISTORT'[\s\S]*?disabled: ''/);
 assert.match(domBuilder, /textContent: 'WARP'[\s\S]*?'data-transform-mode': 'warp'/);
 assert.match(domBuilder, /className: 'layer-transform-precise'/);
 assert.match(domBuilder, /詳細 — 数値で正確に調整/);
-assert.match(domBuilder, /中心点を編集。ダブルクリックで描画範囲の中央へ戻す/);
+assert.match(domBuilder, /flipGroup\.appendChild\(createElement\('button', \{\s*className: 'flip-button flip-button--icon transform-anchor-toggle'/);
+assert.match(domBuilder, /中心軸のドラッグ編集を切り替え。ダブルクリックで描画範囲中央へ戻す/);
+assert.match(domBuilder, /'aria-label': '中心軸のドラッグ編集を切り替え'/);
 assert.ok(
     domBuilder.indexOf("id: 'layer-transform-anchor-btn'")
         < domBuilder.indexOf("id: 'flip-horizontal-btn'")
@@ -293,6 +295,7 @@ assert.match(layerTransform, /_getContentCenterAnchor\(\)/);
 assert.match(layerTransform, /BASIC_HANDLE_SCALE_EPSILON = 0\.0001/);
 assert.match(layerTransform, /minScale: BASIC_HANDLE_SCALE_EPSILON/);
 assert.match(layerTransform, /anchorBtn\?\.addEventListener\('dblclick'/);
+assert.match(layerTransform, /ANIMATEのFrame-local KEY対象外／WARP/);
 assert.match(overlay, /四隅、辺中点、rotation handleの[\s\S]*pointer入力をcallbackへ渡す/);
 assert.doesNotMatch(overlay, /(?:TegakiEventBus|historyManager|localStorage|sessionStorage|saveProject|fetch\s*\()/);
 assert.match(overlay, /onUniformScaleStart/);

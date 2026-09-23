@@ -6,6 +6,8 @@
  * existing Drawing grid (including rail/scroll gutter), never add width.
  * RELATED: dom-builder.js, layer-panel-renderer.js, layer-transform.js.
  */
+import { isTransformTimelineKeyTarget } from '../system/animation/transform-edit-transaction.js';
+
 export class RightWorkspaceFrame {
     constructor(container, getTarget, layerSystem) {
         this.root = container?.closest?.('.right-panel');
@@ -164,6 +166,34 @@ export class RightWorkspaceFrame {
         this.eventBus.on('animation-table:dock-state-changed', this._dockStateHandler);
     }
 
+    _syncTransformActions(layerEditing) {
+        const target = this.layerSystem?.getActiveTransformEditTarget?.();
+        const animate = isTransformTimelineKeyTarget(target);
+        const resetButton = this.panel?.querySelector('#layer-transform-reset-btn');
+
+        if (layerEditing && animate) {
+            this.endButton.textContent = '✓ KEY確定';
+            this.endButton.title = '対象FrameのKEYへ確定してTransformを終了（変更なしなら終了のみ、V）';
+            this.endButton.setAttribute('aria-label', '対象FrameのKEYへ確定してTransformを終了');
+        } else if (layerEditing) {
+            this.endButton.textContent = '✓ SOURCE確定';
+            this.endButton.title = '変形をSOURCE Rasterへ確定してTransformを終了（変更なしなら終了のみ、V）';
+            this.endButton.setAttribute('aria-label', 'SOURCE変形をRasterへ確定してTransformを終了');
+        } else {
+            this.endButton.textContent = 'Transform終了';
+            this.endButton.title = '変更せずTransformを終了（V）';
+            this.endButton.setAttribute('aria-label', '変更せずTransformを終了');
+        }
+
+        // Dirty display stays neutral: the shared pending projection can remain
+        // true after a SOURCE Reset returns the artwork to its entry pose.
+        resetButton?.classList.remove('is-transform-pending');
+        resetButton?.setAttribute('aria-label', '変形をリセット');
+        if (resetButton) {
+            resetButton.title = '現在のTransformを初期状態へ戻す';
+        }
+    }
+
     _getDockStatusSlot(state) {
         if (!this.dock) return null;
         const selector = state === 'collapsed'
@@ -242,6 +272,7 @@ export class RightWorkspaceFrame {
         this.endButton.hidden = !layerEditing;
         this.cancelButton.hidden = !layerEditing;
         this.selectionHint.hidden = layerEditing;
+        this._syncTransformActions(layerEditing);
         this._syncStatusMount();
         if (hadFocus) {
             if (active) this.title.focus({ preventScroll: true });
