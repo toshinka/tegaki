@@ -128,7 +128,8 @@ import {
     resolvePartTransformHandleDrag,
     sampleBoneInstanceMotion,
     sampleRigInstanceMotion,
-    upsertRigBoneKey
+    upsertRigBoneKey,
+    upsertRigPartKey
 } from '../system/animation/part-rig.js';
 import { mapWarpBindPointToPose } from '../system/animation/warp-triangle-point-map.js';
 import { resolveRigidBindingWorldMatrix } from '../system/animation/warp-anchor-constraint.js';
@@ -3511,6 +3512,190 @@ export class AnimationTablePopup {
         return inspectStaticRigAuthoringTarget(this.model.getClipAsset(assetId), layerId, options);
     }
 
+    /** PART Lens は同じ選択CAFの直下Rasterだけを対象にする。 */
+    getRigLensPartTarget(assetId) {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const asset = assetId ? this.model.getClipAsset(assetId) : null;
+        if (!entry?.clip || entry.clip.assetId !== assetId || !asset) {
+            return { ok: false, reason: '選択中のCAFが変わっています。', layers: [] };
+        }
+        const layers = (asset.internalLayers || []).filter(layer =>
+            layer?.type === 'raster' && layer.isBackground !== true
+            && layer.parentLayerId == null && !asset.meshDefinitions?.some(mesh =>
+                mesh.targetInternalLayerId === layer.id));
+        const parts = (asset.rigDefinition?.parts || []).filter(part =>
+            layers.some(layer => layer.id === part.partId));
+        return { ok: true, asset, entry, layers, parts, frame: this.model.playback.currentFrame };
+    }
+
+    projectRigLensPartCanvasPoint(assetId, event) {
+        const target = this.getRigLensPartTarget(assetId);
+        return target.ok ? this._screenToRigProject(event, target.entry) : null;
+    }
+
+    registerRigLensPart(assetId, partId) {
+        const target = this.getRigLensPartTarget(assetId);
+        if (!target.ok || this.isPlaying || !target.layers.some(layer => layer.id === partId)) {
+            return { ok: false, reason: target.reason || '対象Rasterを確認してください。' };
+        }
+        return this.registerInternalRigPartFromExternal(assetId, partId, {
+            source: 'right-workspace-part-lens'
+        });
+    }
+
+    setRigLensPartPivot(assetId, partId, projectPoint) {
+        const target = this.getRigLensPartTarget(assetId);
+        if (!target.ok || this.isPlaying || !target.parts.some(part => part.partId === partId)) {
+            return { ok: false, reason: target.reason || '先にPartを登録してください。' };
+        }
+        const x = Number(projectPoint?.x);
+        const y = Number(projectPoint?.y);
+        if (![x, y].every(Number.isFinite)) return { ok: false, reason: 'PIVOT座標が不正です。' };
+        const before = this._captureInternalLayerHistoryState(target.asset);
+        const result = this.model.setClipAssetRigPartBindPivot(assetId, partId, x, y);
+        if (!result.ok) return result;
+        if (result.changed) {
+            this._invalidateSnapshotTextureCache();
+            this._recordInternalLayerHistory(target.asset, before, 'caf-part-pivot-bind', {
+                type: 'caf-part-pivot-bind', assetId, partId
+            });
+            this.render();
+            this._flushLayerPanelSync();
+            this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        }
+        return result;
+    }
+
+    setRigLensPartParent(assetId, partId, parentPartId = null) {
+        const target = this.getRigLensPartTarget(assetId);
+        if (!target.ok || this.isPlaying || !target.parts.some(part => part.partId === partId)
+            || (parentPartId && !target.parts.some(part => part.partId === parentPartId))) {
+            return { ok: false, reason: target.reason || '同じCAFの登録済みPartを指定してください。' };
+        }
+        const before = this._captureInternalLayerHistoryState(target.asset);
+        const result = this.model.setClipAssetRigPartParent(assetId, partId, parentPartId);
+        if (!result.ok) return result;
+        if (result.changed) {
+            this._invalidateSnapshotTextureCache();
+            this._recordInternalLayerHistory(target.asset, before, 'caf-part-parent-bind', {
+                type: 'caf-part-parent-bind', assetId, partId, parentPartId
+            });
+            this.render();
+            this._flushLayerPanelSync();
+            this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        }
+        return result;
+    }
+
+    getRigLensPartMotionTarget(assetId, partId) {
+        const target = this.getRigLensPartTarget(assetId);
+        if (!target.ok || this.isPlaying) {
+            return { ok: false, reason: target.reason || '再生中はPoseを編集できません。' };
+        }
+        const part = target.parts.find(candidate => candidate.partId === partId);
+        if (!part) return { ok: false, reason: 'Partを登録してください。' };
+        const frame = target.frame;
+        const localFrame = frame - target.entry.clip.startFrame;
+        if (!Number.isInteger(localFrame) || localFrame < 0 || localFrame >= target.entry.clip.duration) {
+            return { ok: false, reason: '対象ClipのFrameを選択してください。' };
+        }
+        const sampled = sampleRigInstanceMotion(target.entry.clip, frame).get(partId)
+            || { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 };
+        const preview = this._rigLensPartPosePreview;
+        return { ...target, ok: true, part, localFrame, sampled,
+            key: getRigPartKeyAtFrame(target.entry.clip.rigMotion, partId, localFrame),
+            preview: preview?.clipId === target.entry.clip.id && preview.frame === frame
+                && preview.partId === partId ? preview : null };
+    }
+
+    previewRigLensPartPose(assetId, partId, transform) {
+        const target = this.getRigLensPartMotionTarget(assetId, partId);
+        if (!target.ok || !['x', 'y', 'scaleX', 'scaleY', 'rotation']
+            .every(field => Number.isFinite(transform?.[field]))) {
+            return { ok: false, reason: target.reason || 'Pose座標が不正です。' };
+        }
+        this._rigLensPartPosePreview = {
+            assetId, partId, clipId: target.entry.clip.id, frame: target.frame,
+            transform: { ...transform },
+            interpolation: target.key?.interpolation === 'hold' ? 'hold' : 'linear'
+        };
+        this._animationPreviewKey = null;
+        this._scheduleMotionEditPreviewRefresh();
+        return { ok: true };
+    }
+
+    cancelRigLensPartPosePreview() {
+        if (!this._rigLensPartPosePreview) return false;
+        this._rigLensPartPosePreview = null;
+        this._animationPreviewKey = null;
+        this._cancelMotionEditPreviewRefresh();
+        this._applyVisibilityPreview();
+        return true;
+    }
+
+    hasRigLensPartPosePreview() { return this._rigLensPartPosePreview != null; }
+
+    commitRigLensPartKey(assetId, partId) {
+        const target = this.getRigLensPartMotionTarget(assetId, partId);
+        if (!target.ok) return target;
+        const pending = this._rigLensPartPosePreview;
+        if (pending && (pending.clipId !== target.entry.clip.id || pending.frame !== target.frame
+            || pending.partId !== partId)) {
+            return { ok: false, reason: '未確定PoseのFrame／Partへ戻って確定または取消してください。' };
+        }
+        const transform = target.preview?.transform || target.sampled;
+        if (target.key && ['x', 'y', 'scaleX', 'scaleY', 'rotation'].every(field =>
+            Math.abs(Number(target.key[field]) - Number(transform[field])) < 1e-9)) {
+            this.cancelRigLensPartPosePreview();
+            return { ok: true, changed: false };
+        }
+        const before = this._captureTimelineHistoryState();
+        const result = this.model.setClipRigPartKey(target.entry.clip.id, partId,
+            target.localFrame, transform, {
+                interpolation: target.key?.interpolation === 'hold' ? 'hold' : 'linear'
+            });
+        if (!result.ok) return result;
+        this._rigLensPartPosePreview = null;
+        this._cancelMotionEditPreviewRefresh();
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        this._finishMotionGestureHistory(before, 'caf-rig-lens-part-key');
+        this.render();
+        this._flushLayerPanelSync();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        return result;
+    }
+
+    getRigLensPartScreenItems(assetId, motion = false) {
+        const target = this.getRigLensPartTarget(assetId);
+        if (!target.ok) return [];
+        const frame = target.frame;
+        const clip = motion ? this._getRigLensPreviewClip(target.entry.clip, frame) : null;
+        const evaluated = evaluateRigidParts(target.asset, clip, frame);
+        const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+        if (!evaluated.ok || !coordinateSystem) return [];
+        const size = this._getCanvasSnapshotSize();
+        const clipMatrix = createCenteredTransformMatrix(
+            sampleClipTransform(target.entry.clip, frame), size.width / 2, size.height / 2
+        );
+        const toScreen = point => {
+            const world = applyTransformMatrix(clipMatrix, point.x, point.y);
+            const screen = coordinateSystem.worldToScreenImmediate?.(world.x, world.y)
+                || coordinateSystem.worldToScreen?.(world.x, world.y);
+            return screen ? { x: screen.clientX, y: screen.clientY } : null;
+        };
+        return target.parts.map(part => {
+            const pose = evaluated.poseByPartId.get(part.partId);
+            if (!pose) return null;
+            const pivot = part.bindTransform;
+            const rootProject = applyTransformMatrix(pose.worldMatrix, pivot.pivotX, pivot.pivotY);
+            const tailProject = applyTransformMatrix(pose.worldMatrix, pivot.pivotX + 28, pivot.pivotY);
+            const head = toScreen(rootProject);
+            const tail = toScreen(tailProject);
+            return head && tail ? { partId: part.partId, head, tail, rootProject } : null;
+        }).filter(Boolean);
+    }
+
     projectRigLensCanvasPoint(assetId, layerId, event) {
         if (!this.getRigLensStaticTarget(assetId, layerId, { allowBound: true }).ok) return null;
         const entry = this.model.findClipEntry(this.selectedCelId);
@@ -3554,12 +3739,22 @@ export class AnimationTablePopup {
     }
 
     _getRigLensPreviewClip(clip, frame) {
-        const preview = this._rigLensPosePreview;
-        if (!preview || preview.clipId !== clip?.id || preview.frame !== frame) return clip;
-        const update = upsertRigBoneKey(clip.rigMotion, preview.boneId,
-            frame - clip.startFrame, preview.transform,
-            { interpolation: preview.interpolation });
-        return update.ok ? { ...clip, rigMotion: update.value } : clip;
+        let projected = clip;
+        const bone = this._rigLensPosePreview;
+        if (bone?.clipId === clip?.id && bone.frame === frame) {
+            const update = upsertRigBoneKey(projected.rigMotion, bone.boneId,
+                frame - clip.startFrame, bone.transform,
+                { interpolation: bone.interpolation });
+            if (update.ok) projected = { ...projected, rigMotion: update.value };
+        }
+        const part = this._rigLensPartPosePreview;
+        if (part?.clipId === clip?.id && part.frame === frame) {
+            const update = upsertRigPartKey(projected.rigMotion, part.partId,
+                frame - clip.startFrame, part.transform,
+                { interpolation: part.interpolation });
+            if (update.ok) projected = { ...projected, rigMotion: update.value };
+        }
+        return projected;
     }
 
     previewRigLensBonePose(assetId, layerId, boneId, transform) {

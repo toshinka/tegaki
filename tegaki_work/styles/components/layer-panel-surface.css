@@ -397,6 +397,17 @@
     flex: 0 0 auto;
     pointer-events: auto;
 }
+.right-workspace-rig-kind-row {
+    display: flex;
+    gap: 4px;
+    pointer-events: auto;
+}
+.right-workspace-rig-kind-row[hidden] {
+    display: none;
+}
+.right-workspace-rig-kind-row button[aria-pressed="true"] {
+    border-color: var(--active-border);
+}
 .right-workspace-rig-lens-region {
     display: grid;
     flex: 0 0 auto;
@@ -879,11 +890,17 @@
     --card-action-active-border-color: var(--active-border);
 }
 
+/* The CAF mirror owns the same active outline as a normal Layer card. */
+.right-panel .clip-layer-mirror-row.is-selected {
+    border-color: var(--card-row-selected-border-color);
+    border-width: var(--card-row-selected-border-width);
+}
+
 .right-panel .caf-simple-header--flat .clip-layer-mirror-row {
     border-color: transparent;
     --card-row-selected-bg: var(--ui-layer-surface-focus);
-    --card-row-selected-border-color: transparent;
-    --card-row-selected-border-width: 1px;
+    --card-row-selected-border-color: var(--active-border);
+    --card-row-selected-border-width: 2px;
     background: var(--ui-layer-context-surface);
     -webkit-backdrop-filter: var(--ui-layer-context-backdrop);
     backdrop-filter: var(--ui-layer-context-backdrop);
@@ -980,7 +997,8 @@
 
 .right-panel .caf-simple-header--flat .clip-layer-mirror-row.is-selected {
     color: var(--futaba-maroon);
-    border-color: transparent;
+    border-color: var(--card-row-selected-border-color);
+    border-width: var(--card-row-selected-border-width);
     background: var(--ui-layer-surface-focus);
 }
 

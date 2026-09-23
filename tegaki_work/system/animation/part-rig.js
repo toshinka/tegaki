@@ -374,6 +374,91 @@ export function registerRigPartDefinition(rigDefinition, partId, options = {}) {
     };
 }
 
+function preservePartBindMatrix(matrix, pivotX, pivotY) {
+    const decomposed = decomposeRigMatrix(matrix);
+    if (!decomposed) return null;
+    const candidate = {
+        ...decomposed, pivotX, pivotY,
+        x: matrix.tx - pivotX + matrix.a * pivotX + matrix.c * pivotY,
+        y: matrix.ty - pivotY + matrix.b * pivotX + matrix.d * pivotY
+    };
+    const reconstructed = createAffineTransformMatrix(candidate);
+    if (['a', 'b', 'c', 'd', 'tx', 'ty'].some(field =>
+        Math.abs(reconstructed[field] - matrix[field]) > 1e-7)) return null;
+    return candidate;
+}
+
+/** 静的Part PIVOTを変更し、現在のBind matrixを保持する。Motion KEYは呼出側が排除する。 */
+export function updateRigPartBindPivot(rigDefinition, partId, pivotX, pivotY) {
+    const normalized = normalizeRigDefinition(rigDefinition);
+    const part = normalized?.parts?.find(candidate => candidate?.partId === partId);
+    if (!part) return { ok: false, reason: 'part-not-found', value: normalized };
+    if (![pivotX, pivotY].every(Number.isFinite)) {
+        return { ok: false, reason: 'invalid-part-pivot', value: normalized };
+    }
+    if (part.bindTransform.pivotX === pivotX && part.bindTransform.pivotY === pivotY) {
+        return { ok: true, changed: false, value: normalized, part };
+    }
+    const bindTransform = preservePartBindMatrix(
+        createAffineTransformMatrix(part.bindTransform), pivotX, pivotY
+    );
+    if (!bindTransform) return { ok: false, reason: 'non-decomposable-bind', value: normalized };
+    const updatedPart = { ...part, bindTransform };
+    return { ok: true, changed: true, part: updatedPart, value: {
+        ...normalized,
+        parts: normalized.parts.map(candidate => candidate.partId === partId ? updatedPart : candidate)
+    } };
+}
+
+/** 親変更時のBind world matrixを維持できる構成だけを受理する。 */
+export function updateRigPartParent(rigDefinition, partId, parentPartId = null) {
+    const normalized = normalizeRigDefinition(rigDefinition);
+    const parts = normalized?.parts;
+    const part = parts?.find(candidate => candidate?.partId === partId);
+    if (!part) return { ok: false, reason: 'part-not-found', value: normalized };
+    if (parentPartId === partId) return { ok: false, reason: 'self-parent', value: normalized };
+    if (parentPartId != null && !parts.some(candidate => candidate.partId === parentPartId)) {
+        return { ok: false, reason: 'parent-part-not-found', value: normalized };
+    }
+    if ((part.parentPartId || null) === (parentPartId || null)) {
+        return { ok: true, changed: false, value: normalized, part };
+    }
+    const descendants = new Set();
+    const visit = id => parts.forEach(candidate => {
+        if (candidate.parentPartId !== id || descendants.has(candidate.partId)) return;
+        descendants.add(candidate.partId);
+        visit(candidate.partId);
+    });
+    visit(partId);
+    if (parentPartId && descendants.has(parentPartId)) {
+        return { ok: false, reason: 'rig-cycle', value: normalized };
+    }
+    const { ordered } = orderRigHierarchy(parts, 'partId', 'parentPartId');
+    const worldById = new Map();
+    ordered.forEach(candidate => {
+        const local = createAffineTransformMatrix(candidate.bindTransform);
+        const parent = worldById.get(candidate.parentPartId);
+        worldById.set(candidate.partId, parent ? multiplyTransformMatrices(parent, local) : local);
+    });
+    const previousWorld = worldById.get(partId);
+    const parentWorld = worldById.get(parentPartId);
+    const inverseParent = parentWorld ? invertTransformMatrix(parentWorld) : null;
+    if (!previousWorld || (parentWorld && !inverseParent)) {
+        return { ok: false, reason: 'non-invertible-parent-bind', value: normalized };
+    }
+    const local = inverseParent
+        ? multiplyTransformMatrices(inverseParent, previousWorld) : previousWorld;
+    const bindTransform = preservePartBindMatrix(
+        local, part.bindTransform.pivotX, part.bindTransform.pivotY
+    );
+    if (!bindTransform) return { ok: false, reason: 'non-decomposable-bind', value: normalized };
+    const updatedPart = { ...part, parentPartId: parentPartId || null, bindTransform };
+    return { ok: true, changed: true, part: updatedPart, value: {
+        ...normalized,
+        parts: parts.map(candidate => candidate.partId === partId ? updatedPart : candidate)
+    } };
+}
+
 /**
  * 既存RigへBoneだけを追加する。Raster Skinning用BoneはPart / rigid bindingを持たず、
  * Bind Poseと階層は既存rigDefinition.bonesだけを正本とする。

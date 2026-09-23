@@ -223,6 +223,23 @@ assert.match(
     'CAF identity has independent top radius'
 );
 
+// The selected CAF-internal Raster must retain the normal orange Layer outline.
+assert.match(
+    renderer,
+    /const isSelected = selectedInternalLayerId === layer\?\.id;[\s\S]*?isSelected,[\s\S]*?isHidden:/u,
+    'CAF mirror selection follows the existing internal Layer authority'
+);
+assert.match(
+    componentCss,
+    /\.right-panel \.clip-layer-mirror-row\.is-selected\s*\{\s*border-color:\s*var\(--card-row-selected-border-color\);\s*border-width:\s*var\(--card-row-selected-border-width\);/u,
+    'selected CAF mirror card restores its active outline after the base border rule'
+);
+assert.match(
+    componentCss,
+    /\.right-panel \.caf-simple-header--flat \.clip-layer-mirror-row\.is-selected\s*\{[^}]*border-color:\s*var\(--card-row-selected-border-color\);/u,
+    'flat CAF mirror variant does not hide the selected outline'
+);
+
 // Lane reference active color distinguished from onion
 assert.match(
     mainCss,

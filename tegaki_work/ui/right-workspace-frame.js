@@ -26,6 +26,8 @@ export class RightWorkspaceFrame {
         this.rigPlacementMode = null;
         this.rigSelectedBoneId = null;
         this.rigLensMode = 'setup';
+        this.rigAuthoringKind = 'deform';
+        this.rigSelectedPartId = null;
         this.rigPointerGesture = null;
         this.rigOverlay = null;
         this.rigOverlayFrame = null;
@@ -120,7 +122,8 @@ export class RightWorkspaceFrame {
             if (this.rigLensActive && event.key?.toLowerCase() === 'v'
                 && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
                 && !event.target?.closest?.('input, textarea, [contenteditable="true"]')
-                && this._getRigLensTable()?.hasRigLensBonePosePreview?.() === true) {
+                && (this._getRigLensTable()?.hasRigLensBonePosePreview?.() === true
+                    || this._getRigLensTable()?.hasRigLensPartPosePreview?.() === true)) {
                 this._requireRigPoseResolution();
                 event.preventDefault();
                 event.stopImmediatePropagation();
@@ -131,7 +134,9 @@ export class RightWorkspaceFrame {
                 event.preventDefault();
                 event.stopImmediatePropagation();
             } else if (this.rigLensActive && event.key === 'Escape'
-                && this._getRigLensTable()?.cancelRigLensBonePosePreview?.()) {
+                && (this.rigAuthoringKind === 'part'
+                    ? this._getRigLensTable()?.cancelRigLensPartPosePreview?.()
+                    : this._getRigLensTable()?.cancelRigLensBonePosePreview?.())) {
                 this.sync();
                 event.preventDefault();
                 event.stopImmediatePropagation();
@@ -169,6 +174,20 @@ export class RightWorkspaceFrame {
         this._rigReturnClickHandler = () => this._returnToTransform();
         this.rigReturnButton.addEventListener('click', this._rigReturnClickHandler);
         header.append(heading, this.rigReturnButton);
+
+        this.rigKindRow = document.createElement('div');
+        this.rigKindRow.className = 'right-workspace-rig-kind-row';
+        this.rigPartKindButton = document.createElement('button');
+        this.rigPartKindButton.type = 'button';
+        this.rigPartKindButton.className = 'gui-control gui-control--s';
+        this.rigPartKindButton.textContent = 'PART';
+        this.rigPartKindButton.addEventListener('click', () => this._setRigAuthoringKind('part'));
+        this.rigDeformKindButton = document.createElement('button');
+        this.rigDeformKindButton.type = 'button';
+        this.rigDeformKindButton.className = 'gui-control gui-control--s';
+        this.rigDeformKindButton.textContent = 'DEFORM';
+        this.rigDeformKindButton.addEventListener('click', () => this._setRigAuthoringKind('deform'));
+        this.rigKindRow.append(this.rigPartKindButton, this.rigDeformKindButton);
 
         const makeRegion = (label, className) => {
             const region = document.createElement('section');
@@ -216,7 +235,11 @@ export class RightWorkspaceFrame {
         this.rigCancelPoseButton.className = 'gui-control gui-control--s';
         this.rigCancelPoseButton.textContent = 'Poseを取消';
         this.rigCancelPoseButton.addEventListener('click', () => {
-            this._getRigLensTable()?.cancelRigLensBonePosePreview?.();
+            if (this.rigAuthoringKind === 'part') {
+                this._getRigLensTable()?.cancelRigLensPartPosePreview?.();
+            } else {
+                this._getRigLensTable()?.cancelRigLensBonePosePreview?.();
+            }
             this.rigEntryMessage = '';
             this.sync();
         });
@@ -236,17 +259,35 @@ export class RightWorkspaceFrame {
         this.rigBindButton.textContent = '絵をBoneへ接続';
         this.rigBindButton.title = '選択中のCAF RasterからAUTO GRIDのMesh / Skin Bindingを作成';
         this.rigBindButton.addEventListener('click', () => this._bindRigArtwork());
+        this.rigPartRegisterButton = document.createElement('button');
+        this.rigPartRegisterButton.type = 'button';
+        this.rigPartRegisterButton.className = 'gui-control gui-control--s';
+        this.rigPartRegisterButton.textContent = '選択LayerをPart登録';
+        this.rigPartRegisterButton.addEventListener('click', () => this._registerRigPart());
+        this.rigPartPivotButton = document.createElement('button');
+        this.rigPartPivotButton.type = 'button';
+        this.rigPartPivotButton.className = 'gui-control gui-control--s';
+        this.rigPartPivotButton.textContent = 'CanvasでPIVOT設定';
+        this.rigPartPivotButton.addEventListener('click', () => this._armRigPartPivot());
+        this.rigPartParentLabel = document.createElement('label');
+        this.rigPartParentLabel.textContent = '親Part ';
+        this.rigPartParentSelect = document.createElement('select');
+        this.rigPartParentSelect.className = 'gui-control gui-control--s';
+        this.rigPartParentSelect.setAttribute('aria-label', '選択Partの親');
+        this.rigPartParentSelect.addEventListener('change', () => this._setRigPartParent());
+        this.rigPartParentLabel.appendChild(this.rigPartParentSelect);
         this.rigToolHint = document.createElement('p');
         this.rigToolHint.setAttribute('role', 'status');
         this.rigToolHint.setAttribute('aria-live', 'polite');
         this.rigLensPropertiesContent.append(
             this.rigPoseButton, this.rigSetupButton, this.rigRootButton,
             this.rigChildButton, this.rigBindButton, this.rigKeyButton,
-            this.rigCancelPoseButton, this.rigToolHint
+            this.rigCancelPoseButton, this.rigPartRegisterButton,
+            this.rigPartPivotButton, this.rigPartParentLabel, this.rigToolHint
         );
         properties.appendChild(this.rigLensPropertiesContent);
 
-        view.append(header, this.rigLensWarning, target, structure, properties);
+        view.append(header, this.rigKindRow, this.rigLensWarning, target, structure, properties);
         view.hidden = true;
         return view;
     }
@@ -311,6 +352,12 @@ export class RightWorkspaceFrame {
             assetName: target.assetName,
             layerName: target.layerName
         };
+        const partTarget = this._getRigLensTable()?.getRigLensPartTarget?.(target.assetId);
+        this.rigAuthoringKind = partTarget?.layers?.length >= 2 && !target.hasMesh
+            && !(partTarget.asset?.rigDefinition?.bones?.length > 0) ? 'part' : 'deform';
+        this.rigSelectedPartId = target.internalLayerId;
+        this.lastRigTargetKey = this.rigAuthoringKind === 'part'
+            ? target.assetId : `${target.assetId}:${target.internalLayerId}`;
         this.rigPlacementMode = null;
         this.rigSelectedBoneId = null;
         this.rigLensMode = 'setup';
@@ -374,7 +421,9 @@ export class RightWorkspaceFrame {
     }
 
     _requireRigPoseResolution() {
-        if (this._getRigLensTable()?.hasRigLensBonePosePreview?.() !== true) return false;
+        const table = this._getRigLensTable();
+        if (table?.hasRigLensBonePosePreview?.() !== true
+            && table?.hasRigLensPartPosePreview?.() !== true) return false;
         this.rigEntryMessage = '未確定Poseがあります。Motion KEYを確定するか、Poseを明示的に取り消してください。';
         this.sync();
         this.rigKeyButton?.focus({ preventScroll: true });
@@ -403,8 +452,35 @@ export class RightWorkspaceFrame {
             : null;
     }
 
+    _setRigAuthoringKind(kind) {
+        if (!this.rigLensActive || this.rigPointerGesture || this._requireRigPoseResolution()) return;
+        if (kind === 'part' && !this._getRigLensTable()?.getRigLensPartTarget?.(
+            this.rigLensTarget.assetId)?.layers?.length) return;
+        this.rigAuthoringKind = kind;
+        this.rigLensMode = 'setup';
+        this.rigPlacementMode = null;
+        this.rigEntryMessage = '';
+        this.sync();
+    }
+
     _setRigLensMode(mode) {
         if (!this.rigLensActive || this.rigPointerGesture) return false;
+        if (this.rigAuthoringKind === 'part') {
+            if (mode === 'motion') {
+                const result = this._getRigLensTable()?.getRigLensPartMotionTarget?.(
+                    this.rigLensTarget.assetId, this.rigSelectedPartId);
+                if (!result?.ok) {
+                    this.rigEntryMessage = result?.reason || 'Partを選択してください。';
+                    this.sync();
+                    return false;
+                }
+            } else if (this._requireRigPoseResolution()) return false;
+            this.rigPlacementMode = null;
+            this.rigLensMode = mode;
+            this.rigEntryMessage = '';
+            this.sync();
+            return true;
+        }
         if (mode === 'motion') {
             const ids = this.rigLensTarget;
             const boneId = this.rigSelectedBoneId;
@@ -429,10 +505,36 @@ export class RightWorkspaceFrame {
     _commitRigPose() {
         if (!this.rigLensActive || this.rigLensMode !== 'motion' || this.rigPointerGesture) return;
         const ids = this.rigLensTarget;
-        const result = this._getRigLensTable()?.commitRigLensBoneKey?.(
-            ids.assetId, ids.internalLayerId, this.rigSelectedBoneId
-        );
+        const result = this.rigAuthoringKind === 'part'
+            ? this._getRigLensTable()?.commitRigLensPartKey?.(ids.assetId, this.rigSelectedPartId)
+            : this._getRigLensTable()?.commitRigLensBoneKey?.(
+                ids.assetId, ids.internalLayerId, this.rigSelectedBoneId);
         this.rigEntryMessage = result?.ok ? '' : (result?.reason || 'Motion KEYを確定できませんでした。');
+        this.sync();
+    }
+
+    _registerRigPart() {
+        const ids = this.rigLensTarget;
+        const result = this._getRigLensTable()?.registerRigLensPart?.(ids.assetId, this.rigSelectedPartId);
+        this.rigEntryMessage = result?.ok ? '' : (result?.reason || 'Partを登録できませんでした。');
+        this.sync();
+    }
+
+    _armRigPartPivot() {
+        const target = this._getRigLensTable()?.getRigLensPartTarget?.(this.rigLensTarget.assetId);
+        if (this.rigLensMode !== 'setup' || !target?.parts?.some(part =>
+            part.partId === this.rigSelectedPartId)) return;
+        this.rigPlacementMode = 'part-pivot';
+        this.rigEntryMessage = '';
+        this.sync();
+    }
+
+    _setRigPartParent() {
+        const result = this._getRigLensTable()?.setRigLensPartParent?.(
+            this.rigLensTarget.assetId, this.rigSelectedPartId,
+            this.rigPartParentSelect.value || null
+        );
+        this.rigEntryMessage = result?.ok ? '' : (result?.reason || '親Partを設定できませんでした。');
         this.sync();
     }
 
@@ -453,7 +555,7 @@ export class RightWorkspaceFrame {
     }
 
     _cancelRigPlacement() {
-        if (this.rigPointerGesture?.kind === 'pose') {
+        if (['pose', 'part-pose'].includes(this.rigPointerGesture?.kind)) {
             this._restoreRigPoseGesturePreview(this.rigPointerGesture);
         }
         this.rigPointerGesture = null;
@@ -470,13 +572,20 @@ export class RightWorkspaceFrame {
     }
 
     _onRigCanvasDown(event) {
-        if (!this.rigLensActive || !this.rigPlacementMode || this.rigPointerGesture
+        if (!this.rigLensActive || this.rigPointerGesture
             || event.button !== 0 || event.isPrimary === false) return;
         const canvas = window.coreEngine?.getApp?.()?.canvas;
         if (!canvas || event.target !== canvas || this.layerSystem?.cameraSystem?.isCanvasMoveMode?.()) return;
+        if (!this.rigPlacementMode) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
         const ids = this.rigLensTarget;
         const table = this._getRigLensTable();
-        const start = table?.projectRigLensCanvasPoint?.(ids.assetId, ids.internalLayerId, event);
+        const start = this.rigPlacementMode === 'part-pivot'
+            ? table?.projectRigLensPartCanvasPoint?.(ids.assetId, event)
+            : table?.projectRigLensCanvasPoint?.(ids.assetId, ids.internalLayerId, event);
         if (!start || !Number.isFinite(start.x) || !Number.isFinite(start.y)) return;
         this.rigPointerGesture = {
             pointerId: event.pointerId,
@@ -484,6 +593,7 @@ export class RightWorkspaceFrame {
             layerId: ids.internalLayerId,
             kind: this.rigPlacementMode,
             parentBoneId: this.rigPlacementMode === 'child' ? this.rigSelectedBoneId : null,
+            partId: this.rigPlacementMode === 'part-pivot' ? this.rigSelectedPartId : null,
             start
         };
         try { canvas.setPointerCapture(event.pointerId); } catch { /* document capture still ends the gesture */ }
@@ -518,20 +628,55 @@ export class RightWorkspaceFrame {
         event.stopImmediatePropagation();
     }
 
+    _startRigPartPoseGesture(item, event) {
+        if (!this.rigLensActive || this.rigAuthoringKind !== 'part'
+            || this.rigLensMode !== 'motion' || this.rigPointerGesture
+            || event.button !== 0 || event.isPrimary === false
+            || this.layerSystem?.cameraSystem?.isCanvasMoveMode?.()) return;
+        const assetId = this.rigLensTarget.assetId;
+        const table = this._getRigLensTable();
+        const target = table?.getRigLensPartMotionTarget?.(assetId, item.partId);
+        const start = table?.projectRigLensPartCanvasPoint?.(assetId, event);
+        if (!target?.ok || !start) return;
+        if (table?.hasRigLensPartPosePreview?.() && !target.preview) {
+            this.rigEntryMessage = '別Part／Frameの未確定Poseを確定または取消してください。';
+            this.sync();
+            return;
+        }
+        this.rigSelectedPartId = item.partId;
+        this.rigPointerGesture = {
+            kind: 'part-pose', pointerId: event.pointerId, assetId, partId: item.partId,
+            startClientX: event.clientX, startClientY: event.clientY,
+            startAngle: Math.atan2(start.y - item.rootProject.y, start.x - item.rootProject.x),
+            rootProject: item.rootProject,
+            startTransform: { ...(target.preview?.transform || target.sampled) },
+            beforePreview: target.preview?.transform ? { ...target.preview.transform } : null,
+            moved: false
+        };
+        try { window.coreEngine?.getApp?.()?.canvas?.setPointerCapture(event.pointerId); } catch { /* document owns terminal */ }
+        this.sync();
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }
+
     _onRigCanvasMove(event) {
         const gesture = this.rigPointerGesture;
-        if (gesture?.kind !== 'pose' || gesture.pointerId !== event.pointerId) return;
+        if (!['pose', 'part-pose'].includes(gesture?.kind) || gesture.pointerId !== event.pointerId) return;
         if (Math.hypot(event.clientX - gesture.startClientX,
             event.clientY - gesture.startClientY) < 2 && !gesture.moved) return;
         const table = this._getRigLensTable();
-        const point = table?.projectRigLensCanvasPoint?.(gesture.assetId, gesture.layerId, event);
+        const point = gesture.kind === 'part-pose'
+            ? table?.projectRigLensPartCanvasPoint?.(gesture.assetId, event)
+            : table?.projectRigLensCanvasPoint?.(gesture.assetId, gesture.layerId, event);
         if (!point) return;
         const transform = resolveBoneRotationHandleDrag({
             startTransform: gesture.startTransform, root: gesture.rootProject,
             currentPointer: point, startAngle: gesture.startAngle
         });
-        const result = table.previewRigLensBonePose(gesture.assetId, gesture.layerId,
-            gesture.boneId, transform);
+        const result = gesture.kind === 'part-pose'
+            ? table.previewRigLensPartPose(gesture.assetId, gesture.partId, transform)
+            : table.previewRigLensBonePose(gesture.assetId, gesture.layerId,
+                gesture.boneId, transform);
         gesture.moved = gesture.moved || result?.ok === true;
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -544,7 +689,7 @@ export class RightWorkspaceFrame {
         try { window.coreEngine?.getApp?.()?.canvas?.releasePointerCapture(event.pointerId); } catch { /* already released */ }
         event.preventDefault();
         event.stopImmediatePropagation();
-        if (gesture.kind === 'pose') {
+        if (gesture.kind === 'pose' || gesture.kind === 'part-pose') {
             if (!gesture.moved) this._restoreRigPoseGesturePreview(gesture);
             this.sync();
             return;
@@ -556,6 +701,14 @@ export class RightWorkspaceFrame {
             return;
         }
         const table = this._getRigLensTable();
+        if (gesture.kind === 'part-pivot') {
+            const point = table?.projectRigLensPartCanvasPoint?.(gesture.assetId, event);
+            const result = table?.setRigLensPartPivot?.(gesture.assetId, gesture.partId, point);
+            this.rigPlacementMode = null;
+            this.rigEntryMessage = result?.ok ? '' : (result?.reason || 'PIVOTを設定できませんでした。');
+            this.sync();
+            return;
+        }
         const end = table?.projectRigLensCanvasPoint?.(gesture.assetId, gesture.layerId, event);
         const result = table?.registerRigLensStaticBone?.(gesture.assetId, gesture.layerId, {
             kind: gesture.kind,
@@ -581,6 +734,14 @@ export class RightWorkspaceFrame {
 
     _restoreRigPoseGesturePreview(gesture) {
         const table = this._getRigLensTable();
+        if (gesture.kind === 'part-pose') {
+            if (gesture.beforePreview) {
+                table?.previewRigLensPartPose?.(gesture.assetId, gesture.partId, gesture.beforePreview);
+            } else {
+                table?.cancelRigLensPartPosePreview?.();
+            }
+            return;
+        }
         if (gesture.beforePreview) {
             table?.previewRigLensBonePose?.(gesture.assetId, gesture.layerId,
                 gesture.boneId, gesture.beforePreview);
@@ -600,19 +761,24 @@ export class RightWorkspaceFrame {
         if (!this.rigOverlay) {
             this.rigOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             this.rigOverlay.classList.add('right-workspace-rig-bone-overlay');
-            this.rigOverlay.setAttribute('aria-label', 'RIG Bone構造');
             document.body.appendChild(this.rigOverlay);
         }
+        this.rigOverlay.setAttribute('aria-label', this.rigAuthoringKind === 'part'
+            ? 'RIG Part構造' : 'RIG Bone構造');
         if (this.rigOverlayFrame != null) return;
         const update = () => {
             this.rigOverlayFrame = null;
             if (!this.rigLensActive || !this.rigOverlay) return;
             const ids = this.rigLensTarget;
             const table = this._getRigLensTable();
-            const bones = (this.rigLensMode === 'motion'
-                ? table?.getRigLensMotionScreenBones?.(ids?.assetId, ids?.internalLayerId)
-                : table?.getRigLensStaticScreenBones?.(ids?.assetId, ids?.internalLayerId)) || [];
-            const key = JSON.stringify([bones, this.rigSelectedBoneId, this.rigLensMode]);
+            const bones = (this.rigAuthoringKind === 'part'
+                ? table?.getRigLensPartScreenItems?.(ids?.assetId, this.rigLensMode === 'motion')
+                : this.rigLensMode === 'motion'
+                    ? table?.getRigLensMotionScreenBones?.(ids?.assetId, ids?.internalLayerId)
+                    : table?.getRigLensStaticScreenBones?.(ids?.assetId, ids?.internalLayerId)) || [];
+            const selectedId = this.rigAuthoringKind === 'part'
+                ? this.rigSelectedPartId : this.rigSelectedBoneId;
+            const key = JSON.stringify([bones, selectedId, this.rigLensMode, this.rigAuthoringKind]);
             if (this.rigOverlay.dataset.geometry !== key) {
                 this.rigOverlay.dataset.geometry = key;
                 const ns = 'http://www.w3.org/2000/svg';
@@ -625,15 +791,24 @@ export class RightWorkspaceFrame {
                     line.setAttribute('y2', bone.tail.y);
                     const marker = document.createElementNS(ns, 'circle');
                     marker.classList.add('right-workspace-rig-bone-marker');
-                    marker.classList.toggle('is-selected', bone.boneId === this.rigSelectedBoneId);
+                    marker.classList.toggle('is-selected', (bone.partId || bone.boneId) === selectedId);
                     marker.setAttribute('cx', bone.head.x);
                     marker.setAttribute('cy', bone.head.y);
                     marker.setAttribute('r', '9');
                     marker.setAttribute('role', 'button');
-                    marker.setAttribute('aria-label', `Bone ${bone.boneId}を選択`);
+                    marker.setAttribute('aria-label', this.rigAuthoringKind === 'part'
+                        ? `Part ${bone.partId}を選択` : `Bone ${bone.boneId}を選択`);
                     marker.addEventListener('pointerdown', event => {
                         if (event.button !== 0) return;
-                        this.rigSelectedBoneId = bone.boneId;
+                        if (this.rigAuthoringKind === 'part') {
+                            if (this.rigLensMode === 'motion'
+                                && this.rigSelectedPartId !== bone.partId
+                                && table?.hasRigLensPartPosePreview?.()) {
+                                this._requireRigPoseResolution();
+                                return;
+                            }
+                            this.rigSelectedPartId = bone.partId;
+                        } else this.rigSelectedBoneId = bone.boneId;
                         this.sync();
                         event.preventDefault();
                         event.stopPropagation();
@@ -641,13 +816,15 @@ export class RightWorkspaceFrame {
                     if (this.rigLensMode !== 'motion') return [line, marker];
                     const tip = document.createElementNS(ns, 'circle');
                     tip.classList.add('right-workspace-rig-bone-marker', 'right-workspace-rig-bone-tip');
-                    tip.classList.toggle('is-selected', bone.boneId === this.rigSelectedBoneId);
+                    tip.classList.toggle('is-selected', (bone.partId || bone.boneId) === selectedId);
                     tip.setAttribute('cx', bone.tail.x);
                     tip.setAttribute('cy', bone.tail.y);
                     tip.setAttribute('r', '9');
                     tip.setAttribute('role', 'button');
-                    tip.setAttribute('aria-label', `${bone.boneId} の先端をドラッグして回転`);
-                    tip.addEventListener('pointerdown', event => this._startRigPoseGesture(bone, event));
+                    tip.setAttribute('aria-label', `${bone.partId || bone.boneId} の先端をドラッグして回転`);
+                    tip.addEventListener('pointerdown', event => this.rigAuthoringKind === 'part'
+                        ? this._startRigPartPoseGesture(bone, event)
+                        : this._startRigPoseGesture(bone, event));
                     return [line, marker, tip];
                 });
                 const tips = nodes.filter(node => node.classList.contains('right-workspace-rig-bone-tip'));
@@ -663,6 +840,19 @@ export class RightWorkspaceFrame {
     }
 
     _renderRigLens(target) {
+        const partTarget = this.rigLensTarget?.assetId
+            ? this._getRigLensTable()?.getRigLensPartTarget?.(this.rigLensTarget.assetId)
+            : null;
+        this.rigKindRow.hidden = !this.rigLensActive || (partTarget?.layers?.length || 0) < 2;
+        this.rigPartKindButton.setAttribute('aria-pressed', String(this.rigAuthoringKind === 'part'));
+        this.rigDeformKindButton.setAttribute('aria-pressed', String(this.rigAuthoringKind === 'deform'));
+        if (this.rigAuthoringKind === 'part') {
+            this._renderRigPartLens(target, partTarget);
+            return;
+        }
+        this.rigPartRegisterButton.hidden = true;
+        this.rigPartPivotButton.hidden = true;
+        this.rigPartParentLabel.hidden = true;
         const rigTarget = target?.rigTarget || null;
         const matchesTarget = !!this.rigLensTarget?.assetId
             && rigTarget?.assetId === this.rigLensTarget?.assetId
@@ -805,6 +995,96 @@ export class RightWorkspaceFrame {
             mesh.textContent = `MESH: ${rigTarget.meshGeneratorLabel || '設定済み'} · ${rigTarget.meshState} / WEIGHT: ${rigTarget.weightState}`;
             this.rigLensStructureContent.appendChild(mesh);
         }
+    }
+
+    _renderRigPartLens(target, partTarget) {
+        const assetId = this.rigLensTarget?.assetId;
+        const matchesAsset = partTarget?.ok === true && target?.rigTarget?.assetId === assetId;
+        const selectedLayer = partTarget?.layers?.find(layer => layer.id === this.rigSelectedPartId);
+        const selectedPart = partTarget?.parts?.find(part => part.partId === this.rigSelectedPartId);
+        const motion = this.rigLensMode === 'motion';
+        const table = this._getRigLensTable();
+        const motionTarget = motion && selectedPart
+            ? table?.getRigLensPartMotionTarget?.(assetId, selectedPart.partId) : null;
+        const pending = table?.hasRigLensPartPosePreview?.() === true;
+        this.rigLensHeading.textContent = motion ? 'PART MOTION' : 'PART SETUP';
+        this.rigView.setAttribute('aria-label', motion ? 'PART MOTION' : 'PART SETUP');
+        this.rigLensTargetName.textContent = `${partTarget?.asset?.name || this.rigLensTarget?.assetName || 'CAF'} / ${selectedLayer?.name || 'Rasterを選択'}`;
+        this.rigLensTargetKind.textContent = 'CAF内 Raster Part';
+        this.rigLensSharedAsset.textContent = 'PIVOTと親子関係は共有CAF Asset、Motion KEYは選択Clipへ保存。';
+        this.rigLensWarning.hidden = matchesAsset && !this.rigEntryMessage;
+        this.rigLensWarning.textContent = this.rigEntryMessage
+            || (matchesAsset ? '' : '選択中のCAFが変わっています。');
+        this.rigLensStructureContent.replaceChildren();
+        const list = document.createElement('ul');
+        list.setAttribute('aria-label', 'CAF内Raster Part');
+        (partTarget?.layers || []).forEach(layer => {
+            const part = partTarget.parts.find(candidate => candidate.partId === layer.id);
+            const parent = partTarget.layers.find(candidate => candidate.id === part?.parentPartId);
+            const item = document.createElement('li');
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'gui-control gui-control--s';
+            button.textContent = layer.name || layer.id;
+            button.setAttribute('aria-pressed', String(layer.id === this.rigSelectedPartId));
+            button.addEventListener('click', () => {
+                if (pending && layer.id !== this.rigSelectedPartId) {
+                    this._requireRigPoseResolution();
+                    return;
+                }
+                this.rigSelectedPartId = layer.id;
+                this.rigPlacementMode = null;
+                this.rigEntryMessage = '';
+                this.sync();
+            });
+            item.append(button, document.createTextNode(part
+                ? ` · ${parent ? `親 ${parent.name || parent.id}` : 'ROOT'} · PIVOT ${part.bindTransform.pivotX.toFixed(1)}, ${part.bindTransform.pivotY.toFixed(1)}`
+                : ' · 未登録'));
+            list.appendChild(item);
+        });
+        this.rigLensStructureContent.appendChild(list);
+        this.rigRootButton.hidden = true;
+        this.rigChildButton.hidden = true;
+        this.rigBindButton.hidden = true;
+        this.rigPartRegisterButton.hidden = motion || !selectedLayer || !!selectedPart;
+        this.rigPartPivotButton.hidden = motion || !selectedPart;
+        this.rigPartParentLabel.hidden = motion || !selectedPart;
+        if (!this.rigPartParentLabel.hidden) {
+            const options = [{ id: '', label: 'なし（ROOT）' },
+                ...partTarget.parts.filter(part => part.partId !== selectedPart.partId)
+                    .map(part => ({ id: part.partId, label: partTarget.layers.find(layer =>
+                        layer.id === part.partId)?.name || part.partId }))];
+            this.rigPartParentSelect.replaceChildren(...options.map(item => {
+                const option = document.createElement('option');
+                option.value = item.id;
+                option.textContent = item.label;
+                return option;
+            }));
+            this.rigPartParentSelect.value = selectedPart.parentPartId || '';
+        }
+        this.rigPoseButton.hidden = motion || !selectedPart;
+        this.rigPoseButton.disabled = !matchesAsset;
+        this.rigSetupButton.hidden = !motion;
+        this.rigKeyButton.hidden = !motion;
+        this.rigKeyButton.textContent = '◆ Part KEY確定';
+        this.rigKeyButton.disabled = !motionTarget?.ok || !matchesAsset
+            || (pending && !motionTarget.preview);
+        this.rigCancelPoseButton.hidden = !motion || !pending;
+        this.rigToolHint.textContent = !matchesAsset
+            ? '選択CAFを確認してください。'
+            : motion
+                ? (motionTarget?.ok
+                    ? `F${motionTarget.frame + 1} · ${motionTarget.preview ? '未確定Pose' : motionTarget.key ? 'KEY設定済み' : 'KEY未設定'}。Canvasの先端をdragで回転し、KEYを明示確定。`
+                    : motionTarget?.reason || '登録済みPartを選択してください。')
+                : this.rigPlacementMode === 'part-pivot'
+                    ? 'Canvas上で選択PartのPIVOTをクリック。Escで中止。'
+                    : selectedPart
+                        ? 'PIVOTをCanvasで設定し、必要なら親Partを選択してください。'
+                        : 'Rasterを選び、Part登録してください。';
+        const destination = this._getRigReturnDestination();
+        this.rigReturnButton.textContent = destination === 'layer' ? '← LAYER' : '← Transform';
+        this.rigReturnButton.setAttribute('aria-label', destination === 'layer'
+            ? 'LAYERへ戻る' : '通常Transformへ戻る');
     }
 
     _mountModeSwitch() {
@@ -1018,8 +1298,12 @@ export class RightWorkspaceFrame {
         this.panel.hidden = rigLensVisible;
         this.rigEntryRow.hidden = rigLensVisible;
         const target = this.getTarget?.() || {};
+        const layerRigTarget = target.rigTarget;
+        const hasSelectedPart = layerRigTarget?.assetId && layerRigTarget?.internalLayerId
+            && this._getRigLensTable()?.getRigLensPartTarget?.(layerRigTarget.assetId)
+                ?.parts?.some(part => part.partId === layerRigTarget.internalLayerId);
         this.rigLayerEntryButton.hidden = active || target.rigTarget?.eligible !== true
-            || target.rigTarget?.hasMesh !== true
+            || (target.rigTarget?.hasMesh !== true && !hasSelectedPart)
             || this.layerSystem?.canStartTransformEditSession?.() !== false;
         const label = target.label || 'Transform';
         this.label.textContent = label;
@@ -1033,9 +1317,12 @@ export class RightWorkspaceFrame {
         }
         const rigTarget = target.rigTarget || null;
         const rigTargetKey = rigTarget?.assetId && rigTarget?.internalLayerId
-            ? `${rigTarget.assetId}:${rigTarget.internalLayerId}`
+            ? (this.rigAuthoringKind === 'part'
+                ? rigTarget.assetId : `${rigTarget.assetId}:${rigTarget.internalLayerId}`)
             : '';
-        if (rigTargetKey !== this.lastRigTargetKey) {
+        if (rigTargetKey !== this.lastRigTargetKey
+            && !(this.rigAuthoringKind === 'part'
+                && this._getRigLensTable()?.hasRigLensPartPosePreview?.())) {
             this._getRigLensTable()?.cancelRigLensBonePosePreview?.();
             this.lastRigTargetKey = rigTargetKey;
             this.rigEntryMessage = '';
@@ -1070,6 +1357,7 @@ export class RightWorkspaceFrame {
 
     destroy() {
         this._getRigLensTable()?.cancelRigLensBonePosePreview?.();
+        this._getRigLensTable()?.cancelRigLensPartPosePreview?.();
         document.removeEventListener('pointerdown', this._rigCanvasDownHandler, true);
         document.removeEventListener('pointerup', this._rigCanvasUpHandler, true);
         document.removeEventListener('pointermove', this._rigCanvasMoveHandler, true);

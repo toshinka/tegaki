@@ -48,6 +48,8 @@ import {
     serializeRigMotion,
     updateRigBoneBindTransform,
     updateRigBoneParent,
+    updateRigPartBindPivot,
+    updateRigPartParent,
     upsertRigBoneKey,
     upsertRigPartKey,
     validateRigDefinition,
@@ -1360,6 +1362,50 @@ export class TimelineModel {
         asset.rigDefinition = validation.value;
         asset.updatedAt = Date.now();
         return { ...update, asset, bone: validation.value.bones.find(bone => bone.boneId === boneId) };
+    }
+
+    _hasClipAssetPartMotion(assetId) {
+        return this.tracks.some(lane => (lane.cels || []).some(clip =>
+            clip.assetId === assetId && clip.rigMotion?.partTracks?.some(track =>
+                Array.isArray(track.keyframes) && track.keyframes.length > 0)));
+    }
+
+    _updateClipAssetRigPart(assetId, partId, update) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const baseline = validateRigDefinition(asset.rigDefinition, asset.internalLayers);
+        if (!baseline.ok) return { ok: false, reason: 'invalid-rig-definition', errors: baseline.errors };
+        if (this._hasClipAssetPartMotion(assetId)) {
+            return { ok: false, reason: 'part-motion-exists' };
+        }
+        if (!resolveRigPartTarget(asset, partId).ok) {
+            return { ok: false, reason: 'part-target-invalid' };
+        }
+        const result = update(asset.rigDefinition);
+        if (!result.ok) return result;
+        const validation = validateRigDefinition(result.value, asset.internalLayers);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-definition', errors: validation.errors };
+        }
+        if (result.changed) {
+            asset.rigDefinition = validation.value;
+            asset.updatedAt = Date.now();
+        }
+        return { ...result, asset, part: validation.value.parts.find(part => part.partId === partId) };
+    }
+
+    setClipAssetRigPartBindPivot(assetId, partId, pivotX, pivotY) {
+        return this._updateClipAssetRigPart(assetId, partId, definition =>
+            updateRigPartBindPivot(definition, partId, pivotX, pivotY));
+    }
+
+    setClipAssetRigPartParent(assetId, partId, parentPartId = null) {
+        const asset = this.getClipAsset(assetId);
+        if (parentPartId != null && !resolveRigPartTarget(asset, parentPartId).ok) {
+            return { ok: false, reason: 'parent-part-target-invalid' };
+        }
+        return this._updateClipAssetRigPart(assetId, partId, definition =>
+            updateRigPartParent(definition, partId, parentPartId));
     }
 
     registerClipAssetWarpAnchorConstraint(assetId, constraint) {
