@@ -497,6 +497,9 @@ export class AnimationTablePopup {
         this._motionAnchorClip = null;
         this._motionCanvas = null;
         this._motionCanvasGesture = null;
+        // PART MOTION previews are a frame-local, runtime-only draft. They are
+        // folded into one ClipInstance.rigMotion update only on explicit KEY.
+        this._rigLensPartPoseDraft = null;
         this._partCanvasGesture = null;
         this._boneCanvasGesture = null;
         this._rigPivotGesture = null;
@@ -1226,6 +1229,7 @@ export class AnimationTablePopup {
 
     play() {
         if (this.isPlaying) return;
+        if (this.hasRigLensPartPosePreview()) return false;
         if (this.isClipEditModeActive) {
             this.exitClipEditMode();
         }
@@ -3641,11 +3645,12 @@ export class AnimationTablePopup {
         }
         const sampled = sampleRigInstanceMotion(target.entry.clip, frame).get(partId)
             || { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 };
-        const preview = this._rigLensPartPosePreview;
+        const draft = this._rigLensPartPoseDraft;
+        const preview = draft?.assetId === assetId && draft.clipId === target.entry.clip.id
+            && draft.frame === frame ? draft.poses.get(partId) || null : null;
         return { ...target, ok: true, part, localFrame, sampled,
             key: getRigPartKeyAtFrame(target.entry.clip.rigMotion, partId, localFrame),
-            preview: preview?.clipId === target.entry.clip.id && preview.frame === frame
-                && preview.partId === partId ? preview : null };
+            preview };
     }
 
     previewRigLensPartPose(assetId, partId, transform) {
@@ -3654,56 +3659,124 @@ export class AnimationTablePopup {
             .every(field => Number.isFinite(transform?.[field]))) {
             return { ok: false, reason: target.reason || 'Pose座標が不正です。' };
         }
-        this._rigLensPartPosePreview = {
-            assetId, partId, clipId: target.entry.clip.id, frame: target.frame,
+        const current = this._rigLensPartPoseDraft;
+        if (current && (current.assetId !== assetId || current.clipId !== target.entry.clip.id
+            || current.frame !== target.frame)) {
+            return { ok: false, reason: '別Frameの未確定Poseを先に確定または取消してください。' };
+        }
+        const draft = current || {
+            assetId, clipId: target.entry.clip.id, frame: target.frame,
+            localFrame: target.localFrame, poses: new Map()
+        };
+        draft.poses.set(partId, {
+            partId,
             transform: { ...transform },
             interpolation: target.key?.interpolation === 'hold' ? 'hold' : 'linear'
-        };
+        });
+        this._rigLensPartPoseDraft = draft;
         this._animationPreviewKey = null;
         this._scheduleMotionEditPreviewRefresh();
         return { ok: true };
     }
 
     cancelRigLensPartPosePreview() {
-        if (!this._rigLensPartPosePreview) return false;
-        this._rigLensPartPosePreview = null;
+        if (!this.hasRigLensPartPosePreview()) return false;
+        this._rigLensPartPoseDraft = null;
         this._animationPreviewKey = null;
         this._cancelMotionEditPreviewRefresh();
         this._applyVisibilityPreview();
         return true;
     }
 
-    hasRigLensPartPosePreview() { return this._rigLensPartPosePreview != null; }
-
-    commitRigLensPartKey(assetId, partId) {
-        const target = this.getRigLensPartMotionTarget(assetId, partId);
-        if (!target.ok) return target;
-        const pending = this._rigLensPartPosePreview;
-        if (pending && (pending.clipId !== target.entry.clip.id || pending.frame !== target.frame
-            || pending.partId !== partId)) {
-            return { ok: false, reason: '未確定PoseのFrame／Partへ戻って確定または取消してください。' };
+    discardRigLensPartPosePreview(assetId, partId) {
+        const draft = this._rigLensPartPoseDraft;
+        if (!draft || draft.assetId !== assetId || !draft.poses.delete(partId)) return false;
+        if (draft.poses.size === 0) {
+            this._rigLensPartPoseDraft = null;
+            this._cancelMotionEditPreviewRefresh();
+            this._applyVisibilityPreview();
+        } else {
+            this._animationPreviewKey = null;
+            this._scheduleMotionEditPreviewRefresh();
         }
-        const transform = target.preview?.transform || target.sampled;
-        if (target.key && ['x', 'y', 'scaleX', 'scaleY', 'rotation'].every(field =>
-            Math.abs(Number(target.key[field]) - Number(transform[field])) < 1e-9)) {
+        return true;
+    }
+
+    hasRigLensPartPosePreview() {
+        return (this._rigLensPartPoseDraft?.poses?.size || 0) > 0;
+    }
+
+    getRigLensPartPoseDraftSummary(assetId = null) {
+        const draft = this._rigLensPartPoseDraft;
+        if (!draft || (assetId && draft.assetId !== assetId)) return null;
+        return {
+            assetId: draft.assetId,
+            clipId: draft.clipId,
+            frame: draft.frame,
+            localFrame: draft.localFrame,
+            partIds: [...draft.poses.keys()]
+        };
+    }
+
+    navigateRigLensPartFrameByDelta(assetId, delta) {
+        const target = this.getRigLensPartTarget(assetId);
+        if (!target.ok || this.isPlaying || !Number.isInteger(delta) || delta === 0
+            || this.hasRigLensPartPosePreview()) return false;
+        const clip = target.entry.clip;
+        const currentLocalFrame = target.frame - clip.startFrame;
+        if (!Number.isInteger(currentLocalFrame) || currentLocalFrame < 0
+            || currentLocalFrame >= clip.duration) return false;
+        const nextLocalFrame = Math.max(0, Math.min(clip.duration - 1, currentLocalFrame + Math.sign(delta)));
+        if (nextLocalFrame === currentLocalFrame) return false;
+        return this._navigateTimelineFrameTo(clip.startFrame + nextLocalFrame, {
+            source: 'right-workspace-rig-frame'
+        });
+    }
+
+    commitRigLensPartPoseFrame(assetId) {
+        const target = this.getRigLensPartTarget(assetId);
+        if (!target.ok) return target;
+        const draft = this._rigLensPartPoseDraft;
+        if (!draft) return { ok: false, reason: '確定するPose変更がありません。' };
+        if (draft.assetId !== assetId || draft.clipId !== target.entry.clip.id
+            || draft.frame !== target.frame) {
+            return { ok: false, reason: '未確定Poseの対象CAF／Frameへ戻って確定または取消してください。' };
+        }
+        const partById = new Map(target.parts.map(part => [part.partId, part]));
+        if ([...draft.poses.keys()].some(partId => !partById.has(partId))) {
+            return { ok: false, reason: '未確定PoseのPartが現在のCAFにありません。' };
+        }
+        const poses = [...draft.poses.values()].filter(pose => {
+            if (!partById.has(pose.partId)) return false;
+            const key = getRigPartKeyAtFrame(target.entry.clip.rigMotion, pose.partId, draft.localFrame);
+            return !key || !['x', 'y', 'scaleX', 'scaleY', 'rotation'].every(field =>
+                Math.abs(Number(key[field]) - Number(pose.transform[field])) < 1e-9)
+                || key.interpolation !== pose.interpolation;
+        }).map(pose => ({
+            partId: pose.partId,
+            transform: pose.transform,
+            options: { interpolation: pose.interpolation }
+        }));
+        if (poses.length === 0) {
             this.cancelRigLensPartPosePreview();
-            return { ok: true, changed: false };
+            return { ok: true, changed: false, keys: [] };
         }
         const before = this._captureTimelineHistoryState();
-        const result = this.model.setClipRigPartKey(target.entry.clip.id, partId,
-            target.localFrame, transform, {
-                interpolation: target.key?.interpolation === 'hold' ? 'hold' : 'linear'
-            });
+        const result = this.model.setClipRigPartKeys(target.entry.clip.id, draft.localFrame, poses);
         if (!result.ok) return result;
-        this._rigLensPartPosePreview = null;
+        this._rigLensPartPoseDraft = null;
         this._cancelMotionEditPreviewRefresh();
         this._invalidateSnapshotTextureCache();
         this._animationPreviewKey = null;
-        this._finishMotionGestureHistory(before, 'caf-rig-lens-part-key');
+        this._finishMotionGestureHistory(before, 'caf-rig-lens-part-frame-key');
         this.render();
         this._flushLayerPanelSync();
         this._scheduleLaneReferencePreviewUpdate({ immediate: true });
         return result;
+    }
+
+    commitRigLensPartKey(assetId) {
+        return this.commitRigLensPartPoseFrame(assetId);
     }
 
     getRigLensPartScreenItems(assetId, motion = false) {
@@ -3850,12 +3923,19 @@ export class AnimationTablePopup {
                 { interpolation: bone.interpolation });
             if (update.ok) projected = { ...projected, rigMotion: update.value };
         }
-        const part = this._rigLensPartPosePreview;
-        if (part?.clipId === clip?.id && part.frame === frame) {
-            const update = upsertRigPartKey(projected.rigMotion, part.partId,
-                frame - clip.startFrame, part.transform,
-                { interpolation: part.interpolation });
-            if (update.ok) projected = { ...projected, rigMotion: update.value };
+        const draft = this._rigLensPartPoseDraft;
+        if (draft?.assetId === clip?.assetId && draft.clipId === clip?.id && draft.frame === frame) {
+            let rigMotion = projected.rigMotion;
+            let changed = false;
+            for (const pose of draft.poses.values()) {
+                const update = upsertRigPartKey(rigMotion, pose.partId,
+                    frame - clip.startFrame, pose.transform,
+                    { interpolation: pose.interpolation });
+                if (!update.ok) continue;
+                rigMotion = update.value;
+                changed = true;
+            }
+            if (changed) projected = { ...projected, rigMotion };
         }
         return projected;
     }
@@ -18191,6 +18271,7 @@ export class AnimationTablePopup {
     }
 
     _navigateTimelineFrameTo(frameIndex, options = {}) {
+        if (this.hasRigLensPartPosePreview()) return false;
         const targetFrame = Math.max(
             0,
             Math.min(this.model.totalFrames - 1, Math.round(Number(frameIndex)))
@@ -18248,6 +18329,7 @@ export class AnimationTablePopup {
     }
 
     moveTimelineFrameByDelta(delta, options = {}) {
+        if (this.hasRigLensPartPosePreview()) return false;
         const current = this.model.playback.currentFrame;
         const nextFrame = Math.max(0, Math.min(this.model.totalFrames - 1, current + delta));
         if (nextFrame === current) return false;
@@ -22517,6 +22599,20 @@ export class AnimationTablePopup {
 
         const timelineGrid = this.panel.querySelector('.anim-timeline-grid');
         if (timelineGrid) {
+            const pendingPartPoseTargets = [
+                '.anim-frame-num', '.anim-cell-slot', '.anim-cel-block', '.anim-clip-block',
+                '.anim-motion-key-marker', '.anim-warp-key-marker',
+                '.anim-layer-transform-key-projection'
+            ].join(', ');
+            const blockFrameChangeDuringPartDraft = event => {
+                if (!this.hasRigLensPartPosePreview()
+                    || !event.target?.closest?.(pendingPartPoseTargets)) return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            };
+            for (const type of ['pointerdown', 'click', 'dblclick', 'contextmenu']) {
+                timelineGrid.addEventListener(type, blockFrameChangeDuringPartDraft, true);
+            }
             timelineGrid.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
                 e.stopPropagation();

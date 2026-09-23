@@ -1463,6 +1463,45 @@ export class TimelineModel {
         return { ...update, lane: entry.lane, clip: entry.clip, asset };
     }
 
+    setClipRigPartKeys(clipId, localFrame, poses = []) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+        const asset = entry.clip.assetId ? this.getClipAsset(entry.clip.assetId) : null;
+        const definition = validateRigDefinition(asset?.rigDefinition, asset?.internalLayers);
+        if (!definition.ok) return { ok: false, reason: 'invalid-rig-definition', errors: definition.errors };
+        const duration = Math.max(1, Number.isInteger(entry.clip.duration) ? entry.clip.duration : 1);
+        if (!Number.isInteger(localFrame) || localFrame < 0 || localFrame >= duration) {
+            return { ok: false, reason: 'part-key-out-of-range' };
+        }
+        if (!Array.isArray(poses) || poses.length === 0) {
+            return { ok: false, reason: 'part-key-pose-required' };
+        }
+
+        let nextMotion = entry.clip.rigMotion;
+        const seenPartIds = new Set();
+        const keys = [];
+        for (const pose of poses) {
+            const partId = pose?.partId;
+            if (typeof partId !== 'string' || seenPartIds.has(partId)
+                || !definition.value.parts.some(part => part?.partId === partId)) {
+                return { ok: false, reason: 'part-not-found', partId };
+            }
+            seenPartIds.add(partId);
+            const update = upsertRigPartKey(nextMotion, partId, localFrame,
+                pose.transform, pose.options || {});
+            if (!update.ok) return { ...update, partId };
+            nextMotion = update.value;
+            keys.push({ partId, key: update.key });
+        }
+
+        const validation = validateRigMotion(nextMotion, definition.value, duration);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-motion', errors: validation.errors };
+        }
+        entry.clip.rigMotion = validation.value;
+        return { ok: true, changed: true, lane: entry.lane, clip: entry.clip, asset, keys };
+    }
+
     removeClipRigPartKey(clipId, partId, localFrame) {
         const entry = this.findClipEntry(clipId);
         if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };

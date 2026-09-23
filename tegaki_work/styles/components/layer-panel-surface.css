@@ -416,6 +416,44 @@
 .right-workspace-rig-mode-row[hidden] {
     display: none;
 }
+.right-workspace-rig-frame-navigation {
+    display: grid;
+    flex: 0 0 auto;
+    grid-template-columns: 24px minmax(0, 1fr) 24px 26px;
+    align-items: center;
+    gap: 3px;
+    min-width: 0;
+    padding-inline: 2px;
+    pointer-events: auto;
+}
+.right-workspace-rig-frame-navigation[hidden],
+.right-workspace-rig-frame-label[hidden] {
+    display: none;
+}
+.right-workspace-rig-frame-navigation button {
+    min-width: 0;
+    min-height: var(--ui-control-height-s);
+    padding-inline: 2px;
+    font-size: 10px;
+    pointer-events: auto;
+}
+.right-workspace-rig-frame-navigation .right-workspace-rig-frame-label {
+    display: grid;
+    min-width: 0;
+    min-height: var(--ui-control-height-s);
+    place-items: center;
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+    pointer-events: auto;
+}
+.right-workspace-rig-frame-navigation .right-workspace-rig-frame-key {
+    min-width: 0;
+    padding-inline: 3px;
+    font-size: 9px;
+    white-space: nowrap;
+}
 .right-workspace-rig-lens-content {
     display: flex;
     flex: 1 1 auto;

@@ -17,7 +17,8 @@ const model = new TimelineModel({
     clipAssets: [{ id: 'caf', name: 'Orbit', internalLayers: [
         { id: 'planet', name: '惑星', type: 'raster' },
         { id: 'moon', name: '衛星', type: 'raster' },
-        { id: 'other', name: '無関係', type: 'raster' }
+        { id: 'other', name: '無関係', type: 'raster' },
+        { id: 'loose', name: '未登録', type: 'raster' }
     ] }],
     tracks: [{ id: 'lane', cels: [{ id: 'clip', assetId: 'caf', startFrame: 0, duration: 3 }] }]
 });
@@ -37,12 +38,17 @@ assert.equal(model.registerClipAssetRigPart('caf', 'other', {
     initialPivot: { x: Number.NaN, y: 0 }
 }).reason, 'invalid-part-pivot');
 assert.equal(asset.rigDefinition.parts.some(part => part.partId === 'other'), false);
+assert.equal(model.registerClipAssetRigPart('caf', 'other', {
+    initialPivot: { x: 105, y: 20 }
+}).changed, true);
+assert.deepEqual(asset.rigDefinition.parts.map(part => part.partId), ['planet', 'moon', 'other']);
 assert.equal(model.setClipAssetRigPartBindPivot('caf', 'planet', 21, 20).ok, true);
 assert.equal(model.setClipAssetRigPartBindPivot('caf', 'planet', 20, 20).ok, true);
 assert.equal(asset.rigDefinition.parts[0].bindTransform.pivotX, 20);
 assert.equal(asset.rigDefinition.parts[1].bindTransform.pivotX, 65);
 const beforeParent = evaluateRigidParts(asset, clip, 0).poseByPartId.get('moon').worldMatrix;
 assert.equal(model.setClipAssetRigPartParent('caf', 'moon', 'planet').ok, true);
+assert.equal(model.setClipAssetRigPartParent('caf', 'other', 'moon').ok, true);
 const afterParent = evaluateRigidParts(asset, clip, 0).poseByPartId.get('moon').worldMatrix;
 for (const field of ['a', 'b', 'c', 'd', 'tx', 'ty']) {
     assert.ok(Math.abs(beforeParent[field] - afterParent[field]) < 1e-8, `parent jump: ${field}`);
@@ -53,7 +59,7 @@ assert.equal(model.setClipAssetRigPartParent('caf', 'moon', 'missing').ok, false
 assert.equal(updateRigPartParent(asset.rigDefinition, 'moon', 'moon').reason, 'self-parent');
 assert.equal(model.setClipAssetRigPartParent('missing-asset', 'moon', 'planet').ok, false);
 assert.equal(createRigPartRenderPlan(asset, clip, 0).status, 'ready');
-assert.equal(createRigPartRenderPlan(asset, clip, 0).islandByLayerId.has('other'), false);
+assert.equal(createRigPartRenderPlan(asset, clip, 0).islandByLayerId.has('loose'), false);
 const beforePreview = model.serialize();
 const parentPose = { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: Math.PI / 2 };
 const preview = upsertRigPartKey(clip.rigMotion, 'planet', 0, parentPose);
@@ -96,13 +102,49 @@ assert.notDeepEqual(pose0.poseByPartId.get('moon').worldMatrix,
     pose1.poseByPartId.get('moon').worldMatrix);
 assert.notDeepEqual(pose0.poseByPartId.get('planet').worldMatrix,
     pose1.poseByPartId.get('planet').worldMatrix);
+const beforeBatch = structuredClone(clip.rigMotion);
+const invalidBatch = model.setClipRigPartKeys('clip', 2, [
+    { partId: 'planet', transform: { x: 4, y: 0, scaleX: 1, scaleY: 1, rotation: 0 } },
+    { partId: 'missing', transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 } }
+]);
+assert.equal(invalidBatch.ok, false);
+assert.deepEqual(clip.rigMotion, beforeBatch, 'invalid batch leaves the ClipInstance untouched');
+const batchPoses = [
+    { partId: 'planet', transform: { x: 5, y: 0, scaleX: 1, scaleY: 1, rotation: 0 } },
+    { partId: 'moon', transform: { x: 0, y: 8, scaleX: 1, scaleY: 1, rotation: 0 },
+        options: { interpolation: 'hold' } },
+    { partId: 'other', transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: Math.PI / 6 } }
+];
+const batchResult = model.setClipRigPartKeys('clip', 2, batchPoses);
+assert.equal(batchResult.ok, true);
+assert.deepEqual(batchResult.keys.map(item => item.partId), ['planet', 'moon', 'other']);
+assert.equal(getRigPartKeyAtFrame(clip.rigMotion, 'moon', 2).interpolation, 'hold');
+const afterBatch = structuredClone(clip.rigMotion);
+history.record({ name: 'part-frame-key-batch',
+    undo: () => { clip.rigMotion = structuredClone(beforeBatch); },
+    do: () => { clip.rigMotion = structuredClone(afterBatch); }
+});
+history.undo();
+for (const partId of ['planet', 'moon', 'other']) {
+    assert.equal(getRigPartKeyAtFrame(clip.rigMotion, partId, 2), null,
+        'one Undo removes the whole frame batch');
+}
+history.redo();
+for (const partId of ['planet', 'moon', 'other']) {
+    assert.ok(getRigPartKeyAtFrame(clip.rigMotion, partId, 2),
+        'one Redo restores the whole frame batch');
+}
 const serialized = await Object.create(ProjectManager.prototype)._serializeAnimationForProject(model);
 const reloaded = new TimelineModel(JSON.parse(JSON.stringify(serialized)));
 asset = reloaded.getClipAsset('caf');
 clip = reloaded.findClipEntry('clip').clip;
 assert.equal(asset.rigDefinition.parts[1].parentPartId, 'planet');
+assert.equal(asset.rigDefinition.parts[2].parentPartId, 'moon');
 assert.equal(asset.rigDefinition.parts[1].bindTransform.pivotX, 65);
 assert.ok(getRigPartKeyAtFrame(clip.rigMotion, 'moon', 1));
+for (const partId of ['planet', 'moon', 'other']) {
+    assert.ok(getRigPartKeyAtFrame(clip.rigMotion, partId, 2));
+}
 assert.equal(createRigPartRenderPlan(asset, clip, 1).status, 'ready');
 assert.equal(asset.rigDefinition.bones?.length || 0, 0);
 assert.equal(asset.meshDefinitions?.length || 0, 0);
@@ -112,7 +154,11 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const popup = fs.readFileSync(path.join(root, '../ui/animation-table-popup.js'), 'utf8');
 const frame = fs.readFileSync(path.join(root, '../ui/right-workspace-frame.js'), 'utf8');
 assert.match(popup, /previewRigLensPartPose[\s\S]*?_scheduleMotionEditPreviewRefresh/u);
-assert.match(popup, /commitRigLensPartKey[\s\S]*?setClipRigPartKey[\s\S]*?_finishMotionGestureHistory/u);
+assert.match(popup, /commitRigLensPartPoseFrame[\s\S]*?setClipRigPartKeys[\s\S]*?_finishMotionGestureHistory/u);
+assert.match(popup, /_rigLensPartPoseDraft[\s\S]*?new Map\(\)/u);
+assert.match(popup, /navigateRigLensPartFrameByDelta[\s\S]*?_navigateTimelineFrameTo/u);
+assert.match(frame, /right-workspace-rig-frame-navigation/u);
+assert.match(frame, /commitRigLensPartPoseFrame/u);
 assert.match(popup, /registerInternalRigPartFromExternal\(assetId, layerId, options = \{\}\)[\s\S]*?options\.selectInternalLayer !== false/u);
 assert.match(popup, /registerRigLensPart\(assetId, partId, initialPivot = null\)[\s\S]*?selectInternalLayer: false/u);
 assert.match(frame, /_startRigPartPoseGesture[\s\S]*?previewRigLensPartPose/u);
@@ -122,4 +168,4 @@ assert.match(frame, /rigKindRow\.hidden = !this\.rigLensActive/u);
 assert.match(frame, /rigPartKindButton\.disabled = !hasPartCandidate/u);
 assert.match(frame, /hasSelectedPart[\s\S]*?rigLayerEntryButton\.hidden/u,
     'registered Part remains reachable from LAYER when Transform is blocked');
-console.log('PASS: two Raster Parts, pivot, no-jump parent, orbit/self-rotation, preview isolation, explicit KEY, History, Project round-trip');
+console.log('PASS: three-Part hierarchy, composite motion, runtime draft, atomic frame KEY batch, one-step Undo/Redo, Project round-trip');
