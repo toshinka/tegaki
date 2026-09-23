@@ -21,14 +21,24 @@ const model = new TimelineModel({
     ] }],
     tracks: [{ id: 'lane', cels: [{ id: 'clip', assetId: 'caf', startFrame: 0, duration: 3 }] }]
 });
-assert.equal(model.registerClipAssetRigPart('caf', 'planet').changed, true);
-assert.equal(model.registerClipAssetRigPart('caf', 'moon').changed, true);
+assert.equal(model.registerClipAssetRigPart('caf', 'planet', {
+    initialPivot: { x: 20, y: 20 }
+}).changed, true);
+assert.equal(model.registerClipAssetRigPart('caf', 'moon', {
+    initialPivot: { x: 65, y: 20 }
+}).changed, true);
 assert.equal(model.registerClipAssetRigPart('caf', 'moon').changed, false);
 let asset = model.getClipAsset('caf');
 let clip = model.findClipEntry('clip').clip;
 assert.deepEqual(asset.rigDefinition.parts.map(part => part.partId), ['planet', 'moon']);
+assert.equal(asset.rigDefinition.parts[0].bindTransform.pivotX, 20);
+assert.equal(asset.rigDefinition.parts[1].bindTransform.pivotX, 65);
+assert.equal(model.registerClipAssetRigPart('caf', 'other', {
+    initialPivot: { x: Number.NaN, y: 0 }
+}).reason, 'invalid-part-pivot');
+assert.equal(asset.rigDefinition.parts.some(part => part.partId === 'other'), false);
+assert.equal(model.setClipAssetRigPartBindPivot('caf', 'planet', 21, 20).ok, true);
 assert.equal(model.setClipAssetRigPartBindPivot('caf', 'planet', 20, 20).ok, true);
-assert.equal(model.setClipAssetRigPartBindPivot('caf', 'moon', 65, 20).ok, true);
 assert.equal(asset.rigDefinition.parts[0].bindTransform.pivotX, 20);
 assert.equal(asset.rigDefinition.parts[1].bindTransform.pivotX, 65);
 const beforeParent = evaluateRigidParts(asset, clip, 0).poseByPartId.get('moon').worldMatrix;
@@ -104,7 +114,8 @@ const frame = fs.readFileSync(path.join(root, '../ui/right-workspace-frame.js'),
 assert.match(popup, /previewRigLensPartPose[\s\S]*?_scheduleMotionEditPreviewRefresh/u);
 assert.match(popup, /commitRigLensPartKey[\s\S]*?setClipRigPartKey[\s\S]*?_finishMotionGestureHistory/u);
 assert.match(frame, /_startRigPartPoseGesture[\s\S]*?previewRigLensPartPose/u);
-assert.match(frame, /_armRigPartPivot[\s\S]*?part-pivot/u);
+assert.match(frame, /_syncRigPartPivotOverlay[\s\S]*?projectRigLensPartBindPoint[\s\S]*?setRigLensPartPivot/u);
+assert.match(popup, /getRigLensPartPivotWorldItems[\s\S]*?canMove/u);
 assert.match(frame, /hasSelectedPart[\s\S]*?rigLayerEntryButton\.hidden/u,
     'registered Part remains reachable from LAYER when Transform is blocked');
 console.log('PASS: two Raster Parts, pivot, no-jump parent, orbit/self-rotation, preview isolation, explicit KEY, History, Project round-trip');

@@ -1018,7 +1018,8 @@ export class TimelineModel {
         if (!conflict.ok) return conflict;
 
         const registration = registerRigPartDefinition(asset.rigDefinition, target.layer.id, {
-            maxParts: options.maxParts ?? Number.POSITIVE_INFINITY
+            maxParts: options.maxParts ?? Number.POSITIVE_INFINITY,
+            initialPivot: options.initialPivot
         });
         if (!registration.ok) return registration;
         const validation = validateRigDefinition(registration.value, asset.internalLayers);

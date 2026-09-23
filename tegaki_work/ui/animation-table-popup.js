@@ -3333,7 +3333,9 @@ export class AnimationTablePopup {
         }
 
         const beforeState = this._captureInternalLayerHistoryState(asset);
-        const result = this.model.registerClipAssetRigPart(asset.id, layer.id);
+        const result = this.model.registerClipAssetRigPart(asset.id, layer.id, {
+            initialPivot: options.initialPivot
+        });
         if (!result.ok) return result;
         this.selectedAssetId = asset.id;
         this.selectedAssetFolderId = asset.folderId || null;
@@ -3525,7 +3527,13 @@ export class AnimationTablePopup {
                 mesh.targetInternalLayerId === layer.id));
         const parts = (asset.rigDefinition?.parts || []).filter(part =>
             layers.some(layer => layer.id === part.partId));
-        return { ok: true, asset, entry, layers, parts, frame: this.model.playback.currentFrame };
+        const staticSetupAllowed = this.model._hasClipAssetPartMotion(assetId) !== true;
+        return {
+            ok: true, asset, entry, layers, parts,
+            frame: this.model.playback.currentFrame,
+            staticSetupAllowed,
+            staticSetupReason: staticSetupAllowed ? '' : '既存Part Motion KEYがあるため静的Setupを編集できません。'
+        };
     }
 
     projectRigLensPartCanvasPoint(assetId, event) {
@@ -3533,23 +3541,53 @@ export class AnimationTablePopup {
         return target.ok ? this._screenToRigProject(event, target.entry) : null;
     }
 
-    registerRigLensPart(assetId, partId) {
+    projectRigLensPartBindPoint(assetId, partId, event) {
+        const target = this.getRigLensPartTarget(assetId);
+        if (!target.ok || !target.staticSetupAllowed) return null;
+        const projectPoint = this._screenToRigProject(event, target.entry);
+        if (!projectPoint) return null;
+        const part = target.parts.find(candidate => candidate.partId === partId);
+        if (!part) return projectPoint;
+        const evaluated = evaluateRigidParts(target.asset, target.entry.clip, target.frame);
+        const pose = evaluated.ok ? evaluated.poseByPartId.get(partId) : null;
+        return pose?.worldMatrix
+            ? invertTransformMatrixPoint(pose.worldMatrix, projectPoint.x, projectPoint.y)
+            : null;
+    }
+
+    registerRigLensPart(assetId, partId, initialPivot = null) {
         const target = this.getRigLensPartTarget(assetId);
         if (!target.ok || this.isPlaying || !target.layers.some(layer => layer.id === partId)) {
             return { ok: false, reason: target.reason || '対象Rasterを確認してください。' };
         }
+        if (!target.staticSetupAllowed) return { ok: false, reason: target.staticSetupReason };
+        if (target.parts.some(part => part.partId === partId)) {
+            return { ok: true, changed: false, part: target.parts.find(part => part.partId === partId) };
+        }
+        const layer = target.layers.find(candidate => candidate.id === partId);
+        const snapshot = this.model.getDrawingSnapshot(layer?.drawingSnapshotId);
+        const bounds = snapshot?.pixels ? this._getDrawingSnapshotContentBounds(snapshot) : null;
+        if (!bounds) return { ok: false, reason: 'Artwork Boundsを確認できません。' };
+        const pivot = initialPivot == null
+            ? { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }
+            : { x: Number(initialPivot.x), y: Number(initialPivot.y) };
+        if (![pivot.x, pivot.y].every(Number.isFinite)) {
+            return { ok: false, reason: 'PIVOT座標が不正です。' };
+        }
         return this.registerInternalRigPartFromExternal(assetId, partId, {
-            source: 'right-workspace-part-lens'
+            source: 'right-workspace-part-lens',
+            initialPivot: pivot
         });
     }
 
-    setRigLensPartPivot(assetId, partId, projectPoint) {
+    setRigLensPartPivot(assetId, partId, bindPoint) {
         const target = this.getRigLensPartTarget(assetId);
         if (!target.ok || this.isPlaying || !target.parts.some(part => part.partId === partId)) {
             return { ok: false, reason: target.reason || '先にPartを登録してください。' };
         }
-        const x = Number(projectPoint?.x);
-        const y = Number(projectPoint?.y);
+        if (!target.staticSetupAllowed) return { ok: false, reason: target.staticSetupReason };
+        const x = Number(bindPoint?.x);
+        const y = Number(bindPoint?.y);
         if (![x, y].every(Number.isFinite)) return { ok: false, reason: 'PIVOT座標が不正です。' };
         const before = this._captureInternalLayerHistoryState(target.asset);
         const result = this.model.setClipAssetRigPartBindPivot(assetId, partId, x, y);
@@ -3572,6 +3610,7 @@ export class AnimationTablePopup {
             || (parentPartId && !target.parts.some(part => part.partId === parentPartId))) {
             return { ok: false, reason: target.reason || '同じCAFの登録済みPartを指定してください。' };
         }
+        if (!target.staticSetupAllowed) return { ok: false, reason: target.staticSetupReason };
         const before = this._captureInternalLayerHistoryState(target.asset);
         const result = this.model.setClipAssetRigPartParent(assetId, partId, parentPartId);
         if (!result.ok) return result;
@@ -3694,6 +3733,69 @@ export class AnimationTablePopup {
             const tail = toScreen(tailProject);
             return head && tail ? { partId: part.partId, head, tail, rootProject } : null;
         }).filter(Boolean);
+    }
+
+    getRigLensPartPivotWorldItems(assetId, selectedPartId, previewBindPoint = null) {
+        const target = this.getRigLensPartTarget(assetId);
+        if (!target.ok) return [];
+        const evaluated = evaluateRigidParts(target.asset, target.entry.clip, target.frame);
+        if (!evaluated.ok) return [];
+        const size = this._getCanvasSnapshotSize();
+        const clipMatrix = createCenteredTransformMatrix(
+            sampleClipTransform(target.entry.clip, target.frame), size.width / 2, size.height / 2
+        );
+        const layerById = new Map(target.layers.map(layer => [layer.id, layer]));
+        const hasPreview = [previewBindPoint?.x, previewBindPoint?.y].every(Number.isFinite);
+        const items = target.parts.map(part => {
+            const pose = evaluated.poseByPartId.get(part.partId);
+            if (!pose) return null;
+            const active = part.partId === selectedPartId;
+            const bindPoint = active && hasPreview
+                ? previewBindPoint
+                : { x: part.bindTransform.pivotX, y: part.bindTransform.pivotY };
+            const root = applyTransformMatrix(pose.worldMatrix, bindPoint.x, bindPoint.y);
+            const tail = applyTransformMatrix(pose.worldMatrix, bindPoint.x + 28, bindPoint.y);
+            return {
+                id: part.partId,
+                kind: 'part',
+                label: 'PIVOT',
+                root: applyTransformMatrix(clipMatrix, root.x, root.y),
+                tail: applyTransformMatrix(clipMatrix, tail.x, tail.y),
+                parentId: part.parentPartId || null,
+                active,
+                configured: true,
+                canMove: active && target.staticSetupAllowed,
+                canRotate: false,
+                showLabel: active,
+                name: layerById.get(part.partId)?.name || part.partId
+            };
+        }).filter(Boolean);
+        if (!target.parts.some(part => part.partId === selectedPartId)) {
+            const layer = layerById.get(selectedPartId);
+            const snapshot = this.model.getDrawingSnapshot(layer?.drawingSnapshotId);
+            const bounds = snapshot?.pixels ? this._getDrawingSnapshotContentBounds(snapshot) : null;
+            if (layer && bounds) {
+                const root = hasPreview
+                    ? previewBindPoint
+                    : { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+                const tail = { x: root.x + 28, y: root.y };
+                items.push({
+                    id: layer.id,
+                    kind: 'part',
+                    label: 'PIVOT',
+                    root: applyTransformMatrix(clipMatrix, root.x, root.y),
+                    tail: applyTransformMatrix(clipMatrix, tail.x, tail.y),
+                    parentId: null,
+                    active: true,
+                    configured: false,
+                    canMove: target.staticSetupAllowed,
+                    canRotate: false,
+                    showLabel: true,
+                    name: layer.name || layer.id
+                });
+            }
+        }
+        return items;
     }
 
     projectRigLensCanvasPoint(assetId, layerId, event) {
@@ -5901,6 +6003,12 @@ export class AnimationTablePopup {
     }
 
     _syncRigPivotOverlay() {
+        // RightWorkspaceFrame borrows this same overlay for PART SETUP. Never
+        // replace its adapter with the legacy editor's callbacks while its lens owns it.
+        if (window.layerPanelRenderer?.workspaceFrame?.rigLensActive === true) {
+            transformAnchorSite.deactivate('clip-motion');
+            return true;
+        }
         const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
         this._syncRigSkinWeightOverlay(coordinateSystem);
         if (this._isRigMeshVertexEditModeActive()) {

@@ -4502,6 +4502,16 @@ export class LayerPanelRenderer {
         }
     }
 
+    getRigLensRasterThumbnailUrl(assetId, layerId) {
+        const table = window.PopupManager?.get?.('animationTable');
+        const target = table?.getRigLensPartTarget?.(assetId);
+        const layer = target?.ok ? target.layers.find(candidate => candidate.id === layerId) : null;
+        const snapshot = layer
+            ? table.model.getDrawingSnapshot(layer.drawingSnapshotId)
+            : null;
+        return snapshot?.pixels ? this._snapshotToThumbnailData(snapshot).dataUrl : '';
+    }
+
     _snapshotToDataUrl(snapshot) {
         return this._snapshotToThumbnailData(snapshot).dataUrl;
     }

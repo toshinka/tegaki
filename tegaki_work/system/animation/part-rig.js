@@ -363,6 +363,13 @@ export function registerRigPartDefinition(rigDefinition, partId, options = {}) {
         return { ok: false, reason: 'part-limit', value: normalized, part: null };
     }
     const part = createIdentityPartDefinition(partId);
+    if (options.initialPivot != null) {
+        const { x, y } = options.initialPivot;
+        if (![x, y].every(Number.isFinite)) {
+            return { ok: false, reason: 'invalid-part-pivot', value: normalized, part: null };
+        }
+        part.bindTransform = { ...part.bindTransform, pivotX: x, pivotY: y };
+    }
     return {
         ok: true,
         changed: true,
