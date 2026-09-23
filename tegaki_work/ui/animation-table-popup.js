@@ -127,7 +127,8 @@ import {
     resolveBoneRotationHandleDrag,
     resolvePartTransformHandleDrag,
     sampleBoneInstanceMotion,
-    sampleRigInstanceMotion
+    sampleRigInstanceMotion,
+    upsertRigBoneKey
 } from '../system/animation/part-rig.js';
 import { mapWarpBindPointToPose } from '../system/animation/warp-triangle-point-map.js';
 import { resolveRigidBindingWorldMatrix } from '../system/animation/warp-anchor-constraint.js';
@@ -3511,9 +3512,141 @@ export class AnimationTablePopup {
     }
 
     projectRigLensCanvasPoint(assetId, layerId, event) {
-        if (!this.getRigLensStaticTarget(assetId, layerId).ok) return null;
+        if (!this.getRigLensStaticTarget(assetId, layerId, { allowBound: true }).ok) return null;
         const entry = this.model.findClipEntry(this.selectedCelId);
         return this._screenToRigProject(event, entry);
+    }
+
+    getRigLensMotionTarget(assetId, layerId, boneId) {
+        const target = this.getRigLensStaticTarget(assetId, layerId, { allowBound: true });
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (!target.ok || !entry?.clip || this.isPlaying) {
+            return { ok: false, reason: target.reason || '再生中はPoseを編集できません。' };
+        }
+        const frame = this.model.playback.currentFrame;
+        const localFrame = frame - entry.clip.startFrame;
+        if (!Number.isInteger(localFrame) || localFrame < 0 || localFrame >= entry.clip.duration) {
+            return { ok: false, reason: '対象ClipのFrameを選択してください。' };
+        }
+        const bone = target.bones.find(candidate => candidate.boneId === boneId);
+        if (!bone) return { ok: false, reason: '対象Boneが見つかりません。' };
+        const asset = this.model.getClipAsset(assetId);
+        const mesh = (asset.meshDefinitions || []).find(item => item.targetInternalLayerId === layerId);
+        const skin = (asset.skinBindings || []).find(item => item.meshId === mesh?.meshId);
+        const connected = skin?.vertexWeights?.some(weight =>
+            weight?.influences?.some(influence => influence.boneId === boneId));
+        const plan = mesh && skin ? createRasterSkinRenderPlan(asset, entry.clip, frame) : null;
+        if (!connected || plan?.status !== 'ready' || !plan.resultByLayerId?.has(layerId)) {
+            return { ok: false, reason: '選択BoneのMesh / Skin接続を確認してください。' };
+        }
+        const preview = this._rigLensPosePreview;
+        if (preview && (preview.clipId !== entry.clip.id || preview.frame !== frame
+            || preview.assetId !== assetId || preview.layerId !== layerId)) {
+            this._rigLensPosePreview = null;
+        }
+        const sampled = sampleBoneInstanceMotion(entry.clip, frame).get(boneId)
+            || { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 };
+        return {
+            ok: true, asset, entry, bone, frame, localFrame, sampled,
+            key: getRigBoneKeyAtFrame(entry.clip.rigMotion, boneId, localFrame),
+            preview: this._rigLensPosePreview?.boneId === boneId ? this._rigLensPosePreview : null
+        };
+    }
+
+    _getRigLensPreviewClip(clip, frame) {
+        const preview = this._rigLensPosePreview;
+        if (!preview || preview.clipId !== clip?.id || preview.frame !== frame) return clip;
+        const update = upsertRigBoneKey(clip.rigMotion, preview.boneId,
+            frame - clip.startFrame, preview.transform,
+            { interpolation: preview.interpolation });
+        return update.ok ? { ...clip, rigMotion: update.value } : clip;
+    }
+
+    previewRigLensBonePose(assetId, layerId, boneId, transform) {
+        const target = this.getRigLensMotionTarget(assetId, layerId, boneId);
+        if (!target.ok || !['x', 'y', 'scaleX', 'scaleY', 'rotation']
+            .every(field => Number.isFinite(transform?.[field]))) return { ok: false, reason: target.reason || 'Pose座標が不正です。' };
+        this._rigLensPosePreview = {
+            assetId, layerId, boneId, clipId: target.entry.clip.id, frame: target.frame,
+            transform: { ...transform },
+            interpolation: target.key?.interpolation === 'hold' ? 'hold' : 'linear'
+        };
+        this._animationPreviewKey = null;
+        this._scheduleMotionEditPreviewRefresh();
+        return { ok: true };
+    }
+
+    cancelRigLensBonePosePreview() {
+        if (!this._rigLensPosePreview) return false;
+        this._rigLensPosePreview = null;
+        this._animationPreviewKey = null;
+        this._cancelMotionEditPreviewRefresh();
+        this._applyVisibilityPreview();
+        return true;
+    }
+
+    hasRigLensBonePosePreview() {
+        return this._rigLensPosePreview != null;
+    }
+
+    commitRigLensBoneKey(assetId, layerId, boneId) {
+        const target = this.getRigLensMotionTarget(assetId, layerId, boneId);
+        if (!target.ok) return target;
+        const transform = target.preview?.transform || target.sampled;
+        const existing = target.key;
+        if (existing && ['x', 'y', 'scaleX', 'scaleY', 'rotation']
+            .every(field => Math.abs(Number(existing[field]) - Number(transform[field])) < 1e-9)) {
+            this.cancelRigLensBonePosePreview();
+            return { ok: true, changed: false };
+        }
+        const beforeState = this._captureTimelineHistoryState();
+        const result = this.model.setClipRigBoneKey(target.entry.clip.id, boneId,
+            target.localFrame, transform,
+            { interpolation: existing?.interpolation === 'hold' ? 'hold' : 'linear' });
+        if (!result.ok) return result;
+        this._rigLensPosePreview = null;
+        this._cancelMotionEditPreviewRefresh();
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        this._finishMotionGestureHistory(beforeState, 'caf-rig-lens-bone-key');
+        this.render();
+        this._flushLayerPanelSync();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        return result;
+    }
+
+    getRigLensMotionScreenBones(assetId, layerId) {
+        const target = this.getRigLensStaticTarget(assetId, layerId, { allowBound: true });
+        if (!target.ok) return [];
+        const entry = this.model.findClipEntry(this.selectedCelId);
+        const frame = this.model.playback.currentFrame;
+        if (this._rigLensPosePreview
+            && (this._rigLensPosePreview.clipId !== entry?.clip?.id
+                || this._rigLensPosePreview.frame !== frame)) {
+            this.cancelRigLensBonePosePreview();
+        }
+        const clip = this._getRigLensPreviewClip(entry.clip, frame);
+        const evaluated = evaluateRigidBones(this.model.getClipAsset(assetId), clip, frame);
+        const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+        if (!evaluated.ok || !coordinateSystem) return [];
+        const size = this._getCanvasSnapshotSize();
+        const clipMatrix = createCenteredTransformMatrix(sampleClipTransform(clip, frame),
+            size.width / 2, size.height / 2);
+        return target.bones.map(bone => {
+            const matrix = evaluated.poseByBoneId.get(bone.boneId)?.worldMatrix;
+            if (!matrix) return null;
+            const rootProject = applyTransformMatrix(matrix, 0, 0);
+            const tipProject = applyTransformMatrix(matrix, bone.length, 0);
+            const toScreen = point => {
+                const world = applyTransformMatrix(clipMatrix, point.x, point.y);
+                const screen = coordinateSystem.worldToScreenImmediate?.(world.x, world.y)
+                    || coordinateSystem.worldToScreen?.(world.x, world.y);
+                return screen ? { x: screen.clientX, y: screen.clientY } : null;
+            };
+            const head = toScreen(rootProject);
+            const tail = toScreen(tipProject);
+            return head && tail ? { boneId: bone.boneId, head, tail, rootProject } : null;
+        }).filter(Boolean);
     }
 
     registerRigLensStaticBone(assetId, layerId, gesture) {
@@ -6235,9 +6368,12 @@ export class AnimationTablePopup {
         const frame = Number.isInteger(options.frameIndex)
             ? options.frameIndex
             : this.model.playback.currentFrame;
-        const folderEffectPlan = createFolderEffectRenderPlan(asset, cel, frame);
+        // A new-Lens Pose candidate is runtime-only. The canonical ClipInstance is
+        // untouched until the explicit KEY action; export/Bake never see this clip.
+        const previewCel = this._getRigLensPreviewClip(cel, frame);
+        const folderEffectPlan = createFolderEffectRenderPlan(asset, previewCel, frame);
         const rigRenderPlan = folderEffectPlan.rigRenderPlan;
-        const rasterSkinPlan = createRasterSkinRenderPlan(asset, cel, frame, {
+        const rasterSkinPlan = createRasterSkinRenderPlan(asset, previewCel, frame, {
             folderEffectPlan
         });
         if (rasterSkinPlan.status !== 'none' && rasterSkinPlan.status !== 'ready') {
@@ -6301,9 +6437,9 @@ export class AnimationTablePopup {
         const deformer = bypassRootDeformerForFolderAuthoring
             ? null
             : sampleClipDeformer(
-                cel.deformer,
-                frame - cel.startFrame,
-                cel.duration
+                previewCel.deformer,
+                frame - previewCel.startFrame,
+                previewCel.duration
             );
         if (deformer) {
             previewNode = this._createDeformerPreviewNode(
@@ -6323,7 +6459,7 @@ export class AnimationTablePopup {
             }
         }
 
-        this._applyClipMotionToPreviewNode(previewNode, cel, options.frameIndex);
+        this._applyClipMotionToPreviewNode(previewNode, previewCel, options.frameIndex);
 
         this._tagPreviewNode(previewNode, track, cel, options);
         targetContainer.addChild(previewNode);

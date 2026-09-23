@@ -335,6 +335,16 @@
 .right-workspace-rig-entry[hidden] {
     display: none;
 }
+.right-workspace-frame > .right-workspace-rig-layer-entry {
+    position: absolute;
+    top: 40px;
+    right: calc(var(--ui-layer-panel-rail-column) + 8px);
+    z-index: 3;
+    pointer-events: auto;
+}
+.right-workspace-frame > .right-workspace-rig-layer-entry[hidden] {
+    display: none;
+}
 .right-workspace-rig-entry > button {
     flex: 0 0 auto;
     pointer-events: auto;
@@ -455,6 +465,14 @@
 }
 .right-workspace-rig-bone-marker.is-selected {
     fill: var(--active-border);
+}
+.right-workspace-rig-bone-tip {
+    fill: var(--futaba-background);
+    stroke: var(--active-border);
+    cursor: grab;
+}
+.right-workspace-rig-bone-tip:active {
+    cursor: grabbing;
 }
 .right-workspace-rig-lens-target > *:not(h3) {
     display: block;
