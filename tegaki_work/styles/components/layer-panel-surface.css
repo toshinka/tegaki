@@ -413,6 +413,49 @@
     line-height: 1.4;
     overflow-wrap: anywhere;
 }
+.right-workspace-rig-lens-properties > div {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+}
+.right-workspace-rig-lens-properties > div > p {
+    flex-basis: 100%;
+}
+.right-workspace-rig-lens-properties button[hidden] {
+    display: none;
+}
+.right-workspace-rig-lens-structure li > button {
+    pointer-events: auto;
+}
+.right-workspace-rig-lens-structure li > button[aria-pressed="true"] {
+    border-color: var(--active-border);
+}
+.right-workspace-rig-bone-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 950;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    overflow: visible;
+}
+.right-workspace-rig-bone-line {
+    stroke: var(--futaba-maroon);
+    stroke-width: 3;
+    stroke-linecap: round;
+    pointer-events: none;
+}
+.right-workspace-rig-bone-marker {
+    fill: var(--futaba-cream);
+    stroke: var(--futaba-maroon);
+    stroke-width: 2;
+    cursor: pointer;
+    pointer-events: auto;
+}
+.right-workspace-rig-bone-marker.is-selected {
+    fill: var(--active-border);
+}
 .right-workspace-rig-lens-target > *:not(h3) {
     display: block;
 }

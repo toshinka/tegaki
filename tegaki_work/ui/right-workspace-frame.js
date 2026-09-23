@@ -22,6 +22,11 @@ export class RightWorkspaceFrame {
         this.rigLensReturnMode = 'basic';
         this.rigEntryMessage = '';
         this.lastRigTargetKey = null;
+        this.rigPlacementMode = null;
+        this.rigSelectedBoneId = null;
+        this.rigPointerGesture = null;
+        this.rigOverlay = null;
+        this.rigOverlayFrame = null;
         this.eventBus = this.layerSystem?.eventBus || window.TegakiEventBus;
         this.statusPanel = document.querySelector('.status-panel');
         this.statusAnchor = null;
@@ -96,6 +101,20 @@ export class RightWorkspaceFrame {
 
         this.rigView = this._createRigLensView();
         this.host.append(this.title, this.rigView, this.panel);
+        this._rigCanvasDownHandler = event => this._onRigCanvasDown(event);
+        this._rigCanvasUpHandler = event => this._onRigCanvasUp(event);
+        this._rigCanvasCancelHandler = event => this._onRigCanvasCancel(event);
+        this._rigEscapeHandler = event => {
+            if (this.rigLensActive && event.key === 'Escape' && (this.rigPlacementMode || this.rigPointerGesture)) {
+                this._cancelRigPlacement();
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }
+        };
+        document.addEventListener('pointerdown', this._rigCanvasDownHandler, true);
+        document.addEventListener('pointerup', this._rigCanvasUpHandler, true);
+        document.addEventListener('pointercancel', this._rigCanvasCancelHandler, true);
+        document.addEventListener('keydown', this._rigEscapeHandler, true);
         this.panel.classList.add('is-context-inspector');
         this.observer = new MutationObserver(() => this.sync());
         this.observer.observe(this.panel, { attributes: true, attributeFilter: ['class'] });
@@ -148,8 +167,21 @@ export class RightWorkspaceFrame {
         structure.appendChild(this.rigLensStructureContent);
 
         const properties = makeRegion('PROPERTIES / CANVAS TOOLS', 'right-workspace-rig-lens-properties');
-        this.rigLensPropertiesContent = document.createElement('p');
-        this.rigLensPropertiesContent.textContent = 'Root／Boneの編集操作は次の実装段階で接続します。';
+        this.rigLensPropertiesContent = document.createElement('div');
+        this.rigRootButton = document.createElement('button');
+        this.rigRootButton.type = 'button';
+        this.rigRootButton.className = 'gui-control gui-control--s';
+        this.rigRootButton.textContent = 'Rootを配置';
+        this.rigRootButton.addEventListener('click', () => this._armRigPlacement('root'));
+        this.rigChildButton = document.createElement('button');
+        this.rigChildButton.type = 'button';
+        this.rigChildButton.className = 'gui-control gui-control--s';
+        this.rigChildButton.textContent = '子Boneを追加';
+        this.rigChildButton.addEventListener('click', () => this._armRigPlacement('child'));
+        this.rigToolHint = document.createElement('p');
+        this.rigToolHint.setAttribute('role', 'status');
+        this.rigToolHint.setAttribute('aria-live', 'polite');
+        this.rigLensPropertiesContent.append(this.rigRootButton, this.rigChildButton, this.rigToolHint);
         properties.appendChild(this.rigLensPropertiesContent);
 
         view.append(header, this.rigLensWarning, target, structure, properties);
@@ -217,6 +249,8 @@ export class RightWorkspaceFrame {
             assetName: target.assetName,
             layerName: target.layerName
         };
+        this.rigPlacementMode = null;
+        this.rigSelectedBoneId = null;
         this._showRigEntryMessage('');
         this.rigLensActive = true;
         this.sync();
@@ -226,6 +260,7 @@ export class RightWorkspaceFrame {
 
     _returnToTransform() {
         if (!this.rigLensActive) return false;
+        if (this.rigPointerGesture) return false;
         const selection = window.CoreRuntime?.api?.selection;
         const pixelSelection = window.pixelSelectionSystem || window.drawingApp?.pixelSelectionSystem;
         if (selection?.getState?.()?.transformSessionActive === true
@@ -239,6 +274,7 @@ export class RightWorkspaceFrame {
             && this.layerSystem?.transform?.isVKeyPressed === true) {
             this.rigLensActive = false;
             this.rigLensTarget = null;
+            this.rigPlacementMode = null;
             this.sync();
             return true;
         }
@@ -256,12 +292,160 @@ export class RightWorkspaceFrame {
 
         this.rigLensActive = false;
         this.rigLensTarget = null;
+        this.rigPlacementMode = null;
         this.sync();
         if (this.rigLensReturnMode === 'warp') {
             this.layerSystem?.transform?.setTransformMode?.('warp');
         }
         this.title.focus({ preventScroll: true });
         return true;
+    }
+
+    _getRigLensTable() {
+        return window.PopupManager?.get?.('animationTable') || null;
+    }
+
+    _getRigLensEditTarget() {
+        const ids = this.rigLensTarget;
+        return ids && this.rigLensActive
+            ? this._getRigLensTable()?.getRigLensStaticTarget?.(ids.assetId, ids.internalLayerId)
+            : null;
+    }
+
+    _armRigPlacement(kind) {
+        const target = this._getRigLensEditTarget();
+        const table = this._getRigLensTable();
+        if (!target?.ok || table?.isPlaying) {
+            this.rigEntryMessage = target?.reason || '再生中はRIGを編集できません。';
+            this.sync();
+            return;
+        }
+        if ((kind === 'root' && target.bones.length !== 0)
+            || (kind === 'child' && (target.bones.length !== 1
+                || this.rigSelectedBoneId !== target.bones[0].boneId))) return;
+        this.rigPlacementMode = kind;
+        this.rigEntryMessage = '';
+        this.sync();
+    }
+
+    _cancelRigPlacement() {
+        this.rigPointerGesture = null;
+        this.rigPlacementMode = null;
+        this.sync();
+    }
+
+    _onRigCanvasDown(event) {
+        if (!this.rigLensActive || !this.rigPlacementMode || this.rigPointerGesture
+            || event.button !== 0 || event.isPrimary === false) return;
+        const canvas = window.coreEngine?.getApp?.()?.canvas;
+        if (!canvas || event.target !== canvas || this.layerSystem?.cameraSystem?.isCanvasMoveMode?.()) return;
+        const ids = this.rigLensTarget;
+        const table = this._getRigLensTable();
+        const start = table?.projectRigLensCanvasPoint?.(ids.assetId, ids.internalLayerId, event);
+        if (!start || !Number.isFinite(start.x) || !Number.isFinite(start.y)) return;
+        this.rigPointerGesture = {
+            pointerId: event.pointerId,
+            assetId: ids.assetId,
+            layerId: ids.internalLayerId,
+            kind: this.rigPlacementMode,
+            start
+        };
+        try { canvas.setPointerCapture(event.pointerId); } catch { /* document capture still ends the gesture */ }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }
+
+    _onRigCanvasUp(event) {
+        const gesture = this.rigPointerGesture;
+        if (!gesture || event.pointerId !== gesture.pointerId) return;
+        this.rigPointerGesture = null;
+        try { window.coreEngine?.getApp?.()?.canvas?.releasePointerCapture(event.pointerId); } catch { /* already released */ }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!this.rigLensActive || this.rigPlacementMode !== gesture.kind
+            || this.rigLensTarget?.assetId !== gesture.assetId
+            || this.rigLensTarget?.internalLayerId !== gesture.layerId) {
+            this._cancelRigPlacement();
+            return;
+        }
+        const table = this._getRigLensTable();
+        const end = table?.projectRigLensCanvasPoint?.(gesture.assetId, gesture.layerId, event);
+        const result = table?.registerRigLensStaticBone?.(gesture.assetId, gesture.layerId, {
+            kind: gesture.kind,
+            start: gesture.start,
+            end
+        });
+        this.rigPlacementMode = null;
+        if (result?.ok && result.changed) {
+            this.rigSelectedBoneId = result.bone.boneId;
+            this.rigEntryMessage = '';
+        } else {
+            this.rigEntryMessage = result?.reason || 'Boneを作成できませんでした。';
+        }
+        this.sync();
+    }
+
+    _onRigCanvasCancel(event) {
+        if (this.rigPointerGesture?.pointerId !== event.pointerId) return;
+        try { window.coreEngine?.getApp?.()?.canvas?.releasePointerCapture(event.pointerId); } catch { /* already released */ }
+        this._cancelRigPlacement();
+    }
+
+    _syncRigOverlay() {
+        if (!this.rigLensActive) {
+            if (this.rigOverlayFrame != null) cancelAnimationFrame(this.rigOverlayFrame);
+            this.rigOverlayFrame = null;
+            this.rigOverlay?.remove();
+            this.rigOverlay = null;
+            return;
+        }
+        if (!this.rigOverlay) {
+            this.rigOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            this.rigOverlay.classList.add('right-workspace-rig-bone-overlay');
+            this.rigOverlay.setAttribute('aria-label', 'RIG Bone構造');
+            document.body.appendChild(this.rigOverlay);
+        }
+        if (this.rigOverlayFrame != null) return;
+        const update = () => {
+            this.rigOverlayFrame = null;
+            if (!this.rigLensActive || !this.rigOverlay) return;
+            const ids = this.rigLensTarget;
+            const bones = this._getRigLensTable()?.getRigLensStaticScreenBones?.(
+                ids?.assetId, ids?.internalLayerId
+            ) || [];
+            const key = JSON.stringify([bones, this.rigSelectedBoneId]);
+            if (this.rigOverlay.dataset.geometry !== key) {
+                this.rigOverlay.dataset.geometry = key;
+                const ns = 'http://www.w3.org/2000/svg';
+                const nodes = bones.flatMap(bone => {
+                    const line = document.createElementNS(ns, 'line');
+                    line.classList.add('right-workspace-rig-bone-line');
+                    line.setAttribute('x1', bone.head.x);
+                    line.setAttribute('y1', bone.head.y);
+                    line.setAttribute('x2', bone.tail.x);
+                    line.setAttribute('y2', bone.tail.y);
+                    const marker = document.createElementNS(ns, 'circle');
+                    marker.classList.add('right-workspace-rig-bone-marker');
+                    marker.classList.toggle('is-selected', bone.boneId === this.rigSelectedBoneId);
+                    marker.setAttribute('cx', bone.head.x);
+                    marker.setAttribute('cy', bone.head.y);
+                    marker.setAttribute('r', '9');
+                    marker.setAttribute('role', 'button');
+                    marker.setAttribute('aria-label', `Bone ${bone.boneId}を選択`);
+                    marker.addEventListener('pointerdown', event => {
+                        if (event.button !== 0) return;
+                        this.rigSelectedBoneId = bone.boneId;
+                        this.sync();
+                        event.preventDefault();
+                        event.stopPropagation();
+                    });
+                    return [line, marker];
+                });
+                this.rigOverlay.replaceChildren(...nodes);
+            }
+            this.rigOverlayFrame = requestAnimationFrame(update);
+        };
+        this.rigOverlayFrame = requestAnimationFrame(update);
     }
 
     _renderRigLens(target) {
@@ -280,6 +464,24 @@ export class RightWorkspaceFrame {
             ? 'CAFまたはRasterの選択が変わっています。対象を確認してからTransformへ戻ってください。'
             : this.rigEntryMessage;
         this.rigLensStructureContent.replaceChildren();
+        const staticTarget = matchesTarget ? this._getRigLensEditTarget() : null;
+        if (this.rigSelectedBoneId && !staticTarget?.bones?.some(bone => bone.boneId === this.rigSelectedBoneId)) {
+            this.rigSelectedBoneId = null;
+        }
+        this.rigRootButton.hidden = !staticTarget?.ok || staticTarget.bones.length !== 0;
+        this.rigChildButton.hidden = !staticTarget?.ok || staticTarget.bones.length !== 1;
+        this.rigChildButton.disabled = this.rigSelectedBoneId !== staticTarget?.bones?.[0]?.boneId;
+        this.rigToolHint.textContent = !staticTarget?.ok
+            ? (staticTarget?.reason || '対象を確認してください。')
+            : this.rigPlacementMode === 'root'
+                ? 'CanvasをクリックしてRootを配置。dragで長さと方向を指定。Escで中止。'
+                : this.rigPlacementMode === 'child'
+                    ? 'Canvas上で子Boneの終点を指定。Escで中止。'
+                    : staticTarget.bones.length === 0
+                        ? 'Rootを配置して静的な階層を開始します。'
+                        : staticTarget.bones.length === 1
+                            ? 'Canvas上のRootを選択してから子Boneを追加します。'
+                            : 'Rootと子Boneが設定されています。';
 
         if (!matchesTarget) {
             const message = document.createElement('p');
@@ -291,7 +493,25 @@ export class RightWorkspaceFrame {
         const status = document.createElement('p');
         status.textContent = `状態: ${rigTarget.status || 'RIG未設定'}`;
         this.rigLensStructureContent.appendChild(status);
-        if (rigTarget.bones?.length) {
+        if (staticTarget?.ok && staticTarget.bones.length) {
+            const list = document.createElement('ul');
+            list.setAttribute('aria-label', '静的Bone構造');
+            staticTarget.bones.forEach(bone => {
+                const item = document.createElement('li');
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'gui-control gui-control--s';
+                button.textContent = bone.name || bone.boneId;
+                button.setAttribute('aria-pressed', String(this.rigSelectedBoneId === bone.boneId));
+                button.addEventListener('click', () => {
+                    this.rigSelectedBoneId = bone.boneId;
+                    this.sync();
+                });
+                item.append(button, document.createTextNode(bone.parentBoneId ? ' · child' : ' · ROOT'));
+                list.appendChild(item);
+            });
+            this.rigLensStructureContent.appendChild(list);
+        } else if (rigTarget.bones?.length) {
             const list = document.createElement('ul');
             list.setAttribute('aria-label', '対象RasterのBone構造');
             rigTarget.bones.forEach(bone => {
@@ -550,6 +770,8 @@ export class RightWorkspaceFrame {
         if (rigTargetKey !== this.lastRigTargetKey) {
             this.lastRigTargetKey = rigTargetKey;
             this.rigEntryMessage = '';
+            this.rigPlacementMode = null;
+            this.rigSelectedBoneId = null;
         }
         const rigEntryMessage = this.rigEntryMessage
             || (rigTarget?.eligible === true
@@ -558,6 +780,11 @@ export class RightWorkspaceFrame {
         this.rigEntryMessageNode.textContent = rigEntryMessage;
         this.rigEntryMessageNode.hidden = !rigEntryMessage;
         this._renderRigLens(target);
+        if (!rigLensVisible) {
+            this.rigPlacementMode = null;
+            this.rigPointerGesture = null;
+        }
+        this._syncRigOverlay();
         const layerEditing = this.layerSystem?.transform?.isVKeyPressed === true;
         this.cancelButton.hidden = !layerEditing;
         this.selectionHint.hidden = layerEditing;
@@ -572,6 +799,12 @@ export class RightWorkspaceFrame {
     }
 
     destroy() {
+        document.removeEventListener('pointerdown', this._rigCanvasDownHandler, true);
+        document.removeEventListener('pointerup', this._rigCanvasUpHandler, true);
+        document.removeEventListener('pointercancel', this._rigCanvasCancelHandler, true);
+        document.removeEventListener('keydown', this._rigEscapeHandler, true);
+        this.rigLensActive = false;
+        this._syncRigOverlay();
         this.observer?.disconnect();
         this.resizeObserver?.disconnect();
         this.layerModeButton?.removeEventListener('click', this._layerModeClickHandler);

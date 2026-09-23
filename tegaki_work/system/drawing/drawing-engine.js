@@ -102,6 +102,8 @@ export class DrawingEngine {
      */
     _shouldAcquireCanvasPointer(event) {
         if (typeof document === 'undefined' || typeof document.elementFromPoint !== 'function') return true;
+        // RIG SETUP owns Canvas clicks as static Bone authoring, never as brush strokes.
+        if (document.querySelector('.right-panel.is-rig-lens-active')) return false;
         const hit = document.elementFromPoint(event.clientX, event.clientY);
         if (!hit || typeof hit.closest !== 'function') return true;
         const uiOwner = hit.closest([

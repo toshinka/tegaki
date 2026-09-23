@@ -57,6 +57,7 @@ import {
     resolveDirectionalTransformDragMode
 } from '../system/transform-math.js';
 import { sampleClipTransform } from '../system/animation/clip-transform-sampler.js';
+import { inspectStaticRigAuthoringTarget, planStaticRigBone } from '../system/animation/rig-static-authoring.js';
 import {
     projectTransformEditContext,
     TRANSFORM_EDIT_AUTHORITY,
@@ -3498,6 +3499,64 @@ export class AnimationTablePopup {
             });
         }
         return result;
+    }
+
+    /** RIG Lens は既存CAF選択とstatic Setup正本への薄い接続だけを使用する。 */
+    getRigLensStaticTarget(assetId, layerId) {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        if (entry?.clip?.assetId !== assetId || this.selectedInternalLayerId !== layerId) {
+            return { ok: false, reason: '選択中のCAF／Rasterが変わっています。', bones: [] };
+        }
+        return inspectStaticRigAuthoringTarget(this.model.getClipAsset(assetId), layerId);
+    }
+
+    projectRigLensCanvasPoint(assetId, layerId, event) {
+        if (!this.getRigLensStaticTarget(assetId, layerId).ok) return null;
+        const entry = this.model.findClipEntry(this.selectedCelId);
+        return this._screenToRigProject(event, entry);
+    }
+
+    registerRigLensStaticBone(assetId, layerId, gesture) {
+        const target = this.getRigLensStaticTarget(assetId, layerId);
+        if (!target.ok || this.isPlaying) return { ok: false, reason: target.reason || '再生中は編集できません。' };
+        const asset = this.model.getClipAsset(assetId);
+        const plan = planStaticRigBone(asset, layerId, gesture);
+        if (!plan.ok) return plan;
+        // Existing CAF Asset transaction records one History entry and never creates a KEY.
+        return this.registerInternalRasterBoneFromExternal(assetId, layerId, {
+            ...plan.options,
+            source: 'right-workspace-rig-lens'
+        });
+    }
+
+    getRigLensStaticScreenBones(assetId, layerId) {
+        const target = this.getRigLensStaticTarget(assetId, layerId);
+        if (!target.ok || target.bones.length === 0) return [];
+        const entry = this.model.findClipEntry(this.selectedCelId);
+        const asset = this.model.getClipAsset(assetId);
+        const evaluated = evaluateRigidBones(asset, null, 0);
+        const coordinateSystem = this.layerSystem?.transform?.coordinateSystem;
+        if (!evaluated.ok || !coordinateSystem) return [];
+        const size = this._getCanvasSnapshotSize();
+        const clipMatrix = createCenteredTransformMatrix(
+            sampleClipTransform(entry.clip, this.model.playback.currentFrame),
+            size.width / 2, size.height / 2
+        );
+        const toScreen = point => {
+            const world = applyTransformMatrix(clipMatrix, point.x, point.y);
+            const screen = coordinateSystem.worldToScreenImmediate?.(world.x, world.y)
+                || coordinateSystem.worldToScreen?.(world.x, world.y);
+            return screen && Number.isFinite(screen.clientX) && Number.isFinite(screen.clientY)
+                ? { x: screen.clientX, y: screen.clientY }
+                : null;
+        };
+        return target.bones.map(bone => {
+            const matrix = evaluated.poseByBoneId.get(bone.boneId)?.worldMatrix;
+            if (!matrix) return null;
+            const head = toScreen(applyTransformMatrix(matrix, 0, 0));
+            const tail = toScreen(applyTransformMatrix(matrix, bone.length, 0));
+            return head && tail ? { boneId: bone.boneId, head, tail } : null;
+        }).filter(Boolean);
     }
 
     _createSelectedRasterRigidPivot() {

@@ -29,8 +29,9 @@ assert.match(frame, /preserveMotionWindow: true/u,
     'return to Transform preserves an open Animation Dock');
 assert.match(frame, /this\.rigLensTarget = \{[\s\S]*?assetId: target\.assetId[\s\S]*?internalLayerId: target\.internalLayerId/u,
     'entry retains only the CAF Asset and internal Raster identity for this view handoff');
-assert.match(frame, /Root／Boneの編集操作は/u,
-    'the RIG skeleton does not claim Root/Bone editing is implemented');
+assert.match(frame, /Rootを配置/u, 'RIG lens exposes Root placement');
+assert.match(frame, /子Boneを追加/u, 'RIG lens exposes child Bone placement');
+assert.match(frame, /registerRigLensStaticBone/u, 'Canvas gesture commits through the existing CAF owner');
 assert.doesNotMatch(frame, /registerClipAsset|generateClipAsset|recordInternalLayerHistory|setClipRig/u,
     'RIG lens presentation does not mutate RIG data or History');
 assert.match(renderer, /targetLayer\?\.type === 'raster'[\s\S]*?targetLayer\.parentLayerId == null/u,
@@ -46,4 +47,4 @@ assert.match(surface, /layer-transform-panel\.is-context-inspector\[hidden\][\s\
 assert.match(surface, /right-workspace-rig-lens[\s\S]*?background: transparent/u,
     'RIG view uses the existing transparent Workspace surface');
 
-console.log('PASS: Right Workspace RIG lens projection, target guard, no-mutation shell, and Dock-preserving return contracts');
+console.log('PASS: Right Workspace RIG lens projection, target guard, static Bone handoff, and Dock-preserving return contracts');
