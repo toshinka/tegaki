@@ -952,8 +952,13 @@ export class RightWorkspaceFrame {
         const partTarget = this.rigLensTarget?.assetId
             ? this._getRigLensTable()?.getRigLensPartTarget?.(this.rigLensTarget.assetId)
             : null;
-        this.rigKindRow.hidden = !this.rigLensActive || (partTarget?.layers?.length || 0) === 0;
+        this.rigKindRow.hidden = !this.rigLensActive;
         this.rigModeRow.hidden = !this.rigLensActive;
+        const hasPartCandidate = (partTarget?.layers?.length || 0) > 0;
+        this.rigPartKindButton.disabled = !hasPartCandidate;
+        this.rigPartKindButton.title = hasPartCandidate
+            ? '未Mesh接続のCAF RasterをPART方式で設定'
+            : 'PART方式にできる未Mesh接続Rasterがありません。既存Bindingと同じRasterへ重ねて登録できません。';
         this.rigPartKindButton.setAttribute('aria-pressed', String(this.rigAuthoringKind === 'part'));
         this.rigDeformKindButton.setAttribute('aria-pressed', String(this.rigAuthoringKind === 'deform'));
         this.rigSetupButton.setAttribute('aria-pressed', String(this.rigLensMode === 'setup'));
@@ -970,6 +975,7 @@ export class RightWorkspaceFrame {
         const matchesTarget = !!this.rigLensTarget?.assetId
             && rigTarget?.assetId === this.rigLensTarget?.assetId
             && rigTarget?.internalLayerId === this.rigLensTarget?.internalLayerId;
+        const isMotion = this.rigLensMode === 'motion';
         const frameLabel = isMotion && this.rigLensTarget?.assetId
             ? ` · F${(this._getRigLensTable()?.getRigLensMotionTarget?.(
                 this.rigLensTarget.assetId, this.rigLensTarget.internalLayerId, this.rigSelectedBoneId
@@ -990,9 +996,6 @@ export class RightWorkspaceFrame {
                 rigTarget.assetId, rigTarget.internalLayerId, { allowBound: true }
             )
             : null;
-        const isMotion = this.rigLensMode === 'motion';
-        this.rigLensHeading.textContent = isMotion ? 'RIG MOTION' : 'RIG SETUP';
-        this.rigView.setAttribute('aria-label', isMotion ? 'RIG MOTION' : 'RIG SETUP');
         if (this.rigSelectedBoneId && !displayTarget?.bones?.some(bone => bone.boneId === this.rigSelectedBoneId)) {
             this.rigSelectedBoneId = null;
         }

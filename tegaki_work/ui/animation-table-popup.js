@@ -3339,7 +3339,7 @@ export class AnimationTablePopup {
         if (!result.ok) return result;
         this.selectedAssetId = asset.id;
         this.selectedAssetFolderId = asset.folderId || null;
-        this.selectedInternalLayerId = layer.id;
+        if (options.selectInternalLayer !== false) this.selectedInternalLayerId = layer.id;
         this._invalidateSnapshotTextureCache();
         if (options.deferUi !== true) {
             this.render();
@@ -3576,7 +3576,8 @@ export class AnimationTablePopup {
         }
         return this.registerInternalRigPartFromExternal(assetId, partId, {
             source: 'right-workspace-part-lens',
-            initialPivot: pivot
+            initialPivot: pivot,
+            selectInternalLayer: false
         });
     }
 

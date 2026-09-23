@@ -113,9 +113,13 @@ const popup = fs.readFileSync(path.join(root, '../ui/animation-table-popup.js'),
 const frame = fs.readFileSync(path.join(root, '../ui/right-workspace-frame.js'), 'utf8');
 assert.match(popup, /previewRigLensPartPose[\s\S]*?_scheduleMotionEditPreviewRefresh/u);
 assert.match(popup, /commitRigLensPartKey[\s\S]*?setClipRigPartKey[\s\S]*?_finishMotionGestureHistory/u);
+assert.match(popup, /registerInternalRigPartFromExternal\(assetId, layerId, options = \{\}\)[\s\S]*?options\.selectInternalLayer !== false/u);
+assert.match(popup, /registerRigLensPart\(assetId, partId, initialPivot = null\)[\s\S]*?selectInternalLayer: false/u);
 assert.match(frame, /_startRigPartPoseGesture[\s\S]*?previewRigLensPartPose/u);
 assert.match(frame, /_syncRigPartPivotOverlay[\s\S]*?projectRigLensPartBindPoint[\s\S]*?setRigLensPartPivot/u);
 assert.match(popup, /getRigLensPartPivotWorldItems[\s\S]*?canMove/u);
+assert.match(frame, /rigKindRow\.hidden = !this\.rigLensActive/u);
+assert.match(frame, /rigPartKindButton\.disabled = !hasPartCandidate/u);
 assert.match(frame, /hasSelectedPart[\s\S]*?rigLayerEntryButton\.hidden/u,
     'registered Part remains reachable from LAYER when Transform is blocked');
 console.log('PASS: two Raster Parts, pivot, no-jump parent, orbit/self-rotation, preview isolation, explicit KEY, History, Project round-trip');
