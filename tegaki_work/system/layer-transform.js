@@ -233,11 +233,6 @@ export class LayerTransform {
         if (!this.eventBus) return;
         
         this.eventBus.on('keyboard:vkey-state-changed', ({ pressed }) => {
-            if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) {
-                const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
-                this.exitMoveMode(activeLayer);
-                return;
-            }
             if (pressed) {
                 if (this.onCanEnterMoveMode?.() === false) return;
                 this.enterMoveMode();
@@ -248,7 +243,6 @@ export class LayerTransform {
         });
         
         this.eventBus.on('layer:reset-transform', () => {
-            if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) return;
             transformAnchorSite.setEditable('layer-transform', false);
             document.getElementById('layer-transform-anchor-btn')?.classList.remove('active');
             const selectionApi = this._getSelectionTransformApi();
@@ -282,23 +276,6 @@ export class LayerTransform {
 
     _getSelectionTransformApi() {
         return window.CoreRuntime?.api?.selection || null;
-    }
-
-    _hasAnimationLayerContext() {
-        const animationTable = window.PopupManager?.get?.('animationTable')
-            || window.coreEngine?.popupManager?.get?.('animationTable');
-        return !!(
-            animationTable?.model &&
-            (
-                (animationTable.model.tracks?.length || 0) > 0 ||
-                (animationTable.model.clipAssets?.length || 0) > 0
-            )
-        );
-    }
-
-    _canTransformActiveAnimationWorkingLayer() {
-        const activeLayer = this.onGetActiveLayer ? this.onGetActiveLayer() : null;
-        return activeLayer?.layerData?.isAnimationWorkingLayer === true;
     }
 
     enterMoveMode() {

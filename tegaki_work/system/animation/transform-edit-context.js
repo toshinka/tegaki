@@ -87,6 +87,30 @@ export function projectTransformEditContext(input = {}) {
             timelineFrame
         });
     }
+    if (clip.duration === 1 && input.sourceWorkingLayerSelected === true
+        && typeof clip.id === 'string' && clip.id.length > 0) {
+        const startFrame = Number.isInteger(clip.startFrame) ? clip.startFrame : 0;
+        if (timelineFrame === null) {
+            return createContext({ reason: 'timeline-frame-required', clipId: clip.id });
+        }
+        if (timelineFrame !== startFrame) {
+            return createContext({
+                reason: 'frame-outside-clip', clipId: clip.id,
+                timelineFrame, localFrame: timelineFrame - startFrame
+            });
+        }
+        // A selected one-frame working Raster has no ANIMATE key timeline.
+        // Its explicit target keeps the existing SOURCE bake/capture terminal.
+        return createContext({
+            mode: TRANSFORM_EDIT_CONTEXT_MODE.SOURCE,
+            authority: TRANSFORM_EDIT_AUTHORITY.LAYER_SOURCE,
+            writable: true,
+            clipId: clip.id,
+            timelineFrame,
+            localFrame: 0,
+            internalLayerId: input.internalLayerId || null
+        });
+    }
     if (!Number.isInteger(clip.duration) || clip.duration <= 1) {
         return createContext({
             reason: 'animated-duration-required',

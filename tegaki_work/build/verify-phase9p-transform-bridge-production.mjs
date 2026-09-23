@@ -44,7 +44,7 @@ assert.match(layerSystem, /session\.previewResult\?\.changed !== true/,
 assert.match(layerSystem, /session\.previewResult\?\.changed === true[\s\S]*?return false/,
     '未確定preview中のFrame移動は暗黙commit / rollbackせず拒否する');
 assert.match(layerSystem, /_finishLayerTransformTimelineSession[\s\S]*?_resumeLayerTransformTimelineSession/);
-assert.match(keyboard, /layerManager\?\.canStartTransformEditSession\?\.\(\) !== false/);
+assert.match(keyboard, /layerManager\?\.canStartTransformEditSession\?\.\(\) === true/);
 assert.match(keyboard, /window\.addEventListener\('blur',[\s\S]*?isTransformTimelineKeyTarget\(layerManager\?\.getActiveTransformEditTarget\?\.\(\)\)[\s\S]*?return;/);
 
 const bridgeStart = popup.indexOf('createLayerTransformEditAdapter()');

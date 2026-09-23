@@ -877,22 +877,15 @@ export const KeyboardHandler = (function() {
     }
 
     function canStartLayerTransform() {
-        const animationTable = window.PopupManager?.get?.('animationTable')
-            || window.coreEngine?.popupManager?.get?.('animationTable');
-
         const layerManager = window.layerManager || window.drawingApp?.layerManager;
         const activeLayer = layerManager?.getActiveLayer?.();
         const layerData = activeLayer?.layerData;
-        if (hasAnimationLayerContext(animationTable)) {
-            if (!(layerData && layerData.isAnimationWorkingLayer === true)) return false;
-            return layerManager?.canStartTransformEditSession?.() !== false;
-        }
         if (!layerData || layerData.isBackground) return false;
         if (layerData.isFolder) {
             const targets = layerManager?.getFolderSelectionTargets?.(layerData.id);
-            return targets?.entries?.some(entry => entry.type === 'raster') === true;
+            if (targets?.entries?.some(entry => entry.type === 'raster') !== true) return false;
         }
-        return layerManager?.canStartTransformEditSession?.() !== false;
+        return layerManager?.canStartTransformEditSession?.() === true;
     }
 
     function toggleLayerTransform(source = 'transform-control') {

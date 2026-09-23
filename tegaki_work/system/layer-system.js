@@ -191,12 +191,17 @@ export class LayerSystem {
     canStartTransformEditSession() {
         const activeLayer = this.getActiveLayer?.();
         if (!activeLayer?.layerData || activeLayer.layerData.isBackground) return false;
-        if (!this._transformEditAdapter?.canStart) return true;
+        if (!this._transformEditAdapter?.canStart) return !this._hasAnimationLayerContext();
         const result = this._transformEditAdapter.canStart({
             layerId: activeLayer.layerData.id,
             isFolder: activeLayer.layerData.isFolder === true
         });
-        return result?.ok === true;
+        if (result?.ok !== true) return false;
+        const target = result.transaction?.target;
+        if (isTransformTimelineKeyTarget(target)) {
+            return activeLayer.layerData.isAnimationWorkingLayer === true;
+        }
+        return target === TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE;
     }
 
     getActiveTransformEditTarget() {
@@ -3423,13 +3428,9 @@ export class LayerSystem {
             if (!this.transform.app && this.app && this.cameraSystem) {
                 this.initTransform();
             }
-            if (this._hasAnimationLayerContext() && !this._canTransformActiveAnimationWorkingLayer()) {
-                this.exitLayerMoveMode();
-                return;
-            }
-
             if (pressed) {
-                this.enterLayerMoveMode();
+                if (!this.canStartTransformEditSession()) return;
+                if (!this.enterLayerMoveMode()) return;
                 const activeLayer = this.getActiveLayer();
                 if (activeLayer) {
                     this.transform.updateTransformPanelValues(activeLayer);

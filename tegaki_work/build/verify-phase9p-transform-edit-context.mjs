@@ -61,6 +61,37 @@ assert.equal(projectTransformEditContext({
     selectedClip: { ...clip, duration: 1 },
     timelineFrame: 10
 }).reason, 'animated-duration-required');
+const oneFrameClip = { ...clip, duration: 1 };
+const oneFrameSource = projectTransformEditContext({
+    tableVisible: true,
+    selectedClip: oneFrameClip,
+    timelineFrame: 10,
+    internalLayerId: 'internal-raster',
+    sourceWorkingLayerSelected: true
+});
+assert.equal(oneFrameSource.mode, TRANSFORM_EDIT_CONTEXT_MODE.SOURCE);
+assert.equal(oneFrameSource.authority, TRANSFORM_EDIT_AUTHORITY.LAYER_SOURCE);
+assert.equal(oneFrameSource.internalLayerId, 'internal-raster');
+assert.equal(projectTransformEditContext({
+    tableVisible: true,
+    selectedClip: oneFrameClip,
+    selectedClipCount: 2,
+    timelineFrame: 10,
+    sourceWorkingLayerSelected: true
+}).reason, 'single-clip-required');
+assert.equal(projectTransformEditContext({
+    tableVisible: true,
+    isPlaying: true,
+    selectedClip: oneFrameClip,
+    timelineFrame: 10,
+    sourceWorkingLayerSelected: true
+}).reason, 'playback-active');
+assert.equal(projectTransformEditContext({
+    tableVisible: true,
+    selectedClip: oneFrameClip,
+    timelineFrame: 11,
+    sourceWorkingLayerSelected: true
+}).reason, 'frame-outside-clip');
 assert.equal(projectTransformEditContext({
     tableVisible: true,
     selectedClip: clip,

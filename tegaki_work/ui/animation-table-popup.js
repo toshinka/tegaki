@@ -11544,6 +11544,19 @@ export class AnimationTablePopup {
         const selectedClipCount = this.selectedCelIds instanceof Set
             ? Math.max(this.selectedCelIds.size, entry?.clip ? 1 : 0)
             : (entry?.clip ? 1 : 0);
+        const activeLayer = this.layerSystem?.getActiveLayer?.();
+        const sourceWorkingLayerId = workingLayerId || activeLayer?.layerData?.id || null;
+        const sourceWorkingLayerSelected = Boolean(
+            sourceWorkingLayerId
+            && sourceWorkingLayerId === activeLayer?.layerData?.id
+            && activeLayer?.layerData?.isAnimationWorkingLayer === true
+            && selectedInternalLayer?.type !== 'folder'
+            && selectedInternalLayer?.isBackground !== true
+            && selectedInternalLayer?.id
+            && this._resolveInternalLayerIdForWorkingLayer?.(asset, sourceWorkingLayerId)
+                === selectedInternalLayer.id
+            && this.canEditSelectedWorkingLayer(sourceWorkingLayerId)
+        );
         return projectTransformEditContext({
             tableVisible: this.isVisible,
             isPlaying: this.isPlaying,
@@ -11551,7 +11564,8 @@ export class AnimationTablePopup {
             selectedClipCount,
             timelineFrame: this.model.playback?.currentFrame,
             internalLayerId,
-            folderLayerId
+            folderLayerId,
+            sourceWorkingLayerSelected
         });
     }
 
