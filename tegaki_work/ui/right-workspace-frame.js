@@ -445,8 +445,8 @@ export class RightWorkspaceFrame {
             return;
         }
         if ((kind === 'root' && target.bones.length !== 0)
-            || (kind === 'child' && (target.bones.length !== 1
-                || this.rigSelectedBoneId !== target.bones[0].boneId))) return;
+            || (kind === 'child' && (target.bones.length === 0 || target.bones.length >= 3
+                || !target.bones.some(bone => bone.boneId === this.rigSelectedBoneId)))) return;
         this.rigPlacementMode = kind;
         this.rigEntryMessage = '';
         this.sync();
@@ -483,6 +483,7 @@ export class RightWorkspaceFrame {
             assetId: ids.assetId,
             layerId: ids.internalLayerId,
             kind: this.rigPlacementMode,
+            parentBoneId: this.rigPlacementMode === 'child' ? this.rigSelectedBoneId : null,
             start
         };
         try { canvas.setPointerCapture(event.pointerId); } catch { /* document capture still ends the gesture */ }
@@ -559,7 +560,8 @@ export class RightWorkspaceFrame {
         const result = table?.registerRigLensStaticBone?.(gesture.assetId, gesture.layerId, {
             kind: gesture.kind,
             start: gesture.start,
-            end
+            end,
+            parentBoneId: gesture.parentBoneId
         });
         this.rigPlacementMode = null;
         if (result?.ok && result.changed) {
@@ -648,7 +650,12 @@ export class RightWorkspaceFrame {
                     tip.addEventListener('pointerdown', event => this._startRigPoseGesture(bone, event));
                     return [line, marker, tip];
                 });
-                this.rigOverlay.replaceChildren(...nodes);
+                const tips = nodes.filter(node => node.classList.contains('right-workspace-rig-bone-tip'));
+                this.rigOverlay.replaceChildren(
+                    ...nodes.filter(node => !tips.includes(node)),
+                    ...tips.filter(node => !node.classList.contains('is-selected')),
+                    ...tips.filter(node => node.classList.contains('is-selected'))
+                );
             }
             this.rigOverlayFrame = requestAnimationFrame(update);
         };
@@ -685,8 +692,10 @@ export class RightWorkspaceFrame {
             this.rigSelectedBoneId = null;
         }
         this.rigRootButton.hidden = isMotion || !staticTarget?.ok || staticTarget.bones.length !== 0;
-        this.rigChildButton.hidden = isMotion || !staticTarget?.ok || staticTarget.bones.length !== 1;
-        this.rigChildButton.disabled = this.rigSelectedBoneId !== staticTarget?.bones?.[0]?.boneId;
+        this.rigChildButton.hidden = isMotion || !staticTarget?.ok
+            || staticTarget.bones.length === 0 || staticTarget.bones.length >= 3;
+        this.rigChildButton.disabled = !staticTarget?.bones?.some(
+            bone => bone.boneId === this.rigSelectedBoneId);
         this.rigBindButton.hidden = isMotion || !staticTarget?.ok || staticTarget.bones.length === 0 || rigTarget.hasMesh;
         this.rigPoseButton.hidden = isMotion || !matchesTarget || !rigTarget?.hasMesh;
         this.rigPoseButton.disabled = !this.rigSelectedBoneId
@@ -718,9 +727,9 @@ export class RightWorkspaceFrame {
                     ? 'Canvas上で子Boneの終点を指定。Escで中止。'
                     : staticTarget.bones.length === 0
                         ? 'Rootを配置して静的な階層を開始します。'
-                        : staticTarget.bones.length === 1
-                            ? 'Canvas上のRootを選択してから子Boneを追加します。'
-                            : 'Rootと子Boneが設定されています。';
+                        : staticTarget.bones.length < 3
+                            ? '親にするBoneを選択してから子Boneを追加します。'
+                            : '3 Bone構造が設定されています。';
 
         if (!matchesTarget) {
             const message = document.createElement('p');
@@ -756,10 +765,19 @@ export class RightWorkspaceFrame {
                     this.rigSelectedBoneId = bone.boneId;
                     this.sync();
                 });
-                item.append(button, document.createTextNode(bone.parentBoneId ? ' · child' : ' · ROOT'));
+                const parent = displayTarget.bones.find(candidate => candidate.boneId === bone.parentBoneId);
+                button.title = `Bone ID: ${bone.boneId}`;
+                item.append(button, document.createTextNode(parent
+                    ? ` · 親 ${parent.name || parent.boneId}` : ' · ROOT'));
                 list.appendChild(item);
             });
             this.rigLensStructureContent.appendChild(list);
+            const selected = displayTarget.bones.find(bone => bone.boneId === this.rigSelectedBoneId);
+            if (selected) {
+                const selection = document.createElement('p');
+                selection.textContent = `選択中: ${selected.name || selected.boneId} · ID ${selected.boneId} · 親 ${selected.parentBoneId || 'なし'}`;
+                this.rigLensStructureContent.appendChild(selection);
+            }
         } else if (rigTarget.bones?.length) {
             const list = document.createElement('ul');
             list.setAttribute('aria-label', '対象RasterのBone構造');
