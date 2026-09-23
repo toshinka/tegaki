@@ -30,7 +30,7 @@ function fixture({ accepts = true, changed = true, committed = true } = {}) {
     const listeners = new Map();
     const layer = { layerData: { id: 'working-raster' } };
     const host = {
-        events, begins: 0, finishes: 0, abandons: 0, restores: 0, history: 0, moved: 0, panel: true, camera: true, toolbar: true,
+        events, begins: 0, finishes: 0, abandons: 0, restores: 0, history: 0, moved: 0, panel: true, camera: true,
         _layerTransformSession: {
             layerId: layer.layerData.id,
             transaction: { target },
@@ -66,13 +66,7 @@ function fixture({ accepts = true, changed = true, committed = true } = {}) {
         },
         cameraSystem: { setVKeyPressed(value) { host.camera = value; } }
     };
-    setupUIListeners.call({
-        eventBus: host.eventBus,
-        setSidebarModePressed(id, value) {
-            assert.equal(id, 'layer-transform-tool');
-            host.toolbar = value;
-        }
-    });
+    setupUIListeners.call({ eventBus: host.eventBus });
     return host;
 }
 const historyRefresh = fixture({ changed: false });
@@ -106,7 +100,6 @@ for (const changed of [true, false]) {
     assert.equal(changed ? commit.call(rejected) : step.call(rejected, 1), false);
     assert.equal(rejected.panel, false);
     assert.equal(rejected.camera, false);
-    assert.equal(rejected.toolbar, false, 'production UI listener clears the V button');
     assert.equal(rejected.begins, 1, 'no speculative begin retry');
     assert.equal(rejected.history, changed ? 1 : 0, 'successful commit survives rejected resume');
     const exits = rejected.events.filter(e => e.name === 'layer:transform-exit');

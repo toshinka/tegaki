@@ -18549,8 +18549,6 @@ export class AnimationTablePopup {
 
     render() {
         if (!this.panel || !this.isVisible) return;
-        const dockFrame = this.panel.querySelector('.anim-dock-current-frame');
-        if (dockFrame) dockFrame.textContent = `F${this.model.playback.currentFrame + 1}`;
         this._queueBottomDockLayout();
         this.panel.style.setProperty('--anim-cell-width', `${this.timelineCellWidth}px`);
         this.panel.style.setProperty('--anim-cel-inset', '6px');
@@ -20002,49 +20000,6 @@ export class AnimationTablePopup {
             const zoom = utilityRow.querySelector('.anim-zoom-controls');
             if (zoom) utilityRow.appendChild(zoom);
             utilityRow.appendChild(footerStatusSlot);
-            const primarySlot = playbackRow.querySelector('.anim-playback-primary-slot');
-            if (primarySlot) {
-                const frameControls = document.createElement('div');
-                frameControls.className = 'anim-dock-frame-controls';
-                frameControls.setAttribute('role', 'group');
-                frameControls.setAttribute('aria-label', 'Frame navigation');
-                const framePrev = document.createElement('button');
-                framePrev.type = 'button';
-                framePrev.className = 'anim-dock-frame-btn';
-                framePrev.dataset.dockFrameAction = 'previous';
-                framePrev.textContent = '<';
-                framePrev.title = '前Frame';
-                framePrev.setAttribute('aria-label', '前Frame');
-                const frame = document.createElement('span');
-                frame.className = 'anim-dock-current-frame';
-                frame.setAttribute('aria-label', '現在Frame');
-                framePrev.addEventListener('click', () => {
-                    const legacyButton = document.getElementById('frame-prev-btn');
-                    if (legacyButton) legacyButton.click();
-                    else this.moveTimelineFrameByDelta(-1);
-                });
-                const frameNext = document.createElement('button');
-                frameNext.type = 'button';
-                frameNext.className = 'anim-dock-frame-btn';
-                frameNext.dataset.dockFrameAction = 'next';
-                frameNext.textContent = '>';
-                frameNext.title = '次Frame';
-                frameNext.setAttribute('aria-label', '次Frame');
-                frameNext.addEventListener('click', () => {
-                    const legacyButton = document.getElementById('frame-next-btn');
-                    if (legacyButton) legacyButton.click();
-                    else this.moveTimelineFrameByDelta(1);
-                });
-                frameControls.append(framePrev, frame, frameNext);
-                primarySlot.insertBefore(frameControls, primarySlot.firstChild);
-                frameControls.addEventListener('wheel', (event) => {
-                    if (event.ctrlKey || event.metaKey || event.altKey || event.deltaY === 0) return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    this.moveTimelineFrameByDelta(event.deltaY < 0 ? -1 : 1);
-                }, { passive: false });
-            }
-
             const secondary = document.createElement('details');
             secondary.className = 'anim-dock-secondary';
             const secondarySummary = document.createElement('summary');
@@ -20076,7 +20031,8 @@ export class AnimationTablePopup {
             });
             secondaryBody.appendChild(laneReference);
             secondary.append(secondarySummary, secondaryBody);
-            playbackRow.querySelector('.anim-table-header-left')?.appendChild(secondary);
+            const primarySlot = playbackRow.querySelector('.anim-playback-primary-slot');
+            primarySlot?.after(secondary);
 
             const windowControls = document.createElement('div');
             windowControls.className = 'anim-dock-window-controls';

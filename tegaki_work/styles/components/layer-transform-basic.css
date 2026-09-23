@@ -136,45 +136,31 @@
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--active-border) 52%, transparent);
 }
 
-.layer-transform-key-components {
-    display: grid;
+.layer-transform-key-main {
+    display: flex;
+    align-items: stretch;
+    min-width: 0;
     gap: 2px;
-    margin: 0 8px 5px;
-    padding: 2px 4px;
-    border-radius: var(--ui-radius-control);
-    background: color-mix(in srgb, var(--futaba-cream) 54%, transparent);
 }
 
-.layer-transform-key-components[hidden] {
-    display: none;
+.layer-transform-key-main > .layer-transform-key-commit-btn {
+    flex: 1 1 auto;
 }
 
-.layer-transform-key-component-row {
-    display: grid;
-    grid-template-columns: minmax(46px, auto) 1fr 28px;
+.layer-transform-key-delete-actions {
+    display: flex;
     align-items: center;
-    min-height: 25px;
-    gap: 5px;
-    padding: 1px 2px 1px 5px;
-    border-radius: calc(var(--ui-radius-control) - 1px);
-    color: var(--futaba-maroon);
-    font-size: 9px;
+    gap: 2px;
 }
 
-.layer-transform-key-component-name {
-    font-weight: 700;
-    letter-spacing: .04em;
-}
-
-.layer-transform-key-component-status {
-    color: var(--text-secondary);
-    font-size: 8px;
+.layer-transform-key-delete-actions[hidden] {
+    display: none;
 }
 
 .layer-transform-key-component-delete {
     display: grid;
     place-items: center;
-    width: 26px;
+    width: 24px;
     height: 24px;
     padding: 4px;
     border: 0;
@@ -529,11 +515,6 @@
     box-shadow: none;
 }
 
-.right-panel.right-workspace-frame .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-components {
-    border-color: var(--ui-control-border);
-    background: color-mix(in srgb, var(--futaba-background) 46%, transparent);
-}
-
 /* Right Dock projection surface: keep the shared Transform DOM, but make its
    local hierarchy and keyboard states read as one compact inspector surface. */
 .right-workspace-frame .layer-transform-context-note {
@@ -582,12 +563,6 @@
     transform: none;
     max-width: 110px;
     white-space: normal;
-}
-.right-workspace-frame .layer-transform-key-component-row {
-    grid-template-columns: minmax(0, 1fr) 28px;
-}
-.right-workspace-frame .layer-transform-key-component-row > :first-child {
-    grid-column: 1 / -1;
 }
 .right-workspace-frame .layer-transform-key-commit-btn {
     white-space: normal;
@@ -677,11 +652,6 @@
 .right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-strip[data-key-state="keyed"] .layer-transform-key-commit-btn {
     border-color: var(--futaba-maroon);
     background: color-mix(in srgb, var(--futaba-maroon) 10%, var(--futaba-background));
-}
-
-.right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-key-components {
-    border: 1px solid var(--futaba-light-medium);
-    background: color-mix(in srgb, var(--futaba-cream) 52%, transparent);
 }
 
 .right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .layer-transform-warp-brush-range input[type="range"] {
@@ -806,9 +776,14 @@
 
 .right-workspace-frame .transform-popup-actions {
     display: flex;
-    flex-flow: row nowrap;
+    flex-flow: row wrap;
     justify-content: flex-end;
-    gap: 4px;
+    gap: 2px;
+}
+
+.right-workspace-frame .transform-popup-actions.is-exit-choice-requested {
+    outline: 2px solid var(--active-border);
+    outline-offset: 2px;
 }
 
 .right-workspace-frame .transform-popup-actions .gui-control {
@@ -823,6 +798,26 @@
 .right-workspace-frame .transform-popup-actions .gui-control svg {
     width: 14px;
     height: 14px;
+}
+
+.right-workspace-frame .transform-popup-actions .transform-terminal-btn {
+    flex: 0 0 var(--ui-control-height-s);
+    color: var(--futaba-maroon);
+}
+
+.right-workspace-frame .transform-popup-actions .transform-terminal-confirm {
+    color: var(--futaba-background);
+    background: var(--futaba-maroon);
+}
+
+.right-workspace-frame .transform-popup-actions .transform-terminal-btn[hidden],
+.right-workspace-frame .transform-selection-hint[hidden] {
+    display: none;
+}
+
+.right-workspace-frame .transform-selection-hint {
+    font-size: 9px;
+    color: var(--text-secondary);
 }
 
 .right-workspace-frame .layer-transform-mode-strip {
@@ -874,23 +869,6 @@
     color: var(--futaba-maroon);
     background: color-mix(in srgb, var(--futaba-maroon) 12%, transparent);
     box-shadow: none;
-}
-
-.right-workspace-frame .layer-transform-key-components {
-    gap: 2px;
-    margin: 0;
-    padding: 4px;
-    border: 1px solid var(--ui-control-border);
-    border-radius: 9px;
-    background: color-mix(in srgb, var(--futaba-background) 46%, transparent);
-}
-
-.right-workspace-frame .layer-transform-key-component-row {
-    grid-template-columns: minmax(0, 1fr) 28px;
-}
-
-.right-workspace-frame .layer-transform-key-component-row > :first-child {
-    grid-column: 1 / -1;
 }
 
 .right-workspace-frame .layer-transform-extension-shell {

@@ -147,29 +147,20 @@ export class LayerTransform {
     }
 
     _syncTimelineKeyComponents(keyGuide = null, frameLabel = '') {
-        const panel = typeof document !== 'undefined'
-            ? document.getElementById('layer-transform-key-components')
+        const actions = typeof document !== 'undefined'
+            ? document.getElementById('layer-transform-key-delete-actions')
             : null;
-        if (!panel) return;
+        if (!actions) return;
         const components = Array.isArray(keyGuide?.components)
             ? keyGuide.components.filter(item => item?.key && item?.component)
             : [];
         const visible = this.isVKeyPressed && components.length > 0;
-        panel.hidden = !visible;
-        panel.replaceChildren();
+        actions.hidden = !visible;
+        actions.replaceChildren();
         if (!visible) return;
         const pending = keyGuide?.pending === true;
         const rejectTitle = '先にKEYを確定または取消してください';
         components.forEach(item => {
-            const row = document.createElement('div');
-            row.className = 'layer-transform-key-component-row';
-            row.dataset.component = item.component;
-            const name = document.createElement('span');
-            name.className = 'layer-transform-key-component-name';
-            name.textContent = String(item.component).toUpperCase();
-            const status = document.createElement('span');
-            status.className = 'layer-transform-key-component-status';
-            status.textContent = '設定済';
             const remove = document.createElement('button');
             remove.type = 'button';
             remove.className = 'layer-transform-key-component-delete';
@@ -185,8 +176,7 @@ export class LayerTransform {
                 if (remove.disabled) return;
                 this.onDeleteLayerTransformComponent?.(item.component);
             });
-            row.append(name, status, remove);
-            panel.appendChild(row);
+            actions.appendChild(remove);
         });
     }
 

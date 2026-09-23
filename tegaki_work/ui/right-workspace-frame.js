@@ -37,12 +37,12 @@ export class RightWorkspaceFrame {
         this.thumbnail.alt = '';
         this.label = document.createElement('span');
         this.title.append(this.thumbnail, this.label);
-        this.hint = document.createElement('div');
-        this.hint.className = 'right-workspace-terminal';
+        this.actions = this.panel.querySelector('.transform-popup-actions');
+        this.heading = this.panel.querySelector('.transform-popup-heading');
         this.endButton = document.createElement('button');
         this.endButton.type = 'button';
-        this.endButton.className = 'gui-control gui-control--l gui-control--primary';
-        this.endButton.textContent = '✓ 確定';
+        this.endButton.className = 'gui-control gui-control--s transform-terminal-btn transform-terminal-confirm';
+        this.endButton.textContent = '✓';
         this.endButton.title = 'Transformを確定して終了（V）';
         this.endButton.setAttribute('aria-keyshortcuts', 'V');
         this.endButton.addEventListener('click', () => {
@@ -50,8 +50,8 @@ export class RightWorkspaceFrame {
         });
         this.cancelButton = document.createElement('button');
         this.cancelButton.type = 'button';
-        this.cancelButton.className = 'gui-control gui-control--l';
-        this.cancelButton.textContent = '× 取消';
+        this.cancelButton.className = 'gui-control gui-control--s transform-terminal-btn transform-terminal-cancel';
+        this.cancelButton.textContent = '×';
         this.cancelButton.title = 'Transformを取り消して終了（Esc）';
         this.cancelButton.setAttribute('aria-keyshortcuts', 'Escape');
         this.cancelButton.addEventListener('click', () => {
@@ -65,9 +65,11 @@ export class RightWorkspaceFrame {
             });
         });
         this.selectionHint = document.createElement('span');
+        this.selectionHint.className = 'transform-selection-hint';
         this.selectionHint.textContent = '選択変形：既存の確定／取消操作';
-        this.hint.append(this.endButton, this.cancelButton, this.selectionHint);
-        this.host.append(this.title, this.panel, this.hint);
+        this.actions?.append(this.endButton, this.cancelButton);
+        this.heading?.appendChild(this.selectionHint);
+        this.host.append(this.title, this.panel);
         this.panel.classList.add('is-context-inspector');
         this.observer = new MutationObserver(() => this.sync());
         this.observer.observe(this.panel, { attributes: true, attributeFilter: ['class'] });
@@ -126,8 +128,12 @@ export class RightWorkspaceFrame {
         if (layerEditing && commitState?.hasPendingTransform === true) {
             // A segment change must not choose confirm or cancel for the user.
             // Keep Transform projected and move focus to the existing terminal.
-            this.hint?.classList.add('is-exit-choice-requested');
-            this.endButton?.focus?.({ preventScroll: true });
+            this.actions?.classList.add('is-exit-choice-requested');
+            const target = this.layerSystem?.getActiveTransformEditTarget?.();
+            const keyButton = isTransformTimelineKeyTarget(target)
+                ? this.panel.querySelector('#layer-transform-key-commit-btn')
+                : null;
+            (keyButton && !keyButton.disabled ? keyButton : this.endButton)?.focus?.({ preventScroll: true });
             return;
         }
         if (!layerEditing) {
@@ -171,18 +177,11 @@ export class RightWorkspaceFrame {
         const animate = isTransformTimelineKeyTarget(target);
         const resetButton = this.panel?.querySelector('#layer-transform-reset-btn');
 
-        if (layerEditing && animate) {
-            this.endButton.textContent = '✓ KEY確定';
-            this.endButton.title = '対象FrameのKEYへ確定してTransformを終了（変更なしなら終了のみ、V）';
-            this.endButton.setAttribute('aria-label', '対象FrameのKEYへ確定してTransformを終了');
-        } else if (layerEditing) {
-            this.endButton.textContent = '✓ SOURCE確定';
+        this.endButton.hidden = !layerEditing || animate;
+        if (layerEditing && !animate) {
+            this.endButton.textContent = '✓';
             this.endButton.title = '変形をSOURCE Rasterへ確定してTransformを終了（変更なしなら終了のみ、V）';
             this.endButton.setAttribute('aria-label', 'SOURCE変形をRasterへ確定してTransformを終了');
-        } else {
-            this.endButton.textContent = 'Transform終了';
-            this.endButton.title = '変更せずTransformを終了（V）';
-            this.endButton.setAttribute('aria-label', '変更せずTransformを終了');
         }
 
         // Dirty display stays neutral: the shared pending projection can remain
@@ -252,7 +251,7 @@ export class RightWorkspaceFrame {
         this.layerModeButton?.setAttribute('aria-pressed', String(!active));
         this.transformModeButton?.classList.toggle('is-selected', active);
         this.transformModeButton?.setAttribute('aria-pressed', String(active));
-        if (!active) this.hint?.classList.remove('is-exit-choice-requested');
+        if (!active) this.actions?.classList.remove('is-exit-choice-requested');
         this.root.classList.toggle('has-transform-workspace', active);
         document.documentElement.classList.toggle('right-workspace-transform-active', active);
         this.drawing.inert = active;
@@ -269,14 +268,13 @@ export class RightWorkspaceFrame {
             this.thumbnail.setAttribute('src', source.getAttribute('src'));
         }
         const layerEditing = this.layerSystem?.transform?.isVKeyPressed === true;
-        this.endButton.hidden = !layerEditing;
         this.cancelButton.hidden = !layerEditing;
         this.selectionHint.hidden = layerEditing;
         this._syncTransformActions(layerEditing);
         this._syncStatusMount();
         if (hadFocus) {
             if (active) this.title.focus({ preventScroll: true });
-            else document.getElementById('layer-transform-tool')?.focus({ preventScroll: true });
+            else this.layerModeButton?.focus({ preventScroll: true });
         }
     }
 

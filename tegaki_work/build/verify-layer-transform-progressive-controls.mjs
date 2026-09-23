@@ -82,15 +82,19 @@ assert.match(styleSource, /::-webkit-slider-thumb \{[\s\S]*?border: 0;[\s\S]*?bo
 assert.match(styleSource, /::-moz-range-thumb \{[\s\S]*?border: 0;[\s\S]*?box-shadow: none;/);
 assert.match(workspaceStyleSource, /\.layer-panel-context-inspector \{[\s\S]*?padding-top: 9px/);
 
-// The terminal stays on the existing V/Escape routes. Presentation changes to
-// a same-row L-sized pair, but KEY confirmation remains a separate operation.
-assert.match(workspaceSource, /className = 'gui-control gui-control--l gui-control--primary'/);
-assert.match(workspaceSource, /textContent = '✓ 確定'/);
+// SOURCE terminal moves into the Transform header; ANIMATE keeps the single
+// pending KEY commit in the existing strip. No lower terminal shell remains.
+assert.match(workspaceSource, /className = 'gui-control gui-control--s transform-terminal-btn transform-terminal-confirm'/);
+assert.match(workspaceSource, /this\.actions\?\.append\(this\.endButton, this\.cancelButton\)/);
 assert.match(workspaceSource, /toggleLayerTransform\?\.\('right-workspace'\)/);
-assert.match(workspaceSource, /textContent = '× 取消'/);
+assert.match(workspaceSource, /this\.endButton\.hidden = !layerEditing \|\| animate/);
+assert.match(domSource, /id: 'layer-transform-key-commit-btn'/);
+assert.match(transformSource, /this\.onCommitTimelineKey\?\.\(\)/);
+assert.match(workspaceSource, /this\.cancelButton\.textContent = '×'/);
 assert.match(workspaceSource, /cancelSourceTransform: true/);
 assert.match(workspaceSource, /cancelled: true/);
-assert.match(workspaceStyleSource, /\.right-workspace-terminal \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+assert.doesNotMatch(workspaceSource, /right-workspace-terminal/);
+assert.doesNotMatch(workspaceStyleSource, /right-workspace-terminal/);
 assert.match(workspaceStyleSource, /\.layer-panel-context-inspector \{[\s\S]*?pointer-events: none/);
 assert.match(workspaceStyleSource, /layer-transform-panel\.is-context-inspector > \* \{[\s\S]*?pointer-events: auto/);
 

@@ -41,8 +41,12 @@ for (const [id, popupName, controls] of popupLaunchers) {
 }
 assert.match(domBuilder, /id: 'image-import-tool'[^\n]*role: 'command'/u,
     'Import remains a one-shot command');
-assert.match(domBuilder, /id: 'layer-transform-tool'[^\n]*role: 'temporary-mode'/u,
-    'V remains a temporary mode');
+assert.doesNotMatch(domBuilder, /id: 'layer-transform-tool'/u,
+    'the obsolete Sidebar V entry is absent');
+assert.doesNotMatch(uiPanels, /'layer-transform-tool'/u,
+    'Sidebar no longer owns Transform button state or click dispatch');
+assert.match(keyboardHandler, /e\.code === 'KeyV'[^\n]*!e\.ctrlKey[\s\S]*?toggleLayerTransform\('transform-shortcut'\)/u,
+    'the keyboard V shortcut retains the shared Transform handler');
 assert.match(domBuilder, /const btn = createElement\('button'[\s\S]*?'data-sidebar-role': tool\.role/u,
     'all entries use a native keyboard-operable button with explicit role metadata');
 assert.match(domBuilder, /isPopupLauncher[\s\S]*?'aria-controls': tool\.controls[\s\S]*?'aria-expanded': 'false'[\s\S]*?'aria-haspopup': 'dialog'/u);
@@ -63,6 +67,14 @@ assert.match(keyboardHandler, /shouldYieldSidebarButtonActivation\(e\)[\s\S]*?\.
 assert.match(keyboardHandler, /if \(shouldYieldSidebarButtonActivation\(e\)\) return;/u);
 assert.match(animationTablePopup, /if \(e\.key === 'Escape' && this\.isVisible\)[\s\S]*?this\.hide\(\)[\s\S]*?stopImmediatePropagation\(\)/u,
     'unhandled Animation Table Escape closes through the same visibility authority');
+assert.doesNotMatch(animationTablePopup, /anim-dock-frame-controls|anim-dock-current-frame/u,
+    'Dock header no longer creates a duplicate Frame selector');
+assert.match(animationTablePopup, /primarySlot\?\.after\(secondary\)/u,
+    'MORE follows the existing play control');
+assert.match(animationTablePopup, /const frameNum = e\.target\.closest\('\.anim-frame-num'\)[\s\S]*?_navigateTimelineFrameTo\(frameIndex/u,
+    'Timeline Frame click retains the navigation owner');
+assert.match(animationTablePopup, /moveTimelineFrameByDelta\(delta, options = \{\}\)/u,
+    'keyboard and wheel keep the shared Frame-step owner');
 
 const popupSources = [
     ['album', albumPopup],
@@ -85,4 +97,4 @@ assert.match(fixture, /aria-pressed="true"/u);
 assert.match(phase, /Gate 0 GO（B Role-aware semantic normalization）/u);
 assert.match(phase, /C 全popup \/ commandのpersistent active化:[^\n]*HOLD/u);
 
-console.log('verify-sidebar-action-semantics: 6 popup launchers, 1 command, 1 temporary mode and all visibility projections OK');
+console.log('verify-sidebar-action-semantics: 6 popup launchers, 1 command, no Sidebar V and all popup visibility projections OK');

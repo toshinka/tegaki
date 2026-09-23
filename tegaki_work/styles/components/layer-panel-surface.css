@@ -222,10 +222,6 @@
     outline-offset: -1px;
 }
 
-.right-workspace-terminal.is-exit-choice-requested {
-    box-shadow: inset 0 0 0 2px var(--active-border);
-}
-
 @media (pointer: coarse) {
     .right-workspace-frame > .right-workspace-mode-switch {
         min-height: 50px;
@@ -245,8 +241,7 @@
 .right-workspace-frame > .layer-panel-container.layer-panel-container--scrollable .layer-panel-items {
     padding-bottom: 8px;
 }
-.right-workspace-target,
-.right-workspace-terminal {
+.right-workspace-target {
     flex: 0 0 auto;
     color: var(--futaba-maroon);
     font-size: 11px;
@@ -275,27 +270,6 @@
 }
 .right-workspace-target img[hidden] { display: none; }
 .right-workspace-target span { min-width: 0; }
-.right-workspace-terminal .gui-control {
-    width: 100%;
-    pointer-events: auto;
-}
-.right-workspace-terminal [hidden] { display: none; }
-.right-workspace-terminal {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px;
-    pointer-events: none;
-}
-.right-workspace-terminal > span {
-    grid-column: 1 / -1;
-    padding: 5px 6px;
-    pointer-events: auto;
-    border: 1px solid var(--ui-control-border);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--futaba-background) 46%, transparent);
-    -webkit-backdrop-filter: var(--ui-control-backdrop);
-    backdrop-filter: var(--ui-control-backdrop);
-}
 .right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector {
     position: static !important;
     inset: auto !important;
@@ -333,7 +307,7 @@
     flex-wrap: wrap;
 }
 
-/* Header and terminal remain fixed while BASIC/WARP content owns the single
+/* Header remains fixed while BASIC/WARP content owns the single
    internal scroll boundary. Empty gaps stay transparent to Canvas input. */
 .right-workspace-frame > .layer-panel-context-inspector .layer-transform-panel.is-context-inspector {
     flex: 1 1 auto;

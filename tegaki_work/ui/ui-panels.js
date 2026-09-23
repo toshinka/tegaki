@@ -152,22 +152,6 @@ export class UIController {
             this.setSidebarPopupExpanded(name, false);
         });
 
-        this.eventBus.on('keyboard:vkey-state-changed', ({ pressed } = {}) => {
-            this.setSidebarModePressed('layer-transform-tool', pressed === true);
-        });
-
-        this.eventBus.on('layer:transform-exit', () => {
-            this.setSidebarModePressed('layer-transform-tool', false);
-        });
-
-        this.eventBus.on('selection:transform-started', () => {
-            this.setSidebarModePressed('layer-transform-tool', true);
-        });
-
-        this.eventBus.on('selection:transform-ended', () => {
-            this.setSidebarModePressed('layer-transform-tool', false);
-        });
-        
         this.eventBus.on('ui:toggle-album', () => {
             this.togglePopup('album');
         });
@@ -700,9 +684,6 @@ export class UIController {
         const toolMap = {
             'quick-access-tool': () => {
                 this.toggleQuickAccessPopup();
-            },
-            'layer-transform-tool': () => {
-                window.KeyboardHandler?.toggleLayerTransform?.('sidebar-button');
             },
             'resize-tool': () => {
                 this.togglePopup('resize');

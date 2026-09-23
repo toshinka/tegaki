@@ -417,7 +417,6 @@
     width: 26px;
     height: 30px;
 }
-.anim-dock-current-frame { min-width: 28px; color: var(--futaba-maroon); font-size: 11px; }
 .anim-dock-states { display: flex; gap: 2px; flex: 0 0 auto; }
 .anim-dock-states button {
     width: 30px;
@@ -525,59 +524,11 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
     height: 23px;
 }
 
-.anim-dock-frame-controls {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    flex: 0 0 auto;
-    min-height: 24px;
-    padding: 1px 3px;
-    border: 1px solid color-mix(in srgb, var(--futaba-maroon) 18%, transparent);
-    border-radius: var(--ui-radius-control);
-    background: color-mix(in srgb, var(--futaba-cream) 70%, transparent);
-    color: var(--futaba-maroon);
-}
-
-.anim-dock-frame-btn {
-    width: 22px;
-    height: 22px;
-    min-width: 22px;
-    padding: 0;
-    border: 1px solid transparent;
-    border-radius: var(--ui-radius-control);
-    background: transparent;
-    color: inherit;
-    font-size: 13px;
-    font-weight: 700;
-    line-height: 1;
-    cursor: pointer;
-}
-
-.anim-dock-frame-btn:hover,
-.anim-dock-frame-btn:focus-visible {
-    border-color: var(--ui-border-hover);
-    background: var(--ui-surface-control-hover);
-}
-
-.anim-dock-frame-btn:focus-visible,
 .anim-dock-window-control:focus-visible,
 .anim-dock-lane-reference:focus-visible,
 .anim-dock-secondary-summary:focus-visible {
     outline: 2px solid var(--active-border);
     outline-offset: 1px;
-}
-
-.anim-dock-current-frame {
-    min-width: 34px;
-    color: var(--futaba-cream);
-    background: var(--futaba-maroon);
-    box-shadow: inset 0 0 0 1px var(--futaba-cream);
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: 700;
-    line-height: 1;
-    text-align: center;
-    white-space: nowrap;
 }
 
 .anim-dock-secondary {
@@ -792,12 +743,6 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
     gap: 3px;
     padding: 0;
     background: transparent;
-}
-
-#animation-table-popup.is-bottom-dock .anim-dock-frame-controls {
-    padding-inline: 2px;
-    border-color: var(--ui-panel-glass-border);
-    background: color-mix(in srgb, var(--ui-panel-glass-surface) 78%, transparent);
 }
 
 #animation-table-popup.is-bottom-dock .anim-table-viewport {

@@ -58,7 +58,7 @@ assert.doesNotMatch(uiPanels, /setupPanelStyles|data-tegaki-panels/u,
 assert.match(uiPanels, /setSidebarPopupExpanded\(popupName, expanded\)[\s\S]*?classList\.toggle\('is-active',[\s\S]*?setAttribute\('aria-expanded'/u,
     'popup launcher visibility projects to active appearance and expanded semantics');
 assert.match(uiPanels, /setSidebarModePressed\(buttonId, pressed\)[\s\S]*?classList\.toggle\('is-active',[\s\S]*?setAttribute\('aria-pressed'/u,
-    'temporary V mode keeps pressed semantics');
+    'generic pressed semantics remain available');
 assert.match(uiPanels, /updateToolUI\(tool\)[\s\S]*?classList\.remove\('active', 'erase-mode'\)[\s\S]*?classList\.add\('active'\)/u,
     'existing Animation Table active projection remains unchanged');
 
@@ -68,7 +68,6 @@ const expectedToolOrder = [
     'export-tool',
     'resize-tool',
     'quick-access-tool',
-    'layer-transform-tool',
     'gif-animation-tool',
     'settings-tool'
 ];
@@ -79,7 +78,7 @@ for (const id of expectedToolOrder) {
     previousIndex = toolIndex;
 }
 assert.match(domBuilder, /id: 'quick-access-tool'[^\n]*role: 'popup-launcher'/u);
-assert.match(domBuilder, /id: 'layer-transform-tool'[^\n]*role: 'temporary-mode'/u);
+assert.doesNotMatch(domBuilder, /id: 'layer-transform-tool'/u);
 assert.match(domBuilder, /const btn = createElement\('button'/u,
     'all Sidebar entries use the accepted native button geometry and focus path');
 

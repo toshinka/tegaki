@@ -70,7 +70,6 @@ export const DOMBuilder = (function() {
             { id: 'resize-tool', icon: 'resize', title: 'リサイズ', role: 'popup-launcher', popupName: 'resize', controls: 'resize-settings' },
             { separator: true },
             { id: 'quick-access-tool', textIcon: 'Q', title: 'Quick Tool Panel (Q)', role: 'popup-launcher', popupName: 'quickAccess', controls: 'quick-access-popup' },
-            { id: 'layer-transform-tool', textIcon: 'V', title: 'レイヤー変形 (V)', role: 'temporary-mode' },
             { separator: true },
             { id: 'gif-animation-tool', icon: 'animation', title: 'アニメテーブル (A)', role: 'popup-launcher', popupName: 'animationTable', controls: 'animation-table-popup' },
             { separator: true },
@@ -463,7 +462,14 @@ export const DOMBuilder = (function() {
             id: 'layer-transform-key-state-label',
             textContent: 'F1 · KEY未設定'
         }));
-        keyStrip.appendChild(keyCommitButton);
+        const keyMain = createElement('div', { className: 'layer-transform-key-main' });
+        keyMain.appendChild(keyCommitButton);
+        keyMain.appendChild(createElement('div', {
+            className: 'layer-transform-key-delete-actions',
+            id: 'layer-transform-key-delete-actions',
+            attributes: { role: 'group', 'aria-label': '現在Frameの変形KEY設定削除', hidden: '' }
+        }));
+        keyStrip.appendChild(keyMain);
         keyStrip.appendChild(createElement('button', {
             className: 'layer-transform-key-step-btn',
             id: 'layer-transform-key-next-btn',
@@ -472,20 +478,6 @@ export const DOMBuilder = (function() {
             attributes: { type: 'button', 'aria-label': '次のFrameへ移動' }
         }));
         panel.appendChild(keyStrip);
-
-        // Layer Transform KEY component management is intentionally below the
-        // bundle-level strip. Rows are populated only when the current Frame
-        // has committed BASIC/WARP components; the Timeline keeps no delete
-        // affordance of its own.
-        panel.appendChild(createElement('div', {
-            className: 'layer-transform-key-components',
-            id: 'layer-transform-key-components',
-            attributes: {
-                role: 'group',
-                'aria-label': '現在FrameのLayer Transform KEY components',
-                hidden: ''
-            }
-        }));
 
         panel.appendChild(modeStrip);
 
@@ -685,7 +677,6 @@ export const DOMBuilder = (function() {
             control.classList.add('gui-control', 'gui-control--s', 'gui-control--icon');
         });
         keyCommitButton.classList.add('gui-control', 'gui-control--m');
-        panel.querySelector('#layer-transform-key-components')?.classList.add('gui-surface', 'gui-surface--compact');
         extensionToggle.classList.add('gui-control', 'gui-control--m', 'gui-control--quiet');
         preciseDetails.classList.add('gui-surface');
         warpExtension.classList.add('gui-surface', 'gui-surface--compact');

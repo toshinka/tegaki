@@ -4,6 +4,7 @@ import { removeLayerTransformComponentKey } from '../system/animation/clip-layer
 
 const source = readFileSync(new URL('../system/layer-transform.js', import.meta.url), 'utf8');
 const popupSource = readFileSync(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8');
+const domSource = readFileSync(new URL('../ui/dom-builder.js', import.meta.url), 'utf8');
 function methodSource(name, next) {
     const start = source.indexOf(`\n    ${name}(`);
     const end = source.indexOf(`\n    ${next}(`, start + 1);
@@ -47,9 +48,9 @@ class FakeElement {
     addEventListener(name, callback) { this.listeners[name] = callback; }
     get buttons() { return this.children.filter(item => item.tagName === 'BUTTON'); }
 }
-const componentPanel = new FakeElement('div');
+const deleteActions = new FakeElement('div');
 globalThis.document = {
-    getElementById(id) { return id === 'layer-transform-key-components' ? componentPanel : null; },
+    getElementById(id) { return id === 'layer-transform-key-delete-actions' ? deleteActions : null; },
     createElement(tag) { return new FakeElement(tag); }
 };
 const syncComponents = new Function(`return ({${methodSource('_syncTimelineKeyComponents', '_syncTimelineKeyStrip')}})._syncTimelineKeyComponents;`)();
@@ -61,30 +62,34 @@ const host = {
 host.sync = syncComponents;
 
 host.sync.call(host, { components: [] }, 'F1');
-assert.equal(componentPanel.hidden, true);
-assert.equal(componentPanel.children.length, 0);
+assert.equal(deleteActions.hidden, true);
+assert.equal(deleteActions.children.length, 0);
 
 host.sync.call(host, {
     components: [{ component: 'basic', key: true }, { component: 'warp', key: true }],
     pending: false
 }, 'F5');
-assert.equal(componentPanel.hidden, false);
-assert.equal(componentPanel.children.length, 2);
-assert.deepEqual(componentPanel.children.map(row => row.dataset.component), ['basic', 'warp']);
-assert.deepEqual(componentPanel.children.map(row => row.buttons[0].attributes['aria-label']), [
+assert.equal(deleteActions.hidden, false);
+assert.equal(deleteActions.children.length, 2);
+assert.deepEqual(deleteActions.children.map(button => button.dataset.component), ['basic', 'warp']);
+assert.deepEqual(deleteActions.children.map(button => button.attributes['aria-label']), [
     'F5のBASIC KEYを削除',
     'F5のWARP KEYを削除'
 ]);
-componentPanel.children[0].buttons[0].listeners.click({ preventDefault() {}, stopPropagation() {} });
+deleteActions.children[0].listeners.click({ preventDefault() {}, stopPropagation() {} });
 assert.deepEqual(host.deleted, ['basic']);
 
 host.sync.call(host, {
     components: [{ component: 'warp', key: true }],
     pending: true
 }, 'F5');
-assert.equal(componentPanel.children.length, 1);
-assert.equal(componentPanel.children[0].buttons[0].disabled, true);
-assert.equal(componentPanel.children[0].buttons[0].title, '先にKEYを確定または取消してください');
+assert.equal(deleteActions.children.length, 1);
+assert.equal(deleteActions.children[0].disabled, true);
+assert.equal(deleteActions.children[0].title, '先にKEYを確定または取消してください');
+
+assert.match(domSource, /keyMain\.appendChild\(keyCommitButton\)/);
+assert.match(domSource, /id: 'layer-transform-key-delete-actions'/);
+assert.doesNotMatch(domSource, /id: 'layer-transform-key-components'/);
 
 assert.match(popupSource, /caf-layer-transform-key-component-delete/);
 const deleteComponent = new Function(
