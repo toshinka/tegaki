@@ -3502,12 +3502,12 @@ export class AnimationTablePopup {
     }
 
     /** RIG Lens は既存CAF選択とstatic Setup正本への薄い接続だけを使用する。 */
-    getRigLensStaticTarget(assetId, layerId) {
+    getRigLensStaticTarget(assetId, layerId, options = {}) {
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
         if (entry?.clip?.assetId !== assetId || this.selectedInternalLayerId !== layerId) {
             return { ok: false, reason: '選択中のCAF／Rasterが変わっています。', bones: [] };
         }
-        return inspectStaticRigAuthoringTarget(this.model.getClipAsset(assetId), layerId);
+        return inspectStaticRigAuthoringTarget(this.model.getClipAsset(assetId), layerId, options);
     }
 
     projectRigLensCanvasPoint(assetId, layerId, event) {
@@ -3529,8 +3529,23 @@ export class AnimationTablePopup {
         });
     }
 
-    getRigLensStaticScreenBones(assetId, layerId) {
+    generateRigLensArtworkBinding(assetId, layerId) {
         const target = this.getRigLensStaticTarget(assetId, layerId);
+        if (!target.ok || this.isPlaying) {
+            return { ok: false, reason: target.reason || '再生中はRIGを編集できません。' };
+        }
+        if (target.bones.length === 0) return { ok: false, reason: '先にRootを配置してください。' };
+        const asset = this.model.getClipAsset(assetId);
+        const layer = asset.internalLayers.find(candidate => candidate?.id === layerId);
+        const entry = this.model.findClipEntry(this.selectedCelId);
+        // The first binding never regenerates or replaces an existing Mesh/Skin.
+        return this._generateRasterBoneSetupForTarget(asset, layer, entry.clip, 'alpha-fit-grid', {
+            allowRegenerate: false
+        });
+    }
+
+    getRigLensStaticScreenBones(assetId, layerId) {
+        const target = this.getRigLensStaticTarget(assetId, layerId, { allowBound: true });
         if (!target.ok || target.bones.length === 0) return [];
         const entry = this.model.findClipEntry(this.selectedCelId);
         const asset = this.model.getClipAsset(assetId);
@@ -3648,15 +3663,25 @@ export class AnimationTablePopup {
         if (context?.targetKind !== 'raster' || this.isPlaying) {
             return { ok: false, reason: 'raster-required' };
         }
-        const asset = context.projection.asset;
-        const layer = context.folder.layer;
+        return this._generateRasterBoneSetupForTarget(
+            context.projection.asset,
+            context.folder.layer,
+            context.projection.entry.clip,
+            generatorMode
+        );
+    }
+
+    _generateRasterBoneSetupForTarget(asset, layer, clip, generatorMode = 'alpha-fit-grid', options = {}) {
         const existingMesh = (asset.meshDefinitions || [])
             .find(mesh => mesh?.targetInternalLayerId === layer.id) || null;
+        if (options.allowRegenerate === false && existingMesh) {
+            return { ok: false, reason: 'mesh-already-exists' };
+        }
         const hasWeightCorrection = [LIMITED_SKIN_CORRECTION_MODE, FIXED_TOPOLOGY_SKIN_WEIGHT_BRUSH_MODE]
             .includes(existingMesh?.generator?.weightCorrectionMode);
         const hasVertexPositionEdit = existingMesh?.generator?.topologyEditMode
             === FIXED_VERTEX_POSITION_EDIT_MODE;
-        const confirmedRegeneration = hasVertexPositionEdit
+        const confirmedRegeneration = options.allowRegenerate === false ? true : hasVertexPositionEdit
             ? window.confirm(hasWeightCorrection
                 ? 'Mesh位置編集とweight補正は再生成で破棄されます。Mesh / Skinを再生成しますか？'
                 : 'Mesh位置編集は再生成で破棄されます。Mesh / Skinを再生成しますか？')
@@ -3680,12 +3705,12 @@ export class AnimationTablePopup {
         this._rigSkinWeightBrushActive = false;
         const folderEffectPlan = createFolderPartRenderPlan(
             asset,
-            context.projection.entry.clip,
+            clip,
             this.model.playback.currentFrame
         );
         const rasterSkinPlan = createRasterSkinRenderPlan(
             asset,
-            context.projection.entry.clip,
+            clip,
             this.model.playback.currentFrame,
             { folderEffectPlan }
         );

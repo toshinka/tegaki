@@ -178,10 +178,18 @@ export class RightWorkspaceFrame {
         this.rigChildButton.className = 'gui-control gui-control--s';
         this.rigChildButton.textContent = '子Boneを追加';
         this.rigChildButton.addEventListener('click', () => this._armRigPlacement('child'));
+        this.rigBindButton = document.createElement('button');
+        this.rigBindButton.type = 'button';
+        this.rigBindButton.className = 'gui-control gui-control--s';
+        this.rigBindButton.textContent = '絵をBoneへ接続';
+        this.rigBindButton.title = '選択中のCAF RasterからAUTO GRIDのMesh / Skin Bindingを作成';
+        this.rigBindButton.addEventListener('click', () => this._bindRigArtwork());
         this.rigToolHint = document.createElement('p');
         this.rigToolHint.setAttribute('role', 'status');
         this.rigToolHint.setAttribute('aria-live', 'polite');
-        this.rigLensPropertiesContent.append(this.rigRootButton, this.rigChildButton, this.rigToolHint);
+        this.rigLensPropertiesContent.append(
+            this.rigRootButton, this.rigChildButton, this.rigBindButton, this.rigToolHint
+        );
         properties.appendChild(this.rigLensPropertiesContent);
 
         view.append(header, this.rigLensWarning, target, structure, properties);
@@ -334,6 +342,14 @@ export class RightWorkspaceFrame {
         this.sync();
     }
 
+    _bindRigArtwork() {
+        if (!this.rigLensActive || !this.rigLensTarget || this.rigPointerGesture) return;
+        const { assetId, internalLayerId } = this.rigLensTarget;
+        const result = this._getRigLensTable()?.generateRigLensArtworkBinding?.(assetId, internalLayerId);
+        this.rigEntryMessage = result?.ok ? '' : (result?.reason || 'Artworkを接続できませんでした。');
+        this.sync();
+    }
+
     _onRigCanvasDown(event) {
         if (!this.rigLensActive || !this.rigPlacementMode || this.rigPointerGesture
             || event.button !== 0 || event.isPrimary === false) return;
@@ -450,7 +466,8 @@ export class RightWorkspaceFrame {
 
     _renderRigLens(target) {
         const rigTarget = target?.rigTarget || null;
-        const matchesTarget = rigTarget?.assetId === this.rigLensTarget?.assetId
+        const matchesTarget = !!this.rigLensTarget?.assetId
+            && rigTarget?.assetId === this.rigLensTarget?.assetId
             && rigTarget?.internalLayerId === this.rigLensTarget?.internalLayerId;
         this.rigLensTargetName.textContent = matchesTarget
             ? `${rigTarget.assetName} / ${rigTarget.layerName}`
@@ -465,14 +482,22 @@ export class RightWorkspaceFrame {
             : this.rigEntryMessage;
         this.rigLensStructureContent.replaceChildren();
         const staticTarget = matchesTarget ? this._getRigLensEditTarget() : null;
-        if (this.rigSelectedBoneId && !staticTarget?.bones?.some(bone => bone.boneId === this.rigSelectedBoneId)) {
+        const displayTarget = matchesTarget
+            ? this._getRigLensTable()?.getRigLensStaticTarget?.(
+                rigTarget.assetId, rigTarget.internalLayerId, { allowBound: true }
+            )
+            : null;
+        if (this.rigSelectedBoneId && !displayTarget?.bones?.some(bone => bone.boneId === this.rigSelectedBoneId)) {
             this.rigSelectedBoneId = null;
         }
         this.rigRootButton.hidden = !staticTarget?.ok || staticTarget.bones.length !== 0;
         this.rigChildButton.hidden = !staticTarget?.ok || staticTarget.bones.length !== 1;
         this.rigChildButton.disabled = this.rigSelectedBoneId !== staticTarget?.bones?.[0]?.boneId;
-        this.rigToolHint.textContent = !staticTarget?.ok
-            ? (staticTarget?.reason || '対象を確認してください。')
+        this.rigBindButton.hidden = !staticTarget?.ok || staticTarget.bones.length === 0 || rigTarget.hasMesh;
+        this.rigToolHint.textContent = rigTarget?.hasMesh
+            ? '既存Mesh / Skinの状態を表示しています。再生成は旧RIGの明示操作を使用してください。'
+            : !staticTarget?.ok
+                ? (staticTarget?.reason || '対象を確認してください。')
             : this.rigPlacementMode === 'root'
                 ? 'CanvasをクリックしてRootを配置。dragで長さと方向を指定。Escで中止。'
                 : this.rigPlacementMode === 'child'
@@ -493,10 +518,17 @@ export class RightWorkspaceFrame {
         const status = document.createElement('p');
         status.textContent = `状態: ${rigTarget.status || 'RIG未設定'}`;
         this.rigLensStructureContent.appendChild(status);
-        if (staticTarget?.ok && staticTarget.bones.length) {
+        const artwork = document.createElement('p');
+        artwork.textContent = rigTarget.hasMesh
+            ? (rigTarget.meshState === 'current' && rigTarget.weightState === 'connected'
+                ? `Artwork: 接続済み · ${rigTarget.bones?.length || 0} Bone`
+                : `Artwork: Mesh / Skin要確認 · ${rigTarget.meshState} / ${rigTarget.weightState}`)
+            : `Artwork: 未接続 · Asset内Bone ${displayTarget?.bones?.length || 0}件`;
+        this.rigLensStructureContent.appendChild(artwork);
+        if (displayTarget?.ok && displayTarget.bones.length) {
             const list = document.createElement('ul');
             list.setAttribute('aria-label', '静的Bone構造');
-            staticTarget.bones.forEach(bone => {
+            displayTarget.bones.forEach(bone => {
                 const item = document.createElement('li');
                 const button = document.createElement('button');
                 button.type = 'button';

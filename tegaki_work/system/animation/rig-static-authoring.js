@@ -7,7 +7,7 @@ import { invertTransformMatrixPoint } from '../transform-math.js';
 
 const finitePoint = point => Number.isFinite(point?.x) && Number.isFinite(point?.y);
 
-export function inspectStaticRigAuthoringTarget(asset, layerId) {
+export function inspectStaticRigAuthoringTarget(asset, layerId, options = {}) {
     if (!asset || !layerId) return { ok: false, reason: 'CAFとRasterを選択してください。', bones: [] };
     const rasters = (asset.internalLayers || []).filter(layer => layer?.type === 'raster' && !layer.isBackground);
     if (rasters.length !== 1 || rasters[0]?.id !== layerId || rasters[0]?.parentLayerId != null) {
@@ -15,7 +15,8 @@ export function inspectStaticRigAuthoringTarget(asset, layerId) {
     }
     const rig = asset.rigDefinition;
     if ((rig?.parts?.length || 0) > 0 || (rig?.rigidBindings?.length || 0) > 0
-        || (asset.meshDefinitions?.length || 0) > 0 || (asset.skinBindings?.length || 0) > 0
+        || (options.allowBound !== true
+            && ((asset.meshDefinitions?.length || 0) > 0 || (asset.skinBindings?.length || 0) > 0))
         || (rig?.warpAnchorConstraints?.length || 0) > 0) {
         return { ok: false, reason: '既存のBinding／Mesh／複合RIGはこの初回編集面では変更できません。', bones: [] };
     }
