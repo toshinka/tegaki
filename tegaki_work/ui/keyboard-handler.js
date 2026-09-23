@@ -888,7 +888,7 @@ export const KeyboardHandler = (function() {
         return layerManager?.canStartTransformEditSession?.() === true;
     }
 
-    function toggleLayerTransform(source = 'transform-control') {
+    function toggleLayerTransform(source = 'transform-control', options = {}) {
         const eventBus = TegakiEventBus;
         if (!eventBus) return false;
 
@@ -900,7 +900,9 @@ export const KeyboardHandler = (function() {
         const animationTable = window.PopupManager?.get?.('animationTable')
             || window.coreEngine?.popupManager?.get?.('animationTable');
         if (nextVKeyState) {
-            animationTable?.setMotionWindowOpen?.(false);
+            if (options.preserveMotionWindow !== true) {
+                animationTable?.setMotionWindowOpen?.(false);
+            }
             if (animationTable?.isSelectedWorkingRestoreBlocked?.()) {
                 animationTable?._showWorkingRestoreBlockedReason?.();
                 return false;

@@ -318,6 +318,124 @@
     pointer-events: auto;
 }
 
+.right-workspace-frame > .layer-panel-context-inspector
+    .layer-transform-panel.is-context-inspector[hidden] {
+    display: none !important;
+}
+
+.right-workspace-rig-entry {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 3px 0;
+    pointer-events: none;
+}
+.right-workspace-rig-entry[hidden] {
+    display: none;
+}
+.right-workspace-rig-entry > button {
+    flex: 0 0 auto;
+    pointer-events: auto;
+}
+.right-workspace-rig-entry-message {
+    min-width: 0;
+    color: var(--futaba-medium);
+    font-size: 10px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    pointer-events: auto;
+}
+.right-workspace-rig-entry-message[hidden] {
+    display: none;
+}
+
+.right-workspace-rig-lens {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    padding: 0 4px 8px;
+    overflow: auto;
+    color: var(--futaba-maroon);
+    background: transparent;
+    pointer-events: none;
+}
+.right-workspace-rig-lens[hidden] {
+    display: none;
+}
+.right-workspace-rig-lens-header {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    pointer-events: none;
+}
+.right-workspace-rig-lens-header h2 {
+    min-width: 0;
+    margin: 0;
+    color: var(--futaba-maroon);
+    font-size: 12px;
+    line-height: 1.3;
+    pointer-events: auto;
+}
+.right-workspace-rig-lens-header button {
+    flex: 0 0 auto;
+    pointer-events: auto;
+}
+.right-workspace-rig-lens-region {
+    display: grid;
+    flex: 0 0 auto;
+    gap: 4px;
+    min-width: 0;
+    padding: 6px 2px;
+    border-top: 1px solid color-mix(in srgb, var(--futaba-maroon) 20%, transparent);
+    pointer-events: auto;
+}
+.right-workspace-rig-lens-region h3 {
+    margin: 0;
+    color: var(--futaba-light-maroon);
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    line-height: 1.3;
+}
+.right-workspace-rig-lens-region p,
+.right-workspace-rig-lens-region li,
+.right-workspace-rig-lens-region strong,
+.right-workspace-rig-lens-region span {
+    margin: 0;
+    color: var(--futaba-maroon);
+    font-size: 11px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+.right-workspace-rig-lens-target > *:not(h3) {
+    display: block;
+}
+.right-workspace-rig-lens-structure ul {
+    display: grid;
+    gap: 3px;
+    margin: 0;
+    padding-inline-start: 16px;
+}
+.right-workspace-rig-lens-warning {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 5px 6px;
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    line-height: 1.4;
+    border-inline-start: 2px solid var(--active-border);
+    pointer-events: auto;
+}
+.right-workspace-rig-lens-warning[hidden] {
+    display: none;
+}
+
 .right-panel .layer-controls-row {
     background: var(--ui-layer-surface-rail);
     color: var(--ui-rail-foreground);

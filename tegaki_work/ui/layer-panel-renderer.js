@@ -1022,15 +1022,55 @@ export class LayerPanelRenderer {
             const targetLabel = targetLayer
                 ? (targetLayer.name || targetLayer.label || targetLayer.id || 'Layer')
                 : '対象未選択';
+            const rigProjection = cafContext.rigProjection;
+            const isRootRaster = targetLayer?.type === 'raster'
+                && targetLayer.isBackground !== true
+                && targetLayer.parentLayerId == null;
+            const projectedBones = rigProjection?.hasMesh === true
+                ? rigProjection.skinBones
+                : (rigProjection?.boundBone ? [rigProjection.boundBone] : []);
             return {
-                label: `${assetLabel} / ${targetLabel}`
+                label: `${assetLabel} / ${targetLabel}`,
+                rigTarget: {
+                    assetId: cafContext.asset.id,
+                    internalLayerId: targetLayer?.id || null,
+                    assetName: assetLabel,
+                    layerName: targetLabel,
+                    eligible: isRootRaster,
+                    reason: !targetLayer
+                        ? 'CAF内のRasterを選択してください。'
+                        : (targetLayer.type !== 'raster'
+                            ? 'RIG SETUPの初期対象はCAF内のRasterです。'
+                            : (targetLayer.isBackground === true
+                                ? '背景RasterはRIG対象にできません。'
+                                : (targetLayer.parentLayerId != null
+                                    ? 'CAF直下のRasterを選択してください。'
+                                    : ''))),
+                    status: rigProjection?.label || '対象未選択',
+                    hasMesh: rigProjection?.hasMesh === true,
+                    meshState: rigProjection?.bendSetup?.meshState || 'missing',
+                    meshGeneratorLabel: rigProjection?.meshGeneratorLabel || null,
+                    weightState: rigProjection?.bendSetup?.weightState || 'missing',
+                    unboundBoneCount: rigProjection?.hasMesh === true
+                        ? 0
+                        : (rigProjection?.unboundBones?.length || 0),
+                    bones: projectedBones.map(bone => ({
+                        boneId: bone.boneId,
+                        name: bone.name || bone.boneId,
+                        parentBoneId: bone.parentBoneId || null
+                    }))
+                }
             };
         }
 
         const activeLayer = this.layerSystem?.getActiveLayer?.();
         const layerData = activeLayer?.layerData || null;
         return {
-            label: layerData?.name || layerData?.id || 'Active Layer'
+            label: layerData?.name || layerData?.id || 'Active Layer',
+            rigTarget: {
+                eligible: false,
+                reason: 'CAF内のRasterを選択してからRIGを編集してください。'
+            }
         };
     }
     _getLegacyLayerCardInteractiveSelector(extraSelector = '') {
