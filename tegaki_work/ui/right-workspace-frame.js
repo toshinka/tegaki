@@ -11,6 +11,35 @@ import { isTransformTimelineKeyTarget } from '../system/animation/transform-edit
 import { resolveBoneRotationHandleDrag } from '../system/animation/part-rig.js';
 import { rigPivotOverlay } from './rig-pivot-overlay.js';
 
+const RIG_PART_OPERATION_MESSAGES = Object.freeze({
+    'asset-not-found': '対象CAFが見つかりません。',
+    'layer-not-found': 'CAF内の対象Layerが見つかりません。',
+    'part-target-not-found': 'CAF内の対象Layerが見つかりません。',
+    'part-target-type-unsupported': 'このLayer種別はPartにできません。',
+    'part-target-background-unsupported': '背景LayerはPartにできません。',
+    'raster-part-root-required': 'CAF階層の子RasterはPartにできません。',
+    'rig-mode-conflict': 'Mesh/Skinと競合するため、このRasterはPartにできません。',
+    'clipping-boundary-split': 'Clipping境界に分割があるため登録できません。',
+    'layer-deformer-conflict': '既存WARPがあるためPartにできません。',
+    'layer-transform-conflict': '既存Layer MotionがあるためPartにできません。',
+    'folder-transform-conflict': '既存Folder Motionと競合するためPartにできません。',
+    'part-motion-exists': '既存Part Motion KEYがあるため静的Setupを編集できません。',
+    'invalid-rig-definition': 'RIG構造を検証できないため操作できません。',
+    'invalid-part-pivot': 'PIVOT座標が不正なため登録できません。',
+    'rig-cycle': '循環する親子関係は設定できません。',
+    'self-parent': '自分自身は親に指定できません。',
+    'parent-part-not-found': '親Partが見つかりません。',
+    'parent-part-target-invalid': '同じCAFの有効なPartを親に指定してください。',
+    'non-invertible-parent-bind': 'この親ではArtwork位置を保持できません。',
+    'non-decomposable-bind': 'Bind位置を安全に保持できません。'
+});
+
+function rigPartOperationMessage(result, fallback) {
+    const reason = result?.reason;
+    if (typeof reason !== 'string' || reason.length === 0) return fallback;
+    return RIG_PART_OPERATION_MESSAGES[reason] || reason;
+}
+
 export class RightWorkspaceFrame {
     constructor(container, getTarget, layerSystem) {
         this.root = container?.closest?.('.right-panel');
@@ -261,17 +290,8 @@ export class RightWorkspaceFrame {
         this.rigPartFrameLabel = document.createElement('span');
         this.rigPartFrameLabel.className = 'right-workspace-rig-frame-label';
         this.rigPartFrameLabel.setAttribute('aria-live', 'polite');
-        this.rigPartFrameNext = document.createElement('button');
-        this.rigPartFrameNext.type = 'button';
-        this.rigPartFrameNext.className = 'gui-control gui-control--s';
-        this.rigPartFrameNext.textContent = '›';
-        this.rigPartFrameNext.setAttribute('aria-label', '次のFrame');
-        this.rigPartFrameNext.addEventListener('click', () => this._navigateRigPartFrame(1));
-        this.rigPartFrameRow.append(
-            this.rigPartFramePrevious, this.rigPartFrameLabel, this.rigPartFrameNext,
-            this.rigCancelPoseButton
-        );
-        this.rigPartFrameRow.addEventListener('wheel', event => {
+        this.rigPartFrameLabel.title = '対象Clipの現在Frame。ホイールで1Frameずつ移動';
+        this.rigPartFrameLabel.addEventListener('wheel', event => {
             event.preventDefault();
             event.stopPropagation();
             if (event.deltaY === 0) return;
@@ -282,6 +302,16 @@ export class RightWorkspaceFrame {
             }
             this._navigateRigPartFrame(event.deltaY < 0 ? -1 : 1);
         }, { passive: false });
+        this.rigPartFrameNext = document.createElement('button');
+        this.rigPartFrameNext.type = 'button';
+        this.rigPartFrameNext.className = 'gui-control gui-control--s';
+        this.rigPartFrameNext.textContent = '›';
+        this.rigPartFrameNext.setAttribute('aria-label', '次のFrame');
+        this.rigPartFrameNext.addEventListener('click', () => this._navigateRigPartFrame(1));
+        this.rigPartFrameRow.append(
+            this.rigPartFramePrevious, this.rigPartFrameLabel, this.rigPartFrameNext,
+            this.rigCancelPoseButton
+        );
         this.rigRootButton = document.createElement('button');
         this.rigRootButton.type = 'button';
         this.rigRootButton.className = 'gui-control gui-control--s';
@@ -300,23 +330,23 @@ export class RightWorkspaceFrame {
         this.rigBindButton.addEventListener('click', () => this._bindRigArtwork());
         this.rigPartRegisterButton = document.createElement('button');
         this.rigPartRegisterButton.type = 'button';
-        this.rigPartRegisterButton.className = 'gui-control gui-control--s';
-        this.rigPartRegisterButton.textContent = 'Part登録';
+        this.rigPartRegisterButton.className = 'gui-control gui-control--s right-workspace-rig-part-create';
+        this.rigPartRegisterButton.textContent = 'Partを作成';
+        this.rigPartRegisterButton.setAttribute('aria-label', '選択RasterからPartを作成');
         this.rigPartRegisterButton.addEventListener('click', () => this._registerRigPart());
         this.rigPartParentLabel = document.createElement('label');
         this.rigPartParentLabel.className = 'right-workspace-rig-part-parent';
         this.rigPartParentLabel.textContent = '親 ';
         this.rigPartParentSelect = document.createElement('select');
         this.rigPartParentSelect.className = 'gui-control gui-control--s';
-        this.rigPartParentSelect.setAttribute('aria-label', '選択Partの親');
+        this.rigPartParentSelect.setAttribute('aria-label', '選択Partの親Part');
         this.rigPartParentSelect.addEventListener('change', () => this._setRigPartParent());
         this.rigPartParentLabel.appendChild(this.rigPartParentSelect);
         this.rigToolHint = document.createElement('p');
         this.rigToolHint.setAttribute('role', 'status');
         this.rigToolHint.setAttribute('aria-live', 'polite');
         this.rigLensPropertiesContent.append(
-            this.rigRootButton, this.rigChildButton, this.rigBindButton,
-            this.rigPartRegisterButton, this.rigPartParentLabel, this.rigToolHint
+            this.rigRootButton, this.rigChildButton, this.rigBindButton, this.rigToolHint
         );
         properties.appendChild(this.rigLensPropertiesContent);
 
@@ -567,8 +597,10 @@ export class RightWorkspaceFrame {
 
     _registerRigPart() {
         const ids = this.rigLensTarget;
-        const result = this._getRigLensTable()?.registerRigLensPart?.(ids.assetId, this.rigSelectedPartId);
-        this.rigEntryMessage = result?.ok ? '' : (result?.reason || 'Partを登録できませんでした。');
+        const result = ids
+            ? this._getRigLensTable()?.registerRigLensPart?.(ids.assetId, this.rigSelectedPartId)
+            : null;
+        this.rigEntryMessage = result?.ok ? '' : rigPartOperationMessage(result, 'Partを作成できませんでした。');
         this.sync();
     }
 
@@ -685,7 +717,7 @@ export class RightWorkspaceFrame {
             ? this._getRigLensTable()?.setRigLensPartPivot?.(gesture.assetId, partId, point)
             : this._getRigLensTable()?.registerRigLensPart?.(gesture.assetId, partId, point));
         this.rigEntryMessage = saved?.ok
-            ? '' : (saved?.reason || 'PIVOTを保存できませんでした。');
+            ? '' : rigPartOperationMessage(saved, 'PIVOTを保存できませんでした。');
         this.sync();
     }
 
@@ -694,7 +726,8 @@ export class RightWorkspaceFrame {
             this.rigLensTarget.assetId, this.rigSelectedPartId,
             this.rigPartParentSelect.value || null
         );
-        this.rigEntryMessage = result?.ok ? '' : (result?.reason || '親Partを設定できませんでした。');
+        this.rigEntryMessage = result?.ok
+            ? '' : rigPartOperationMessage(result, '親Partを設定できませんでした。');
         this.sync();
     }
 
