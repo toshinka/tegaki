@@ -4369,7 +4369,7 @@ export class AnimationTablePopup {
         };
     }
 
-    setRigLensStaticBoneParent(assetId, layerId, boneId, parentBoneId) {
+    setRigLensStaticBoneParent(assetId, layerId, boneId, parentBoneId, options = {}) {
         const target = this.getRigLensStaticEditTarget(assetId, layerId);
         if (!target.ok) return target;
         const bone = target.bones.find(candidate => candidate.boneId === boneId) || null;
@@ -4390,13 +4390,19 @@ export class AnimationTablePopup {
         }
         const asset = this.model.getClipAsset(assetId);
         const beforeState = this._captureInternalLayerHistoryState(asset);
-        const result = this.model.setClipAssetRigBoneParent(assetId, boneId, nextParentId);
+        const result = this.model.setClipAssetRigBoneParent(
+            assetId, boneId, nextParentId, {
+                appendToSiblingEnd: options.appendToSiblingEnd === true
+            }
+        );
         if (!result.ok) return result;
         if (result.changed) {
             this._recordInternalLayerHistory(asset, beforeState, 'caf-rig-bone-parent', {
                 type: 'caf-rig-bone-parent', assetId, layerId,
                 boneId, parentBoneId: result.bone.parentBoneId || null,
-                source: 'right-workspace-rig-lens'
+                source: options.appendToSiblingEnd === true
+                    ? 'right-workspace-rig-hierarchy-board-dnd'
+                    : 'right-workspace-rig-lens'
             });
             this._invalidateSnapshotTextureCache();
             this._animationPreviewKey = null;

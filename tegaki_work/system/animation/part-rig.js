@@ -723,7 +723,7 @@ function decomposeRigMatrix(matrix) {
 }
 
 /** parentBoneIdだけを更新し、現在のBind world matrixを保つ。 */
-export function updateRigBoneParent(rigDefinition, boneId, parentBoneId = null) {
+export function updateRigBoneParent(rigDefinition, boneId, parentBoneId = null, options = {}) {
     const normalized = normalizeRigDefinition(rigDefinition);
     if (!normalized || !Array.isArray(normalized.bones)) {
         return { ok: false, reason: 'invalid-rig-definition', value: normalized, bone: null };
@@ -783,16 +783,36 @@ export function updateRigBoneParent(rigDefinition, boneId, parentBoneId = null) 
         parentBoneId: parentBoneId || null,
         bindTransform
     };
+    let bones = normalized.bones.map(candidate => (
+        candidate?.boneId === boneId ? updatedBone : candidate
+    ));
+    if (options.appendToSiblingEnd === true) {
+        const movedIndex = bones.findIndex(candidate => candidate?.boneId === boneId);
+        const moved = bones[movedIndex];
+        bones = bones.filter(candidate => candidate?.boneId !== boneId);
+        const siblings = bones.filter(candidate => (
+            (candidate?.parentBoneId || null) === (parentBoneId || null)
+        ));
+        const lastSibling = siblings.at(-1);
+        const parentIndex = parentBoneId
+            ? bones.findIndex(candidate => candidate?.boneId === parentBoneId)
+            : -1;
+        const lastSiblingIndex = lastSibling
+            ? bones.findIndex(candidate => candidate?.boneId === lastSibling.boneId)
+            : -1;
+        const insertionIndex = lastSiblingIndex >= 0
+            ? lastSiblingIndex + 1
+            : Math.max(0, parentIndex + 1);
+        bones.splice(insertionIndex, 0, moved);
+    }
     return {
         ok: true,
         changed: true,
         value: {
             ...normalized,
-            bones: normalized.bones.map(candidate => (
-                candidate?.boneId === boneId ? updatedBone : candidate
-            ))
+            bones
         },
-        bone: updatedBone
+        bone: bones.find(candidate => candidate?.boneId === boneId) || updatedBone
     };
 }
 

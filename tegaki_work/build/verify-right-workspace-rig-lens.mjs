@@ -34,8 +34,18 @@ assert.match(frame, /rigRootButton\.addEventListener\('click',[\s\S]*?_createRig
     'the Root action creates through the existing CAF registration owner');
 assert.match(frame, /_createRigStructureEditorDialog\(\)[\s\S]*?document\.createElement\('dialog'\)[\s\S]*?showModal\(\)/u,
     'expanded structure editing is a native modal that blocks Canvas input behind it');
-assert.match(frame, /＋ 子Bone[\s\S]*?＋ 兄弟Bone[\s\S]*?配置へ進む/u,
-    'the editor exposes child, sibling, and Canvas placement handoff actions');
+assert.match(frame, /title\.textContent = '骨格を組み立てる'[\s\S]*?rigStructureAddBoneButton\.textContent = '＋ Bone'[\s\S]*?right-workspace-rig-structure-board-viewport/u,
+    'the expanded editor centers the Bone card board and exposes one primary add action');
+assert.doesNotMatch(frame, /rigStructureChildButton|rigStructureSiblingButton/u,
+    'the expanded editor no longer requires child/sibling action sequencing');
+assert.match(frame, /_getRigHierarchyCardTree\(bones\)[\s\S]*?parentBoneId[\s\S]*?number: parts\.join\('-'\)/u,
+    'hierarchy numbers derive from parent links');
+assert.match(frame, /serialized bones\[\] enumeration as sibling display order/u,
+    'sibling display order reuses the existing serialized bones array order');
+assert.match(frame, /_onRigHierarchyCardDragStart[\s\S]*?_onRigHierarchyCardDragOver[\s\S]*?_onRigHierarchyCardDrop/u,
+    'cards expose source feedback, guarded target feedback, and a real reparent drop handler');
+assert.match(frame, /setRigLensStaticBoneParent\?\.[\s\S]*?appendToSiblingEnd: true/u,
+    'a valid card drop uses the existing CAF parent owner and places the bone last among siblings');
 assert.match(frame, /rigBoneParentSelect\.addEventListener\('change',[\s\S]*?_setRigLensBoneParent/u,
     'the expanded editor reuses the guarded parent-change selector');
 assert.match(frame, /childrenByParent[\s\S]*?parentBoneId[\s\S]*?item\.appendChild\(makeNodes\(/u,

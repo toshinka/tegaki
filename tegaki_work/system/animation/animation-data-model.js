@@ -1351,10 +1351,10 @@ export class TimelineModel {
         return { ...update, asset, bone: validation.value.bones.find(bone => bone.boneId === boneId) };
     }
 
-    setClipAssetRigBoneParent(assetId, boneId, parentBoneId = null) {
+    setClipAssetRigBoneParent(assetId, boneId, parentBoneId = null, options = {}) {
         const asset = this.getClipAsset(assetId);
         if (!asset) return { ok: false, reason: 'asset-not-found' };
-        const update = updateRigBoneParent(asset.rigDefinition, boneId, parentBoneId);
+        const update = updateRigBoneParent(asset.rigDefinition, boneId, parentBoneId, options);
         if (!update.ok) return update;
         const validation = validateRigDefinition(update.value, asset.internalLayers);
         if (!validation.ok) {
