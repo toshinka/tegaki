@@ -3545,6 +3545,23 @@ export class AnimationTablePopup {
         return target.ok ? this._screenToRigProject(event, target.entry) : null;
     }
 
+    projectRigLensPartMotionLocalPoint(assetId, partId, event) {
+        const target = this.getRigLensPartMotionTarget(assetId, partId);
+        if (!target.ok) return null;
+        const projectPoint = this._screenToRigProject(event, target.entry);
+        if (!projectPoint) return null;
+        if (!target.part.parentPartId) return projectPoint;
+
+        const previewClip = this._getRigLensPreviewClip(target.entry.clip, target.frame);
+        const evaluated = evaluateRigidParts(target.asset, previewClip, target.frame);
+        const parentPose = evaluated.ok
+            ? evaluated.poseByPartId.get(target.part.parentPartId) || null
+            : null;
+        return parentPose?.worldMatrix
+            ? invertTransformMatrixPoint(parentPose.worldMatrix, projectPoint.x, projectPoint.y)
+            : null;
+    }
+
     projectRigLensPartBindPoint(assetId, partId, event) {
         const target = this.getRigLensPartTarget(assetId);
         if (!target.ok || !target.staticSetupAllowed) return null;
@@ -3653,6 +3670,162 @@ export class AnimationTablePopup {
         return { ...target, ok: true, part, localFrame, sampled,
             key: getRigPartKeyAtFrame(target.entry.clip.rigMotion, partId, localFrame),
             preview };
+    }
+
+    getRigLensPartIkChainContext(assetId, effectorPartId) {
+        const effectorTarget = this.getRigLensPartMotionTarget(assetId, effectorPartId);
+        if (!effectorTarget.ok) return { ok: false, reason: effectorTarget.reason };
+        const partsById = new Map(effectorTarget.parts.map(part => [part.partId, part]));
+        const effectorPart = partsById.get(effectorPartId);
+        const jointPart = partsById.get(effectorPart?.parentPartId) || null;
+        const rootPart = partsById.get(jointPart?.parentPartId) || null;
+        if (!rootPart || !jointPart || !effectorPart) {
+            return { ok: false, reason: 'IKにはRoot・中間・手先の親子Partが必要です。' };
+        }
+        const draft = this._rigLensPartPoseDraft;
+        if (draft && (draft.assetId !== assetId
+            || draft.clipId !== effectorTarget.entry.clip.id
+            || draft.frame !== effectorTarget.frame)) {
+            return { ok: false, reason: '別Frameの未確定Poseを先に確定または取消してください。' };
+        }
+        const rootTarget = this.getRigLensPartMotionTarget(assetId, rootPart.partId);
+        const jointTarget = this.getRigLensPartMotionTarget(assetId, jointPart.partId);
+        if (!rootTarget.ok || !jointTarget.ok) {
+            return { ok: false, reason: rootTarget.reason || jointTarget.reason };
+        }
+        if ([rootTarget, jointTarget].some(target => target.entry.clip.id !== effectorTarget.entry.clip.id
+            || target.frame !== effectorTarget.frame)) {
+            return { ok: false, reason: '同じCAF・FrameのPartを選択してください。' };
+        }
+
+        const previewClip = this._getRigLensPreviewClip(effectorTarget.entry.clip, effectorTarget.frame);
+        const evaluated = evaluateRigidParts(effectorTarget.asset, previewClip, effectorTarget.frame);
+        if (!evaluated.ok) return { ok: false, reason: 'Partの現在Poseを評価できません。' };
+        const poseByPartId = evaluated.poseByPartId;
+        const chain = [rootPart, jointPart, effectorPart].map(part => ({
+            part,
+            pose: poseByPartId.get(part.partId) || null
+        }));
+        if (chain.some(item => !item.pose?.worldMatrix)) {
+            return { ok: false, reason: 'Root・中間・手先のPoseが揃っていません。' };
+        }
+        const isPositiveUniformTransform = matrix => {
+            if (!matrix || ![matrix.a, matrix.b, matrix.c, matrix.d, matrix.tx, matrix.ty]
+                .every(Number.isFinite)) return false;
+            const scaleX = Math.hypot(matrix.a, matrix.b);
+            const scaleY = Math.hypot(matrix.c, matrix.d);
+            const dot = matrix.a * matrix.c + matrix.b * matrix.d;
+            const determinant = matrix.a * matrix.d - matrix.b * matrix.c;
+            return scaleX > TWO_BONE_IK_EPSILON && scaleY > TWO_BONE_IK_EPSILON
+                && Math.abs(scaleX - scaleY) <= 1e-5 * Math.max(1, scaleX, scaleY)
+                && Math.abs(dot) <= 1e-5 * Math.max(1, scaleX * scaleY)
+                && determinant > 0;
+        };
+        const isPositiveUniformScale = transform => {
+            const scaleX = Number(transform?.scaleX);
+            const scaleY = Number(transform?.scaleY);
+            return Number.isFinite(scaleX) && Number.isFinite(scaleY)
+                && scaleX > TWO_BONE_IK_EPSILON && scaleY > TWO_BONE_IK_EPSILON
+                && Math.abs(scaleX - scaleY) <= 1e-6 * Math.max(1, scaleX, scaleY);
+        };
+        if (chain.some(({ pose }) => !isPositiveUniformScale(pose.localTransform)
+            || !isPositiveUniformTransform(pose.worldMatrix))) {
+            return { ok: false, reason: '非一様・鏡像・shear変形を含むPart chainではIKを使用できません。' };
+        }
+        let ancestorId = rootPart.parentPartId || null;
+        let ancestorCount = 0;
+        while (ancestorId) {
+            if (++ancestorCount > effectorTarget.parts.length) {
+                return { ok: false, reason: 'Part階層が循環しています。' };
+            }
+            const ancestorPart = partsById.get(ancestorId);
+            const ancestorPose = poseByPartId.get(ancestorId);
+            if (!ancestorPart || !ancestorPose || !isPositiveUniformTransform(ancestorPose.worldMatrix)) {
+                return { ok: false, reason: 'Root側の親に非一様・鏡像・shear変形があります。' };
+            }
+            ancestorId = ancestorPart.parentPartId || null;
+        }
+
+        const pointFor = ({ part, pose }) => applyTransformMatrix(
+            pose.worldMatrix,
+            Number(part.bindTransform?.pivotX),
+            Number(part.bindTransform?.pivotY)
+        );
+        const points = {
+            root: pointFor(chain[0]),
+            joint: pointFor(chain[1]),
+            effector: pointFor(chain[2])
+        };
+        if (!Object.values(points).every(point => Number.isFinite(point?.x) && Number.isFinite(point?.y))) {
+            return { ok: false, reason: 'PartのPIVOT座標が不正です。' };
+        }
+        const lengthA = Math.hypot(points.joint.x - points.root.x, points.joint.y - points.root.y);
+        const lengthB = Math.hypot(points.effector.x - points.joint.x, points.effector.y - points.joint.y);
+        if (lengthA <= TWO_BONE_IK_EPSILON || lengthB <= TWO_BONE_IK_EPSILON) {
+            return { ok: false, reason: 'IKには長さが0でない2本のPartが必要です。' };
+        }
+        const cross = (points.joint.x - points.root.x) * (points.effector.y - points.joint.y)
+            - (points.joint.y - points.root.y) * (points.effector.x - points.joint.x);
+        const bendSign = Number.isFinite(cross) && Math.abs(cross) > TWO_BONE_IK_EPSILON
+            ? (cross >= 0 ? 1 : -1) : 1;
+        const motionFor = target => ({ ...(target.preview?.transform || target.sampled) });
+        return {
+            ok: true,
+            assetId,
+            clipId: effectorTarget.entry.clip.id,
+            frame: effectorTarget.frame,
+            localFrame: effectorTarget.localFrame,
+            rootPartId: rootPart.partId,
+            jointPartId: jointPart.partId,
+            effectorPartId,
+            points,
+            lengthA,
+            lengthB,
+            bendSign,
+            rootTransform: motionFor(rootTarget),
+            jointTransform: motionFor(jointTarget),
+            rootPreview: rootTarget.preview?.transform ? { ...rootTarget.preview.transform } : null,
+            jointPreview: jointTarget.preview?.transform ? { ...jointTarget.preview.transform } : null
+        };
+    }
+
+    previewRigLensPartIkTarget(assetId, effectorPartId, targetPoint, basePose) {
+        const context = this.getRigLensPartIkChainContext(assetId, effectorPartId);
+        if (!context.ok) return context;
+        if (!basePose || basePose.assetId !== assetId
+            || basePose.clipId !== context.clipId || basePose.frame !== context.frame
+            || basePose.effectorPartId !== effectorPartId
+            || basePose.rootPartId !== context.rootPartId
+            || basePose.jointPartId !== context.jointPartId) {
+            return { ok: false, reason: 'IK操作中に対象CAF・Frame・Part chainが変わりました。' };
+        }
+        const solution = solveFixedLengthTwoBoneIk({
+            ...basePose.points,
+            target: targetPoint,
+            bendSign: basePose.bendSign
+        });
+        if (!solution.ok) return { ...solution, reason: 'IK targetを解決できません。' };
+        const rootTransform = {
+            ...basePose.rootTransform,
+            rotation: basePose.rootTransform.rotation + solution.rootRotationDelta
+        };
+        const jointTransform = {
+            ...basePose.jointTransform,
+            rotation: basePose.jointTransform.rotation + solution.jointRotationDelta
+        };
+        const rootBefore = context.rootPreview || context.rootTransform;
+        const rootResult = this.previewRigLensPartPose(assetId, context.rootPartId, rootTransform);
+        if (!rootResult.ok) return rootResult;
+        const jointResult = this.previewRigLensPartPose(assetId, context.jointPartId, jointTransform);
+        if (!jointResult.ok) {
+            if (context.rootPreview) {
+                this.previewRigLensPartPose(assetId, context.rootPartId, rootBefore);
+            } else {
+                this.discardRigLensPartPosePreview(assetId, context.rootPartId);
+            }
+            return jointResult;
+        }
+        return { ok: true, ...solution, rootTransform, jointTransform };
     }
 
     previewRigLensPartPose(assetId, partId, transform) {

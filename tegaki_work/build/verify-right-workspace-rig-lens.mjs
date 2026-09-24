@@ -31,6 +31,22 @@ assert.match(frame, /this\.rigLensTarget = \{[\s\S]*?assetId: target\.assetId[\s
     'entry retains only the CAF Asset and internal Raster identity for this view handoff');
 assert.match(frame, /Rootを配置/u, 'RIG lens exposes Root placement');
 assert.match(frame, /子Boneを追加/u, 'RIG lens exposes child Bone placement');
+assert.match(frame, /rigView\.dataset\.authoringKind = this\.rigAuthoringKind[\s\S]*?rigView\.dataset\.mode = this\.rigLensMode/u,
+    'existing RIG view state drives the setup/motion surface projection');
+assert.match(frame, /this\.rigLensStructureTitle\.textContent = isMotion \? 'Bone' : 'Bone \/ Artwork'/u,
+    'DEFORM setup combines static structure and artwork status while motion focuses the Bone list');
+assert.match(frame, /targetRow\.className = 'right-workspace-rig-target-row right-workspace-rig-deform-static'/u,
+    'static Raster identity is marked for omission from DEFORM motion');
+assert.match(frame, /right-workspace-rig-deform-static right-workspace-rig-artwork-state/u,
+    'artwork binding is summarized as one compact setup state');
+assert.match(frame, /right-workspace-rig-deform-bones/u,
+    'the Bone list retains selection and parent labels in one hierarchy surface');
+assert.match(frame, /this\.rigToolHint\.hidden = !isMotion && !this\.rigPlacementMode/u,
+    'idle SETUP does not retain a duplicate instructional block while actionable states remain visible');
+assert.doesNotMatch(frame, /selection\.textContent = `\$\{selected\.name/u,
+    'the selected Bone summary is not duplicated below the selectable list');
+assert.match(frame, /this\.rigPartIkButton\.hidden = true/u,
+    'the PART-only IK control does not leak into the DEFORM workspace');
 assert.match(frame, /registerRigLensStaticBone/u, 'Canvas gesture commits through the existing CAF owner');
 assert.doesNotMatch(frame, /registerClipAsset|generateClipAsset|recordInternalLayerHistory|setClipRig/u,
     'RIG lens presentation does not mutate RIG data or History');
@@ -46,5 +62,9 @@ assert.match(surface, /layer-transform-panel\.is-context-inspector\[hidden\][\s\
     'the old Transform panel cannot paint through its forced display rule under the RIG lens');
 assert.match(surface, /right-workspace-rig-lens[\s\S]*?background: transparent/u,
     'RIG view uses the existing transparent Workspace surface');
+assert.match(surface, /data-authoring-kind="deform"\]\[data-mode="motion"\] \.right-workspace-rig-deform-static[\s\S]*?display: none !important/u,
+    'DEFORM motion hides static setup details without affecting PART or setup');
+assert.match(surface, /right-workspace-rig-deform-action[\s\S]*?width: 100%/u,
+    'DEFORM next actions use the available compact workspace width');
 
 console.log('PASS: Right Workspace RIG lens projection, target guard, static Bone handoff, and Dock-preserving return contracts');

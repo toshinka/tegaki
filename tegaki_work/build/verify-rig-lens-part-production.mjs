@@ -4,11 +4,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRigPartRenderPlan } from '../system/animation/folder-part-render-plan.js';
 import {
-    evaluateRigidParts, getRigPartKeyAtFrame, updateRigPartParent, upsertRigPartKey
+    evaluateRigidParts, getRigPartKeyAtFrame, resolvePartTransformHandleDrag,
+    updateRigPartParent, upsertRigPartKey
 } from '../system/animation/part-rig.js';
 import { applyTransformMatrix } from '../system/transform-math.js';
 
 globalThis.window = globalThis.window || {};
+const { AnimationTablePopup } = await import('../ui/animation-table-popup.js');
 const { TimelineModel } = await import('../system/animation/animation-data-model.js');
 const { HistoryManager } = await import('../system/history.js');
 const { ProjectManager } = await import('../system/project-manager.js');
@@ -60,6 +62,98 @@ assert.equal(updateRigPartParent(asset.rigDefinition, 'moon', 'moon').reason, 's
 assert.equal(model.setClipAssetRigPartParent('missing-asset', 'moon', 'planet').ok, false);
 assert.equal(createRigPartRenderPlan(asset, clip, 0).status, 'ready');
 assert.equal(createRigPartRenderPlan(asset, clip, 0).islandByLayerId.has('loose'), false);
+
+const movedTransform = resolvePartTransformHandleDrag({
+    mode: 'move',
+    startTransform: { x: 2, y: -1, scaleX: 1.25, scaleY: 0.8, rotation: 0.35 },
+    startPointer: { x: 12, y: 8 },
+    currentPointer: { x: 19, y: 3 }
+});
+assert.deepEqual(movedTransform,
+    { x: 9, y: -6, scaleX: 1.25, scaleY: 0.8, rotation: 0.35 },
+    'Part translation updates only existing x/y motion fields');
+
+const motionProjectionProbe = Object.create(AnimationTablePopup.prototype);
+const parentDraftTransform = {
+    x: 11, y: -7, scaleX: 1.4, scaleY: 0.75, rotation: Math.PI / 3
+};
+motionProjectionProbe._rigLensPartPoseDraft = {
+    assetId: 'caf', clipId: 'clip', frame: 0, localFrame: 0,
+    poses: new Map([['planet', {
+        partId: 'planet', transform: parentDraftTransform, interpolation: 'linear'
+    }]])
+};
+motionProjectionProbe.getRigLensPartMotionTarget = (_assetId, partId) => ({
+    ok: true, asset, entry: { clip }, frame: 0,
+    part: asset.rigDefinition.parts.find(part => part.partId === partId)
+});
+motionProjectionProbe._screenToRigProject = event => event.projectPoint;
+const parentDraftClip = motionProjectionProbe._getRigLensPreviewClip(clip, 0);
+const parentDraftEvaluation = evaluateRigidParts(asset, parentDraftClip, 0);
+const parentDraftMatrix = parentDraftEvaluation.poseByPartId.get('planet').worldMatrix;
+const startParentLocal = { x: 27, y: -13 };
+const endParentLocal = { x: 34, y: -8 };
+const startProject = applyTransformMatrix(parentDraftMatrix, startParentLocal.x, startParentLocal.y);
+const endProject = applyTransformMatrix(parentDraftMatrix, endParentLocal.x, endParentLocal.y);
+const mappedStart = motionProjectionProbe.projectRigLensPartMotionLocalPoint('caf', 'moon', {
+    projectPoint: startProject
+});
+const mappedEnd = motionProjectionProbe.projectRigLensPartMotionLocalPoint('caf', 'moon', {
+    projectPoint: endProject
+});
+assert.ok(Math.abs(mappedStart.x - startParentLocal.x) < 1e-8
+    && Math.abs(mappedStart.y - startParentLocal.y) < 1e-8,
+    'child drag start is mapped through the parent preview world matrix');
+assert.ok(Math.abs(mappedEnd.x - endParentLocal.x) < 1e-8
+    && Math.abs(mappedEnd.y - endParentLocal.y) < 1e-8,
+    'child drag end is mapped through the same parent preview world matrix');
+const childMove = resolvePartTransformHandleDrag({
+    mode: 'move', startTransform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+    startPointer: mappedStart, currentPointer: mappedEnd
+});
+assert.ok(Math.abs(childMove.x - 7) < 1e-8);
+assert.ok(Math.abs(childMove.y - 5) < 1e-8);
+
+const identityMotion = { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 };
+const baseEvaluation = evaluateRigidParts(asset, clip, 0);
+const translatedRootUpdate = upsertRigPartKey(null, 'planet', 0,
+    { ...identityMotion, x: 9, y: -6 });
+const translatedRootEvaluation = evaluateRigidParts(asset,
+    { ...clip, rigMotion: translatedRootUpdate.value }, 0);
+for (const partId of ['planet', 'moon', 'other']) {
+    const part = asset.rigDefinition.parts.find(candidate => candidate.partId === partId);
+    const pivot = part.bindTransform;
+    const beforeCenter = applyTransformMatrix(
+        baseEvaluation.poseByPartId.get(partId).worldMatrix, pivot.pivotX, pivot.pivotY
+    );
+    const afterCenter = applyTransformMatrix(
+        translatedRootEvaluation.poseByPartId.get(partId).worldMatrix, pivot.pivotX, pivot.pivotY
+    );
+    assert.ok(Math.abs(afterCenter.x - beforeCenter.x - 9) < 1e-8
+        && Math.abs(afterCenter.y - beforeCenter.y + 6) < 1e-8,
+    `${partId} follows root translation without rewriting descendant tracks`);
+}
+const translatedChildUpdate = upsertRigPartKey(null, 'moon', 0,
+    { ...identityMotion, x: 4, y: 6 });
+const translatedChildEvaluation = evaluateRigidParts(asset,
+    { ...clip, rigMotion: translatedChildUpdate.value }, 0);
+assert.deepEqual(translatedChildEvaluation.poseByPartId.get('planet').worldMatrix,
+    baseEvaluation.poseByPartId.get('planet').worldMatrix,
+    'child translation does not move its parent');
+for (const partId of ['moon', 'other']) {
+    const part = asset.rigDefinition.parts.find(candidate => candidate.partId === partId);
+    const pivot = part.bindTransform;
+    const beforeCenter = applyTransformMatrix(
+        baseEvaluation.poseByPartId.get(partId).worldMatrix, pivot.pivotX, pivot.pivotY
+    );
+    const afterCenter = applyTransformMatrix(
+        translatedChildEvaluation.poseByPartId.get(partId).worldMatrix, pivot.pivotX, pivot.pivotY
+    );
+    assert.ok(Math.abs(afterCenter.x - beforeCenter.x - 4) < 1e-8
+        && Math.abs(afterCenter.y - beforeCenter.y - 6) < 1e-8,
+    `${partId} follows child translation while the parent remains still`);
+}
+
 const beforePreview = model.serialize();
 const parentPose = { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: Math.PI / 2 };
 const preview = upsertRigPartKey(clip.rigMotion, 'planet', 0, parentPose);
@@ -163,6 +257,21 @@ assert.match(frame, /commitRigLensPartPoseFrame/u);
 assert.match(popup, /registerInternalRigPartFromExternal\(assetId, layerId, options = \{\}\)[\s\S]*?options\.selectInternalLayer !== false/u);
 assert.match(popup, /registerRigLensPart\(assetId, partId, initialPivot = null\)[\s\S]*?selectInternalLayer: false/u);
 assert.match(frame, /_startRigPartPoseGesture[\s\S]*?previewRigLensPartPose/u);
+assert.match(frame, /resolvePartTransformHandleDrag[\s\S]*?startPointer: gesture\.startPointer/u,
+    'PART root-handle drag uses the existing x/y motion resolver');
+assert.match(frame, /_startRigPartPoseGesture\(bone, event, 'move'\)/u,
+    'PART MOTION root marker starts translation while the tip remains the rotation handle');
+assert.match(popup, /projectRigLensPartMotionLocalPoint[\s\S]*?_getRigLensPreviewClip[\s\S]*?evaluateRigidParts[\s\S]*?invertTransformMatrixPoint/u,
+    'child translation pointer coordinates include the current parent preview');
+assert.match(frame, /Part \$\{bone\.partId\}を選択、ドラッグして移動/u,
+    'root translation affordance remains selectable and accessible');
+assert.match(surface, /\.right-workspace-rig-part-move-handle\s*\{\s*cursor:\s*move/u,
+    'root translation and tip rotation have distinct pointer affordances');
+const partGestureSource = frame.slice(
+    frame.indexOf('_startRigPartPoseGesture'), frame.indexOf('_onRigCanvasUp')
+);
+assert.doesNotMatch(partGestureSource, /setClipRigPartKey(?:s)?\s*\(/u,
+    'Part canvas gestures update runtime preview only, not canonical KEY data');
 assert.match(frame, /_syncRigPartPivotOverlay[\s\S]*?projectRigLensPartBindPoint[\s\S]*?setRigLensPartPivot/u);
 assert.match(popup, /getRigLensPartPivotWorldItems[\s\S]*?canMove/u);
 assert.match(frame, /rigPartFrameLabel\.addEventListener\('wheel'/u,

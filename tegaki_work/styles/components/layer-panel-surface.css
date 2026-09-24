@@ -502,6 +502,57 @@
 .right-workspace-rig-lens-properties > div > p {
     flex-basis: 100%;
 }
+.right-workspace-rig-lens[data-authoring-kind="deform"] .right-workspace-rig-deform-action {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+}
+.right-workspace-rig-lens[data-authoring-kind="deform"] .right-workspace-rig-deform-bones {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.right-workspace-rig-lens[data-authoring-kind="deform"] .right-workspace-rig-deform-bones > li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    min-height: 26px;
+    padding-block: 1px;
+    border-radius: 4px;
+}
+.right-workspace-rig-lens[data-authoring-kind="deform"] .right-workspace-rig-bone-select {
+    justify-content: flex-start;
+    min-width: 0;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.right-workspace-rig-lens[data-authoring-kind="deform"] .right-workspace-rig-bone-parent {
+    min-width: 0;
+    max-width: 68px;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.right-workspace-rig-lens[data-authoring-kind="deform"][data-mode="motion"] .right-workspace-rig-deform-static {
+    display: none !important;
+}
+.right-workspace-rig-lens[data-authoring-kind="deform"][data-mode="motion"] .right-workspace-rig-lens-structure,
+.right-workspace-rig-lens[data-authoring-kind="deform"][data-mode="motion"] .right-workspace-rig-lens-properties {
+    padding-block: 2px;
+}
+.right-workspace-rig-lens[data-authoring-kind="deform"][data-mode="motion"] .right-workspace-rig-lens-properties {
+    border-top-color: color-mix(in srgb, var(--futaba-maroon) 14%, transparent);
+}
 .right-workspace-rig-lens-properties button[hidden] {
     display: none;
 }
@@ -659,6 +710,21 @@
 }
 .right-workspace-rig-bone-marker.is-selected {
     fill: var(--active-border);
+}
+.right-workspace-rig-part-move-handle {
+    cursor: move;
+    stroke-width: 3;
+}
+.right-workspace-rig-bone-marker.right-workspace-rig-part-ik-target,
+.right-workspace-rig-bone-marker.right-workspace-rig-part-ik-target.is-selected {
+    fill: var(--futaba-maroon);
+    stroke: var(--active-border);
+    stroke-width: 4;
+    cursor: crosshair;
+}
+.right-workspace-rig-part-ik-toggle.is-active {
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 22%, var(--futaba-background));
 }
 .right-workspace-rig-bone-tip {
     fill: var(--futaba-background);
