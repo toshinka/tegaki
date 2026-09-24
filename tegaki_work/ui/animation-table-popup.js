@@ -3561,8 +3561,10 @@ export class AnimationTablePopup {
 
     registerRigLensPart(assetId, partId, initialPivot = null) {
         const target = this.getRigLensPartTarget(assetId);
-        if (!target.ok || this.isPlaying || !target.layers.some(layer => layer.id === partId)) {
-            return { ok: false, reason: target.reason || '対象Rasterを確認してください。' };
+        if (!target.ok) return { ok: false, reason: target.reason || '対象CAFを確認してください。' };
+        if (this.isPlaying) return { ok: false, reason: '再生中はPartを登録できません。' };
+        if (!target.layers.some(layer => layer.id === partId)) {
+            return { ok: false, reason: '対象Rasterを確認してください。' };
         }
         if (!target.staticSetupAllowed) return { ok: false, reason: target.staticSetupReason };
         if (target.parts.some(part => part.partId === partId)) {
@@ -3721,7 +3723,7 @@ export class AnimationTablePopup {
     navigateRigLensPartFrameByDelta(assetId, delta) {
         const target = this.getRigLensPartTarget(assetId);
         if (!target.ok || this.isPlaying || !Number.isInteger(delta) || delta === 0
-            || this.hasRigLensPartPosePreview()) return false;
+            || this.hasRigLensPartPosePreview() || this.hasRigLensBonePosePreview()) return false;
         const clip = target.entry.clip;
         const currentLocalFrame = target.frame - clip.startFrame;
         if (!Number.isInteger(currentLocalFrame) || currentLocalFrame < 0
@@ -18271,7 +18273,7 @@ export class AnimationTablePopup {
     }
 
     _navigateTimelineFrameTo(frameIndex, options = {}) {
-        if (this.hasRigLensPartPosePreview()) return false;
+        if (this.hasRigLensPartPosePreview() || this.hasRigLensBonePosePreview()) return false;
         const targetFrame = Math.max(
             0,
             Math.min(this.model.totalFrames - 1, Math.round(Number(frameIndex)))
@@ -18329,7 +18331,7 @@ export class AnimationTablePopup {
     }
 
     moveTimelineFrameByDelta(delta, options = {}) {
-        if (this.hasRigLensPartPosePreview()) return false;
+        if (this.hasRigLensPartPosePreview() || this.hasRigLensBonePosePreview()) return false;
         const current = this.model.playback.currentFrame;
         const nextFrame = Math.max(0, Math.min(this.model.totalFrames - 1, current + delta));
         if (nextFrame === current) return false;

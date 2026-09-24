@@ -153,6 +153,7 @@ assert.equal(asset.skinBindings?.length || 0, 0);
 const root = path.dirname(fileURLToPath(import.meta.url));
 const popup = fs.readFileSync(path.join(root, '../ui/animation-table-popup.js'), 'utf8');
 const frame = fs.readFileSync(path.join(root, '../ui/right-workspace-frame.js'), 'utf8');
+const surface = fs.readFileSync(path.join(root, '../styles/components/layer-panel-surface.css'), 'utf8');
 assert.match(popup, /previewRigLensPartPose[\s\S]*?_scheduleMotionEditPreviewRefresh/u);
 assert.match(popup, /commitRigLensPartPoseFrame[\s\S]*?setClipRigPartKeys[\s\S]*?_finishMotionGestureHistory/u);
 assert.match(popup, /_rigLensPartPoseDraft[\s\S]*?new Map\(\)/u);
@@ -164,8 +165,52 @@ assert.match(popup, /registerRigLensPart\(assetId, partId, initialPivot = null\)
 assert.match(frame, /_startRigPartPoseGesture[\s\S]*?previewRigLensPartPose/u);
 assert.match(frame, /_syncRigPartPivotOverlay[\s\S]*?projectRigLensPartBindPoint[\s\S]*?setRigLensPartPivot/u);
 assert.match(popup, /getRigLensPartPivotWorldItems[\s\S]*?canMove/u);
+assert.match(frame, /rigPartFrameLabel\.addEventListener\('wheel'/u,
+    'frame wheel is owned by the frame-number control only');
+assert.doesNotMatch(frame, /rigPartFrameRow\.addEventListener\('wheel'/u,
+    'frame controls and surrounding Inspector do not capture wheel input');
+assert.match(frame, /details\.textContent = `親：\$\{parentName\}`[\s\S]*?item\.appendChild\(details\)/u,
+    'parent hierarchy is projected inside each Part card');
+assert.match(frame, /if \(!motion && isSelected\)[\s\S]*?item\.appendChild\(this\.rigPartParentLabel\)/u,
+    'parent editing is inline in the selected Setup card only');
+assert.match(frame, /item\.appendChild\(this\.rigPartRegisterButton\)/u,
+    'Part creation remains reachable from its selected Layer card');
+assert.match(frame, /rigSelectedPartId = layer\.id;[\s\S]*?this\.sync\(\);/u,
+    'selecting a Layer updates only the runtime selection projection');
+assert.match(frame, /RIG_PART_OPERATION_MESSAGES[\s\S]*?clipping-boundary-split[\s\S]*?rig-cycle[\s\S]*?function rigPartOperationMessage/u,
+    'registration and hierarchy refusals have concise UI reasons');
+assert.match(popup, /registerRigLensPart\(assetId, partId, initialPivot = null\)[\s\S]*?initialPivot: pivot[\s\S]*?selectInternalLayer: false/u,
+    'explicit Pivot setup can register the Part without changing the selected CAF Layer');
+assert.match(popup, /registerInternalRigPartFromExternal\(assetId, layerId, options = \{\}\)[\s\S]*?_recordInternalLayerHistory\(asset, beforeState, 'caf-rig-part-register'/u,
+    'Part registration and its initial Pivot share one existing History boundary');
+assert.match(popup, /if \(this\.isPlaying\) return \{ ok: false, reason: '再生中はPartを登録できません。' \};/u,
+    'playback refusal is reported instead of being mislabeled as a target error');
+assert.match(surface, /right-workspace-rig-part-item:has\(> \.right-workspace-rig-part-row\[aria-pressed="true"\]\)[\s\S]*?var\(--active-border\)/u,
+    'the existing Part selection projects one Futaba active outline around the whole card');
 assert.match(frame, /rigKindRow\.hidden = !this\.rigLensActive/u);
 assert.match(frame, /rigPartKindButton\.disabled = !hasPartCandidate/u);
 assert.match(frame, /hasSelectedPart[\s\S]*?rigLayerEntryButton\.hidden/u,
     'registered Part remains reachable from LAYER when Transform is blocked');
+assert.match(frame, /this\.rigPartFrameRow\.hidden = !matchesTarget \|\| !hasLocalFrame/u,
+    'RIG Frame row is shown only for the selected target Clip and a valid frame');
+assert.match(frame, /_renderRigPartLens[\s\S]*?authoringKind: 'part'[\s\S]*?frameTarget: partTarget/u,
+    'PART SETUP and MOTION reuse the existing selected-Clip Frame projection');
+assert.match(frame, /authoringKind: 'deform'[\s\S]*?frameTarget: partTarget/u,
+    'DEFORM SETUP and MOTION use the selected CAF Clip frame without Part KEY routing');
+assert.match(frame, /this\.title\.hidden = rigLensVisible/u,
+    'the duplicate normal Layer/Frame target label is hidden only in RIG');
+assert.doesNotMatch(frame, /rigReturnButton/u,
+    'RIG exit uses the existing guarded LAYER / TRANSFORM primary switch');
+assert.match(frame, /commitRigLensPartPoseFrame[\s\S]*?commitRigLensBoneKey/u,
+    'PART batch KEY and DEFORM Bone KEY keep their distinct existing terminals');
+assert.match(popup, /navigateRigLensPartFrameByDelta[\s\S]*?hasRigLensBonePosePreview/u,
+    'RIG Frame navigation refuses pending Bone Pose');
+assert.match(popup, /_navigateTimelineFrameTo\(frameIndex, options = \{\}\)\s*\{\s*if \(this\.hasRigLensPartPosePreview\(\) \|\| this\.hasRigLensBonePosePreview\(\)\)/u,
+    'direct Frame navigation cannot implicitly discard either RIG Pose draft');
+assert.match(popup, /moveTimelineFrameByDelta\(delta, options = \{\}\)\s*\{\s*if \(this\.hasRigLensPartPosePreview\(\) \|\| this\.hasRigLensBonePosePreview\(\)\)/u,
+    'Dock Frame navigation preserves pending Part and Bone Pose drafts');
+assert.match(surface, /\.right-workspace-rig-part-item\s*\{\s*display:\s*flex/u,
+    'Part selection and parent relation share a compact horizontal card row');
+assert.match(surface, /\.right-workspace-rig-frame-navigation\.has-pose-cancel\s*\{/u,
+    'the Frame row reserves a cancel slot only while a pending Pose can be cancelled');
 console.log('PASS: three-Part hierarchy, composite motion, runtime draft, atomic frame KEY batch, one-step Undo/Redo, Project round-trip');
