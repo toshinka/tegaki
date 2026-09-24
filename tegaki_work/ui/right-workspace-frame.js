@@ -1193,10 +1193,17 @@ export class RightWorkspaceFrame {
             items.forEach(bone => {
                 if (ancestors.has(bone.boneId)) return;
                 const children = childrenByParent.get(bone.boneId) || [];
-                const item = document.createElement('li');
-                item.className = 'right-workspace-rig-bone-tree-item';
-                item.setAttribute('role', 'none');
+                const listItem = document.createElement('li');
+                listItem.className = 'right-workspace-rig-bone-tree-item';
+                listItem.setAttribute('role', 'none');
+                const item = document.createElement('div');
+                item.className = 'right-workspace-rig-bone-tree-select gui-control gui-control--s';
+                item.setAttribute('role', 'treeitem');
+                item.setAttribute('aria-level', String(depth + 1));
+                item.setAttribute('aria-selected', String(this.rigSelectedBoneId === bone.boneId));
+                item.tabIndex = this.rigSelectedBoneId === bone.boneId ? 0 : -1;
                 item.style.setProperty('--rig-tree-depth', String(Math.min(depth, 4)));
+                item.dataset.rigTreeSelect = 'true';
                 item.dataset.rigBoneId = bone.boneId;
                 if (children.length > 0) {
                     const folded = this.rigTreeCollapsedBoneIds.has(bone.boneId);
@@ -1205,6 +1212,7 @@ export class RightWorkspaceFrame {
                     const fold = document.createElement('button');
                     fold.type = 'button';
                     fold.className = 'right-workspace-rig-bone-tree-fold gui-control gui-control--s';
+                    fold.dataset.rigTreeFold = 'true';
                     fold.textContent = folded ? '›' : '⌄';
                     fold.setAttribute('aria-label', `${folded ? '展開' : '折り畳む'} ${bone.name || 'Bone'}の子`);
                     fold.setAttribute('aria-expanded', String(!folded));
@@ -1225,16 +1233,7 @@ export class RightWorkspaceFrame {
                     spacer.setAttribute('aria-hidden', 'true');
                     item.appendChild(spacer);
                 }
-                const select = document.createElement('button');
-                select.type = 'button';
-                select.className = 'right-workspace-rig-bone-tree-select gui-control gui-control--s';
-                select.dataset.rigTreeSelect = 'true';
-                select.dataset.rigBoneId = bone.boneId;
-                select.setAttribute('role', 'treeitem');
-                select.setAttribute('aria-level', String(depth + 1));
-                select.setAttribute('aria-selected', String(this.rigSelectedBoneId === bone.boneId));
-                if (children.length > 0) select.setAttribute('aria-expanded', String(!this.rigTreeCollapsedBoneIds.has(bone.boneId)));
-                select.tabIndex = this.rigSelectedBoneId === bone.boneId ? 0 : -1;
+                if (children.length > 0) item.setAttribute('aria-expanded', String(!this.rigTreeCollapsedBoneIds.has(bone.boneId)));
                 const root = bone.parentBoneId == null;
                 const glyph = document.createElement('span');
                 glyph.className = root
@@ -1247,39 +1246,46 @@ export class RightWorkspaceFrame {
                 name.textContent = bone.name || (root ? 'Root' : 'Bone');
                 const isVerified = this.rigPlacementVerifiedBoneIds.has(bone.boneId);
                 const placement = document.createElement('span');
-                placement.className = 'right-workspace-rig-bone-tree-placement';
-                placement.textContent = isVerified ? '✓' : '○';
+                placement.className = `right-workspace-rig-bone-tree-placement ${isVerified ? 'is-verified' : 'is-pending'}`;
+                placement.textContent = isVerified ? '✓' : '待';
                 placement.title = isVerified
                     ? 'Canvas位置をこの編集セッションで確認済み'
                     : 'Canvas位置の確認待ち。選択してCanvas上のBind位置を調整';
                 placement.setAttribute('aria-label', isVerified ? '配置確認済み' : '配置確認待ち');
-                select.title = `${name.textContent} · ${root ? 'Root' : `親 ${byId.get(bone.parentBoneId)?.name || 'Bone'}`} · ${placement.title}`;
-                select.setAttribute('aria-label', `${name.textContent} · ${root ? 'Root' : `親 ${byId.get(bone.parentBoneId)?.name || 'Bone'}`} · ${placement.getAttribute('aria-label')}`);
-                select.append(glyph, name, placement);
-                select.addEventListener('click', () => this._selectRigLensBone(bone.boneId));
-                item.appendChild(select);
-                list.appendChild(item);
+                item.title = `${name.textContent} · ${root ? 'Root' : `親 ${byId.get(bone.parentBoneId)?.name || 'Bone'}`} · ${placement.title}`;
+                item.setAttribute('aria-label', `${name.textContent} · ${root ? 'Root' : `親 ${byId.get(bone.parentBoneId)?.name || 'Bone'}`} · ${placement.getAttribute('aria-label')}`);
+                item.append(glyph, name, placement);
+                item.addEventListener('click', event => {
+                    if (event.target.closest('[data-rig-tree-fold]')
+                        || event.target.closest('[role="treeitem"]') !== item) return;
+                    this._selectRigLensBone(bone.boneId);
+                });
+                listItem.appendChild(item);
                 if (children.length > 0 && !this.rigTreeCollapsedBoneIds.has(bone.boneId)) {
                     const nextAncestors = new Set(ancestors);
                     nextAncestors.add(bone.boneId);
-                    list.appendChild(makeNodes(children, depth + 1, nextAncestors));
+                    item.appendChild(makeNodes(children, depth + 1, nextAncestors));
                 }
+                list.appendChild(listItem);
             });
             return list;
         };
         const roots = childrenByParent.get(null) || [];
         container.appendChild(makeNodes(roots.length ? roots : bones, 0, new Set()));
         container.dataset.variant = variant;
-        if (this.rigStructureTreeRestoreFocusId) {
+        const activeVariant = this.rigStructureEditorDialog?.open ? 'expanded' : 'compact';
+        if (variant === activeVariant && this.rigStructureTreeRestoreFocusId) {
             const focusId = this.rigStructureTreeRestoreFocusId;
             const focusTarget = [...container.querySelectorAll('[data-rig-tree-select]')]
                 .find(button => button.dataset.rigBoneId === focusId);
-            focusTarget?.focus({ preventScroll: true });
-            this.rigStructureTreeRestoreFocusId = null;
+            if (focusTarget) {
+                focusTarget.focus({ preventScroll: true });
+                this.rigStructureTreeRestoreFocusId = null;
+            }
         }
         const selected = [...container.querySelectorAll('[data-rig-tree-select]')]
             .find(button => button.dataset.rigBoneId === this.rigSelectedBoneId);
-        selected?.scrollIntoView?.({ block: 'nearest' });
+        if (variant === activeVariant) selected?.scrollIntoView?.({ block: 'nearest' });
     }
 
     _onRigBoneTreeKeyDown(event) {
@@ -1947,17 +1953,31 @@ export class RightWorkspaceFrame {
                     line.setAttribute('y1', bone.head.y);
                     line.setAttribute('x2', bone.tail.x);
                     line.setAttribute('y2', bone.tail.y);
-                    const marker = document.createElementNS(ns, 'circle');
+                    const isStaticRoot = this.rigAuthoringKind === 'deform'
+                        && this.rigLensMode === 'setup' && bone.parentBoneId == null;
+                    const marker = document.createElementNS(ns, isStaticRoot ? 'polygon' : 'circle');
                     marker.classList.add('right-workspace-rig-bone-marker');
+                    if (isStaticRoot) marker.classList.add('right-workspace-rig-bone-root-marker');
                     marker.classList.toggle('is-selected', (bone.partId || bone.boneId) === selectedId);
                     marker.setAttribute('data-rig-bone-id', bone.boneId || '');
-                    marker.setAttribute('cx', bone.head.x);
-                    marker.setAttribute('cy', bone.head.y);
-                    marker.setAttribute('r', '9');
+                    if (isStaticRoot) {
+                        const radius = 10;
+                        marker.setAttribute('points', [
+                            `${bone.head.x},${bone.head.y - radius}`,
+                            `${bone.head.x + radius},${bone.head.y}`,
+                            `${bone.head.x},${bone.head.y + radius}`,
+                            `${bone.head.x - radius},${bone.head.y}`
+                        ].join(' '));
+                    } else {
+                        marker.setAttribute('cx', bone.head.x);
+                        marker.setAttribute('cy', bone.head.y);
+                        marker.setAttribute('r', '9');
+                    }
                     marker.setAttribute('role', 'button');
                     const partMotionHandle = this.rigAuthoringKind === 'part'
                         && this.rigLensMode === 'motion';
-                    const staticBoneMoveHandle = staticBoneEditAllowed;
+                    const staticBoneMoveHandle = staticBoneEditAllowed
+                        && this.rigSelectedBoneId === bone.boneId;
                     marker.classList.toggle('right-workspace-rig-bone-move-handle', staticBoneMoveHandle);
                     marker.classList.toggle('right-workspace-rig-part-move-handle', partMotionHandle);
                     const isIkTarget = partMotionHandle
@@ -1969,9 +1989,9 @@ export class RightWorkspaceFrame {
                             ? `Part ${bone.partId}を選択、ドラッグして移動`
                         : this.rigAuthoringKind === 'part'
                             ? `Part ${bone.partId}を選択`
-                            : staticBoneMoveHandle
-                                ? `Bone ${bone.boneId}を選択、ドラッグしてBind位置を移動`
-                                : `Bone ${bone.boneId}を選択`;
+                        : staticBoneMoveHandle
+                                ? `${isStaticRoot ? 'Root' : `Bone ${bone.boneId}`}を選択、ドラッグしてBind位置を移動`
+                                : `${isStaticRoot ? 'Root' : `Bone ${bone.boneId}`}を選択`;
                     marker.setAttribute('aria-label', markerLabel);
                     marker.setAttribute('title', markerLabel);
                     marker.addEventListener('pointerdown', event => {
@@ -2211,6 +2231,8 @@ export class RightWorkspaceFrame {
         this.rigBindButton.title = pendingPlacementCount > 0
             ? `Canvas位置を確認してください（未確認 ${pendingPlacementCount} Bone）。`
             : '選択中のCAF Rasterを既存AUTO GRIDのMesh / Skinへ接続';
+        this.rigStructureNameInput.disabled = !staticTarget?.ok;
+        this.rigRootButton.disabled = !staticTarget?.ok;
         this.rigStructureChildButton.disabled = !staticTarget?.ok || !selectedStaticBone;
         this.rigStructureSiblingButton.disabled = !staticTarget?.ok
             || !selectedStaticBone || selectedStaticBone.parentBoneId == null;
@@ -2290,6 +2312,10 @@ export class RightWorkspaceFrame {
             const message = document.createElement('p');
             message.textContent = '現在の選択と入場時の対象が一致しないため、構造情報を表示していません。';
             this.rigLensStructureContent.appendChild(message);
+            if (structureEditorOpen) {
+                this.rigStructureEditorTree.replaceChildren();
+                this.rigStructureStatus.textContent = '対象Rasterが一致しません。対象を確認してから構造編集を再開してください。';
+            }
             this._renderRigPendingPoseRecovery(target);
             return;
         }

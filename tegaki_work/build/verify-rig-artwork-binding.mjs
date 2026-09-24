@@ -168,6 +168,6 @@ assert.match(workspaceSource, /const bindingTarget = matchesTarget[\s\S]*?allowE
     'the Workspace resolves binding separately from immutable Bone authoring');
 assert.match(workspaceSource, /rigBindButton\.hidden = isMotion \|\| !bindingTarget\?\.ok/u,
     'the Artwork binding action is exposed only for a valid unbound selected Raster');
-assert.match(workspaceSource, /rigRootButton\.hidden = isMotion \|\| !staticTarget\?\.ok/u,
-    'Root authoring remains behind the strict no-existing-Mesh guard');
+assert.match(workspaceSource, /rigRootButton\.hidden = !structureEditorOpen \|\| isMotion\s+\|\| !staticTarget\?\.ok \|\| staticTarget\.bones\.length !== 0/u,
+    'Root authoring remains limited to the structure editor and an empty valid target');
 console.log('PASS: RIG Artwork Binding target, Mesh/Skin, Bone deformation, KEY isolation, History and round-trip');

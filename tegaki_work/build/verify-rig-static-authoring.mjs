@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
     inspectStaticRigAuthoringTarget,
     planStaticRigBone,
+    planStaticRigStructureBone,
     resolveStaticRigRootCenter
 } from '../system/animation/rig-static-authoring.js';
 
@@ -33,6 +34,55 @@ assert.equal(planStaticRigBone(asset, 'raster', {
     kind: 'root', start: { x: -1e308, y: 0 }, end: { x: 1e308, y: 0 }
 }).ok, false, 'overflowed length is rejected before mutation');
 assert.equal(JSON.stringify(asset.serialize()), before, 'cancel before commit leaves Asset unchanged');
+
+const structureModel = makeModel();
+const structureAsset = structureModel.getClipAsset('asset');
+function registerStructureBone(options, boneId, name = options.name) {
+    const registration = { ...options, boneId, name };
+    return structureModel.registerClipAssetRasterBone('asset', 'raster', registration);
+}
+const structureRootPlan = planStaticRigStructureBone(structureAsset, 'raster', {
+    kind: 'root', name: ' Pelvis ', rootPoint: { x: 84, y: 96 }
+});
+assert.equal(structureRootPlan.ok, true, 'a structure-first Root gets a valid provisional Bind transform');
+assert.equal(structureRootPlan.options.name, 'Pelvis');
+assert.equal(structureRootPlan.options.parentBoneId, null);
+assert.deepEqual(
+    [structureRootPlan.options.bindTransform.x, structureRootPlan.options.bindTransform.y], [84, 96]
+);
+assert.ok(Number.isFinite(structureRootPlan.options.length) && structureRootPlan.options.length > 0);
+assert.equal(planStaticRigStructureBone(structureAsset, 'raster', {
+    kind: 'root', rootPoint: { x: Number.NaN, y: 0 }
+}).ok, false, 'invalid root coordinates are refused');
+assert.equal(registerStructureBone(structureRootPlan.options, 'structure-root').ok, true);
+assert.equal(planStaticRigStructureBone(structureAsset, 'raster', {
+    kind: 'root', rootPoint: { x: 0, y: 0 }
+}).ok, false, 'the single-root model refuses a second Root');
+const structureChild = parentBoneId => planStaticRigStructureBone(
+    structureAsset, 'raster', { kind: 'child', name: 'Torso', parentBoneId }
+);
+const torsoPlan = structureChild('structure-root');
+assert.equal(torsoPlan.ok, true);
+assert.equal(torsoPlan.options.parentBoneId, 'structure-root');
+assert.equal(registerStructureBone(torsoPlan.options, 'torso').ok, true);
+const leftLegPlan = structureChild('structure-root');
+const rightLegPlan = structureChild('structure-root');
+assert.equal(leftLegPlan.ok && rightLegPlan.ok, true);
+assert.equal(registerStructureBone(leftLegPlan.options, 'left-leg', 'Left leg').ok, true);
+assert.equal(registerStructureBone(rightLegPlan.options, 'right-leg', 'Right leg').ok, true);
+assert.deepEqual(structureAsset.rigDefinition.bones.map(bone => [bone.boneId, bone.parentBoneId]), [
+    ['structure-root', null], ['torso', 'structure-root'],
+    ['left-leg', 'structure-root'], ['right-leg', 'structure-root']
+], 'siblings share the selected parent in the existing Bone hierarchy');
+assert.equal(evaluateRigidBones(structureAsset, null, 0).ok, true,
+    'valid provisional Bind transforms remain evaluable before Artwork binding');
+assert.equal(structureModel.findClipEntry('clip').clip.rigMotion, null,
+    'structure-first authoring does not create a Motion KEY');
+const restoredStructure = new TimelineModel(structureModel.serialize())
+    .getClipAsset('asset').rigDefinition.bones;
+assert.deepEqual(restoredStructure.map(bone => [bone.boneId, bone.parentBoneId]),
+    structureAsset.rigDefinition.bones.map(bone => [bone.boneId, bone.parentBoneId]),
+    'structure-first Bone identity and parentage survive Project serialization');
 
 const root = planStaticRigBone(asset, 'raster', {
     kind: 'root', start: { x: 10, y: 20 }, end: { x: 10, y: 20 }
@@ -119,6 +169,8 @@ assert.match(source, /registerRigLensStaticBone[\s\S]*?registerInternalRasterBon
     'RIG Lens commits through existing CAF Asset/History route');
 assert.match(source, /registerInternalRasterBoneFromExternal[\s\S]*?_recordInternalLayerHistory\(asset, beforeState, 'caf-raster-bone-register'/u,
     'one existing CAF History command owns creation');
+assert.match(source, /createRigLensStaticStructureBone[\s\S]*?planStaticRigStructureBone[\s\S]*?registerInternalRasterBoneFromExternal/u,
+    'structure-first registration delegates through the existing CAF Asset/History owner');
 
 const branchingModel = makeModel();
 const branchingAsset = branchingModel.getClipAsset('asset');

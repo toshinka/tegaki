@@ -4451,7 +4451,13 @@ export class AnimationTablePopup {
             if (!matrix) return null;
             const head = toScreen(applyTransformMatrix(matrix, 0, 0));
             const tail = toScreen(applyTransformMatrix(matrix, bone.length, 0));
-            return head && tail ? { boneId: bone.boneId, head, tail } : null;
+            return head && tail ? {
+                boneId: bone.boneId,
+                parentBoneId: bone.parentBoneId || null,
+                name: bone.name || '',
+                head,
+                tail
+            } : null;
         }).filter(Boolean);
     }
 

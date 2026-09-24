@@ -29,9 +29,29 @@ assert.match(frame, /preserveMotionWindow: true/u,
     'return to Transform preserves an open Animation Dock');
 assert.match(frame, /this\.rigLensTarget = \{[\s\S]*?assetId: target\.assetId[\s\S]*?internalLayerId: target\.internalLayerId/u,
     'entry retains only the CAF Asset and internal Raster identity for this view handoff');
-assert.match(frame, /Rootを配置/u, 'RIG lens exposes Root placement');
-assert.match(frame, /rigRootButton\.addEventListener\('click',[\s\S]*?_createRigLensStaticRoot\(\)/u,
-    'the Root button creates directly instead of arming a second Canvas click');
+assert.match(frame, /骨格を作成/u, 'RIG lens exposes the structure-first entry');
+assert.match(frame, /rigRootButton\.addEventListener\('click',[\s\S]*?_createRigLensStaticRoot\(/u,
+    'the Root action creates through the existing CAF registration owner');
+assert.match(frame, /_createRigStructureEditorDialog\(\)[\s\S]*?document\.createElement\('dialog'\)[\s\S]*?showModal\(\)/u,
+    'expanded structure editing is a native modal that blocks Canvas input behind it');
+assert.match(frame, /＋ 子Bone[\s\S]*?＋ 兄弟Bone[\s\S]*?配置へ進む/u,
+    'the editor exposes child, sibling, and Canvas placement handoff actions');
+assert.match(frame, /rigBoneParentSelect\.addEventListener\('change',[\s\S]*?_setRigLensBoneParent/u,
+    'the expanded editor reuses the guarded parent-change selector');
+assert.match(frame, /childrenByParent[\s\S]*?parentBoneId[\s\S]*?item\.appendChild\(makeNodes\(/u,
+    'both tree projections derive hierarchy from the existing parentBoneId and nest children under treeitems');
+assert.match(frame, /rigTreeCollapsedBoneIds = new Set\(\)/u,
+    'fold state is runtime-only and separate from Bone hierarchy data');
+assert.match(frame, /rigStructureTreeRestoreFocusId[\s\S]*?activeVariant/u,
+    'keyboard focus restoration targets the currently visible tree projection');
+assert.match(frame, /staticBoneEditAllowed\s*&&\s*this\.rigSelectedBoneId === bone\.boneId/u,
+    'only the selected static Bone exposes Bind move and rotation handles');
+assert.match(frame, /document\.createElementNS\(ns, isStaticRoot \? 'polygon' : 'circle'\)/u,
+    'Root uses a distinct Canvas glyph from ordinary Bone joints');
+assert.match(frame, /rigPlacementVerifiedBoneIds = new Set\(\)/u,
+    'Canvas placement confirmation remains transient and is not persisted as another model');
+assert.match(frame, /rigBindButton\.disabled = pendingPlacementCount > 0/u,
+    'AUTO Mesh/Skin binding is blocked until every Bone placement is confirmed');
 assert.match(frame, /getRigLensStaticEditTarget/u,
     'static structure UI uses the editability guard rather than display-only eligibility');
 assert.match(frame, /子Boneを追加/u, 'RIG lens exposes child Bone placement');
@@ -119,6 +139,10 @@ assert.match(frame, /window\.addEventListener\('blur', this\._rigBlurHandler\)/u
     'window blur cancels an incomplete child gesture');
 assert.match(surface, /right-workspace-rig-bone-placement-preview[\s\S]*?pointer-events: none/u,
     'the child placement ghost is visible without taking pointer ownership');
+assert.match(surface, /\.right-workspace-rig-structure-editor\[open\][\s\S]*?display: flex/u,
+    'the expanded editor receives its central, scrollable GUI surface');
+assert.match(surface, /\.right-workspace-rig-bone-tree-select\[aria-selected="true"\][\s\S]*?--active-border/u,
+    'tree selection uses the existing Futaba active-border token');
 
 globalThis.window = globalThis.window || {};
 const { RightWorkspaceFrame } = await import('../ui/right-workspace-frame.js');
@@ -148,6 +172,7 @@ const createFrame = () => {
         rigLensMode: 'setup',
         rigLensTarget: { assetId: 'asset', internalLayerId: 'raster' },
         rigSelectedBoneId: 'root',
+        rigPlacementVerifiedBoneIds: new Set(),
         rigPlacementMode: null,
         rigPointerGesture: null,
         rigEntryMessage: '',

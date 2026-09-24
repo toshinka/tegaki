@@ -798,6 +798,246 @@
     display: none;
 }
 
+.right-workspace-rig-bone-tree {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    color: var(--futaba-maroon);
+}
+.right-workspace-rig-bone-tree--compact {
+    max-height: min(28dvh, 240px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+.right-workspace-rig-bone-tree--expanded {
+    max-height: min(52dvh, 480px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+.right-workspace-rig-bone-tree-group,
+.right-workspace-rig-bone-tree-item {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.right-workspace-rig-bone-tree-item {
+    margin-inline-start: min(calc(var(--rig-tree-depth, 0) * 5px), 20px);
+}
+.right-workspace-rig-bone-tree-select {
+    display: grid;
+    grid-template-columns: 18px 17px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 2px;
+    width: 100%;
+    min-width: 0;
+    min-height: 24px;
+    height: auto;
+    padding: 2px 3px;
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius-control);
+    color: var(--futaba-maroon);
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+}
+.right-workspace-rig-bone-tree-select[aria-selected="true"] {
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 15%, var(--futaba-cream));
+}
+.right-workspace-rig-bone-tree-select:focus-visible {
+    outline: 2px solid var(--active-border);
+    outline-offset: 1px;
+}
+.right-workspace-rig-bone-tree-fold,
+.right-workspace-rig-bone-tree-fold-spacer {
+    display: grid;
+    width: 18px;
+    min-width: 18px;
+    min-height: 18px;
+    height: 18px;
+    place-items: center;
+    padding: 0;
+    font-size: 11px !important;
+    line-height: 1;
+}
+.right-workspace-rig-bone-tree-glyph {
+    display: grid;
+    width: 16px;
+    height: 16px;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, var(--futaba-maroon) 65%, transparent);
+    border-radius: 50%;
+    color: var(--futaba-maroon);
+    font-size: 8px !important;
+    font-weight: 700;
+    line-height: 1;
+}
+.right-workspace-rig-bone-tree-glyph.is-root {
+    border-radius: 4px;
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 14%, var(--futaba-cream));
+}
+.right-workspace-rig-bone-tree-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.right-workspace-rig-bone-tree-placement {
+    min-width: 14px;
+    color: var(--futaba-medium) !important;
+    font-size: 8px !important;
+    font-weight: 700;
+    text-align: center;
+    white-space: nowrap;
+}
+.right-workspace-rig-bone-tree-placement.is-pending {
+    color: var(--active-border) !important;
+}
+
+.right-workspace-rig-structure-editor {
+    position: fixed;
+    inset: 50% auto auto 50%;
+    box-sizing: border-box;
+    width: min(780px, calc(100vw - 32px));
+    max-width: min(780px, calc(100vw - 32px));
+    max-height: min(82dvh, 760px);
+    margin: 0;
+    padding: 0;
+    transform: translate(-50%, -50%);
+    overflow: hidden;
+    border: 1px solid var(--ui-panel-glass-border);
+    border-radius: var(--ui-radius-panel);
+    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--futaba-cream) 94%, transparent);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    box-shadow: var(--ui-panel-glass-shadow);
+}
+.right-workspace-rig-structure-editor[open] {
+    display: flex;
+    flex-direction: column;
+}
+.right-workspace-rig-structure-editor::backdrop {
+    background: color-mix(in srgb, var(--futaba-maroon) 30%, transparent);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+}
+.right-workspace-rig-structure-editor-header,
+.right-workspace-rig-structure-editor-footer {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px 12px;
+}
+.right-workspace-rig-structure-editor-header {
+    border-bottom: 1px solid color-mix(in srgb, var(--futaba-maroon) 18%, transparent);
+}
+.right-workspace-rig-structure-editor-header h2 {
+    min-width: 0;
+    margin: 0;
+    color: var(--futaba-maroon);
+    font-size: 15px;
+}
+.right-workspace-rig-structure-editor-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(210px, 0.8fr);
+    gap: 14px;
+    min-height: 0;
+    padding: 12px;
+    overflow: auto;
+}
+.right-workspace-rig-structure-editor-body h3 {
+    margin: 0 0 6px;
+    color: var(--futaba-light-maroon);
+    font-size: 11px;
+}
+.right-workspace-rig-structure-editor-tree-section,
+.right-workspace-rig-structure-editor-actions {
+    min-width: 0;
+}
+.right-workspace-rig-structure-editor-actions {
+    display: grid;
+    align-content: start;
+    gap: 9px;
+    padding-inline-start: 12px;
+    border-inline-start: 1px solid color-mix(in srgb, var(--futaba-maroon) 18%, transparent);
+}
+.right-workspace-rig-structure-name-label {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    color: var(--futaba-maroon);
+    font-size: 10px;
+}
+.right-workspace-rig-structure-name-label input {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+}
+.right-workspace-rig-structure-create-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+    min-width: 0;
+}
+.right-workspace-rig-structure-create-actions > .right-workspace-rig-deform-action {
+    grid-column: 1 / -1;
+}
+.right-workspace-rig-structure-create-actions > button {
+    min-width: 0;
+    white-space: normal;
+}
+.right-workspace-rig-structure-parent-host .right-workspace-rig-bone-parent-control {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    color: var(--futaba-maroon);
+    font-size: 10px;
+}
+.right-workspace-rig-structure-parent-host select {
+    flex: 1 1 auto;
+    width: 0;
+    min-width: 0;
+    max-width: 100%;
+}
+.right-workspace-rig-structure-editor-status {
+    margin: 0;
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+.right-workspace-rig-structure-editor-footer {
+    justify-content: flex-end;
+    border-top: 1px solid color-mix(in srgb, var(--futaba-maroon) 18%, transparent);
+}
+.right-workspace-rig-bone-root-marker {
+    stroke-width: 2.5;
+}
+
+@media (max-width: 620px) {
+    .right-workspace-rig-structure-editor-body {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+    }
+    .right-workspace-rig-structure-editor-actions {
+        padding: 10px 0 0;
+        border-inline-start: 0;
+        border-top: 1px solid color-mix(in srgb, var(--futaba-maroon) 18%, transparent);
+    }
+    .right-workspace-rig-bone-tree--expanded {
+        max-height: min(34dvh, 320px);
+    }
+}
+
 .right-panel .layer-controls-row {
     background: var(--ui-layer-surface-rail);
     color: var(--ui-rail-foreground);
