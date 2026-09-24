@@ -284,8 +284,14 @@ assert.match(frame, /if \(!motion && isSelected\)[\s\S]*?item\.appendChild\(this
     'parent editing is inline in the selected Setup card only');
 assert.match(frame, /item\.appendChild\(this\.rigPartRegisterButton\)/u,
     'Part creation remains reachable from its selected Layer card');
-assert.match(frame, /rigSelectedPartId = layer\.id;[\s\S]*?this\.sync\(\);/u,
+const partSelectionSource = frame.slice(
+    frame.indexOf('_selectRigLensPart(partId)'),
+    frame.indexOf('_syncRigModeAction(motionTarget, matchesTarget)')
+);
+assert.match(partSelectionSource, /this\.rigSelectedPartId = partId;[\s\S]*?this\.sync\(\);/u,
     'selecting a Layer updates only the runtime selection projection');
+assert.doesNotMatch(partSelectionSource, /History|KEY|setClipRigPartKey/u,
+    'Part selection and progressive phase readiness do not mutate History or KEY data');
 assert.match(frame, /RIG_PART_OPERATION_MESSAGES[\s\S]*?clipping-boundary-split[\s\S]*?rig-cycle[\s\S]*?function rigPartOperationMessage/u,
     'registration and hierarchy refusals have concise UI reasons');
 assert.match(popup, /registerRigLensPart\(assetId, partId, initialPivot = null\)[\s\S]*?initialPivot: pivot[\s\S]*?selectInternalLayer: false/u,

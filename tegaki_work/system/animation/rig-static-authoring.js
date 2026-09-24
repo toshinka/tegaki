@@ -7,6 +7,20 @@ import { invertTransformMatrixPoint } from '../transform-math.js';
 
 const finitePoint = point => Number.isFinite(point?.x) && Number.isFinite(point?.y);
 
+export function resolveStaticRigRootCenter(bounds) {
+    if (![bounds?.x, bounds?.y, bounds?.width, bounds?.height].every(Number.isFinite)
+        || bounds.width <= 0 || bounds.height <= 0) {
+        return { ok: false, reason: 'Artwork Boundsを確認できません。', point: null };
+    }
+    const point = {
+        x: bounds.x + bounds.width / 2,
+        y: bounds.y + bounds.height / 2
+    };
+    return finitePoint(point)
+        ? { ok: true, reason: '', point }
+        : { ok: false, reason: 'Artwork Boundsの中心座標が不正です。', point: null };
+}
+
 export function inspectStaticRigAuthoringTarget(asset, layerId, options = {}) {
     if (!asset || !layerId) return { ok: false, reason: 'CAFとRasterを選択してください。', bones: [] };
     const layer = (asset.internalLayers || []).find(candidate => candidate?.id === layerId) || null;
@@ -34,13 +48,22 @@ export function inspectStaticRigAuthoringTarget(asset, layerId, options = {}) {
             return { ok: false, reason: 'Artwork接続後はBone構造を変更できません。', bones: [] };
         }
     }
-    const bones = rig?.bones || [];
-    if (!Array.isArray(bones) || bones.length > 3
-        || (bones.length > 0 && bones[0]?.parentBoneId != null)
-        || bones.slice(1).some((bone, index) =>
-            !bones.slice(0, index + 1).some(parent => parent?.boneId === bone?.parentBoneId))
-        || bones.some(bone => !bone?.boneId || !Number.isFinite(bone.length) || bone.length <= 0)) {
-        return { ok: false, reason: '既存Bone構造は初回編集の3 Bone範囲外です。', bones: [] };
+    const bones = rig?.bones ?? [];
+    const boneIds = new Set(Array.isArray(bones) ? bones.map(bone => bone?.boneId) : []);
+    const rootCount = Array.isArray(bones)
+        ? bones.filter(bone => bone?.parentBoneId == null).length : -1;
+    const validBoneData = Array.isArray(bones) && bones.every(bone => (
+        !!bone?.boneId
+        && Number.isFinite(bone.length)
+        && bone.length > 0
+        && (bone.parentBoneId == null || boneIds.has(bone.parentBoneId))
+    ));
+    const evaluated = Array.isArray(bones) && bones.length > 0
+        ? evaluateRigidBones(asset, null, 0) : null;
+    if (!validBoneData
+        || (bones.length > 0 && rootCount !== 1)
+        || (evaluated && !evaluated.ok)) {
+        return { ok: false, reason: '既存Bone構造を安全に編集できません。', bones: [] };
     }
     return { ok: true, bones };
 }
@@ -72,8 +95,8 @@ export function planStaticRigBone(asset, layerId, { kind, start, end, parentBone
             }
         };
     }
-    if (kind !== 'child' || target.bones.length === 0 || target.bones.length >= 3) {
-        return { ok: false, reason: '子Boneは選択中のBoneから、合計3 Boneまで追加できます。' };
+    if (kind !== 'child' || target.bones.length === 0) {
+        return { ok: false, reason: '子Boneは選択中のBoneから追加できます。' };
     }
     // Preserve the single-Root caller contract; a deeper hierarchy requires an explicit selection.
     const selectedParentId = parentBoneId || (target.bones.length === 1 ? target.bones[0].boneId : null);

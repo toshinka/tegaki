@@ -30,9 +30,42 @@ assert.match(frame, /preserveMotionWindow: true/u,
 assert.match(frame, /this\.rigLensTarget = \{[\s\S]*?assetId: target\.assetId[\s\S]*?internalLayerId: target\.internalLayerId/u,
     'entry retains only the CAF Asset and internal Raster identity for this view handoff');
 assert.match(frame, /Rootを配置/u, 'RIG lens exposes Root placement');
+assert.match(frame, /rigRootButton\.addEventListener\('click',[\s\S]*?_createRigLensStaticRoot\(\)/u,
+    'the Root button creates directly instead of arming a second Canvas click');
+assert.match(frame, /getRigLensStaticEditTarget/u,
+    'static structure UI uses the editability guard rather than display-only eligibility');
 assert.match(frame, /子Boneを追加/u, 'RIG lens exposes child Bone placement');
 assert.match(frame, /rigView\.dataset\.authoringKind = this\.rigAuthoringKind[\s\S]*?rigView\.dataset\.mode = this\.rigLensMode/u,
     'existing RIG view state drives the setup/motion surface projection');
+assert.match(frame, /rigLensContent\.append\(structure, properties, this\.rigModeRow\)/u,
+    'one shared phase action follows the target and operation content inside its scroll owner');
+assert.doesNotMatch(frame, /rigSetupButton|rigPoseButton/u,
+    'the upper SETUP/MOTION segment is not duplicated');
+assert.match(frame, /MOTIONへ進む →[\s\S]*?← SETUPへ戻る/u,
+    'the phase control describes the next action rather than labeling the current state');
+assert.match(frame, /_resolveRigLensInitialMotionEntry\(\)[\s\S]*?getRigLensPartMotionTarget[\s\S]*?getRigLensMotionTarget/u,
+    'entry derives Motion readiness from the existing PART and DEFORM resolvers');
+assert.match(frame, /if \(motionEntry\.ok\)[\s\S]*?this\.rigLensMode = 'motion'/u,
+    'only a resolver-approved target receives Motion-first entry');
+assert.match(frame, /_syncRigModeAction\(motionTarget, matchesTarget\)[\s\S]*?rigModeActionButton\.disabled/u,
+    'the next-step action is enabled only for the current resolved target');
+assert.match(frame, /_selectRigLensBone\(bone\.boneId\)/u,
+    'Bone list and Canvas selection route through the guarded selector');
+assert.match(frame, /_startRigStaticBoneGesture\(bone, 'move', event\)[\s\S]*?_startRigStaticBoneGesture\(bone, 'rotate', event\)/u,
+    'static Bone head and selected tip handles edit Bind placement and direction');
+assert.match(frame, /resolveBoneRootHandleDrag[\s\S]*?previewRigLensStaticBoneBind/u,
+    'static Bind translation uses the existing Bone drag resolver and setup adapter');
+assert.match(frame, /rigBoneParentSelect\.addEventListener\('change',[\s\S]*?_setRigLensBoneParent/u,
+    'the selected Bone exposes a compact explicit parent change control');
+assert.doesNotMatch(frame, /target\.bones\.length\s*(?:>=|<)\s*3/u,
+    'RIG Lens authoring has no former three-Bone UI cap');
+assert.match(frame, /_renderRigPendingPoseRecovery\(target\)[\s\S]*?Poseを取消/u,
+    'an explicit cancel remains available if a target changes during a pending Pose');
+const targetChangeGuard = frame.match(/if \(rigTargetKey !== this\.lastRigTargetKey\) \{([\s\S]*?)\n        \}/u)?.[1] || '';
+assert.match(targetChangeGuard, /_hasRigPosePreview\(\)/u,
+    'target changes are held behind the existing pending-Pose guard');
+assert.doesNotMatch(targetChangeGuard, /cancelRigLensBonePosePreview/u,
+    'target projection never silently cancels a Bone Pose');
 assert.match(frame, /this\.rigLensStructureTitle\.textContent = isMotion \? 'Bone' : 'Bone \/ Artwork'/u,
     'DEFORM setup combines static structure and artwork status while motion focuses the Bone list');
 assert.match(frame, /targetRow\.className = 'right-workspace-rig-target-row right-workspace-rig-deform-static'/u,
@@ -66,5 +99,11 @@ assert.match(surface, /data-authoring-kind="deform"\]\[data-mode="motion"\] \.ri
     'DEFORM motion hides static setup details without affecting PART or setup');
 assert.match(surface, /right-workspace-rig-deform-action[\s\S]*?width: 100%/u,
     'DEFORM next actions use the available compact workspace width');
+assert.match(surface, /\.right-workspace-rig-flow-action[\s\S]*?width: 100%[\s\S]*?white-space: normal/u,
+    'the shared action remains full-width and readable in the narrow Workspace');
+assert.match(surface, /right-workspace-rig-bone-parent-control[\s\S]*?min-width: 0/u,
+    'the parent selector fits the narrow RIG Workspace');
+assert.match(surface, /right-workspace-rig-bone-move-handle[\s\S]*?cursor: move/u,
+    'static Bind handles advertise their pointer operation');
 
 console.log('PASS: Right Workspace RIG lens projection, target guard, static Bone handoff, and Dock-preserving return contracts');

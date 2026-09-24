@@ -51,8 +51,8 @@ assert.deepEqual(asset.rigDefinition.bones.map(bone => [bone.boneId, bone.parent
     [['root', null], ['child1', 'root'], ['child2', 'child1']]);
 assert.equal(inspectStaticRigAuthoringTarget(asset, 'raster').ok, true);
 assert.equal(planStaticRigBone(asset, 'raster', {
-    kind: 'child', parentBoneId: 'child2', end: { x: 29, y: 8 }
-}).ok, false, 'fourth Bone is outside this lens');
+    kind: 'child', parentBoneId: 'child2', end: { x: 40, y: 8 }
+}).ok, true, 'static hierarchy authoring is no longer capped at three Bones');
 assert.equal(clip.rigMotion, null, 'static authoring creates no Frame-local KEY');
 assert.equal(asset.meshDefinitions?.length || 0, 0);
 assert.equal(asset.skinBindings?.length || 0, 0);

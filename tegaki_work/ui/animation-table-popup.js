@@ -57,7 +57,11 @@ import {
     resolveDirectionalTransformDragMode
 } from '../system/transform-math.js';
 import { sampleClipTransform } from '../system/animation/clip-transform-sampler.js';
-import { inspectStaticRigAuthoringTarget, planStaticRigBone } from '../system/animation/rig-static-authoring.js';
+import {
+    inspectStaticRigAuthoringTarget,
+    planStaticRigBone,
+    resolveStaticRigRootCenter
+} from '../system/animation/rig-static-authoring.js';
 import {
     projectTransformEditContext,
     TRANSFORM_EDIT_AUTHORITY,
@@ -3518,6 +3522,27 @@ export class AnimationTablePopup {
         return inspectStaticRigAuthoringTarget(this.model.getClipAsset(assetId), layerId, options);
     }
 
+    _hasRigLensBoneMotionKeys(assetId) {
+        return (this.model.tracks || []).some(lane => (lane.cels || []).some(clip => (
+            clip?.assetId === assetId
+            && clip.rigMotion?.boneTracks?.some(track => (
+                Array.isArray(track?.keyframes) && track.keyframes.length > 0
+            ))
+        )));
+    }
+
+    getRigLensStaticEditTarget(assetId, layerId) {
+        const target = this.getRigLensStaticTarget(assetId, layerId);
+        if (!target.ok) return target;
+        if (this.isPlaying) {
+            return { ...target, ok: false, reason: '再生中は静的Boneを編集できません。' };
+        }
+        if (this._hasRigLensBoneMotionKeys(assetId)) {
+            return { ...target, ok: false, reason: '既存Bone Motion KEYがあるため静的Setupを編集できません。' };
+        }
+        return target;
+    }
+
     /** PART Lens は同じ選択CAFの直下Rasterだけを対象にする。 */
     getRigLensPartTarget(assetId) {
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
@@ -4078,7 +4103,7 @@ export class AnimationTablePopup {
         const preview = this._rigLensPosePreview;
         if (preview && (preview.clipId !== entry.clip.id || preview.frame !== frame
             || preview.assetId !== assetId || preview.layerId !== layerId)) {
-            this._rigLensPosePreview = null;
+            return { ok: false, reason: '未確定Poseがあります。対象を切り替える前にKEY確定または取消してください。' };
         }
         const sampled = sampleBoneInstanceMotion(entry.clip, frame).get(boneId)
             || { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 };
@@ -4176,7 +4201,7 @@ export class AnimationTablePopup {
         if (this._rigLensPosePreview
             && (this._rigLensPosePreview.clipId !== entry?.clip?.id
                 || this._rigLensPosePreview.frame !== frame)) {
-            this.cancelRigLensBonePosePreview();
+            return [];
         }
         const clip = this._getRigLensPreviewClip(entry.clip, frame);
         const evaluated = evaluateRigidBones(this.model.getClipAsset(assetId), clip, frame);
@@ -4202,9 +4227,25 @@ export class AnimationTablePopup {
         }).filter(Boolean);
     }
 
+    createRigLensStaticRootAtArtworkCenter(assetId, layerId) {
+        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+        if (!target.ok) return target;
+        if (target.bones.length > 0) return { ok: false, reason: 'Rootはすでに配置されています。' };
+        const asset = this.model.getClipAsset(assetId);
+        const layer = asset?.internalLayers?.find(candidate => candidate?.id === layerId) || null;
+        const snapshot = layer ? this.model.getDrawingSnapshot(layer.drawingSnapshotId) : null;
+        const center = resolveStaticRigRootCenter(
+            snapshot?.pixels ? this._getDrawingSnapshotContentBounds(snapshot) : null
+        );
+        if (!center.ok) return { ok: false, reason: center.reason };
+        return this.registerRigLensStaticBone(assetId, layerId, {
+            kind: 'root', start: center.point, end: center.point
+        });
+    }
+
     registerRigLensStaticBone(assetId, layerId, gesture) {
-        const target = this.getRigLensStaticTarget(assetId, layerId);
-        if (!target.ok || this.isPlaying) return { ok: false, reason: target.reason || '再生中は編集できません。' };
+        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+        if (!target.ok) return target;
         const asset = this.model.getClipAsset(assetId);
         const plan = planStaticRigBone(asset, layerId, gesture);
         if (!plan.ok) return plan;
@@ -4213,6 +4254,129 @@ export class AnimationTablePopup {
             ...plan.options,
             source: 'right-workspace-rig-lens'
         });
+    }
+
+    beginRigLensStaticBoneGesture(assetId, layerId, boneId, event) {
+        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+        if (!target.ok) return target;
+        const bone = target.bones.find(candidate => candidate.boneId === boneId) || null;
+        const asset = this.model.getClipAsset(assetId);
+        const entry = this.model.findClipEntry(this.selectedCelId);
+        if (!bone || !asset || !entry?.clip) {
+            return { ok: false, reason: '選択BoneまたはCAFを確認してください。' };
+        }
+        const projectPoint = this._screenToRigProject(event, entry);
+        const startPointer = this._projectToBoneParentLocal(
+            projectPoint, { asset, entry }, bone, { bindPose: true }
+        );
+        if (![startPointer?.x, startPointer?.y].every(Number.isFinite)) {
+            return { ok: false, reason: 'Canvas上のBone座標を取得できません。' };
+        }
+        return {
+            ok: true,
+            bone,
+            startTransform: { ...bone.bindTransform },
+            startPointer,
+            beforeState: this._captureInternalLayerHistoryState(asset)
+        };
+    }
+
+    projectRigLensStaticBonePoint(assetId, layerId, boneId, event) {
+        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+        if (!target.ok) return null;
+        const bone = target.bones.find(candidate => candidate.boneId === boneId) || null;
+        const entry = this.model.findClipEntry(this.selectedCelId);
+        const asset = this.model.getClipAsset(assetId);
+        if (!bone || !entry?.clip || !asset) return null;
+        const projectPoint = this._screenToRigProject(event, entry);
+        return this._projectToBoneParentLocal(
+            projectPoint, { asset, entry }, bone, { bindPose: true }
+        );
+    }
+
+    previewRigLensStaticBoneBind(assetId, layerId, boneId, transform) {
+        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+        if (!target.ok) return target;
+        const bone = target.bones.find(candidate => candidate.boneId === boneId) || null;
+        if (!bone || !['x', 'y', 'rotation'].every(field => Number.isFinite(transform?.[field]))) {
+            return { ok: false, reason: 'Bone Bind座標が不正です。' };
+        }
+        if (['x', 'y', 'rotation'].every(field => bone.bindTransform?.[field] === transform[field])) {
+            return { ok: true, changed: false, bone };
+        }
+        return this.model.setClipAssetRigBoneBindTransform(assetId, boneId, transform);
+    }
+
+    finishRigLensStaticBoneGesture(assetId, layerId, boneId, startTransform, beforeState) {
+        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+        const bone = target?.bones?.find(candidate => candidate.boneId === boneId) || null;
+        if (!target?.ok || !bone || !beforeState || !startTransform) {
+            return { ok: false, reason: target?.reason || 'Bone編集を確定できません。' };
+        }
+        const changed = ['x', 'y', 'rotation'].some(field => (
+            bone.bindTransform?.[field] !== startTransform[field]
+        ));
+        if (changed) {
+            const asset = this.model.getClipAsset(assetId);
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-rig-bone-bind-gesture', {
+                type: 'caf-rig-bone-bind-gesture', assetId, layerId, boneId,
+                source: 'right-workspace-rig-lens'
+            });
+            this._invalidateSnapshotTextureCache();
+            this._animationPreviewKey = null;
+            this._applyVisibilityPreview();
+            this.render();
+            this._flushLayerPanelSync();
+            this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        }
+        return { ok: true, changed, bone };
+    }
+
+    cancelRigLensStaticBoneGesture(assetId, beforeState) {
+        if (!beforeState) return { ok: false, reason: 'Bone編集の取消状態がありません。' };
+        return {
+            ok: this._restoreInternalLayerHistoryState(assetId, beforeState),
+            changed: true
+        };
+    }
+
+    setRigLensStaticBoneParent(assetId, layerId, boneId, parentBoneId) {
+        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+        if (!target.ok) return target;
+        const bone = target.bones.find(candidate => candidate.boneId === boneId) || null;
+        if (!bone) return { ok: false, reason: '対象Boneが見つかりません。' };
+        const nextParentId = typeof parentBoneId === 'string' && parentBoneId.length > 0
+            ? parentBoneId : null;
+        if ((bone.parentBoneId || null) === nextParentId) {
+            return { ok: true, changed: false, bone };
+        }
+        if (bone.parentBoneId == null && nextParentId != null) {
+            return { ok: false, reason: 'Rootには親Boneを設定できません。' };
+        }
+        if (bone.parentBoneId != null && nextParentId == null) {
+            return { ok: false, reason: 'Rootを一つに保つため、このBoneは親から切り離せません。' };
+        }
+        if (nextParentId && !target.bones.some(candidate => candidate.boneId === nextParentId)) {
+            return { ok: false, reason: '同じRIG内のBoneを親に指定してください。' };
+        }
+        const asset = this.model.getClipAsset(assetId);
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const result = this.model.setClipAssetRigBoneParent(assetId, boneId, nextParentId);
+        if (!result.ok) return result;
+        if (result.changed) {
+            this._recordInternalLayerHistory(asset, beforeState, 'caf-rig-bone-parent', {
+                type: 'caf-rig-bone-parent', assetId, layerId,
+                boneId, parentBoneId: result.bone.parentBoneId || null,
+                source: 'right-workspace-rig-lens'
+            });
+            this._invalidateSnapshotTextureCache();
+            this._animationPreviewKey = null;
+            this._applyVisibilityPreview();
+            this.render();
+            this._flushLayerPanelSync();
+            this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        }
+        return result;
     }
 
     generateRigLensArtworkBinding(assetId, layerId) {

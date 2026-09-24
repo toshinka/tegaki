@@ -2,10 +2,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inspectStaticRigAuthoringTarget, planStaticRigBone } from '../system/animation/rig-static-authoring.js';
+import {
+    inspectStaticRigAuthoringTarget,
+    planStaticRigBone,
+    resolveStaticRigRootCenter
+} from '../system/animation/rig-static-authoring.js';
 
 globalThis.window = globalThis.window || {};
 const { TimelineModel, ClipAssetModel } = await import('../system/animation/animation-data-model.js');
+const { evaluateRigidBones } = await import('../system/animation/part-rig.js');
 const { HistoryManager } = await import('../system/history.js');
 
 const makeModel = () => new TimelineModel({
@@ -16,6 +21,11 @@ const makeModel = () => new TimelineModel({
 const model = makeModel();
 const asset = model.getClipAsset('asset');
 const clip = model.findClipEntry('clip').clip;
+assert.deepEqual(resolveStaticRigRootCenter({ x: 8, y: 10, width: 20, height: 30 }), {
+    ok: true, reason: '', point: { x: 18, y: 25 }
+}, 'the direct Root point is the selected Artwork Bounds center');
+assert.equal(resolveStaticRigRootCenter({ x: 0, y: 0, width: 0, height: 10 }).ok, false,
+    'empty Artwork Bounds cannot place a Root');
 const before = JSON.stringify(asset.serialize());
 assert.equal(inspectStaticRigAuthoringTarget(asset, 'raster').ok, true);
 assert.equal(planStaticRigBone(asset, 'raster', { kind: 'child', end: { x: 20, y: 20 } }).ok, false);
@@ -109,4 +119,84 @@ assert.match(source, /registerRigLensStaticBone[\s\S]*?registerInternalRasterBon
     'RIG Lens commits through existing CAF Asset/History route');
 assert.match(source, /registerInternalRasterBoneFromExternal[\s\S]*?_recordInternalLayerHistory\(asset, beforeState, 'caf-raster-bone-register'/u,
     'one existing CAF History command owns creation');
-console.log('PASS: static Root/child model, guard, cancel, KEY isolation, serialization and existing History route');
+
+const branchingModel = makeModel();
+const branchingAsset = branchingModel.getClipAsset('asset');
+const rootPlan = planStaticRigBone(branchingAsset, 'raster', {
+    kind: 'root', start: { x: 0, y: 0 }, end: { x: 0, y: 0 }
+});
+assert.equal(rootPlan.ok, true);
+assert.equal(branchingModel.registerClipAssetRasterBone('asset', 'raster', {
+    ...rootPlan.options, boneId: 'root'
+}).ok, true);
+const addChild = (boneId, parentBoneId, end) => {
+    const plan = planStaticRigBone(branchingAsset, 'raster', {
+        kind: 'child', parentBoneId, end
+    });
+    assert.equal(plan.ok, true, `${boneId} is valid from selected parent ${parentBoneId}`);
+    const registered = branchingModel.registerClipAssetRasterBone('asset', 'raster', {
+        ...plan.options, boneId
+    });
+    assert.equal(registered.ok, true);
+    assert.equal(registered.bone.parentBoneId, parentBoneId);
+    return registered.bone;
+};
+addChild('torso', 'root', { x: 0, y: -96 });
+addChild('right-arm', 'torso', { x: 24, y: -96 });
+addChild('left-arm', 'torso', { x: -24, y: -96 });
+addChild('leg', 'root', { x: 24, y: 0 });
+assert.equal(branchingAsset.rigDefinition.bones.length, 5,
+    'static authoring permits a branched structure beyond the former three-Bone setup cap');
+assert.equal(planStaticRigBone(branchingAsset, 'raster', {
+    kind: 'child', end: { x: 30, y: -100 }
+}).ok, false, 'after several Bones, a parent must be explicitly selected');
+
+const beforeReparent = evaluateRigidBones(branchingAsset, null, 0);
+assert.equal(beforeReparent.ok, true);
+const oldArmWorld = beforeReparent.poseByBoneId.get('left-arm').worldMatrix;
+const reparent = branchingModel.setClipAssetRigBoneParent('asset', 'left-arm', 'root');
+assert.equal(reparent.ok, true);
+assert.equal(reparent.bone.parentBoneId, 'root');
+const afterReparent = evaluateRigidBones(branchingAsset, null, 0);
+const newArmWorld = afterReparent.poseByBoneId.get('left-arm').worldMatrix;
+for (const field of ['a', 'b', 'c', 'd', 'tx', 'ty']) {
+    assert.ok(Math.abs(oldArmWorld[field] - newArmWorld[field]) < 1e-8,
+        `safe reparent preserves Bind world matrix field ${field}`);
+}
+assert.equal(branchingModel.setClipAssetRigBoneParent('asset', 'left-arm', 'left-arm').ok, false,
+    'self-parenting is refused');
+assert.equal(branchingModel.setClipAssetRigBoneParent('asset', 'torso', 'right-arm').reason, 'bone-cycle',
+    'a descendant cannot be made the parent');
+assert.equal(branchingModel.setClipAssetRigBoneParent('asset', 'left-arm', 'missing').ok, false,
+    'a missing parent is refused');
+
+const beforeRootMove = evaluateRigidBones(branchingAsset, null, 0).poseByBoneId.get('right-arm').worldMatrix;
+const rootMove = branchingModel.setClipAssetRigBoneBindTransform('asset', 'root', { x: 15, y: 7 });
+assert.equal(rootMove.ok, true);
+const afterRootMove = evaluateRigidBones(branchingAsset, null, 0).poseByBoneId.get('right-arm').worldMatrix;
+assert.ok(Math.abs(afterRootMove.tx - beforeRootMove.tx - 15) < 1e-8);
+assert.ok(Math.abs(afterRootMove.ty - beforeRootMove.ty - 7) < 1e-8,
+    'moving a parent carries descendant Bind poses without rewriting child IDs or parents');
+assert.equal(branchingModel.findClipEntry('clip').clip.rigMotion, null,
+    'static authoring does not create Frame-local Motion KEYs');
+const revisitedBranches = new TimelineModel(branchingModel.serialize())
+    .getClipAsset('asset').rigDefinition.bones;
+assert.deepEqual(revisitedBranches.map(bone => [bone.boneId, bone.parentBoneId]), [
+    ['root', null], ['torso', 'root'], ['right-arm', 'torso'], ['left-arm', 'root'], ['leg', 'root']
+], 'Project save/revisit preserves Bone identity and branched parent links');
+assert.deepEqual(revisitedBranches.map(bone => bone.bindTransform),
+    branchingAsset.rigDefinition.bones.map(bone => bone.bindTransform),
+    'Project save/revisit preserves edited Bind locations');
+
+const rootMethodStart = source.indexOf('createRigLensStaticRootAtArtworkCenter(');
+const rootMethodEnd = source.indexOf('generateRigLensArtworkBinding(', rootMethodStart);
+assert.match(source.slice(rootMethodStart, rootMethodEnd),
+    /resolveStaticRigRootCenter[\s\S]*?_getDrawingSnapshotContentBounds[\s\S]*?registerRigLensStaticBone/u,
+    'direct Root creation uses selected Raster content bounds and existing registration');
+assert.match(source, /getRigLensStaticEditTarget[\s\S]*?_hasRigLensBoneMotionKeys[\s\S]*?boneTracks/u,
+    'static structure edits are guarded when existing Bone Motion KEYs are present');
+assert.match(source, /finishRigLensStaticBoneGesture[\s\S]*?_recordInternalLayerHistory/u,
+    'a static Bind drag uses one existing CAF Asset History boundary');
+assert.match(source, /setRigLensStaticBoneParent[\s\S]*?setClipAssetRigBoneParent[\s\S]*?_recordInternalLayerHistory/u,
+    'new Workspace reparenting uses the existing world-preserving model mutator and History owner');
+console.log('PASS: centered Root, branched Bone authoring, safe reparent, Bind movement, key/binding guards, serialization, and CAF History route');

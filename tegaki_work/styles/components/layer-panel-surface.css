@@ -405,11 +405,20 @@
     display: none;
 }
 .right-workspace-rig-mode-row {
+    display: flex;
     flex: 0 0 auto;
+    min-width: 0;
+    padding: 0 2px 4px;
     pointer-events: auto;
 }
 .right-workspace-rig-mode-row[hidden] {
     display: none;
+}
+.right-workspace-rig-flow-action {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
 }
 .right-workspace-rig-frame-navigation {
     display: grid;
@@ -507,6 +516,26 @@
     width: 100%;
     min-width: 0;
     white-space: normal;
+}
+.right-workspace-rig-lens[data-authoring-kind="deform"] .right-workspace-rig-bone-parent-control {
+    display: flex;
+    flex: 1 1 100%;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    color: var(--futaba-maroon);
+    font-size: 9px;
+}
+.right-workspace-rig-bone-parent-control[hidden] {
+    display: none;
+}
+.right-workspace-rig-bone-parent-control select {
+    flex: 1 1 auto;
+    width: 0;
+    min-width: 0;
+    max-width: 100%;
+    padding-inline: 3px;
+    font-size: 9px;
 }
 .right-workspace-rig-lens[data-authoring-kind="deform"] .right-workspace-rig-deform-bones {
     display: grid;
@@ -712,6 +741,10 @@
     fill: var(--active-border);
 }
 .right-workspace-rig-part-move-handle {
+    cursor: move;
+    stroke-width: 3;
+}
+.right-workspace-rig-bone-move-handle {
     cursor: move;
     stroke-width: 3;
 }

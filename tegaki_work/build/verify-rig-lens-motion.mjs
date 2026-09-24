@@ -108,6 +108,23 @@ const popup = fs.readFileSync(path.join(root, '../ui/animation-table-popup.js'),
 const frame = fs.readFileSync(path.join(root, '../ui/right-workspace-frame.js'), 'utf8');
 assert.match(popup, /_getRigLensPreviewClip[\s\S]*?upsertRigBoneKey/u);
 assert.match(popup, /const previewCel = this\._getRigLensPreviewClip\(cel, frame\)[\s\S]*?createRasterSkinRenderPlan\(asset, previewCel/u);
+const motionTargetStart = popup.indexOf('getRigLensMotionTarget(assetId, layerId, boneId)');
+const motionTargetEnd = popup.indexOf('\n    _getRigLensPreviewClip(', motionTargetStart);
+const motionScreenStart = popup.indexOf('getRigLensMotionScreenBones(assetId, layerId)');
+const motionScreenEnd = popup.indexOf('registerRigLensStaticBone(assetId, layerId, gesture)', motionScreenStart);
+assert.ok(motionTargetStart >= 0 && motionTargetEnd > motionTargetStart
+    && motionScreenStart > motionTargetEnd && motionScreenEnd > motionScreenStart);
+const motionTargetSource = popup.slice(motionTargetStart, motionTargetEnd);
+assert.match(motionTargetSource,
+    /preview && \([\s\S]*?return \{ ok: false, reason: '未確定Poseがあります/u,
+    'a stale Bone preview blocks Motion readiness without being discarded');
+assert.doesNotMatch(motionTargetSource, /_rigLensPosePreview = null/u,
+    'Motion target resolution does not silently clear a pending preview');
+assert.match(popup.slice(motionScreenStart, motionScreenEnd),
+    /_rigLensPosePreview[\s\S]*?return \[\]/u,
+    'stale screen projection hides handles while preserving the pending Pose');
+assert.doesNotMatch(popup.slice(motionScreenStart, motionScreenEnd), /cancelRigLensBonePosePreview\(\)/u,
+    'Canvas overlay projection does not cancel a pending Pose');
 assert.match(popup, /commitRigLensBoneKey[\s\S]*?setClipRigBoneKey[\s\S]*?_finishMotionGestureHistory/u);
 assert.match(frame, /_startRigPoseGesture[\s\S]*?resolveBoneRotationHandleDrag/u);
 assert.match(frame, /rigKeyButton\.addEventListener\('click', \(\) => this\._commitRigPose\(\)\)/u);
