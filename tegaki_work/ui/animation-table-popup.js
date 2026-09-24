@@ -60,6 +60,7 @@ import { sampleClipTransform } from '../system/animation/clip-transform-sampler.
 import {
     inspectStaticRigAuthoringTarget,
     planStaticRigBone,
+    planStaticRigStructureBone,
     resolveStaticRigRootCenter
 } from '../system/animation/rig-static-authoring.js';
 import {
@@ -4253,6 +4254,34 @@ export class AnimationTablePopup {
         return this.registerInternalRasterBoneFromExternal(assetId, layerId, {
             ...plan.options,
             source: 'right-workspace-rig-lens'
+        });
+    }
+
+    createRigLensStaticStructureBone(assetId, layerId, options = {}) {
+        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+        if (!target.ok) return target;
+        const asset = this.model.getClipAsset(assetId);
+        let rootPoint = null;
+        if (options.kind === 'root') {
+            const layer = asset?.internalLayers?.find(candidate => candidate?.id === layerId) || null;
+            const snapshot = layer ? this.model.getDrawingSnapshot(layer.drawingSnapshotId) : null;
+            const center = resolveStaticRigRootCenter(
+                snapshot?.pixels ? this._getDrawingSnapshotContentBounds(snapshot) : null
+            );
+            if (!center.ok) return center;
+            rootPoint = center.point;
+        }
+        const plan = planStaticRigStructureBone(asset, layerId, {
+            kind: options.kind,
+            name: options.name,
+            parentBoneId: options.parentBoneId,
+            rootPoint
+        });
+        if (!plan.ok) return plan;
+        return this.registerInternalRasterBoneFromExternal(assetId, layerId, {
+            ...plan.options,
+            source: 'right-workspace-rig-structure',
+            deferUi: true
         });
     }
 

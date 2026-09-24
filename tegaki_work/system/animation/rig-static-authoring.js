@@ -6,6 +6,7 @@ import { evaluateRigidBones } from './part-rig.js';
 import { invertTransformMatrixPoint } from '../transform-math.js';
 
 const finitePoint = point => Number.isFinite(point?.x) && Number.isFinite(point?.y);
+const STRUCTURE_BONE_LENGTH = 48;
 
 export function resolveStaticRigRootCenter(bounds) {
     if (![bounds?.x, bounds?.y, bounds?.width, bounds?.height].every(Number.isFinite)
@@ -124,6 +125,54 @@ export function planStaticRigBone(asset, layerId, { kind, start, end, parentBone
                 rotation: Math.atan2(dy, dx), pivotX: 0, pivotY: 0
             },
             length
+        }
+    };
+}
+
+/**
+ * 構造編集で既存Bone正本へ登録するための、有効な仮Bind geometryを作る。
+ * これは配置完了を意味しない。配置状態はRight Workspaceのruntime表示だけが持つ。
+ */
+export function planStaticRigStructureBone(asset, layerId, {
+    kind, name, parentBoneId, rootPoint
+} = {}) {
+    const target = inspectStaticRigAuthoringTarget(asset, layerId);
+    if (!target.ok) return target;
+    const boneName = typeof name === 'string' && name.trim()
+        ? name.trim().slice(0, 64)
+        : kind === 'root' ? 'Root' : `Bone ${target.bones.length}`;
+    if (kind === 'root') {
+        if (target.bones.length !== 0 || !finitePoint(rootPoint)) {
+            return { ok: false, reason: 'Rootは未設定の対象に一つだけ作成できます。' };
+        }
+        return {
+            ok: true,
+            options: {
+                name: boneName,
+                parentBoneId: null,
+                bindTransform: {
+                    x: rootPoint.x, y: rootPoint.y, scaleX: 1, scaleY: 1,
+                    rotation: -Math.PI / 2, pivotX: 0, pivotY: 0
+                },
+                length: STRUCTURE_BONE_LENGTH
+            }
+        };
+    }
+    if (kind !== 'child' || target.bones.length === 0) {
+        return { ok: false, reason: 'Rootを作成してから子Boneを追加してください。' };
+    }
+    const parent = target.bones.find(bone => bone.boneId === parentBoneId) || null;
+    if (!parent) return { ok: false, reason: '同じRIG内の親Boneを選択してください。' };
+    return {
+        ok: true,
+        options: {
+            name: boneName,
+            parentBoneId: parent.boneId,
+            bindTransform: {
+                x: parent.length, y: 0, scaleX: 1, scaleY: 1,
+                rotation: -Math.PI / 2, pivotX: 0, pivotY: 0
+            },
+            length: STRUCTURE_BONE_LENGTH
         }
     };
 }
