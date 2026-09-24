@@ -4216,7 +4216,9 @@ export class AnimationTablePopup {
     }
 
     generateRigLensArtworkBinding(assetId, layerId) {
-        const target = this.getRigLensStaticTarget(assetId, layerId);
+        const target = this.getRigLensStaticTarget(assetId, layerId, {
+            allowExistingOtherRasterBindings: true
+        });
         if (!target.ok || this.isPlaying) {
             return { ok: false, reason: target.reason || '再生中はRIGを編集できません。' };
         }

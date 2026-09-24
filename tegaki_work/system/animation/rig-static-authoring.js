@@ -1,6 +1,6 @@
 /**
  * RIG Lens の初回 static Bone authoring preflight / geometry。
- * 未接続BoneにはRaster ownerが保存されないため、単一Raster Assetだけを扱う。
+ * Bone構造はClipAsset単位、Mesh/Skin bindingはRaster単位の既存正本を使用する。
  */
 import { evaluateRigidBones } from './part-rig.js';
 import { invertTransformMatrixPoint } from '../transform-math.js';
@@ -9,16 +9,30 @@ const finitePoint = point => Number.isFinite(point?.x) && Number.isFinite(point?
 
 export function inspectStaticRigAuthoringTarget(asset, layerId, options = {}) {
     if (!asset || !layerId) return { ok: false, reason: 'CAFとRasterを選択してください。', bones: [] };
-    const rasters = (asset.internalLayers || []).filter(layer => layer?.type === 'raster' && !layer.isBackground);
-    if (rasters.length !== 1 || rasters[0]?.id !== layerId || rasters[0]?.parentLayerId != null) {
-        return { ok: false, reason: '未接続Boneの保存先を一意にするため、CAF直下のRasterが一枚のAssetだけ編集できます。', bones: [] };
+    const layer = (asset.internalLayers || []).find(candidate => candidate?.id === layerId) || null;
+    if (!layer) return { ok: false, reason: 'CAF内のRasterを選択してください。', bones: [] };
+    if (layer.type !== 'raster' || layer.isBackground === true) {
+        return { ok: false, reason: '背景以外のRasterを選択してください。', bones: [] };
+    }
+    if (layer.parentLayerId != null) {
+        return { ok: false, reason: 'CAF直下のRasterを選択してください。', bones: [] };
     }
     const rig = asset.rigDefinition;
     if ((rig?.parts?.length || 0) > 0 || (rig?.rigidBindings?.length || 0) > 0
-        || (options.allowBound !== true
-            && ((asset.meshDefinitions?.length || 0) > 0 || (asset.skinBindings?.length || 0) > 0))
         || (rig?.warpAnchorConstraints?.length || 0) > 0) {
         return { ok: false, reason: '既存のBinding／Mesh／複合RIGはこの初回編集面では変更できません。', bones: [] };
+    }
+    const meshDefinitions = Array.isArray(asset.meshDefinitions) ? asset.meshDefinitions : [];
+    const skinBindings = Array.isArray(asset.skinBindings) ? asset.skinBindings : [];
+    const targetMesh = meshDefinitions.find(mesh => mesh?.targetInternalLayerId === layerId) || null;
+    if (options.allowBound !== true) {
+        if (options.allowExistingOtherRasterBindings === true) {
+            if (targetMesh) {
+                return { ok: false, reason: 'このRasterはすでにArtworkへ接続されています。', bones: [] };
+            }
+        } else if (meshDefinitions.length > 0 || skinBindings.length > 0) {
+            return { ok: false, reason: 'Artwork接続後はBone構造を変更できません。', bones: [] };
+        }
     }
     const bones = rig?.bones || [];
     if (!Array.isArray(bones) || bones.length > 3
@@ -26,7 +40,7 @@ export function inspectStaticRigAuthoringTarget(asset, layerId, options = {}) {
         || bones.slice(1).some((bone, index) =>
             !bones.slice(0, index + 1).some(parent => parent?.boneId === bone?.parentBoneId))
         || bones.some(bone => !bone?.boneId || !Number.isFinite(bone.length) || bone.length <= 0)) {
-        return { ok: false, reason: '既存Bone構造は単一Rasterの3 Bone編集範囲外です。', bones: [] };
+        return { ok: false, reason: '既存Bone構造は初回編集の3 Bone範囲外です。', bones: [] };
     }
     return { ok: true, bones };
 }

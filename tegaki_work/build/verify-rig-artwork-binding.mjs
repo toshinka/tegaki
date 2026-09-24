@@ -114,8 +114,10 @@ const multiAsset = new ClipAssetModel({
         { id: 'other', type: 'raster', drawingSnapshotId: snapshot.id }
     ]
 });
-assert.equal(inspectStaticRigAuthoringTarget(multiAsset, 'raster').ok, false,
-    'new RIG refuses ambiguous multi-Raster Bone ownership');
+assert.equal(inspectStaticRigAuthoringTarget(multiAsset, 'raster').ok, true,
+    'selected Raster authoring resolves within a multi-Raster Asset using its existing Asset-level Bone structure');
+assert.equal(inspectStaticRigAuthoringTarget(multiAsset, 'other').ok, true,
+    'the second direct Raster has an independent stable Mesh target');
 const multiModel = new TimelineModel({
     totalFrames: 4,
     drawingSnapshots: [snapshot],
@@ -124,17 +126,48 @@ const multiModel = new TimelineModel({
 });
 const otherBinding = multiModel.generateClipAssetRasterBoneSetup('multi', 'other');
 assert.equal(otherBinding.ok, true);
+const multiRigAsset = multiModel.getClipAsset('multi');
+assert.equal(inspectStaticRigAuthoringTarget(multiRigAsset, 'raster').ok, false,
+    'Bone structure remains immutable after the first Raster is bound');
+assert.equal(inspectStaticRigAuthoringTarget(multiRigAsset, 'raster', {
+    allowExistingOtherRasterBindings: true
+}).ok, true, 'an unbound selected Raster can reuse the existing Asset Bone structure');
+assert.equal(inspectStaticRigAuthoringTarget(multiRigAsset, 'other', {
+    allowExistingOtherRasterBindings: true
+}).ok, false, 'binding an already-connected target is refused instead of regenerated');
 const targetBinding = multiModel.generateClipAssetRasterBoneSetup('multi', 'raster');
 assert.equal(targetBinding.ok, true);
-assert.equal(multiModel.getClipAsset('multi').meshDefinitions.length, 2);
-assert.equal(multiModel.getClipAsset('multi').skinBindings.length, 2);
-assert.ok(multiModel.getClipAsset('multi').meshDefinitions.some(mesh => mesh.meshId === otherBinding.meshDefinition.meshId),
+assert.equal(multiRigAsset.meshDefinitions.length, 2);
+assert.equal(multiRigAsset.skinBindings.length, 2);
+assert.deepEqual(new Set(multiRigAsset.meshDefinitions.map(mesh => mesh.targetInternalLayerId)),
+    new Set(['raster', 'other']), 'each Mesh keeps the intended internal Raster target ID');
+assert.ok(multiRigAsset.meshDefinitions.some(mesh => mesh.meshId === otherBinding.meshDefinition.meshId),
     'existing model retains unrelated Raster Mesh');
-assert.ok(multiModel.getClipAsset('multi').skinBindings.some(binding => binding.meshId === otherBinding.meshDefinition.meshId),
+assert.ok(multiRigAsset.skinBindings.some(binding => binding.meshId === otherBinding.meshDefinition.meshId),
     'existing model retains unrelated Raster Skin Binding');
+const multiClip = multiModel.findClipEntry('multi-clip').clip;
+const multiPlan = createRasterSkinRenderPlan(multiRigAsset, multiClip, 0);
+assert.equal(multiPlan.status, 'ready', 'both explicitly bound Raster targets evaluate through the existing shared Bone structure');
+assert.deepEqual(new Set(multiPlan.resultByLayerId.keys()), new Set(['raster', 'other']));
+assert.equal(multiClip.rigMotion, null, 'multi-Raster static setup does not create a Motion KEY');
+const restoredMulti = new TimelineModel(multiModel.serialize()).getClipAsset('multi');
+assert.deepEqual(new Set(restoredMulti.meshDefinitions.map(mesh => mesh.targetInternalLayerId)),
+    new Set(['raster', 'other']), 'Project round-trip preserves each binding target ID');
+assert.equal(inspectStaticRigAuthoringTarget(multiRigAsset, 'raster', {
+    allowExistingOtherRasterBindings: true
+}).ok, false, 'the newly connected selected target cannot be rebound by this first-bind action');
 
 const popupSource = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../ui/animation-table-popup.js'), 'utf8');
+const workspaceSource = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../ui/right-workspace-frame.js'), 'utf8');
 assert.match(popupSource, /generateRigLensArtworkBinding[\s\S]*?_generateRasterBoneSetupForTarget/u);
+assert.match(popupSource, /generateRigLensArtworkBinding[\s\S]*?getRigLensStaticTarget\(assetId, layerId, \{\s*allowExistingOtherRasterBindings: true\s*\}\)/u,
+    'DEFORM binding explicitly allows other Raster targets while preserving the selected target check');
 assert.match(popupSource, /_generateRasterBoneSetupForTarget[\s\S]*?generateClipAssetRasterBoneSetup[\s\S]*?_restoreInternalLayerHistoryState[\s\S]*?_recordInternalLayerHistory/u,
     'new and old UI use the same model, rollback, and CAF History boundary');
+assert.match(workspaceSource, /const bindingTarget = matchesTarget[\s\S]*?allowExistingOtherRasterBindings: true/u,
+    'the Workspace resolves binding separately from immutable Bone authoring');
+assert.match(workspaceSource, /rigBindButton\.hidden = isMotion \|\| !bindingTarget\?\.ok/u,
+    'the Artwork binding action is exposed only for a valid unbound selected Raster');
+assert.match(workspaceSource, /rigRootButton\.hidden = isMotion \|\| !staticTarget\?\.ok/u,
+    'Root authoring remains behind the strict no-existing-Mesh guard');
 console.log('PASS: RIG Artwork Binding target, Mesh/Skin, Bone deformation, KEY isolation, History and round-trip');

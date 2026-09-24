@@ -81,8 +81,28 @@ assert.deepEqual(model.getClipAsset('asset').rigDefinition.bones.map(bone => bon
 
 const multi = makeModel().getClipAsset('asset');
 multi.internalLayers.push({ id: 'second', type: 'raster' });
-assert.equal(inspectStaticRigAuthoringTarget(multi, 'raster').ok, false,
-    'unbound Bone owner is ambiguous with multiple Raster layers');
+assert.equal(inspectStaticRigAuthoringTarget(multi, 'raster').ok, true,
+    'an explicitly selected direct Raster resolves within a multi-Raster CAF');
+assert.equal(inspectStaticRigAuthoringTarget(multi, 'second').ok, true,
+    'each direct Raster resolves by its stable internal Layer ID');
+assert.equal(planStaticRigBone(multi, 'raster', {
+    kind: 'root', start: { x: 12, y: 18 }, end: { x: 40, y: 18 }
+}).ok, true, 'Root placement uses the selected Raster context without changing Asset-level Bone storage');
+assert.equal(inspectStaticRigAuthoringTarget(multi, 'missing').ok, false,
+    'an unresolved selected Raster is refused');
+const nested = {
+    ...multi,
+    internalLayers: multi.internalLayers.map(layer => layer.id === 'second'
+        ? { ...layer, parentLayerId: 'folder' } : layer)
+};
+assert.equal(inspectStaticRigAuthoringTarget(nested, 'second').ok, false,
+    'nested Raster targets remain outside the initial DEFORM edit surface');
+const partConflict = {
+    ...multi,
+    rigDefinition: { version: 1, parts: [{ partId: 'second' }], bones: [], rigidBindings: [] }
+};
+assert.equal(inspectStaticRigAuthoringTarget(partConflict, 'raster').ok, false,
+    'existing PART ownership remains a DEFORM conflict');
 assert.equal(inspectStaticRigAuthoringTarget(asset, 'wrong').ok, false);
 const source = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../ui/animation-table-popup.js'), 'utf8');
 assert.match(source, /registerRigLensStaticBone[\s\S]*?registerInternalRasterBoneFromExternal/u,
