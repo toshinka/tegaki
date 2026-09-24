@@ -262,6 +262,7 @@
     -webkit-backdrop-filter: var(--ui-control-backdrop);
     backdrop-filter: var(--ui-control-backdrop);
 }
+.right-workspace-target[hidden] { display: none !important; }
 .right-workspace-target img {
     width: 24px;
     height: 24px;

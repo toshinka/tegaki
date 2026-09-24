@@ -199,6 +199,8 @@ assert.match(frame, /authoringKind: 'deform'[\s\S]*?frameTarget: partTarget/u,
     'DEFORM SETUP and MOTION use the selected CAF Clip frame without Part KEY routing');
 assert.match(frame, /this\.title\.hidden = rigLensVisible/u,
     'the duplicate normal Layer/Frame target label is hidden only in RIG');
+assert.match(surface, /\.right-workspace-target\[hidden\]\s*\{\s*display:\s*none\s*!important\s*;\s*\}/u,
+    'the target label hidden state overrides its flex display and collapses its layout slot');
 assert.doesNotMatch(frame, /rigReturnButton/u,
     'RIG exit uses the existing guarded LAYER / TRANSFORM primary switch');
 assert.match(frame, /commitRigLensPartPoseFrame[\s\S]*?commitRigLensBoneKey/u,
