@@ -60,6 +60,7 @@ export class RightWorkspaceFrame {
         this.rigPlacementMode = null;
         this.rigSelectedBoneId = null;
         this.rigPlacementVerifiedBoneIds = new Set();
+        this.rigStructureCreatedBoneIds = new Set();
         this.rigTreeCollapsedBoneIds = new Set();
         this.rigStructureTreeRestoreFocusId = null;
         this.rigStructureDrag = null;
@@ -557,6 +558,7 @@ export class RightWorkspaceFrame {
         this.rigPlacementMode = null;
         this.rigSelectedBoneId = null;
         this.rigPlacementVerifiedBoneIds.clear();
+        this.rigStructureCreatedBoneIds.clear();
         this.rigTreeCollapsedBoneIds.clear();
         this.rigLensMode = 'setup';
         const motionEntry = this._resolveRigLensInitialMotionEntry();
@@ -610,6 +612,7 @@ export class RightWorkspaceFrame {
         this.rigLensActive = false;
         this.rigLensTarget = null;
         this.rigPlacementMode = null;
+        this.rigStructureCreatedBoneIds.clear();
         this.rigPartIkEffectorId = null;
         this.sync();
         if (this.rigLensReturnMode === 'warp') {
@@ -1136,6 +1139,31 @@ export class RightWorkspaceFrame {
     }
 
     _closeRigStructureEditor(returnToCanvas) {
+        if (returnToCanvas && this.rigLensActive && this.rigLensTarget) {
+            const target = this._getRigLensEditTarget();
+            const pendingCreatedIds = (target?.bones || [])
+                .filter(bone => this.rigStructureCreatedBoneIds.has(bone.boneId)
+                    && !this.rigPlacementVerifiedBoneIds.has(bone.boneId))
+                .map(bone => bone.boneId);
+            if (pendingCreatedIds.length > 0) {
+                const result = this._getRigLensTable()?.applyRigLensStaticInitialLayout?.(
+                    this.rigLensTarget.assetId, this.rigLensTarget.internalLayerId,
+                    pendingCreatedIds
+                );
+                if (!result?.ok) {
+                    this.rigStructureStatusMessage = result?.reason
+                        || '新規Boneの初期配置を確定できません。';
+                    if (this.rigStructureStatus) {
+                        this.rigStructureStatus.textContent = this.rigStructureStatusMessage;
+                    }
+                    this.sync();
+                    return false;
+                }
+                this.rigStructureStatusMessage = result.changed
+                    ? '新規BoneをCanvas内へ初期配置しました。各Boneの位置確認は続けて行ってください。'
+                    : '';
+            }
+        }
         this._clearRigStructureDragState();
         if (this.rigStructureEditorDialog?.open) this.rigStructureEditorDialog.close();
         if (this.rigLensPropertiesContent) {
@@ -1366,9 +1394,38 @@ export class RightWorkspaceFrame {
             number.className = 'right-workspace-rig-hierarchy-number';
             number.textContent = isRoot ? 'ROOT' : entry.number;
             number.setAttribute('aria-hidden', 'true');
-            const name = document.createElement('span');
-            name.className = 'right-workspace-rig-hierarchy-name';
-            name.textContent = bone.name || (isRoot ? 'Root' : 'Bone');
+            const name = document.createElement('input');
+            name.className = 'right-workspace-rig-hierarchy-name-input';
+            name.type = 'text';
+            name.maxLength = 64;
+            name.value = bone.name || (isRoot ? 'Root' : 'Bone');
+            name.readOnly = this.rigSelectedBoneId !== bone.boneId;
+            name.setAttribute('aria-label', `${name.value} · Bone名`);
+            name.title = name.readOnly ? 'Boneを選択すると名前を編集できます。' : 'Bone名を編集';
+            name.addEventListener('change', () => {
+                const result = this._getRigLensTable()?.setRigLensStaticBoneName?.(
+                    this.rigLensTarget?.assetId, this.rigLensTarget?.internalLayerId,
+                    bone.boneId, name.value
+                );
+                if (!result?.ok) {
+                    name.value = bone.name || (isRoot ? 'Root' : 'Bone');
+                    this.rigStructureStatusMessage = result?.reason || 'Bone名を変更できません。';
+                } else {
+                    this.rigStructureStatusMessage = '';
+                }
+                this.sync();
+            });
+            name.addEventListener('keydown', event => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    name.blur();
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    name.value = bone.name || (isRoot ? 'Root' : 'Bone');
+                    name.blur();
+                }
+            });
             const placed = this.rigPlacementVerifiedBoneIds.has(bone.boneId);
             const state = document.createElement('span');
             state.className = `right-workspace-rig-hierarchy-placement${placed ? ' is-verified' : ' is-pending'}`;
@@ -1382,12 +1439,25 @@ export class RightWorkspaceFrame {
             node.title = `${isRoot ? 'Root（番号対象外）' : `階層 ${entry.number}`} · ${name.textContent} · ${parentLabel} · ${state.title} · ${dragHint}`;
             card.title = node.title;
             card.append(number, name, state);
-            card.addEventListener('click', () => {
+            card.addEventListener('click', event => {
+                if (event.target === name) {
+                    if (this.rigSelectedBoneId !== bone.boneId) {
+                        this.rigStructureTreeRestoreFocusId = bone.boneId;
+                        this._selectRigLensBone(bone.boneId);
+                    }
+                    return;
+                }
                 this.rigStructureTreeRestoreFocusId = bone.boneId;
                 this._selectRigLensBone(bone.boneId);
             });
             if (!isRoot) {
-                card.addEventListener('dragstart', event => this._onRigHierarchyCardDragStart(event, bone.boneId, card));
+                card.addEventListener('dragstart', event => {
+                    if (event.target?.closest?.('input')) {
+                        event.preventDefault();
+                        return;
+                    }
+                    this._onRigHierarchyCardDragStart(event, bone.boneId, card);
+                });
                 card.addEventListener('dragover', event => this._onRigHierarchyCardDragOver(event, bone.boneId, card));
                 card.addEventListener('dragleave', event => {
                     if (event.relatedTarget && card.contains(event.relatedTarget)) return;
@@ -1647,6 +1717,7 @@ export class RightWorkspaceFrame {
             : { ok: false, reason: target?.reason || '対象Rasterを確認してください。' };
         if (result?.ok && result.changed) {
             this.rigSelectedBoneId = result.bone.boneId;
+            this.rigStructureCreatedBoneIds.add(result.bone.boneId);
             this.rigPlacementVerifiedBoneIds.delete(result.bone.boneId);
             this.rigStructureNameInput.value = `Bone ${target.bones.length + 1}`;
             this.rigStructureStatusMessage = '';
@@ -1683,6 +1754,7 @@ export class RightWorkspaceFrame {
         );
         if (result?.ok && result.changed) {
             this.rigSelectedBoneId = result.bone.boneId;
+            this.rigStructureCreatedBoneIds.add(result.bone.boneId);
             this.rigPlacementVerifiedBoneIds.delete(result.bone.boneId);
             this._expandRigBoneAncestors([...target.bones, result.bone], result.bone.boneId);
             this.rigStructureNameInput.value = `Bone ${target.bones.length + 1}`;

@@ -60,6 +60,7 @@ import { sampleClipTransform } from '../system/animation/clip-transform-sampler.
 import {
     inspectStaticRigAuthoringTarget,
     planStaticRigBone,
+    planStaticRigInitialBoneLayout,
     planStaticRigStructureBone,
     resolveStaticRigRootCenter
 } from '../system/animation/rig-static-authoring.js';
@@ -4283,6 +4284,85 @@ export class AnimationTablePopup {
             source: 'right-workspace-rig-structure',
             deferUi: true
         });
+    }
+
+    setRigLensStaticBoneName(assetId, layerId, boneId, name) {
+        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+        if (!target.ok) return target;
+        if (!target.bones.some(bone => bone.boneId === boneId)) {
+            return { ok: false, reason: '対象Boneが見つかりません。' };
+        }
+        const asset = this.model.getClipAsset(assetId);
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        const result = this.model.setClipAssetRigBoneName(assetId, boneId, name);
+        if (!result.ok || !result.changed) return result;
+        this._recordInternalLayerHistory(asset, beforeState, 'caf-rig-bone-name', {
+            type: 'caf-rig-bone-name', assetId, layerId, boneId,
+            source: 'right-workspace-rig-structure-name'
+        });
+        this._applyVisibilityPreview();
+        this.render();
+        this._flushLayerPanelSync();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        return result;
+    }
+
+    applyRigLensStaticInitialLayout(assetId, layerId, boneIds = []) {
+        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+        if (!target.ok) return target;
+        const asset = this.model.getClipAsset(assetId);
+        const layer = asset?.internalLayers?.find(candidate => candidate?.id === layerId) || null;
+        const snapshot = layer ? this.model.getDrawingSnapshot(layer.drawingSnapshotId) : null;
+        const artworkBounds = snapshot?.pixels
+            ? this._getDrawingSnapshotContentBounds(snapshot) : null;
+        const canvasSize = this._getCanvasSnapshotSize();
+        const plan = planStaticRigInitialBoneLayout(asset, layerId, {
+            boneIds,
+            artworkBounds,
+            canvasWidth: canvasSize.width,
+            canvasHeight: canvasSize.height
+        });
+        if (!plan.ok || plan.updates.length === 0) {
+            return { ...plan, changed: false, boneIds: [] };
+        }
+
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        if (!beforeState) return { ok: false, reason: 'CAF Asset Historyの状態を取得できません。' };
+        for (const update of plan.updates) {
+            const result = this.model.setClipAssetRigBoneBindTransform(
+                assetId, update.boneId, update.bindTransform
+            );
+            if (!result.ok) {
+                this._restoreInternalLayerHistoryState(assetId, beforeState);
+                return { ok: false, reason: result.reason || '初期Bind配置を反映できません。' };
+            }
+        }
+
+        const nextAsset = this.model.getClipAsset(assetId);
+        const afterState = this._captureInternalLayerHistoryState(nextAsset);
+        const recorded = this._recordInternalLayerHistoryFromStates(
+            nextAsset, beforeState, afterState, 'caf-rig-bone-initial-layout', {
+                type: 'caf-rig-bone-initial-layout', assetId, layerId,
+                boneIds: plan.updates.map(update => update.boneId),
+                source: 'right-workspace-rig-initial-layout'
+            }
+        );
+        if (!recorded) {
+            this._restoreInternalLayerHistoryState(assetId, beforeState);
+            return { ok: false, reason: '初期Bind配置をCAF Asset Historyへ記録できません。' };
+        }
+
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        this.render();
+        this._flushLayerPanelSync();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        return {
+            ok: true, changed: true,
+            boneIds: plan.updates.map(update => update.boneId),
+            fanSpread: plan.fanSpread, rootRotation: plan.rootRotation
+        };
     }
 
     beginRigLensStaticBoneGesture(assetId, layerId, boneId, event) {

@@ -3,7 +3,7 @@
  * Bone構造はClipAsset単位、Mesh/Skin bindingはRaster単位の既存正本を使用する。
  */
 import { evaluateRigidBones } from './part-rig.js';
-import { invertTransformMatrixPoint } from '../transform-math.js';
+import { applyTransformMatrix, invertTransformMatrixPoint } from '../transform-math.js';
 
 const finitePoint = point => Number.isFinite(point?.x) && Number.isFinite(point?.y);
 const STRUCTURE_BONE_LENGTH = 48;
@@ -174,5 +174,112 @@ export function planStaticRigStructureBone(asset, layerId, {
             },
             length: STRUCTURE_BONE_LENGTH
         }
+    };
+}
+
+/**
+ * 初回Setup用に、今回の構造編集で新規作成されたBoneだけのBind方向を配置する。
+ * 既存BoneのBind位置・長さ・階層は保持し、結果は既存Bind evaluatorでCanvas bounds内と確認する。
+ */
+export function planStaticRigInitialBoneLayout(asset, layerId, {
+    boneIds = [], artworkBounds, canvasWidth, canvasHeight
+} = {}) {
+    const target = inspectStaticRigAuthoringTarget(asset, layerId);
+    if (!target.ok) return target;
+    if (!Array.isArray(boneIds) || boneIds.length === 0) {
+        return { ok: true, reason: '', updates: [] };
+    }
+    if (![canvasWidth, canvasHeight].every(value => Number.isFinite(value) && value > 0)) {
+        return { ok: false, reason: 'Canvas範囲を確認できません。', updates: [] };
+    }
+    const artworkCenter = resolveStaticRigRootCenter(artworkBounds);
+    if (!artworkCenter.ok) return { ...artworkCenter, updates: [] };
+
+    const bones = target.bones;
+    const bonesById = new Map(bones.map(bone => [bone.boneId, bone]));
+    const pendingIds = new Set(boneIds.filter(id => bonesById.has(id)));
+    if (pendingIds.size === 0) return { ok: true, reason: '', updates: [] };
+    const root = bones.find(bone => bone.parentBoneId == null);
+    if (!root) return { ok: false, reason: '単一Rootを確認できません。', updates: [] };
+
+    const childrenByParent = new Map();
+    bones.forEach(bone => {
+        if (bone.parentBoneId == null) return;
+        const children = childrenByParent.get(bone.parentBoneId) || [];
+        children.push(bone);
+        childrenByParent.set(bone.parentBoneId, children);
+    });
+
+    const rootIsNew = pendingIds.has(root.boneId);
+    const canvasCenter = { x: canvasWidth / 2, y: canvasHeight / 2 };
+    const centerDeltaX = canvasCenter.x - artworkCenter.point.x;
+    const centerDeltaY = canvasCenter.y - artworkCenter.point.y;
+    const preferredRootRotation = rootIsNew
+        ? (Math.hypot(centerDeltaX, centerDeltaY) > 1
+            ? Math.atan2(centerDeltaY, centerDeltaX)
+            : -Math.PI / 2)
+        : Number(root.bindTransform?.rotation);
+    const rootRotations = rootIsNew
+        ? [0, ...Array.from({ length: 12 }, (_, index) => (index + 1) * Math.PI / 12)
+            .flatMap(offset => [offset, -offset])]
+            .map(offset => preferredRootRotation + offset)
+        : [preferredRootRotation];
+    const fanSpreads = [Math.PI * 0.36, Math.PI * 0.30, Math.PI * 0.24, Math.PI * 0.18, Math.PI / 12];
+
+    for (const fanSpread of fanSpreads) {
+        for (const rootRotation of rootRotations) {
+            const rotations = new Map();
+            if (rootIsNew) rotations.set(root.boneId, rootRotation);
+            childrenByParent.forEach((siblings) => {
+                const denominator = Math.max(1, siblings.length - 1);
+                siblings.forEach((bone, index) => {
+                    if (!pendingIds.has(bone.boneId)) return;
+                    const angle = siblings.length < 2
+                        ? 0
+                        : ((index / denominator) * 2 - 1) * fanSpread;
+                    rotations.set(bone.boneId, angle);
+                });
+            });
+
+            const candidateBones = bones.map(bone => rotations.has(bone.boneId)
+                ? {
+                    ...bone,
+                    bindTransform: { ...bone.bindTransform, rotation: rotations.get(bone.boneId) }
+                }
+                : bone);
+            const evaluated = evaluateRigidBones({
+                ...asset,
+                rigDefinition: { ...(asset.rigDefinition || {}), bones: candidateBones }
+            }, null, 0);
+            if (!evaluated.ok) continue;
+
+            const inCanvas = [...pendingIds].every(boneId => {
+                const bone = bonesById.get(boneId);
+                const matrix = evaluated.poseByBoneId.get(boneId)?.worldMatrix;
+                if (!bone || !matrix) return false;
+                const head = applyTransformMatrix(matrix, 0, 0);
+                const tail = applyTransformMatrix(matrix, bone.length, 0);
+                return [head.x, head.y, tail.x, tail.y].every(Number.isFinite)
+                    && [head, tail].every(point => (
+                        point.x >= 0 && point.x <= canvasWidth
+                        && point.y >= 0 && point.y <= canvasHeight
+                    ));
+            });
+            if (!inCanvas) continue;
+
+            const updates = [...rotations].flatMap(([boneId, rotation]) => {
+                const bone = bonesById.get(boneId);
+                return bone && bone.bindTransform?.rotation !== rotation
+                    ? [{ boneId, bindTransform: { rotation } }]
+                    : [];
+            });
+            return { ok: true, reason: '', updates, fanSpread, rootRotation };
+        }
+    }
+
+    return {
+        ok: false,
+        reason: '初期配置がCanvas内に収まりません。階層を浅くするか、RootをCanvas内側へ配置してください。',
+        updates: []
     };
 }

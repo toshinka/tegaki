@@ -47,6 +47,7 @@ import {
     serializeRigDefinition,
     serializeRigMotion,
     updateRigBoneBindTransform,
+    updateRigBoneName,
     updateRigBoneParent,
     updateRigPartBindPivot,
     updateRigPartParent,
@@ -1342,6 +1343,21 @@ export class TimelineModel {
         if (!asset) return { ok: false, reason: 'asset-not-found' };
         const update = updateRigBoneBindTransform(asset.rigDefinition, boneId, transform);
         if (!update.ok) return update;
+        const validation = validateRigDefinition(update.value, asset.internalLayers);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-definition', errors: validation.errors };
+        }
+        asset.rigDefinition = validation.value;
+        asset.updatedAt = Date.now();
+        return { ...update, asset, bone: validation.value.bones.find(bone => bone.boneId === boneId) };
+    }
+
+    setClipAssetRigBoneName(assetId, boneId, name) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const update = updateRigBoneName(asset.rigDefinition, boneId, name);
+        if (!update.ok) return update;
+        if (!update.changed) return { ...update, asset, bone: update.bone };
         const validation = validateRigDefinition(update.value, asset.internalLayers);
         if (!validation.ok) {
             return { ok: false, reason: 'invalid-rig-definition', errors: validation.errors };

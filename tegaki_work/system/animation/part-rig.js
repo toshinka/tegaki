@@ -706,6 +706,34 @@ export function updateRigBoneBindTransform(rigDefinition, boneId, transform = {}
     };
 }
 
+/** Bone display name is static Setup data, independent of ID, parent, Bind, and Frame Pose. */
+export function updateRigBoneName(rigDefinition, boneId, name) {
+    const normalized = normalizeRigDefinition(rigDefinition);
+    if (!normalized || !Array.isArray(normalized.bones)) {
+        return { ok: false, reason: 'invalid-rig-definition', value: normalized, bone: null };
+    }
+    const nextName = typeof name === 'string' ? name.trim() : '';
+    if (!nextName || Array.from(nextName).length > 64) {
+        return { ok: false, reason: 'invalid-bone-name', value: normalized, bone: null };
+    }
+    const boneIndex = normalized.bones.findIndex(bone => bone?.boneId === boneId);
+    if (boneIndex < 0) {
+        return { ok: false, reason: 'bone-not-found', value: normalized, bone: null };
+    }
+    const previous = normalized.bones[boneIndex];
+    if ((previous.name || '') === nextName) {
+        return { ok: true, changed: false, value: normalized, bone: previous };
+    }
+    const bone = { ...previous, name: nextName };
+    const bones = normalized.bones.map((candidate, index) => index === boneIndex ? bone : candidate);
+    return {
+        ok: true,
+        changed: true,
+        value: { ...normalized, bones },
+        bone
+    };
+}
+
 function decomposeRigMatrix(matrix) {
     const scaleX = Math.hypot(matrix.a, matrix.b);
     if (!Number.isFinite(scaleX) || scaleX < 1e-8) return null;
