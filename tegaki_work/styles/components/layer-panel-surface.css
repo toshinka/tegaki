@@ -767,6 +767,23 @@
 .right-workspace-rig-bone-tip:active {
     cursor: grabbing;
 }
+.right-workspace-rig-bone-overlay.is-child-placement .right-workspace-rig-bone-tip {
+    cursor: crosshair;
+}
+.right-workspace-rig-bone-placement-preview {
+    fill: none;
+    stroke: var(--active-border);
+    stroke-width: 2;
+    stroke-dasharray: 5 4;
+    stroke-linecap: round;
+    pointer-events: none;
+}
+.right-workspace-rig-bone-placement-endpoint {
+    fill: var(--futaba-cream);
+    stroke: var(--active-border);
+    stroke-width: 2;
+    pointer-events: none;
+}
 .right-workspace-rig-lens-warning {
     flex: 0 0 auto;
     margin: 0;

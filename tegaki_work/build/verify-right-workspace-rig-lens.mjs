@@ -35,6 +35,10 @@ assert.match(frame, /rigRootButton\.addEventListener\('click',[\s\S]*?_createRig
 assert.match(frame, /getRigLensStaticEditTarget/u,
     'static structure UI uses the editability guard rather than display-only eligibility');
 assert.match(frame, /子Boneを追加/u, 'RIG lens exposes child Bone placement');
+assert.match(frame, /rigChildButton\.addEventListener\('click',[\s\S]*?_onRigChildPlacementClick\(\)/u,
+    'the visible child action enters the existing placement mode');
+assert.match(frame, /_onRigChildPlacementClick\(\)[\s\S]*?_armRigPlacement\('child'\)/u,
+    'the actual child action handler uses the existing runtime placement state');
 assert.match(frame, /rigView\.dataset\.authoringKind = this\.rigAuthoringKind[\s\S]*?rigView\.dataset\.mode = this\.rigLensMode/u,
     'existing RIG view state drives the setup/motion surface projection');
 assert.match(frame, /rigLensContent\.append\(structure, properties, this\.rigModeRow\)/u,
@@ -105,5 +109,105 @@ assert.match(surface, /right-workspace-rig-bone-parent-control[\s\S]*?min-width:
     'the parent selector fits the narrow RIG Workspace');
 assert.match(surface, /right-workspace-rig-bone-move-handle[\s\S]*?cursor: move/u,
     'static Bind handles advertise their pointer operation');
+assert.match(frame, /event\.target\?\.closest\?\.\('\.right-workspace-rig-bone-overlay \.right-workspace-rig-bone-marker'\)/u,
+    'document capture routes Bone marker input before the existing Bind-handle listeners');
+assert.match(frame, /registerRigLensStaticBone[\s\S]*?parentBoneId: gesture\.parentBoneId/u,
+    'child placement commits through the existing static CAF registration with its selected parent');
+assert.match(frame, /event\.key === 'Escape'[\s\S]*?_cancelRigPlacement\(\)/u,
+    'Escape remains a cancellation route while placement is armed or active');
+assert.match(frame, /window\.addEventListener\('blur', this\._rigBlurHandler\)/u,
+    'window blur cancels an incomplete child gesture');
+assert.match(surface, /right-workspace-rig-bone-placement-preview[\s\S]*?pointer-events: none/u,
+    'the child placement ghost is visible without taking pointer ownership');
+
+globalThis.window = globalThis.window || {};
+const { RightWorkspaceFrame } = await import('../ui/right-workspace-frame.js');
+const registeredGestures = [];
+const pointerCapture = [];
+const canvas = {
+    setPointerCapture: pointerId => pointerCapture.push(['set', pointerId]),
+    releasePointerCapture: pointerId => pointerCapture.push(['release', pointerId])
+};
+window.coreEngine = { getApp: () => ({ canvas }) };
+const editTarget = { ok: true, bones: [{ boneId: 'root', name: 'Root' }] };
+const table = {
+    isPlaying: false,
+    projectRigLensCanvasPoint: (_assetId, _layerId, event) => ({ x: event.clientX, y: event.clientY }),
+    registerRigLensStaticBone: (assetId, layerId, gesture) => {
+        registeredGestures.push({ assetId, layerId, ...gesture });
+        const bone = { boneId: `child-${registeredGestures.length}`, name: `Bone ${registeredGestures.length}` };
+        editTarget.bones.push(bone);
+        return { ok: true, changed: true, bone };
+    }
+};
+const createFrame = () => {
+    const instance = Object.create(RightWorkspaceFrame.prototype);
+    Object.assign(instance, {
+        rigLensActive: true,
+        rigAuthoringKind: 'deform',
+        rigLensMode: 'setup',
+        rigLensTarget: { assetId: 'asset', internalLayerId: 'raster' },
+        rigSelectedBoneId: 'root',
+        rigPlacementMode: null,
+        rigPointerGesture: null,
+        rigEntryMessage: '',
+        layerSystem: { cameraSystem: { isCanvasMoveMode: () => false } },
+        sync() {}
+    });
+    instance._getRigLensEditTarget = () => editTarget;
+    instance._getRigLensTable = () => table;
+    return instance;
+};
+const pointer = (target, pointerId, x, y) => ({
+    target, pointerId, clientX: x, clientY: y, button: 0, isPrimary: true,
+    defaultPrevented: false, immediateStopped: false,
+    preventDefault() { this.defaultPrevented = true; },
+    stopImmediatePropagation() { this.immediateStopped = true; }
+});
+const behavioralFrame = createFrame();
+assert.equal(behavioralFrame._onRigChildPlacementClick(), true);
+assert.equal(behavioralFrame.rigPlacementMode, 'child');
+const parentTip = {
+    dataset: { rigBoneId: 'root' },
+    classList: { contains: className => className === 'right-workspace-rig-bone-tip' },
+    closest() { return this; }
+};
+const down = pointer(parentTip, 21, 20, 30);
+behavioralFrame._onRigCanvasDown(down);
+assert.equal(behavioralFrame.rigPointerGesture.parentBoneId, 'root');
+assert.equal(down.defaultPrevented && down.immediateStopped, true,
+    'the marker event is owned before it can start a Bind edit');
+const move = pointer(canvas, 21, 90, 70);
+behavioralFrame._onRigCanvasMove(move);
+assert.equal(behavioralFrame.rigPointerGesture.moved, true);
+assert.equal(registeredGestures.length, 0, 'pointermove only previews and creates no intermediate Bone');
+const up = pointer(canvas, 21, 90, 70);
+behavioralFrame._onRigCanvasUp(up);
+assert.equal(registeredGestures.length, 1, 'one completed drag creates exactly one Bone');
+assert.deepEqual(registeredGestures[0], {
+    assetId: 'asset', layerId: 'raster', kind: 'child',
+    start: { x: 20, y: 30 }, end: { x: 90, y: 70 }, parentBoneId: 'root'
+});
+assert.equal(behavioralFrame.rigSelectedBoneId, 'child-1');
+assert.equal(behavioralFrame.rigPlacementMode, null);
+
+const clickFrame = createFrame();
+clickFrame._onRigChildPlacementClick();
+clickFrame._onRigCanvasDown(pointer(canvas, 22, 10, 10));
+clickFrame._onRigCanvasUp(pointer(canvas, 22, 10, 10));
+assert.equal(registeredGestures.length, 1, 'a click without a drag creates no Bone');
+assert.equal(clickFrame.rigPlacementMode, 'child', 'a short click leaves the explicit tool ready for retry');
+clickFrame._onRigWindowBlur();
+assert.equal(clickFrame.rigPlacementMode, null, 'window blur disarms the incomplete placement');
+
+const cancelFrame = createFrame();
+cancelFrame._onRigChildPlacementClick();
+cancelFrame._onRigCanvasDown(pointer(canvas, 23, 15, 15));
+const cancelEvent = pointer(canvas, 23, 40, 40);
+cancelFrame._onRigCanvasCancel(cancelEvent);
+assert.equal(registeredGestures.length, 1, 'pointercancel creates no Bone');
+assert.equal(cancelFrame.rigPointerGesture, null);
+assert.equal(cancelFrame.rigPlacementMode, null);
+assert.equal(cancelEvent.defaultPrevented && cancelEvent.immediateStopped, true);
 
 console.log('PASS: Right Workspace RIG lens projection, target guard, static Bone handoff, and Dock-preserving return contracts');
