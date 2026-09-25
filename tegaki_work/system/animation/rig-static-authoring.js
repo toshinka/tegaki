@@ -224,7 +224,10 @@ export function planStaticRigInitialBoneLayout(asset, layerId, {
             .flatMap(offset => [offset, -offset])]
             .map(offset => preferredRootRotation + offset)
         : [preferredRootRotation];
-    const fanSpreads = [Math.PI * 0.36, Math.PI * 0.30, Math.PI * 0.24, Math.PI * 0.18, Math.PI / 12];
+    const fanSpreads = [
+        Math.PI * 0.5, Math.PI * 0.42, Math.PI * 0.36,
+        Math.PI * 0.30, Math.PI * 0.24, Math.PI * 0.18, Math.PI / 12
+    ];
 
     for (const fanSpread of fanSpreads) {
         for (const rootRotation of rootRotations) {

@@ -730,6 +730,27 @@
     stroke-linecap: round;
     pointer-events: none;
 }
+.right-workspace-rig-parent-link {
+    stroke: var(--futaba-medium);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 4;
+    stroke-linecap: round;
+    pointer-events: none;
+}
+.right-workspace-rig-bone-name-label {
+    fill: var(--futaba-maroon);
+    stroke: var(--futaba-background);
+    stroke-width: 3px;
+    paint-order: stroke;
+    font-size: 11px;
+    font-weight: 700;
+    pointer-events: none;
+    user-select: none;
+}
+.right-workspace-rig-bone-name-label.is-root-label {
+    fill: var(--futaba-light-maroon);
+    font-weight: 800;
+}
 .right-workspace-rig-bone-marker {
     fill: var(--futaba-cream);
     stroke: var(--futaba-maroon);
@@ -809,6 +830,81 @@
     overflow: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
+}
+.right-workspace-rig-bone-tree--flat {
+    max-height: min(30dvh, 260px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+.right-workspace-rig-bone-selection-list {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.right-workspace-rig-bone-selection-item {
+    min-width: 0;
+    padding: 1px;
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius-control);
+}
+.right-workspace-rig-bone-selection-item.is-selected {
+    border-color: color-mix(in srgb, var(--active-border) 75%, transparent);
+    background: color-mix(in srgb, var(--futaba-cream) 44%, transparent);
+}
+.right-workspace-rig-bone-selection-button {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    min-width: 0;
+    min-height: 25px;
+    padding: 2px 4px;
+    overflow: hidden;
+    text-align: left;
+}
+.right-workspace-rig-bone-selection-button[aria-selected="true"] {
+    border-color: var(--active-border);
+    background: color-mix(in srgb, var(--active-border) 13%, var(--futaba-cream));
+}
+.right-workspace-rig-bone-selection-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.right-workspace-rig-selected-bone-details {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    padding: 3px 5px 4px 27px;
+}
+.right-workspace-rig-selected-bone-parent,
+.right-workspace-rig-selected-bone-placement,
+.right-workspace-rig-selected-bone-action {
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 9px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+.right-workspace-rig-selected-bone-placement.is-pending {
+    color: var(--active-border);
+    font-weight: 700;
+}
+.right-workspace-rig-selected-bone-placement.is-verified {
+    color: var(--futaba-medium);
+    font-weight: 700;
+}
+.right-workspace-rig-selected-bone-action {
+    margin: 0;
+    color: var(--futaba-maroon);
 }
 .right-workspace-rig-bone-tree--expanded {
     max-height: min(52dvh, 480px);
@@ -1140,6 +1236,28 @@
     font-weight: 700;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+.right-workspace-rig-hierarchy-name-input {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    padding: 2px 3px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--futaba-background) 42%, transparent);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+}
+.right-workspace-rig-hierarchy-name-input[readonly] {
+    cursor: pointer;
+}
+.right-workspace-rig-hierarchy-name-input:focus-visible {
+    border-color: var(--active-border);
+    outline: 2px solid color-mix(in srgb, var(--active-border) 36%, transparent);
+    outline-offset: 1px;
 }
 .right-workspace-rig-hierarchy-placement {
     min-width: 16px;

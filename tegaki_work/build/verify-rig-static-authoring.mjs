@@ -5,9 +5,11 @@ import { fileURLToPath } from 'node:url';
 import {
     inspectStaticRigAuthoringTarget,
     planStaticRigBone,
+    planStaticRigInitialBoneLayout,
     planStaticRigStructureBone,
     resolveStaticRigRootCenter
 } from '../system/animation/rig-static-authoring.js';
+import { applyTransformMatrix } from '../system/transform-math.js';
 
 globalThis.window = globalThis.window || {};
 const { TimelineModel, ClipAssetModel } = await import('../system/animation/animation-data-model.js');
@@ -83,6 +85,185 @@ const restoredStructure = new TimelineModel(structureModel.serialize())
 assert.deepEqual(restoredStructure.map(bone => [bone.boneId, bone.parentBoneId]),
     structureAsset.rigDefinition.bones.map(bone => [bone.boneId, bone.parentBoneId]),
     'structure-first Bone identity and parentage survive Project serialization');
+
+// A named, three-level hierarchy lays out only the Bones created in the current setup pass.
+const layoutModel = makeModel();
+const layoutAsset = layoutModel.getClipAsset('asset');
+const layoutRoot = planStaticRigStructureBone(layoutAsset, 'raster', {
+    kind: 'root', name: '体', rootPoint: { x: 200, y: 200 }
+});
+assert.equal(layoutRoot.ok, true);
+assert.equal(layoutModel.registerClipAssetRasterBone('asset', 'raster', {
+    ...layoutRoot.options, boneId: 'body'
+}).ok, true);
+const layoutChildren = [
+    ['head', '頭', 'body'], ['left-arm', '左腕', 'body'],
+    ['right-arm', '右腕', 'body'], ['left-leg', '左脚', 'body'],
+    ['right-leg', '右脚', 'body'], ['left-hand', '左手', 'left-arm'],
+    ['right-hand', '右手', 'right-arm'], ['left-foot', '左足', 'left-leg'],
+    ['right-foot', '右足', 'right-leg']
+];
+for (const [boneId, name, parentBoneId] of layoutChildren) {
+    const plan = planStaticRigStructureBone(layoutAsset, 'raster', {
+        kind: 'child', name, parentBoneId
+    });
+    assert.equal(plan.ok, true, `${name} has an existing parent Bone`);
+    assert.equal(layoutModel.registerClipAssetRasterBone('asset', 'raster', {
+        ...plan.options, boneId
+    }).ok, true, `${name} registers through the existing CAF Bone model`);
+}
+const layoutExistingRoot = structuredClone(layoutAsset.rigDefinition.bones[0]);
+const layoutBefore = structuredClone(layoutAsset.rigDefinition.bones);
+const newLayoutIds = layoutChildren.map(([boneId]) => boneId);
+const initialLayout = planStaticRigInitialBoneLayout(layoutAsset, 'raster', {
+    boneIds: newLayoutIds,
+    artworkBounds: { x: 150, y: 160, width: 100, height: 80 },
+    canvasWidth: 400,
+    canvasHeight: 400
+});
+assert.equal(initialLayout.ok, true, initialLayout.reason);
+assert.equal(initialLayout.fanSpread, Math.PI * 0.5,
+    'the default fitting candidate gives five direct branches enough angular separation');
+assert.ok(initialLayout.updates.length > 0);
+assert.ok(initialLayout.updates.every(update => newLayoutIds.includes(update.boneId)),
+    'only newly created Bones receive initial Bind rotation updates');
+assert.equal(initialLayout.updates.some(update => update.boneId === 'body'), false,
+    'the pre-existing Root is not part of this initial layout transaction');
+assert.deepEqual(layoutAsset.rigDefinition.bones[0], layoutExistingRoot,
+    'layout planning never changes the pre-existing Root or its Bind placement');
+assert.deepEqual(layoutAsset.rigDefinition.bones, layoutBefore,
+    'layout planning is a pure proposal before the existing CAF History owner applies it');
+const allBonesAsNew = planStaticRigInitialBoneLayout({
+    ...layoutAsset,
+    rigDefinition: { ...layoutAsset.rigDefinition, bones: layoutBefore }
+}, 'raster', {
+    boneIds: layoutBefore.map(bone => bone.boneId),
+    artworkBounds: { x: 50, y: 50, width: 100, height: 100 },
+    canvasWidth: 400,
+    canvasHeight: 400
+});
+assert.equal(allBonesAsNew.ok, true, allBonesAsNew.reason);
+assert.ok(allBonesAsNew.updates.some(update => update.boneId === 'body'),
+    'a newly created Root receives the selected artwork-to-Canvas orientation');
+assert.ok(Math.abs(allBonesAsNew.rootRotation - Math.PI / 4) < 1e-10,
+    'a new Root initially directs the tree toward the Canvas interior');
+for (const update of initialLayout.updates) {
+    const original = layoutBefore.find(bone => bone.boneId === update.boneId);
+    assert.deepEqual(Object.keys(update.bindTransform), ['rotation'],
+        'layout changes only the existing Bind direction field');
+    assert.ok(original, 'each proposed layout update names an existing Bone');
+}
+for (const update of initialLayout.updates) {
+    assert.equal(layoutModel.setClipAssetRigBoneBindTransform('asset', update.boneId, update.bindTransform).ok, true);
+    const original = layoutBefore.find(bone => bone.boneId === update.boneId);
+    const updated = layoutAsset.rigDefinition.bones.find(bone => bone.boneId === update.boneId);
+    for (const field of ['x', 'y', 'scaleX', 'scaleY', 'pivotX', 'pivotY']) {
+        assert.equal(updated.bindTransform[field], original.bindTransform[field],
+            `initial layout preserves existing Bind ${field}`);
+    }
+    assert.equal(updated.length, original.length);
+    assert.equal(updated.parentBoneId, original.parentBoneId);
+    assert.equal(updated.name, original.name);
+}
+const laidOut = evaluateRigidBones(layoutAsset, null, 0);
+assert.equal(laidOut.ok, true);
+const endpoints = new Map(layoutAsset.rigDefinition.bones.map(bone => {
+    const world = laidOut.poseByBoneId.get(bone.boneId).worldMatrix;
+    return [bone.boneId, {
+        head: applyTransformMatrix(world, 0, 0),
+        tail: applyTransformMatrix(world, bone.length, 0)
+    }];
+}));
+for (const bone of layoutAsset.rigDefinition.bones) {
+    const { head, tail } = endpoints.get(bone.boneId);
+    for (const point of [head, tail]) {
+        assert.ok(point.x >= 0 && point.x <= 400 && point.y >= 0 && point.y <= 400,
+            `${bone.name} remains inside the persisted Canvas coordinate bounds`);
+    }
+    if (bone.parentBoneId) {
+        const parentTail = endpoints.get(bone.parentBoneId).tail;
+        assert.ok(Math.hypot(head.x - parentTail.x, head.y - parentTail.y) < 1e-7,
+            `${bone.name} remains joined to its existing parent`);
+    }
+}
+const rootChildren = layoutAsset.rigDefinition.bones.filter(bone => bone.parentBoneId === 'body');
+const rootChildTails = rootChildren.map(bone => endpoints.get(bone.boneId).tail);
+const rootChildLabelAnchors = rootChildren.map(bone => {
+    const { head, tail } = endpoints.get(bone.boneId);
+    const dx = tail.x - head.x;
+    const dy = tail.y - head.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const fraction = Math.min(0.8, Math.max(0.66, 28 / length));
+    return {
+        x: head.x + dx * fraction - dy / length * 6,
+        y: head.y + dy * fraction + dx / length * 6
+    };
+});
+for (let first = 0; first < rootChildTails.length; first += 1) {
+    for (let second = first + 1; second < rootChildTails.length; second += 1) {
+        assert.ok(Math.hypot(rootChildTails[first].x - rootChildTails[second].x,
+            rootChildTails[first].y - rootChildTails[second].y) > 1,
+        'siblings fan out instead of overlapping');
+        assert.ok(Math.hypot(rootChildLabelAnchors[first].x - rootChildLabelAnchors[second].x,
+            rootChildLabelAnchors[first].y - rootChildLabelAnchors[second].y) > 20,
+        'sibling name anchors remain separated enough for short Japanese bone names');
+    }
+}
+const leftArmVector = {
+    x: endpoints.get('left-arm').tail.x - endpoints.get('left-arm').head.x,
+    y: endpoints.get('left-arm').tail.y - endpoints.get('left-arm').head.y
+};
+const leftHandVector = {
+    x: endpoints.get('left-hand').tail.x - endpoints.get('left-hand').head.x,
+    y: endpoints.get('left-hand').tail.y - endpoints.get('left-hand').head.y
+};
+assert.ok(leftArmVector.x * leftHandVector.x + leftArmVector.y * leftHandVector.y > 0,
+    'a grandchild extends along its selected parent branch');
+const renameBefore = structuredClone(layoutAsset.rigDefinition.bones.find(bone => bone.boneId === 'left-arm'));
+assert.equal(layoutModel.setClipAssetRigBoneName('asset', 'left-arm', '左腕・上').changed, true);
+assert.deepEqual(
+    layoutAsset.rigDefinition.bones.find(bone => bone.boneId === 'left-arm'),
+    { ...renameBefore, name: '左腕・上' },
+    'renaming changes the display name only, not Bone ID, parent, or Bind placement'
+);
+assert.equal(layoutModel.setClipAssetRigBoneName('asset', 'left-arm', '   ').ok, false,
+    'empty display names are refused');
+const savedLayout = new TimelineModel(layoutModel.serialize()).getClipAsset('asset').rigDefinition.bones;
+assert.deepEqual(savedLayout.map(bone => [bone.boneId, bone.name, bone.parentBoneId]),
+    layoutAsset.rigDefinition.bones.map(bone => [bone.boneId, bone.name, bone.parentBoneId]),
+    'Project round-trip preserves stable Bone IDs, names, and parent links');
+assert.deepEqual(savedLayout.map(bone => bone.bindTransform),
+    layoutAsset.rigDefinition.bones.map(bone => bone.bindTransform),
+    'Project round-trip preserves existing Bind coordinates and new layout directions');
+assert.equal(layoutModel.findClipEntry('clip').clip.rigMotion, null,
+    'static initial layout and naming do not create Motion KEY data');
+
+const tooSmallModel = makeModel();
+const tooSmallAsset = tooSmallModel.getClipAsset('asset');
+const tooSmallRoot = planStaticRigStructureBone(tooSmallAsset, 'raster', {
+    kind: 'root', name: '体', rootPoint: { x: 30, y: 30 }
+});
+assert.equal(tooSmallModel.registerClipAssetRasterBone('asset', 'raster', {
+    ...tooSmallRoot.options, boneId: 'body'
+}).ok, true);
+for (const [boneId, parentBoneId] of [['a', 'body'], ['b', 'a'], ['c', 'b']]) {
+    const plan = planStaticRigStructureBone(tooSmallAsset, 'raster', {
+        kind: 'child', name: boneId, parentBoneId
+    });
+    assert.equal(tooSmallModel.registerClipAssetRasterBone('asset', 'raster', {
+        ...plan.options, boneId
+    }).ok, true);
+}
+const tooSmallBefore = JSON.stringify(tooSmallAsset.serialize());
+const rejectedLayout = planStaticRigInitialBoneLayout(tooSmallAsset, 'raster', {
+    boneIds: ['body', 'a', 'b', 'c'],
+    artworkBounds: { x: 20, y: 20, width: 20, height: 20 },
+    canvasWidth: 60,
+    canvasHeight: 60
+});
+assert.equal(rejectedLayout.ok, false, 'a skeleton that cannot fit is rejected instead of placed off Canvas');
+assert.equal(JSON.stringify(tooSmallAsset.serialize()), tooSmallBefore,
+    'a rejected layout never mutates the saved Bind model');
 
 const root = planStaticRigBone(asset, 'raster', {
     kind: 'root', start: { x: 10, y: 20 }, end: { x: 10, y: 20 }
@@ -171,6 +352,8 @@ assert.match(source, /registerInternalRasterBoneFromExternal[\s\S]*?_recordInter
     'one existing CAF History command owns creation');
 assert.match(source, /createRigLensStaticStructureBone[\s\S]*?planStaticRigStructureBone[\s\S]*?registerInternalRasterBoneFromExternal/u,
     'structure-first registration delegates through the existing CAF Asset/History owner');
+assert.match(source, /applyRigLensStaticInitialLayout\(assetId, layerId, boneIds = \[\]\)[\s\S]*?planStaticRigInitialBoneLayout[\s\S]*?setClipAssetRigBoneBindTransform[\s\S]*?_recordInternalLayerHistoryFromStates/u,
+    'the full initial Bind layout is applied as one existing CAF Asset History transaction');
 
 const branchingModel = makeModel();
 const branchingAsset = branchingModel.getClipAsset('asset');

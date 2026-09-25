@@ -29,6 +29,27 @@ assert.match(css, /right-workspace-rig-structure-editor \[hidden\][\s\S]*?displa
     'dialog buttons respect hidden state after being moved into the modal');
 assert.match(css, /right-workspace-rig-hierarchy-card\.is-drop-target/u);
 assert.match(css, /right-workspace-rig-hierarchy-card\.is-drop-invalid/u);
+assert.match(frameSource, /right-workspace-rig-hierarchy-name-input/u,
+    'the structure board exposes inline Bone-name editing');
+assert.match(frameSource, /setRigLensStaticBoneName/u,
+    'inline naming reaches the existing static CAF name adapter');
+assert.match(popupSource, /setRigLensStaticBoneName\(assetId, layerId, boneId, name\)[\s\S]*?setClipAssetRigBoneName[\s\S]*?_recordInternalLayerHistory/u,
+    'renaming uses the existing CAF Asset History owner');
+const compactListStart = frameSource.indexOf('_renderRigCompactBoneList(container, bones)');
+const compactListEnd = frameSource.indexOf('_renderRigBoneTree(container, bones', compactListStart);
+const compactListSource = frameSource.slice(compactListStart, compactListEnd);
+assert.match(compactListSource, /this\.rigSelectedBoneId === bone\.boneId/u);
+assert.match(compactListSource, /button\.addEventListener\('click',[\s\S]*?_selectRigLensBone\(bone\.boneId\)/u,
+    'the flat selector uses the existing selected Bone ID and Canvas selection path');
+assert.match(compactListSource, /parentDetail[\s\S]*?placement[\s\S]*?action/u,
+    'the selected Bone card projects parent, placement, and current Canvas action');
+assert.match(frameSource, /_closeRigStructureEditor\(returnToCanvas\)[\s\S]*?pendingCreatedIds[\s\S]*?applyRigLensStaticInitialLayout/u,
+    'returning from the board lays out only this-session unverified Bones');
+assert.match(frameSource, /right-workspace-rig-parent-link/u);
+assert.match(frameSource, /right-workspace-rig-bone-name-label/u);
+assert.match(css, /right-workspace-rig-bone-tree--flat[\s\S]*?overflow: auto/u,
+    'the right Workspace selector is flat and internally scrollable');
+assert.match(css, /right-workspace-rig-hierarchy-name-input:focus-visible/u);
 
 globalThis.window = globalThis.window || {};
 const { TimelineModel } = await import('../system/animation/animation-data-model.js');
@@ -61,6 +82,7 @@ Object.assign(addFrame, {
     rigEntryMessage: '',
     rigPointerGesture: null,
     rigPlacementMode: null,
+    rigStructureCreatedBoneIds: new Set(),
     rigStructureDrag: null,
     rigStructureEditorTree: { querySelectorAll: () => [] },
     sync() {}
