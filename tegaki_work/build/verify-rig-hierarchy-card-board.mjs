@@ -12,8 +12,21 @@ const popupSource = read('ui/animation-table-popup.js');
 const css = read('styles/components/layer-panel-surface.css');
 
 assert.match(frameSource, /rigStructureAddBoneButton\.textContent = '＋ Bone'/u);
-assert.match(frameSource, /kind === 'board'[\s\S]*?root\?\.boneId/u,
-    'the board add action registers each initial card under the one existing Root');
+assert.match(frameSource, /kind === 'board'[\s\S]*?selected\?\.boneId \|\| root\?\.boneId/u,
+    'the board add action creates a child of the selected Bone, with Root fallback');
+assert.match(frameSource, /rigStructureTreeRestoreFocusId = result\.bone\.boneId/u,
+    'new Bone selection is projected and focused immediately');
+assert.match(popupSource, /removeRigLensStaticBone[\s\S]*?caf-rig-bone-remove/u,
+    'safe deletion reaches the existing CAF Asset History adapter');
+assert.match(frameSource, /allowBound: true[\s\S]*?readOnlyTarget/u,
+    'guarded structures can be reopened for read-only inspection');
+assert.match(frameSource, /_renderRigHierarchyCardBoard\(container, bones, \{ readOnly = false \}/u);
+assert.match(frameSource, /staticBonePlacementPending[\s\S]*?staticBoneTipHandle = staticBoneMoveHandle && !staticBonePlacementPending/u,
+    'unverified placement hides the tip handle rather than only styling it away');
+assert.match(frameSource, /if \(!readOnly && !isRoot\)[\s\S]*?_onRigHierarchyCardDragStart/u,
+    'read-only structure cards do not acquire drag ownership');
+assert.match(frameSource, /name\.readOnly = readOnly \|\|/u,
+    'read-only structure cards keep inline names non-editable');
 assert.match(frameSource, /_getRigHierarchyCardTree\(bones\)[\s\S]*?parentBoneId[\s\S]*?number: parts\.join\('-'\)/u,
     'display numbers are derived from parent links and serialized Bone enumeration');
 assert.match(frameSource, /serialized bones\[\] enumeration as sibling display order/u);
@@ -75,6 +88,8 @@ Object.assign(addFrame, {
     rigLensMode: 'setup',
     rigLensTarget: { assetId: 'asset', internalLayerId: 'raster' },
     rigSelectedBoneId: 'root',
+    rigStructureTreeRestoreFocusId: null,
+    rigStructureEditorReadOnly: false,
     rigPlacementVerifiedBoneIds: new Set(),
     rigTreeCollapsedBoneIds: new Set(),
     rigStructureNameInput: { value: 'Bone 1' },
@@ -100,7 +115,25 @@ addFrame._getRigLensTable = () => ({
     }
 });
 
+addFrame.rigStructureNameInput.value = 'First';
+assert.equal(addFrame._createRigLensStructureBone('board'), true,
+    '＋ Bone creates a child of the selected Root');
+const firstContextualBone = addFrame.rigSelectedBoneId;
+assert.equal(asset.rigDefinition.bones.find(bone => bone.boneId === firstContextualBone).parentBoneId, 'root');
+assert.equal(addFrame.rigStructureTreeRestoreFocusId, firstContextualBone);
+addFrame.rigStructureNameInput.value = 'Nested';
+assert.equal(addFrame._createRigLensStructureBone('board'), true,
+    'a second ＋ Bone creates a child of the newly selected Bone');
+const nestedContextualBone = addFrame.rigSelectedBoneId;
+assert.equal(asset.rigDefinition.bones.find(bone => bone.boneId === nestedContextualBone).parentBoneId,
+    firstContextualBone);
+assert.equal(model.removeClipAssetRigBone('asset', nestedContextualBone).ok, true);
+assert.equal(model.removeClipAssetRigBone('asset', firstContextualBone).ok, true);
+addFrame.rigSelectedBoneId = 'root';
+addFrame.rigStructureNameInput.value = 'Bone 1';
+
 for (let index = 1; index <= 6; index += 1) {
+    addFrame.rigSelectedBoneId = 'root';
     assert.equal(addFrame._createRigLensStructureBone('board'), true,
         `＋ Bone creates initial card ${index}`);
 }
@@ -200,6 +233,33 @@ assert.equal(addFrame._onRigHierarchyCardDrop(dropEvent, card2, dragCard), false
 assert.equal(historyEntries, historyBeforeInvalid);
 addFrame.rigLensTarget.assetId = 'asset';
 
+let deleteHistoryEntries = 0;
+let deleteCalls = 0;
+addFrame._getRigLensTable = () => ({
+    removeRigLensStaticBone: (assetId, layerId, boneId) => {
+        deleteCalls += 1;
+        const result = model.removeClipAssetRigBone(assetId, boneId);
+        if (result.ok && result.changed) deleteHistoryEntries += 1;
+        return result;
+    }
+});
+addFrame.rigSelectedBoneId = 'root';
+assert.equal(addFrame._deleteRigLensStructureBone(), false, 'Root deletion is refused');
+addFrame.rigSelectedBoneId = card2;
+assert.equal(addFrame._deleteRigLensStructureBone(), false,
+    'a Bone with descendants cannot be deleted or implicitly reparented');
+assert.equal(deleteCalls, 0);
+addFrame.rigSelectedBoneId = card4;
+addFrame.rigPlacementVerifiedBoneIds.add(card4);
+assert.equal(addFrame._deleteRigLensStructureBone(), true, 'an unreferenced leaf Bone can be deleted');
+assert.equal(deleteCalls, 1);
+assert.equal(deleteHistoryEntries, 1, 'one leaf deletion reaches one CAF-history boundary');
+assert.equal(addFrame.rigSelectedBoneId, card2, 'selection moves to the deleted Bone parent');
+assert.equal(addFrame.rigStructureTreeRestoreFocusId, card2);
+assert.equal(asset.rigDefinition.bones.some(bone => bone.boneId === card4), false);
+assert.equal(addFrame.rigPlacementVerifiedBoneIds.has(card4), false);
+assert.equal(addFrame.rigStructureCreatedBoneIds.has(card4), false);
+
 const savedBones = serializeRigDefinition(asset.rigDefinition).bones;
 assert.deepEqual(savedBones.map(bone => bone.boneId), asset.rigDefinition.bones.map(bone => bone.boneId),
     'the existing serialized Bone enumeration retains the sibling-order projection');
@@ -210,3 +270,41 @@ assert.deepEqual(reopened.map(bone => [bone.boneId, bone.parentBoneId]),
 assert.equal(model.findClipEntry('clip').clip.rigMotion, null, 'board edits do not create Motion KEYs');
 
 console.log('PASS: RIG hierarchy card numbering, Root-child creation, guarded D&D, append order, stable IDs, Bind World, and Project serialization');
+
+const removalModel = new TimelineModel({
+    totalFrames: 4,
+    clipAssets: [{ id: 'remove-asset', internalLayers: [{ id: 'raster', type: 'raster' }] }],
+    tracks: [{ id: 'remove-lane', cels: [{ id: 'remove-clip', assetId: 'remove-asset', startFrame: 0, duration: 4 }] }]
+});
+const removalBind = { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, pivotX: 0, pivotY: 0 };
+const registerRemovalBone = (boneId, parentBoneId) => removalModel.registerClipAssetRasterBone(
+    'remove-asset', 'raster', { boneId, parentBoneId, length: 10, bindTransform: removalBind }
+);
+assert.equal(registerRemovalBone('remove-root', null).ok, true);
+assert.equal(registerRemovalBone('remove-parent', 'remove-root').ok, true);
+assert.equal(registerRemovalBone('remove-leaf', 'remove-parent').ok, true);
+assert.equal(removalModel.removeClipAssetRigBone('remove-asset', 'remove-root').reason, 'root-bone-protected');
+assert.equal(removalModel.removeClipAssetRigBone('remove-asset', 'remove-parent').reason, 'bone-has-children');
+assert.equal(removalModel.removeClipAssetRigBone('remove-asset', 'remove-leaf').ok, true);
+assert.equal(removalModel.setClipRigBoneKey('remove-clip', 'remove-parent', 0, {
+    x: 1, y: 0, scaleX: 1, scaleY: 1, rotation: 0
+}).ok, true);
+assert.equal(removalModel.removeClipAssetRigBone('remove-asset', 'remove-parent').reason,
+    'bone-motion-reference', 'a Bone referenced by Motion cannot be deleted');
+
+const boundRemovalModel = new TimelineModel({
+    totalFrames: 1,
+    clipAssets: [{ id: 'bound-remove-asset', internalLayers: [{ id: 'raster', type: 'raster' }] }],
+    tracks: [{ id: 'bound-remove-lane', cels: [{
+        id: 'bound-remove-clip', assetId: 'bound-remove-asset', startFrame: 0, duration: 1
+    }] }]
+});
+assert.equal(boundRemovalModel.registerClipAssetRasterBone('bound-remove-asset', 'raster', {
+    boneId: 'bound-root', parentBoneId: null, length: 10, bindTransform: removalBind
+}).ok, true);
+assert.equal(boundRemovalModel.registerClipAssetRasterBone('bound-remove-asset', 'raster', {
+    boneId: 'bound-leaf', parentBoneId: 'bound-root', length: 10, bindTransform: removalBind
+}).ok, true);
+boundRemovalModel.getClipAsset('bound-remove-asset').meshDefinitions = [{ meshId: 'existing-mesh' }];
+assert.equal(boundRemovalModel.removeClipAssetRigBone('bound-remove-asset', 'bound-leaf').reason,
+    'bone-mesh-skin-bound', 'a Mesh-bound skeleton remains protected from structural deletion');

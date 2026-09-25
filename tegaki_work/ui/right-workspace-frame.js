@@ -66,6 +66,7 @@ export class RightWorkspaceFrame {
         this.rigStructureDrag = null;
         this.rigStructureConnectorFrame = null;
         this.rigStructureStatusMessage = '';
+        this.rigStructureEditorReadOnly = false;
         this.rigLensMode = 'setup';
         this.rigAuthoringKind = 'deform';
         this.rigSelectedPartId = null;
@@ -434,11 +435,18 @@ export class RightWorkspaceFrame {
         this.rigStructureAddBoneButton.type = 'button';
         this.rigStructureAddBoneButton.className = 'gui-control gui-control--m right-workspace-rig-board-add';
         this.rigStructureAddBoneButton.textContent = '＋ Bone';
-        this.rigStructureAddBoneButton.setAttribute('aria-label', '第一階層へBoneを追加');
+        this.rigStructureAddBoneButton.setAttribute('aria-label', 'Root直下にBoneを追加');
         this.rigStructureAddBoneButton.addEventListener('click', () => this._createRigLensStructureBone('board'));
+        this.rigStructureDeleteBoneButton = document.createElement('button');
+        this.rigStructureDeleteBoneButton.type = 'button';
+        this.rigStructureDeleteBoneButton.className = 'gui-control gui-control--s right-workspace-rig-board-delete';
+        this.rigStructureDeleteBoneButton.textContent = '選択Boneを削除';
+        this.rigStructureDeleteBoneButton.addEventListener('click', () => this._deleteRigLensStructureBone());
         this.rigStructureDialogActions = document.createElement('div');
         this.rigStructureDialogActions.className = 'right-workspace-rig-structure-editor-toolbar-actions';
-        this.rigStructureDialogActions.append(this.rigStructureAddBoneButton);
+        this.rigStructureDialogActions.append(
+            this.rigStructureAddBoneButton, this.rigStructureDeleteBoneButton
+        );
         this.rigStructureParentDisclosure = document.createElement('details');
         this.rigStructureParentDisclosure.className = 'right-workspace-rig-structure-parent-disclosure';
         const parentSummary = document.createElement('summary');
@@ -473,7 +481,8 @@ export class RightWorkspaceFrame {
         this.rigStructureContinueButton.type = 'button';
         this.rigStructureContinueButton.className = 'gui-control gui-control--m';
         this.rigStructureContinueButton.textContent = '配置へ進む';
-        this.rigStructureContinueButton.addEventListener('click', () => this._closeRigStructureEditor(true));
+        this.rigStructureContinueButton.addEventListener('click', () =>
+            this._closeRigStructureEditor(!this.rigStructureEditorReadOnly));
         footer.appendChild(this.rigStructureContinueButton);
         dialog.append(header, toolbar, this.rigStructureBoardViewport, footer);
         dialog.addEventListener('cancel', event => {
@@ -696,12 +705,6 @@ export class RightWorkspaceFrame {
     _selectRigLensBone(boneId) {
         if (!this.rigLensActive || !boneId || this.rigPointerGesture) return false;
         const changed = this.rigSelectedBoneId !== boneId;
-        if (changed && this.rigLensMode === 'motion' && this._requireRigPoseResolution()) return false;
-        this.rigSelectedBoneId = boneId;
-        if (this.rigLensMode === 'setup' && this.rigAuthoringKind === 'deform') {
-            const target = this._getRigLensEditTarget();
-            if (target?.ok) this._expandRigBoneAncestors(target.bones, boneId);
-        }
         if (changed && this.rigLensMode === 'motion') {
             const ids = this.rigLensTarget;
             const target = ids
@@ -710,12 +713,17 @@ export class RightWorkspaceFrame {
                 )
                 : null;
             if (!target?.ok) {
-                this.rigLensMode = 'setup';
                 this.rigEntryMessage = target?.reason || '選択BoneのMotion条件を確認してください。';
-            } else {
-                this.rigEntryMessage = '';
+                this.sync();
+                return false;
             }
-        } else if (changed) {
+        }
+        this.rigSelectedBoneId = boneId;
+        if (this.rigLensMode === 'setup' && this.rigAuthoringKind === 'deform') {
+            const target = this._getRigLensEditTarget();
+            if (target?.ok) this._expandRigBoneAncestors(target.bones, boneId);
+        }
+        if (changed) {
             this.rigEntryMessage = '';
         }
         this.sync();
@@ -1111,21 +1119,34 @@ export class RightWorkspaceFrame {
     _openRigStructureEditor() {
         if (!this.rigLensActive || this.rigAuthoringKind !== 'deform'
             || this.rigLensMode !== 'setup' || this.rigPointerGesture) return false;
-        const target = this._getRigLensEditTarget();
+        const editTarget = this._getRigLensEditTarget();
+        const displayTarget = this._getRigLensTable()?.getRigLensStaticTarget?.(
+            this.rigLensTarget?.assetId, this.rigLensTarget?.internalLayerId, { allowBound: true }
+        );
+        const readOnlyTarget = !editTarget?.ok && displayTarget?.ok
+            && displayTarget.bones?.length > 0;
+        const target = editTarget?.ok ? editTarget : (readOnlyTarget ? displayTarget : editTarget);
         if (!target?.ok || !this.rigStructureEditorDialog) {
-            this.rigEntryMessage = target?.reason || '骨格構造を編集できません。';
+            this.rigEntryMessage = target?.reason || editTarget?.reason || '骨格構造を表示できません。';
             this.sync();
             return false;
         }
         if (this.rigPlacementMode) this._cancelRigPlacement();
-        if (this.rigStructureEditorDialog.open) return true;
+        if (this.rigStructureEditorDialog.open) {
+            this.rigStructureEditorReadOnly = !editTarget?.ok;
+            this.sync();
+            return true;
+        }
         this._clearRigStructureDragState();
+        this.rigStructureEditorReadOnly = !editTarget?.ok;
+        this.rigStructureStatusMessage = '';
         this.rigStructureNameInput.value = target.bones.length === 0
             ? 'Root' : `Bone ${target.bones.length}`;
         this.rigStructureEditorDialog.showModal();
         this.rigStructureDialogActions.appendChild(this.rigRootButton);
         this.rigStructureParentHost.appendChild(this.rigBoneParentLabel);
-        this.rigEntryMessage = '';
+        this.rigEntryMessage = this.rigStructureEditorReadOnly
+            ? (editTarget?.reason || '現在の構造は読み取り専用です。') : '';
         this.sync();
         if (this.rigSelectedBoneId) {
             this.rigStructureEditorTree.querySelectorAll('[data-rig-tree-select]')
@@ -1141,7 +1162,8 @@ export class RightWorkspaceFrame {
     }
 
     _closeRigStructureEditor(returnToCanvas) {
-        if (returnToCanvas && this.rigLensActive && this.rigLensTarget) {
+        if (returnToCanvas && !this.rigStructureEditorReadOnly
+            && this.rigLensActive && this.rigLensTarget) {
             const target = this._getRigLensEditTarget();
             if (this.rigStructureCreatedBoneIds.size > 0 && !target?.ok) {
                 this.rigStructureStatusMessage = target?.reason
@@ -1177,6 +1199,7 @@ export class RightWorkspaceFrame {
         }
         this._clearRigStructureDragState();
         if (this.rigStructureEditorDialog?.open) this.rigStructureEditorDialog.close();
+        this.rigStructureEditorReadOnly = false;
         if (this.rigLensPropertiesContent) {
             this.rigLensPropertiesContent.insertBefore(this.rigRootButton, this.rigChildButton);
             this.rigChildButton.after(this.rigBoneParentLabel);
@@ -1443,7 +1466,7 @@ export class RightWorkspaceFrame {
         };
     }
 
-    _renderRigHierarchyCardBoard(container, bones) {
+    _renderRigHierarchyCardBoard(container, bones, { readOnly = false } = {}) {
         if (!container) return;
         container.replaceChildren();
         const board = this._getRigHierarchyCardTree(bones);
@@ -1474,12 +1497,12 @@ export class RightWorkspaceFrame {
             node.dataset.rigBoneId = bone.boneId;
             node.dataset.rigDisplayNumber = entry.number || '';
             const card = document.createElement('div');
-            card.className = `gui-control gui-control--m right-workspace-rig-hierarchy-card${isRoot ? ' is-root-card' : ''}`;
+            card.className = `gui-control gui-control--m right-workspace-rig-hierarchy-card${isRoot ? ' is-root-card' : ''}${readOnly ? ' is-read-only' : ''}`;
             card.dataset.rigBoneCard = 'true';
             card.dataset.rigBoneId = bone.boneId;
             card.dataset.rigParentBoneId = bone.parentBoneId || '';
             card.dataset.rigDisplayNumber = entry.number || '';
-            card.draggable = !isRoot;
+            card.draggable = !isRoot && !readOnly;
             const number = document.createElement('span');
             number.className = 'right-workspace-rig-hierarchy-number';
             number.textContent = isRoot ? 'ROOT' : entry.number;
@@ -1489,9 +1512,10 @@ export class RightWorkspaceFrame {
             name.type = 'text';
             name.maxLength = 64;
             name.value = bone.name || (isRoot ? 'Root' : 'Bone');
-            name.readOnly = this.rigSelectedBoneId !== bone.boneId;
+            name.readOnly = readOnly || this.rigSelectedBoneId !== bone.boneId;
             name.setAttribute('aria-label', `${name.value} · Bone名`);
-            name.title = name.readOnly ? 'Boneを選択すると名前を編集できます。' : 'Bone名を編集';
+            name.title = readOnly ? '既存guardにより構造は読み取り専用です。'
+                : name.readOnly ? 'Boneを選択すると名前を編集できます。' : 'Bone名を編集';
             name.addEventListener('change', () => {
                 const result = this._getRigLensTable()?.setRigLensStaticBoneName?.(
                     this.rigLensTarget?.assetId, this.rigLensTarget?.internalLayerId,
@@ -1524,9 +1548,10 @@ export class RightWorkspaceFrame {
             state.title = placed ? 'Canvas配置確認済み' : 'Canvas配置確認待ち';
             const parent = bones.find(candidate => candidate?.boneId === bone.parentBoneId) || null;
             const parentLabel = parent ? `親 ${parent.name || 'Bone'}` : '単一Root';
-            const dragHint = isRoot ? '子BoneをここへdropするとRoot直下に戻ります' : 'ドラッグして別Boneの子へ移動';
-            node.setAttribute('aria-label', `${isRoot ? 'Root' : `階層 ${entry.number}`} · ${name.textContent} · ${parentLabel} · ${state.getAttribute('aria-label')} · ${dragHint}`);
-            node.title = `${isRoot ? 'Root（番号対象外）' : `階層 ${entry.number}`} · ${name.textContent} · ${parentLabel} · ${state.title} · ${dragHint}`;
+            const dragHint = readOnly ? '読み取り専用'
+                : isRoot ? '子BoneをここへdropするとRoot直下に戻ります' : 'ドラッグして別Boneの子へ移動';
+            node.setAttribute('aria-label', `${isRoot ? 'Root' : `階層 ${entry.number}`} · ${name.value} · ${parentLabel} · ${state.getAttribute('aria-label')} · ${dragHint}`);
+            node.title = `${isRoot ? 'Root（番号対象外）' : `階層 ${entry.number}`} · ${name.value} · ${parentLabel} · ${state.title} · ${dragHint}`;
             card.title = node.title;
             card.append(number, name, state);
             card.addEventListener('click', event => {
@@ -1540,7 +1565,7 @@ export class RightWorkspaceFrame {
                 this.rigStructureTreeRestoreFocusId = bone.boneId;
                 this._selectRigLensBone(bone.boneId);
             });
-            if (!isRoot) {
+            if (!readOnly && !isRoot) {
                 card.addEventListener('dragstart', event => {
                     if (event.target?.closest?.('input')) {
                         event.preventDefault();
@@ -1555,7 +1580,7 @@ export class RightWorkspaceFrame {
                 });
                 card.addEventListener('drop', event => this._onRigHierarchyCardDrop(event, bone.boneId, card));
                 card.addEventListener('dragend', () => this._onRigHierarchyCardDragEnd());
-            } else {
+            } else if (!readOnly) {
                 card.addEventListener('dragover', event => this._onRigHierarchyCardDragOver(event, bone.boneId, card));
                 card.addEventListener('dragleave', event => {
                     if (event.relatedTarget && card.contains(event.relatedTarget)) return;
@@ -1820,6 +1845,47 @@ export class RightWorkspaceFrame {
         return result?.ok === true;
     }
 
+    _deleteRigLensStructureBone() {
+        if (!this.rigLensActive || this.rigAuthoringKind !== 'deform'
+            || this.rigLensMode !== 'setup' || this.rigPointerGesture) return false;
+        const target = this._getRigLensEditTarget();
+        const selected = target?.bones?.find(bone => bone.boneId === this.rigSelectedBoneId) || null;
+        if (!target?.ok || !selected) {
+            this.rigStructureStatusMessage = target?.reason || '削除するBoneを選択してください。';
+            this.sync();
+            return false;
+        }
+        if (selected.parentBoneId == null) {
+            this.rigStructureStatusMessage = 'Rootは削除できません。';
+            this.sync();
+            return false;
+        }
+        if (this._getRigBoneDescendants(target.bones, selected.boneId).size > 0) {
+            this.rigStructureStatusMessage = '子孫Boneを先に整理してください。親の付け替えや一括削除は行いません。';
+            this.sync();
+            return false;
+        }
+        const result = this._getRigLensTable()?.removeRigLensStaticBone?.(
+            this.rigLensTarget.assetId, this.rigLensTarget.internalLayerId, selected.boneId
+        );
+        if (!result?.ok || !result.changed) {
+            this.rigStructureStatusMessage = result?.reason || 'Boneを削除できませんでした。';
+            this.sync();
+            return false;
+        }
+        const fallbackId = selected.parentBoneId
+            || target.bones.find(bone => bone.parentBoneId == null)?.boneId || null;
+        this.rigSelectedBoneId = fallbackId;
+        this.rigStructureTreeRestoreFocusId = fallbackId;
+        this.rigPlacementVerifiedBoneIds.delete(selected.boneId);
+        this.rigStructureCreatedBoneIds.delete(selected.boneId);
+        this.rigTreeCollapsedBoneIds.delete(selected.boneId);
+        this.rigStructureStatusMessage = `${selected.name || 'Bone'}を削除しました。Undoで復元できます。`;
+        this.rigEntryMessage = '';
+        this.sync();
+        return true;
+    }
+
     _createRigLensStructureBone(kind) {
         if (!this.rigLensActive || this.rigAuthoringKind !== 'deform'
             || this.rigLensMode !== 'setup' || this.rigPointerGesture) return false;
@@ -1827,7 +1893,7 @@ export class RightWorkspaceFrame {
         const selected = target?.bones?.find(bone => bone.boneId === this.rigSelectedBoneId) || null;
         const root = target?.bones?.find(bone => bone.parentBoneId == null) || null;
         const parentBoneId = kind === 'board'
-            ? root?.boneId
+            ? selected?.boneId || root?.boneId
             : kind === 'sibling' ? selected?.parentBoneId : selected?.boneId;
         if (!target?.ok || !parentBoneId || (kind !== 'board' && !selected)) {
             this.rigEntryMessage = target?.reason
@@ -1844,6 +1910,7 @@ export class RightWorkspaceFrame {
         );
         if (result?.ok && result.changed) {
             this.rigSelectedBoneId = result.bone.boneId;
+            this.rigStructureTreeRestoreFocusId = result.bone.boneId;
             this.rigStructureCreatedBoneIds.add(result.bone.boneId);
             this.rigPlacementVerifiedBoneIds.delete(result.bone.boneId);
             this._expandRigBoneAncestors([...target.bones, result.bone], result.bone.boneId);
@@ -2032,11 +2099,6 @@ export class RightWorkspaceFrame {
             || this.layerSystem?.cameraSystem?.isCanvasMoveMode?.()) return;
         const ids = this.rigLensTarget;
         const table = this._getRigLensTable();
-        if (this.rigSelectedBoneId !== bone.boneId && this._requireRigPoseResolution()) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            return;
-        }
         const target = table?.getRigLensMotionTarget?.(ids.assetId, ids.internalLayerId, bone.boneId);
         if (!target?.ok) {
             if (this._hasRigPosePreview(table)) {
@@ -2382,12 +2444,9 @@ export class RightWorkspaceFrame {
             }
             return;
         }
-        if (gesture.beforePreview) {
-            table?.previewRigLensBonePose?.(gesture.assetId, gesture.layerId,
-                gesture.boneId, gesture.beforePreview);
-        } else {
-            table?.cancelRigLensBonePosePreview?.();
-        }
+        table?.restoreRigLensBonePoseDraft?.(
+            gesture.assetId, gesture.layerId, gesture.boneId, gesture.beforePreview
+        );
     }
 
     _syncRigOverlay() {
@@ -2429,8 +2488,15 @@ export class RightWorkspaceFrame {
             const staticBoneEditAllowed = this.rigAuthoringKind === 'deform'
                 && this.rigLensMode === 'setup'
                 && table?.getRigLensStaticEditTarget?.(ids?.assetId, ids?.internalLayerId)?.ok === true;
+            const pendingPlacementBoneIds = this.rigAuthoringKind === 'deform'
+                && this.rigLensMode === 'setup'
+                ? bones.filter(bone => this.rigStructureCreatedBoneIds.has(bone.boneId)
+                    && !this.rigPlacementVerifiedBoneIds.has(bone.boneId))
+                    .map(bone => bone.boneId)
+                : [];
             const key = JSON.stringify([
                 bones, selectedId, this.rigLensMode, this.rigAuthoringKind, staticBoneEditAllowed,
+                pendingPlacementBoneIds,
                 this.rigPartIkEffectorId, this.rigPlacementMode,
                 placementGesture && [placementGesture.parentBoneId, placementGesture.moved,
                     placementGesture.currentClientX, placementGesture.currentClientY]
@@ -2488,6 +2554,9 @@ export class RightWorkspaceFrame {
                         && this.rigLensMode === 'motion';
                     const staticBoneMoveHandle = staticBoneEditAllowed
                         && this.rigSelectedBoneId === bone.boneId;
+                    const staticBonePlacementPending = staticSetup
+                        && this.rigStructureCreatedBoneIds.has(bone.boneId)
+                        && !this.rigPlacementVerifiedBoneIds.has(bone.boneId);
                     marker.classList.toggle('right-workspace-rig-bone-move-handle', staticBoneMoveHandle);
                     marker.classList.toggle('right-workspace-rig-part-move-handle', partMotionHandle);
                     const isIkTarget = partMotionHandle
@@ -2501,7 +2570,9 @@ export class RightWorkspaceFrame {
                         : this.rigAuthoringKind === 'part'
                             ? `Part ${bone.partId}を選択`
                         : staticBoneMoveHandle
-                                ? `${isStaticRoot ? 'Root' : 'Bone'}「${boneName}」を選択、ドラッグしてBind位置を移動`
+                                ? staticBonePlacementPending
+                                    ? `${isStaticRoot ? 'Root' : 'Bone'}「${boneName}」の関節位置をドラッグして調整`
+                                    : `${isStaticRoot ? 'Root' : 'Bone'}「${boneName}」を選択、ドラッグしてBind位置を移動`
                                 : `${isStaticRoot ? 'Root' : 'Bone'}「${boneName}」を選択`;
                     marker.setAttribute('aria-label', markerLabel);
                     marker.setAttribute('title', markerLabel);
@@ -2533,7 +2604,7 @@ export class RightWorkspaceFrame {
                         event.preventDefault();
                         event.stopPropagation();
                     });
-                    const staticBoneTipHandle = staticBoneMoveHandle && this.rigSelectedBoneId === bone.boneId;
+                    const staticBoneTipHandle = staticBoneMoveHandle && !staticBonePlacementPending;
                     const label = staticSetup ? (() => {
                         const text = document.createElementNS(ns, 'text');
                         const dx = bone.tail.x - bone.head.x;
@@ -2691,21 +2762,29 @@ export class RightWorkspaceFrame {
         }
         const structureEditorOpen = this.rigStructureEditorDialog?.open === true;
         const displayBones = displayTarget?.ok ? displayTarget.bones : [];
+        const canEditStructure = staticTarget?.ok === true;
+        const canOpenStructure = canEditStructure || (displayTarget?.ok && displayBones.length > 0);
+        if (structureEditorOpen) this.rigStructureEditorReadOnly = !canEditStructure;
         const pendingPlacementCount = staticTarget?.ok
             ? staticTarget.bones.filter(bone => !this.rigPlacementVerifiedBoneIds.has(bone.boneId)).length
             : 0;
-        this.rigStructureEditButton.hidden = isMotion || !matchesTarget || !staticTarget?.ok;
-        this.rigStructureEditButton.textContent = staticTarget?.bones?.length
-            ? '構造を編集' : '骨格を作成';
-        this.rigStructureEditButton.title = staticTarget?.bones?.length
-            ? '同じBone構造を編集し、親子関係を確認します。'
-            : '既存rigDefinitionへRootを作成し、親子構造を組み立てます。';
+        const selectedPlacementPending = staticTarget?.ok === true
+            && this.rigStructureCreatedBoneIds.has(this.rigSelectedBoneId)
+            && !this.rigPlacementVerifiedBoneIds.has(this.rigSelectedBoneId);
+        this.rigStructureEditButton.hidden = isMotion || !matchesTarget || !canOpenStructure;
+        this.rigStructureEditButton.textContent = !canEditStructure
+            ? '構造を確認' : displayBones.length ? '構造を編集' : '骨格を作成';
+        this.rigStructureEditButton.title = !canEditStructure
+            ? `${staticTarget?.reason || '既存guardにより編集できません。'} 構造は読み取り専用で確認できます。`
+            : displayBones.length
+                ? '同じBone構造を編集し、親子関係を確認します。'
+                : '既存rigDefinitionへRootを作成し、親子構造を組み立てます。';
         this.rigRootButton.hidden = !structureEditorOpen || isMotion
-            || !staticTarget?.ok || staticTarget.bones.length !== 0;
-        const hasSingleRoot = staticTarget?.ok === true
-            && staticTarget.bones.filter(bone => bone.parentBoneId == null).length === 1;
-        this.rigStructureAddBoneButton.hidden = !structureEditorOpen || isMotion || !hasSingleRoot;
-        this.rigStructureAddBoneButton.disabled = !staticTarget?.ok || !hasSingleRoot;
+            || !canEditStructure || staticTarget.bones.length !== 0;
+        const hasSingleRoot = displayBones.filter(bone => bone.parentBoneId == null).length === 1;
+        this.rigStructureAddBoneButton.hidden = !structureEditorOpen || isMotion
+            || !canEditStructure || !hasSingleRoot;
+        this.rigStructureAddBoneButton.disabled = !canEditStructure || !hasSingleRoot;
         this.rigChildButton.hidden = isMotion || !staticTarget?.ok
             || staticTarget.bones.length === 0;
         this.rigChildButton.disabled = !staticTarget?.bones?.some(
@@ -2713,6 +2792,26 @@ export class RightWorkspaceFrame {
         const selectedStaticBone = staticTarget?.bones?.find(
             bone => bone.boneId === this.rigSelectedBoneId
         ) || null;
+        const selectedBoardBone = displayBones.find(
+            bone => bone.boneId === this.rigSelectedBoneId
+        ) || null;
+        const selectedHasDescendants = selectedBoardBone
+            ? this._getRigBoneDescendants(displayBones, selectedBoardBone.boneId).size > 0
+            : false;
+        const deleteReason = !selectedBoardBone ? '削除するBoneを選択してください。'
+            : !canEditStructure ? (staticTarget?.reason || '既存guardにより構造を編集できません。')
+                : selectedBoardBone.parentBoneId == null ? 'Rootは削除できません。'
+                    : selectedHasDescendants ? '子孫Boneがあるため削除できません。先に子を整理してください。'
+                        : '';
+        this.rigStructureDeleteBoneButton.hidden = !structureEditorOpen || !selectedBoardBone;
+        this.rigStructureDeleteBoneButton.disabled = !!deleteReason;
+        this.rigStructureDeleteBoneButton.setAttribute('aria-label', deleteReason
+            ? `選択Boneを削除できません。${deleteReason}` : `「${selectedBoardBone?.name || 'Bone'}」を削除`);
+        this.rigStructureDeleteBoneButton.title = deleteReason || '末端BoneをCAF Asset Historyへ記録して削除';
+        this.rigStructureAddBoneButton.setAttribute('aria-label', selectedStaticBone
+            ? `「${selectedStaticBone.name || 'Bone'}」の子Boneを追加`
+            : 'Root直下にBoneを追加');
+        this.rigStructureParentDisclosure.hidden = isMotion || !canEditStructure || !selectedStaticBone;
         this.rigBoneParentLabel.hidden = isMotion || !selectedStaticBone;
         if (selectedStaticBone) {
             const descendants = new Set();
@@ -2757,7 +2856,7 @@ export class RightWorkspaceFrame {
             this.rigBoneParentSelect.disabled = true;
         }
         this.rigStructureParentDisclosure.hidden = !structureEditorOpen
-            || !selectedStaticBone || selectedStaticBone.parentBoneId == null;
+            || !canEditStructure || !selectedStaticBone || selectedStaticBone.parentBoneId == null;
         const selectedParent = staticTarget?.bones?.find(
             bone => bone.boneId === this.rigSelectedBoneId
         );
@@ -2784,11 +2883,18 @@ export class RightWorkspaceFrame {
         this.rigStructureNameInput.disabled = !staticTarget?.ok;
         this.rigRootButton.disabled = !staticTarget?.ok;
         this.rigStructureContinueButton.disabled = displayBones.length === 0;
-        this.rigStructureStatus.textContent = this.rigStructureStatusMessage || (pendingPlacementCount > 0
-            ? `Canvas位置の確認待ち ${pendingPlacementCount} Bone · Bind値は既存CAFへ保存済み`
-            : displayBones.length > 0
-                ? '構造は既存CAFへ記録済み · CanvasでBone位置を調整できます'
-                : 'Rootから骨格構造を作成します');
+        this.rigStructureContinueButton.textContent = this.rigStructureEditorReadOnly
+            ? '閉じる' : '配置へ進む';
+        this.rigStructureContinueButton.title = this.rigStructureEditorReadOnly
+            ? '構造の閲覧を終了します。Bone位置やHistoryは変更しません。'
+            : '構造編集を終了してCanvasへ戻ります。';
+        this.rigStructureStatus.textContent = this.rigStructureStatusMessage || (this.rigStructureEditorReadOnly
+            ? `${staticTarget?.reason || '編集guardが有効です。'} · 読み取り専用で構造を確認できます。`
+            : pendingPlacementCount > 0
+                ? `Canvas位置の確認待ち ${pendingPlacementCount} Bone · Bind値は既存CAFへ保存済み`
+                : displayBones.length > 0
+                    ? '構造は既存CAFへ記録済み · CanvasでBone位置を調整できます'
+                    : 'Rootから骨格構造を作成します');
         const motionTarget = matchesTarget && this.rigSelectedBoneId
             ? this._getRigLensTable()?.getRigLensMotionTarget?.(
                 rigTarget.assetId, rigTarget.internalLayerId, this.rigSelectedBoneId
@@ -2796,7 +2902,11 @@ export class RightWorkspaceFrame {
         this._syncRigModeAction(motionTarget, matchesTarget);
         const table = this._getRigLensTable();
         const pendingPose = this._hasRigPosePreview(table);
-        const boneDraftMatches = isMotion && !!motionTarget?.preview;
+        const boneDraftSummary = isMotion
+            ? table?.getRigLensBonePoseDraftSummary?.(rigTarget.assetId, rigTarget.internalLayerId)
+            : null;
+        const boneDraftMatches = isMotion && boneDraftSummary?.matchesRequestedTarget
+            && boneDraftSummary.matchesCurrent;
         this._renderRigFrameNavigation({
             authoringKind: 'deform',
             mode: this.rigLensMode,
@@ -2804,9 +2914,9 @@ export class RightWorkspaceFrame {
             frameTarget: partTarget,
             pending: pendingPose,
             commit: boneDraftMatches ? {
-                localFrame: motionTarget.localFrame,
-                ariaLabel: `F${motionTarget.localFrame + 1}の${motionTarget.bone.name || 'Bone'} PoseをMotion KEYへ確定`,
-                title: '選択Boneの未確定Poseを既存Bone KEYへ確定'
+                localFrame: boneDraftSummary.localFrame,
+                ariaLabel: `F${boneDraftSummary.localFrame + 1}の${boneDraftSummary.count} Bone Poseを一括Motion KEY確定`,
+                title: `このFrameの未確定 ${boneDraftSummary.count} Bone Poseを一つのHistory境界で確定`
             } : null,
             showCancel: isMotion && pendingPose
         });
@@ -2824,7 +2934,9 @@ export class RightWorkspaceFrame {
         this.rigToolHint.textContent = !matchesTarget
             ? '対象Rasterを確認してください.'
             : isMotion
-                ? (motionTarget?.ok
+                ? (boneDraftMatches
+                    ? `未確定Pose ${boneDraftSummary.count} Bone · Frame単位で一括KEY確定`
+                    : motionTarget?.ok
                     ? (motionTarget.preview ? '未確定Pose' : motionTarget.key ? 'KEY設定済み' : 'KEY未設定')
                     : motionTarget?.reason || '接続済みBoneを選択してください。')
                 : !staticTarget?.ok && bindingTarget?.ok && bindingTarget.bones.length > 0
@@ -2850,6 +2962,8 @@ export class RightWorkspaceFrame {
             ? '選択Boneの先端をドラッグしてPose preview。明示KEY確定またはPose取消が必要です。'
             : this.rigPlacementMode === 'child'
                 ? `${selectedParentLabel}を親として先端からdragし、子Boneを作成します。Escまたはボタン再押下で取消できます。`
+                : selectedPlacementPending
+                    ? '初期配置中は選択Boneの関節markerだけをdragして位置を調整します。配置確認後に先端ハンドルを使えます。'
                 : '骨格構造を作成してからCanvas位置を調整します。選択Boneの頭はBind移動、先端は方向変更です。';
         this.rigToolHint.hidden = !isMotion && !this.rigPlacementMode
             && staticTarget?.ok === true
@@ -2862,7 +2976,7 @@ export class RightWorkspaceFrame {
             message.textContent = '現在の選択と入場時の対象が一致しないため、構造情報を表示していません。';
             this.rigLensStructureContent.appendChild(message);
             if (structureEditorOpen) {
-                this._renderRigHierarchyCardBoard(this.rigStructureEditorTree, []);
+                this._renderRigHierarchyCardBoard(this.rigStructureEditorTree, [], { readOnly: true });
                 this.rigStructureStatus.textContent = '対象Rasterが一致しません。対象を確認してから構造編集を再開してください。';
             }
             this._renderRigPendingPoseRecovery(target);
@@ -2972,7 +3086,9 @@ export class RightWorkspaceFrame {
         }
 
         if (structureEditorOpen) {
-            this._renderRigHierarchyCardBoard(this.rigStructureEditorTree, displayBones);
+            this._renderRigHierarchyCardBoard(this.rigStructureEditorTree, displayBones, {
+                readOnly: !canEditStructure
+            });
             this.rigStructureEditorTree.setAttribute('aria-label', 'Bone階層カードボード');
         }
 

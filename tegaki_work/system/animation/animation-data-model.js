@@ -1381,6 +1381,44 @@ export class TimelineModel {
         return { ...update, asset, bone: validation.value.bones.find(bone => bone.boneId === boneId) };
     }
 
+    removeClipAssetRigBone(assetId, boneId) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const baseline = validateRigDefinition(asset.rigDefinition, asset.internalLayers);
+        if (!baseline.ok) {
+            return { ok: false, reason: 'invalid-rig-definition', errors: baseline.errors };
+        }
+        const bone = baseline.value.bones.find(candidate => candidate.boneId === boneId);
+        if (!bone) return { ok: false, reason: 'bone-not-found' };
+        if (bone.parentBoneId == null) return { ok: false, reason: 'root-bone-protected' };
+        if (baseline.value.bones.some(candidate => candidate.parentBoneId === boneId)) {
+            return { ok: false, reason: 'bone-has-children' };
+        }
+        if ((asset.meshDefinitions?.length || 0) > 0 || (asset.skinBindings?.length || 0) > 0) {
+            return { ok: false, reason: 'bone-mesh-skin-bound' };
+        }
+        if ((baseline.value.parts?.length || 0) > 0
+            || (baseline.value.rigidBindings?.length || 0) > 0
+            || (baseline.value.warpAnchorConstraints?.length || 0) > 0) {
+            return { ok: false, reason: 'bone-rig-reference' };
+        }
+        const hasMotionReference = this.tracks.some(lane => (lane.cels || []).some(clip => (
+            clip?.assetId === assetId
+            && clip.rigMotion?.boneTracks?.some(track => track?.boneId === boneId)
+        )));
+        if (hasMotionReference) return { ok: false, reason: 'bone-motion-reference' };
+
+        const removal = removeRigDefinitionTargets(baseline.value, { boneIds: [boneId] });
+        if (!removal.ok) return removal;
+        const validation = validateRigDefinition(removal.value, asset.internalLayers);
+        if (!validation.ok) {
+            return { ok: false, reason: 'invalid-rig-definition', errors: validation.errors };
+        }
+        asset.rigDefinition = validation.value;
+        asset.updatedAt = Date.now();
+        return { ok: true, changed: true, asset, bone, rigDefinition: validation.value };
+    }
+
     _hasClipAssetPartMotion(assetId) {
         return this.tracks.some(lane => (lane.cels || []).some(clip =>
             clip.assetId === assetId && clip.rigMotion?.partTracks?.some(track =>

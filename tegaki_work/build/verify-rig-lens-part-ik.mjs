@@ -42,7 +42,7 @@ const popup = Object.assign(Object.create(AnimationTablePopup.prototype), {
     selectedInternalLayerId: 'hand',
     isPlaying: false,
     _rigLensPartPoseDraft: null,
-    _rigLensPosePreview: null,
+    _rigLensBonePoseDraft: null,
     _animationPreviewKey: null
 });
 popup._scheduleMotionEditPreviewRefresh = () => {};

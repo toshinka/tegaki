@@ -3,12 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRasterSkinRenderPlan } from '../system/animation/raster-skin-render-plan.js';
-import { getRigBoneKeyAtFrame, resolveBoneRotationHandleDrag, upsertRigBoneKey } from '../system/animation/part-rig.js';
+import { evaluateRigidBones, getRigBoneKeyAtFrame, resolveBoneRotationHandleDrag, upsertRigBoneKey } from '../system/animation/part-rig.js';
 
 globalThis.window = globalThis.window || {};
 const { TimelineModel } = await import('../system/animation/animation-data-model.js');
 const { HistoryManager } = await import('../system/history.js');
 const { ProjectManager } = await import('../system/project-manager.js');
+const { AnimationTablePopup } = await import('../ui/animation-table-popup.js');
 
 const width = 16;
 const height = 8;
@@ -116,22 +117,154 @@ assert.ok(motionTargetStart >= 0 && motionTargetEnd > motionTargetStart
     && motionScreenStart > motionTargetEnd && motionScreenEnd > motionScreenStart);
 const motionTargetSource = popup.slice(motionTargetStart, motionTargetEnd);
 assert.match(motionTargetSource,
-    /preview && \([\s\S]*?return \{ ok: false, reason: '未確定Poseがあります/u,
+    /draft\?\.poses\?\.size && !this\._matchesRigLensBonePoseDraft[\s\S]*?return \{ ok: false, reason: '未確定Poseがあります/u,
     'a stale Bone preview blocks Motion readiness without being discarded');
-assert.doesNotMatch(motionTargetSource, /_rigLensPosePreview = null/u,
+assert.doesNotMatch(motionTargetSource, /_rigLensBonePoseDraft = null/u,
     'Motion target resolution does not silently clear a pending preview');
 assert.match(popup.slice(motionScreenStart, motionScreenEnd),
-    /_rigLensPosePreview[\s\S]*?return \[\]/u,
+    /_rigLensBonePoseDraft[\s\S]*?return \[\]/u,
     'stale screen projection hides handles while preserving the pending Pose');
 assert.doesNotMatch(popup.slice(motionScreenStart, motionScreenEnd), /cancelRigLensBonePosePreview\(\)/u,
     'Canvas overlay projection does not cancel a pending Pose');
-assert.match(popup, /commitRigLensBoneKey[\s\S]*?setClipRigBoneKey[\s\S]*?_finishMotionGestureHistory/u);
+assert.match(popup, /commitRigLensBoneKey[\s\S]*?setClipRigMotion[\s\S]*?caf-rig-lens-bone-frame-key[\s\S]*?_finishMotionGestureHistory/u,
+    'DEFORM Bone drafts use one validated Frame-level rigMotion commit');
+assert.match(popup, /restoreRigLensBonePoseDraft[\s\S]*?draft\.poses\.delete\(boneId\)/u,
+    'gesture cancellation removes only the current Bone draft');
+assert.match(frame, /getRigLensBonePoseDraftSummary/u,
+    'Frame controls expose the count and scope of the pending Bone batch');
 assert.match(frame, /_startRigPoseGesture[\s\S]*?resolveBoneRotationHandleDrag/u);
 assert.match(frame, /rigKeyButton\.addEventListener\('click', \(\) => this\._commitRigPose\(\)\)/u);
+const boneSelectionStart = frame.indexOf('_selectRigLensBone(boneId)');
+const boneSelectionEnd = frame.indexOf('\n    _selectRigLensPart(', boneSelectionStart);
+assert.ok(boneSelectionStart >= 0 && boneSelectionEnd > boneSelectionStart);
+assert.doesNotMatch(frame.slice(boneSelectionStart, boneSelectionEnd), /_requireRigPoseResolution/u,
+    'Bone selection does not require committing or cancelling another Bone draft');
+const poseGestureStart = frame.indexOf('_startRigPoseGesture(bone, event)');
+const poseGestureEnd = frame.indexOf('\n    _startRigPartPoseGesture(', poseGestureStart);
+assert.ok(poseGestureStart >= 0 && poseGestureEnd > poseGestureStart);
+assert.doesNotMatch(frame.slice(poseGestureStart, poseGestureEnd), /_requireRigPoseResolution/u,
+    'Canvas Bone switching retains same-frame draft editing');
+assert.match(frame, /restoreRigLensBonePoseDraft\?\./u);
 assert.match(frame, /_getRigReturnDestination\(\)[\s\S]*?canStartTransformEditSession/u);
 assert.match(frame, /_requireRigPoseResolution\(\)[\s\S]*?hasRigLensBonePosePreview/u);
 assert.match(frame, /rigLayerEntryButton\.addEventListener\('click', this\._rigEntryClickHandler\)/u);
 assert.match(frame, /event\.key\?\.toLowerCase\(\) === 'v'[\s\S]*?hasRigLensBonePosePreview/u);
+
+model.playback.currentFrame = 2;
+const batchHistoryRecords = [];
+const batchPopup = Object.create(AnimationTablePopup.prototype);
+Object.assign(batchPopup, {
+    model,
+    selectedCelId: 'clip',
+    selectedInternalLayerId: 'raster',
+    isPlaying: false,
+    _rigLensPartPoseDraft: null,
+    _rigLensBonePoseDraft: null,
+    _animationPreviewKey: null,
+    _captureTimelineHistoryState: () => model.serialize(),
+    _recordTimelineHistory: (beforeState, afterState, name, meta) => {
+        batchHistoryRecords.push({ beforeState, afterState, name, meta });
+    },
+    _scheduleMotionEditPreviewRefresh() {},
+    _cancelMotionEditPreviewRefresh() {},
+    _applyVisibilityPreview() {},
+    _invalidateSnapshotTextureCache() {},
+    render() {},
+    _flushLayerPanelSync() {},
+    _scheduleLaneReferencePreviewUpdate() {}
+});
+const batchAsset = model.getClipAsset('asset');
+const batchClip = model.findClipEntry('clip').clip;
+const rootMotionTarget = batchPopup.getRigLensMotionTarget('asset', 'raster', 'root');
+const childMotionTarget = batchPopup.getRigLensMotionTarget('asset', 'raster', 'child');
+assert.equal(rootMotionTarget.ok, true, rootMotionTarget.reason);
+assert.equal(childMotionTarget.ok, true, childMotionTarget.reason);
+const frameTwoBefore = JSON.parse(JSON.stringify(batchClip.rigMotion));
+const frameTwoBeforeEvaluation = evaluateRigidBones(batchAsset, batchClip, 2);
+const rootPose = { ...rootMotionTarget.sampled, x: rootMotionTarget.sampled.x + 2 };
+const childPose = { ...childMotionTarget.sampled, rotation: childMotionTarget.sampled.rotation + 0.35 };
+assert.equal(batchPopup.previewRigLensBonePose('asset', 'raster', 'root', rootPose).ok, true);
+const switchedBoneTarget = batchPopup.getRigLensMotionTarget('asset', 'raster', 'child');
+assert.equal(switchedBoneTarget.ok, true, 'switching Bone keeps a same-frame draft editable');
+assert.equal(switchedBoneTarget.preview, null, 'the selected Bone has no preview until it is edited');
+assert.deepEqual(batchPopup.getRigLensBonePoseDraftSummary('asset', 'raster')?.boneIds, ['root']);
+assert.equal(batchPopup.previewRigLensBonePose('asset', 'raster', 'child', childPose).ok, true);
+assert.equal(batchPopup.getRigLensBonePoseDraftSummary('asset', 'raster')?.count, 2);
+assert.deepEqual(batchClip.rigMotion, frameTwoBefore, 'runtime draft does not mutate saved KEY data');
+const frameTwoPreviewClip = batchPopup._getRigLensPreviewClip(batchClip, 2);
+assert.ok(getRigBoneKeyAtFrame(frameTwoPreviewClip.rigMotion, 'root', 2));
+assert.ok(getRigBoneKeyAtFrame(frameTwoPreviewClip.rigMotion, 'child', 2));
+const rootOnlyMotion = upsertRigBoneKey(batchClip.rigMotion, 'root', 2, rootPose).value;
+const rootOnlyEvaluation = evaluateRigidBones(batchAsset, { ...batchClip, rigMotion: rootOnlyMotion }, 2);
+const fullDraftEvaluation = evaluateRigidBones(batchAsset, frameTwoPreviewClip, 2);
+assert.notDeepEqual(
+    frameTwoBeforeEvaluation.poseByBoneId.get('child').worldMatrix,
+    rootOnlyEvaluation.poseByBoneId.get('child').worldMatrix,
+    'parent Bone draft continues to move its child through the existing evaluator'
+);
+assert.notDeepEqual(
+    rootOnlyEvaluation.poseByBoneId.get('child').worldMatrix,
+    fullDraftEvaluation.poseByBoneId.get('child').worldMatrix,
+    'the child Bone draft is composed with the parent preview'
+);
+const draftPlan = createRasterSkinRenderPlan(batchAsset, frameTwoPreviewClip, 2);
+assert.equal(draftPlan.status, 'ready');
+assert.notDeepEqual(draftPlan.meshResults[0].vertices,
+    createRasterSkinRenderPlan(batchAsset, batchClip, 2).meshResults[0].vertices);
+const frameTwoKeyResult = batchPopup.commitRigLensBoneKey('asset', 'raster', 'child');
+assert.equal(frameTwoKeyResult.ok, true, frameTwoKeyResult.reason);
+assert.equal(frameTwoKeyResult.changedBoneCount, 2);
+assert.equal(batchHistoryRecords.length, 1, 'the frame batch records exactly one History boundary');
+assert.equal(batchHistoryRecords[0].name, 'caf-rig-lens-bone-frame-key');
+assert.ok(getRigBoneKeyAtFrame(batchClip.rigMotion, 'root', 2));
+assert.ok(getRigBoneKeyAtFrame(batchClip.rigMotion, 'child', 2));
+assert.equal(batchPopup.hasRigLensBonePosePreview(), false);
+
+model.playback.currentFrame = 3;
+const frameThreeSavedMotion = JSON.stringify(batchClip.rigMotion);
+const rootAtThree = batchPopup.getRigLensMotionTarget('asset', 'raster', 'root');
+const childAtThree = batchPopup.getRigLensMotionTarget('asset', 'raster', 'child');
+const firstChildDraft = { ...childAtThree.sampled, rotation: childAtThree.sampled.rotation + 0.1 };
+assert.equal(batchPopup.previewRigLensBonePose('asset', 'raster', 'root', {
+    ...rootAtThree.sampled, y: rootAtThree.sampled.y + 1
+}).ok, true);
+assert.equal(batchPopup.previewRigLensBonePose('asset', 'raster', 'child', firstChildDraft).ok, true);
+assert.equal(batchPopup.previewRigLensBonePose('asset', 'raster', 'child', {
+    ...firstChildDraft, rotation: firstChildDraft.rotation + 0.2
+}).ok, true);
+assert.equal(batchPopup.restoreRigLensBonePoseDraft(
+    'asset', 'raster', 'child', firstChildDraft
+), true);
+assert.deepEqual(batchPopup.getRigLensMotionTarget('asset', 'raster', 'child').preview.transform,
+    firstChildDraft, 'pointer cancellation restores only this Bone to its prior draft');
+assert.equal(batchPopup.restoreRigLensBonePoseDraft('asset', 'raster', 'child', null), true);
+assert.deepEqual(batchPopup.getRigLensBonePoseDraftSummary('asset', 'raster')?.boneIds, ['root'],
+    'discarding one gesture leaves the other Bone draft intact');
+const historyBeforeFrameCancel = batchHistoryRecords.length;
+assert.equal(batchPopup.cancelRigLensBonePosePreview(), true);
+assert.equal(JSON.stringify(batchClip.rigMotion), frameThreeSavedMotion,
+    'Frame Pose cancel preserves all previously saved KEYs');
+assert.equal(batchHistoryRecords.length, historyBeforeFrameCancel,
+    'preview and cancel do not create History');
+
+assert.equal(batchPopup.previewRigLensBonePose('asset', 'raster', 'root', {
+    ...rootAtThree.sampled, x: rootAtThree.sampled.x + 1
+}).ok, true);
+batchPopup._rigLensBonePoseDraft.poses.set('missing-bone', {
+    boneId: 'missing-bone',
+    transform: { x: 1, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+    interpolation: 'linear'
+});
+const invalidBatchBefore = JSON.stringify(batchClip.rigMotion);
+const invalidBatchHistoryCount = batchHistoryRecords.length;
+const invalidBatch = batchPopup.commitRigLensBoneKey('asset', 'raster', 'root');
+assert.equal(invalidBatch.ok, false, 'an invalid Bone prevents the whole batch from committing');
+assert.equal(JSON.stringify(batchClip.rigMotion), invalidBatchBefore,
+    'invalid batch leaves no partial KEY writes');
+assert.equal(batchHistoryRecords.length, invalidBatchHistoryCount);
+assert.equal(batchPopup.hasRigLensBonePosePreview(), true, 'failed batch remains available for explicit recovery');
+assert.equal(batchPopup.cancelRigLensBonePosePreview(), true);
+
 if (process.argv[2]) {
     const exportedProject = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
     const loadedProject = new TimelineModel(exportedProject.animation);
