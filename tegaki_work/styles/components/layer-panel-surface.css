@@ -433,6 +433,44 @@
 .right-workspace-rig-frame-navigation.has-pose-cancel {
     grid-template-columns: 24px minmax(0, 1fr) 24px 26px;
 }
+.right-workspace-rig-frame-navigation.has-frame-key {
+    grid-template-columns: 24px minmax(20px, 1fr) 24px minmax(54px, max-content);
+}
+.right-workspace-rig-frame-navigation.has-key-state {
+    grid-template-columns: 24px minmax(20px, 1fr) 24px max-content;
+}
+.right-workspace-rig-frame-navigation.has-frame-key.has-pose-cancel {
+    grid-template-columns: 24px minmax(20px, 1fr) 24px minmax(54px, max-content) 26px;
+}
+.right-workspace-rig-frame-navigation.has-key-state.has-pose-cancel {
+    grid-template-columns: 24px minmax(20px, 1fr) 24px max-content 26px;
+}
+.right-workspace-rig-frame-key-group {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    min-width: 0;
+    white-space: nowrap;
+}
+.right-workspace-rig-frame-key-group[hidden],
+.right-workspace-rig-frame-key-state[hidden],
+.right-workspace-rig-frame-key-delete[hidden],
+.right-workspace-rig-frame-key[hidden] {
+    display: none !important;
+}
+.right-workspace-rig-frame-key-state {
+    color: var(--futaba-maroon);
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    user-select: none;
+    pointer-events: none;
+}
+.right-workspace-rig-frame-key-state.is-keyed {
+    color: var(--futaba-maroon);
+    font-weight: 650;
+}
 .right-workspace-rig-frame-navigation[hidden],
 .right-workspace-rig-frame-label[hidden] {
     display: none;
@@ -462,6 +500,12 @@
     padding-inline: 3px;
     font-size: 9px;
     white-space: nowrap;
+}
+.right-workspace-rig-frame-navigation .right-workspace-rig-frame-key-delete {
+    flex: 0 0 auto;
+    min-height: var(--ui-control-height-s);
+    padding-inline: 5px;
+    font-size: 9px;
 }
 .right-workspace-rig-lens-content {
     display: flex;
@@ -760,6 +804,37 @@
 }
 .right-workspace-rig-bone-marker.is-selected {
     fill: var(--active-border);
+}
+.right-workspace-rig-bone-motion-joint {
+    stroke-width: 1.5;
+    cursor: default;
+    pointer-events: none;
+}
+.right-workspace-rig-motion-handle {
+    cursor: grab;
+    pointer-events: auto;
+}
+.right-workspace-rig-motion-handle:active {
+    cursor: grabbing;
+}
+.right-workspace-rig-motion-handle-hit {
+    fill: var(--futaba-cream);
+    fill-opacity: 0.94;
+    stroke: var(--futaba-maroon);
+    stroke-width: 1.5;
+    pointer-events: all;
+}
+.right-workspace-rig-motion-handle-glyph {
+    fill: none;
+    stroke: var(--futaba-maroon);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+.right-workspace-rig-motion-handle:hover .right-workspace-rig-motion-handle-hit {
+    fill: var(--active-border);
+    fill-opacity: 0.9;
 }
 .right-workspace-rig-part-move-handle {
     cursor: move;

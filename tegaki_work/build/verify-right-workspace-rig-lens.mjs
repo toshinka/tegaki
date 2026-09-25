@@ -56,8 +56,8 @@ assert.match(frame, /rigStructureTreeRestoreFocusId[\s\S]*?activeVariant/u,
     'keyboard focus restoration targets the currently visible tree projection');
 assert.match(frame, /staticBoneEditAllowed\s*&&\s*this\.rigSelectedBoneId === bone\.boneId/u,
     'only the selected static Bone exposes Bind move and rotation handles');
-assert.match(frame, /document\.createElementNS\(ns, isStaticRoot \? 'polygon' : 'circle'\)/u,
-    'Root uses a distinct Canvas glyph from ordinary Bone joints');
+assert.match(frame, /const marker = document\.createElementNS\(ns, 'circle'\);[\s\S]*?if \(isStaticRoot\) marker\.classList\.add\('right-workspace-rig-bone-root-marker'\)/u,
+    'SETUP Root and Bone joints share the circle marker contract');
 assert.match(frame, /rigPlacementVerifiedBoneIds = new Set\(\)/u,
     'Canvas placement confirmation remains transient and is not persisted as another model');
 assert.match(frame, /rigBindButton\.disabled = pendingPlacementCount > 0/u,

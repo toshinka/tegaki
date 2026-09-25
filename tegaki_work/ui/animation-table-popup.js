@@ -4082,6 +4082,21 @@ export class AnimationTablePopup {
         return this._screenToRigProject(event, entry);
     }
 
+    projectRigLensBoneMotionLocalPoint(assetId, layerId, boneId, event) {
+        const target = this.getRigLensMotionTarget(assetId, layerId, boneId);
+        if (!target.ok) return null;
+        const projectPoint = this._screenToRigProject(event, target.entry);
+        if (!projectPoint || !target.bone.parentBoneId) return projectPoint;
+        const previewClip = this._getRigLensPreviewClip(target.entry.clip, target.frame);
+        const evaluated = evaluateRigidBones(target.asset, previewClip, target.frame);
+        const parentPose = evaluated.ok
+            ? evaluated.poseByBoneId.get(target.bone.parentBoneId) || null
+            : null;
+        return parentPose?.worldMatrix
+            ? invertTransformMatrixPoint(parentPose.worldMatrix, projectPoint.x, projectPoint.y)
+            : null;
+    }
+
     getRigLensMotionTarget(assetId, layerId, boneId) {
         const target = this.getRigLensStaticTarget(assetId, layerId, { allowBound: true });
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
@@ -4118,6 +4133,41 @@ export class AnimationTablePopup {
             key: getRigBoneKeyAtFrame(entry.clip.rigMotion, boneId, localFrame),
             preview
         };
+    }
+
+    deleteRigLensBoneKey(assetId, layerId, boneId) {
+        if (this.isPlaying) return { ok: false, reason: 'playback-active' };
+        const target = this.getRigLensMotionTarget(assetId, layerId, boneId);
+        if (!target.ok) return target;
+        const draft = this._rigLensBonePoseDraft;
+        if (draft?.poses?.size && this._matchesRigLensBonePoseDraft(
+            draft, assetId, layerId, target.entry.clip, target.frame
+        )) {
+            return { ok: false, reason: '未確定Poseを先にKEY確定または取消してください。' };
+        }
+        if (!target.key) return { ok: false, reason: 'このFrameに削除できるKEYはありません。' };
+
+        const beforeState = this._captureTimelineHistoryState();
+        const result = this.model.removeClipRigBoneKey(
+            target.entry.clip.id, boneId, target.localFrame
+        );
+        if (!result.ok) return result;
+        this._invalidateSnapshotTextureCache();
+        this._recordTimelineHistory(
+            beforeState,
+            this._captureTimelineHistoryState(),
+            'caf-bone-key-delete',
+            {
+                type: 'caf-bone-key-delete',
+                clipId: target.entry.clip.id,
+                boneId,
+                localFrame: target.localFrame
+            }
+        );
+        this.render();
+        this._flushLayerPanelSync();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        return result;
     }
 
     _matchesRigLensBonePoseDraft(draft, assetId, layerId, clip, frame) {

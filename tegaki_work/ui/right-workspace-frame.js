@@ -285,7 +285,6 @@ export class RightWorkspaceFrame {
         this.rigStructureEditButton.addEventListener('click', () => this._openRigStructureEditor());
         this.rigLensStructureContent = document.createElement('div');
         structure.appendChild(this.rigLensStructureContent);
-        structure.appendChild(this.rigStructureEditButton);
 
         const properties = makeRegion('right-workspace-rig-lens-properties', '選択パーツ');
         this.rigLensPropertiesTitle = properties.querySelector('h3');
@@ -313,6 +312,17 @@ export class RightWorkspaceFrame {
         this.rigPartFrameRow = document.createElement('div');
         this.rigPartFrameRow.className = 'right-workspace-rig-frame-navigation';
         this.rigPartFrameRow.setAttribute('aria-label', 'RIG Frame操作');
+        this.rigFrameKeyGroup = document.createElement('div');
+        this.rigFrameKeyGroup.className = 'right-workspace-rig-frame-key-group';
+        this.rigFrameKeyState = document.createElement('span');
+        this.rigFrameKeyState.className = 'right-workspace-rig-frame-key-state';
+        this.rigFrameKeyState.setAttribute('role', 'status');
+        this.rigFrameKeyState.setAttribute('aria-live', 'polite');
+        this.rigFrameKeyDeleteButton = document.createElement('button');
+        this.rigFrameKeyDeleteButton.type = 'button';
+        this.rigFrameKeyDeleteButton.className = 'gui-control gui-control--s right-workspace-rig-frame-key-delete';
+        this.rigFrameKeyDeleteButton.textContent = 'KEY削除';
+        this.rigFrameKeyDeleteButton.addEventListener('click', () => this._deleteRigLensBoneKey());
         this.rigPartFramePrevious = document.createElement('button');
         this.rigPartFramePrevious.type = 'button';
         this.rigPartFramePrevious.className = 'gui-control gui-control--s';
@@ -886,6 +896,21 @@ export class RightWorkspaceFrame {
         this.sync();
     }
 
+    _deleteRigLensBoneKey() {
+        if (!this.rigLensActive || this.rigAuthoringKind !== 'deform'
+            || this.rigLensMode !== 'motion' || this.rigPointerGesture) return;
+        const ids = this.rigLensTarget;
+        const result = ids
+            ? this._getRigLensTable()?.deleteRigLensBoneKey?.(
+                ids.assetId, ids.internalLayerId, this.rigSelectedBoneId
+            )
+            : null;
+        this.rigEntryMessage = result?.ok
+            ? ''
+            : (result?.reason || '現在FrameのKEYを削除できませんでした。');
+        this.sync();
+    }
+
     _navigateRigPartFrame(delta) {
         const table = this._getRigLensTable();
         if (this._hasRigPosePreview(table)) {
@@ -915,7 +940,10 @@ export class RightWorkspaceFrame {
         frameTarget = null,
         pending = false,
         commit = null,
-        showCancel = false
+        showCancel = false,
+        keepFrameNumberWithKey = false,
+        frameKeyState = null,
+        showFrameKeyDelete = false
     } = {}) {
         const clip = frameTarget?.entry?.clip;
         const frame = frameTarget?.frame;
@@ -932,6 +960,10 @@ export class RightWorkspaceFrame {
 
         this.rigPartFrameRow.setAttribute('aria-label', `RIG ${kindLabel} ${modeLabel} Frame操作`);
         this.rigPartFrameRow.classList.toggle('has-pose-cancel', showCancel);
+        this.rigPartFrameRow.classList.toggle('has-frame-key', !!commit && keepFrameNumberWithKey);
+        this.rigPartFrameRow.classList.toggle(
+            'has-key-state', !!frameKeyState?.exists && keepFrameNumberWithKey
+        );
         this.rigPartFrameRow.hidden = !matchesTarget || !hasLocalFrame;
         this.rigPartFramePrevious.disabled = !canNavigate || currentLocalFrame <= 0;
         this.rigPartFrameNext.disabled = !canNavigate
@@ -943,11 +975,33 @@ export class RightWorkspaceFrame {
         this.rigPartFramePrevious.title = canNavigate ? '対象Clip内の前のFrame' : blockedTitle;
         this.rigPartFrameNext.title = canNavigate ? '対象Clip内の次のFrame' : blockedTitle;
 
+        this.rigFrameKeyState.hidden = !frameKeyState?.exists || !keepFrameNumberWithKey;
+        this.rigFrameKeyState.textContent = frameKeyState?.exists ? '◆' : '';
+        this.rigFrameKeyState.classList.toggle('is-keyed', !!frameKeyState?.exists);
+        if (frameKeyState?.exists) {
+            const keyDescription = `F${currentLocalFrame + 1}・選択BoneにKEYあり`;
+            this.rigFrameKeyState.setAttribute('aria-label', keyDescription);
+            this.rigFrameKeyState.title = keyDescription;
+        } else {
+            this.rigFrameKeyState.removeAttribute('aria-label');
+            this.rigFrameKeyState.removeAttribute('title');
+        }
+        this.rigFrameKeyDeleteButton.hidden = !showFrameKeyDelete || !keepFrameNumberWithKey;
+        this.rigFrameKeyDeleteButton.setAttribute('aria-label',
+            `F${currentLocalFrame + 1}・選択BoneのKEYを削除`);
+        this.rigFrameKeyDeleteButton.title = `F${currentLocalFrame + 1}の選択Bone KEYだけを削除`;
+        const keyControls = [];
+        if (frameKeyState?.exists && keepFrameNumberWithKey) keyControls.push(this.rigFrameKeyState);
+        if (commit && keepFrameNumberWithKey) keyControls.push(this.rigKeyButton);
+        if (showFrameKeyDelete && keepFrameNumberWithKey) keyControls.push(this.rigFrameKeyDeleteButton);
+        this.rigFrameKeyGroup.replaceChildren(...keyControls);
+        this.rigFrameKeyGroup.hidden = keyControls.length === 0;
+
         this.rigPartFrameLabel.textContent = frameLabel;
         this.rigPartFrameLabel.title = pending
             ? '未確定Poseがあります。明示的にKEY確定または取消してください。'
             : '対象Clipの現在Frame。ホイールで1Frameずつ移動';
-        this.rigPartFrameLabel.hidden = !!commit;
+        this.rigPartFrameLabel.hidden = !!commit && !keepFrameNumberWithKey;
         this.rigCancelPoseButton.textContent = '↶';
         this.rigCancelPoseButton.setAttribute('aria-label', '未確定Poseを取り消す');
         this.rigCancelPoseButton.title = '未確定Poseだけを取り消す';
@@ -958,16 +1012,19 @@ export class RightWorkspaceFrame {
         if (commit) {
             const localFrame = Number.isInteger(commit.localFrame)
                 ? commit.localFrame : currentLocalFrame;
-            this.rigKeyButton.textContent = `✓ F${localFrame + 1}確定`;
+            this.rigKeyButton.textContent = keepFrameNumberWithKey
+                ? '◆ KEY確定' : `✓ F${localFrame + 1}確定`;
             this.rigKeyButton.setAttribute('aria-label', commit.ariaLabel);
             this.rigKeyButton.title = commit.title;
             this.rigKeyButton.hidden = false;
             this.rigKeyButton.disabled = !matchesTarget;
-            controls.push(this.rigKeyButton);
+            if (keepFrameNumberWithKey) controls.push(this.rigPartFrameLabel);
+            else controls.push(this.rigKeyButton);
         } else {
             controls.push(this.rigPartFrameLabel);
         }
         controls.push(this.rigPartFrameNext);
+        if (keepFrameNumberWithKey && !this.rigFrameKeyGroup.hidden) controls.push(this.rigFrameKeyGroup);
         if (showCancel) controls.push(this.rigCancelPoseButton);
         this.rigPartFrameRow.replaceChildren(...controls);
         return { currentLocalFrame, hasLocalFrame };
@@ -2216,7 +2273,7 @@ export class RightWorkspaceFrame {
         event.stopImmediatePropagation();
     }
 
-    _startRigPoseGesture(bone, event) {
+    _startRigPoseGesture(bone, event, operation = 'rotate') {
         if (!this.rigLensActive || this.rigLensMode !== 'motion' || this.rigPointerGesture
             || event.button !== 0 || event.isPrimary === false
             || this.layerSystem?.cameraSystem?.isCanvasMoveMode?.()) return;
@@ -2237,7 +2294,11 @@ export class RightWorkspaceFrame {
             event.stopImmediatePropagation();
             return;
         }
-        const start = table?.projectRigLensCanvasPoint?.(ids.assetId, ids.internalLayerId, event);
+        const start = operation === 'move'
+            ? table?.projectRigLensBoneMotionLocalPoint?.(
+                ids.assetId, ids.internalLayerId, bone.boneId, event
+            )
+            : table?.projectRigLensCanvasPoint?.(ids.assetId, ids.internalLayerId, event);
         if (!start) {
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -2245,10 +2306,13 @@ export class RightWorkspaceFrame {
         }
         this.rigSelectedBoneId = bone.boneId;
         this.rigPointerGesture = {
-            kind: 'pose', pointerId: event.pointerId, assetId: ids.assetId,
+            kind: 'pose', operation, pointerId: event.pointerId, assetId: ids.assetId,
             layerId: ids.internalLayerId, boneId: bone.boneId,
+            startPointer: operation === 'move' ? start : null,
             startClientX: event.clientX, startClientY: event.clientY,
-            startAngle: Math.atan2(start.y - bone.rootProject.y, start.x - bone.rootProject.x),
+            startAngle: operation === 'rotate'
+                ? Math.atan2(start.y - bone.rootProject.y, start.x - bone.rootProject.x)
+                : null,
             rootProject: bone.rootProject,
             startTransform: { ...(target.preview?.transform || target.sampled) },
             beforePreview: target.preview?.transform ? { ...target.preview.transform } : null,
@@ -2423,13 +2487,23 @@ export class RightWorkspaceFrame {
             ? gesture.operation === 'move'
                 ? table?.projectRigLensPartMotionLocalPoint?.(gesture.assetId, gesture.partId, event)
                 : table?.projectRigLensPartCanvasPoint?.(gesture.assetId, event)
+            : gesture.kind === 'pose' && gesture.operation === 'move'
+                ? table?.projectRigLensBoneMotionLocalPoint?.(
+                    gesture.assetId, gesture.layerId, gesture.boneId, event
+                )
             : table?.projectRigLensCanvasPoint?.(gesture.assetId, gesture.layerId, event);
         if (!point) return;
         const targetPoint = gesture.kind === 'part-ik' ? {
             x: gesture.basePose.points.effector.x + point.x - gesture.startPointer.x,
             y: gesture.basePose.points.effector.y + point.y - gesture.startPointer.y
         } : null;
-        const transform = gesture.kind === 'part-pose' && gesture.operation === 'move'
+        const transform = gesture.kind === 'pose' && gesture.operation === 'move'
+            ? resolveBoneRootHandleDrag({
+                startTransform: gesture.startTransform,
+                startPointer: gesture.startPointer,
+                currentPointer: point
+            })
+            : gesture.kind === 'part-pose' && gesture.operation === 'move'
             ? resolvePartTransformHandleDrag({
                 mode: 'move', startTransform: gesture.startTransform,
                 startPointer: gesture.startPointer, currentPointer: point
@@ -2668,6 +2742,10 @@ export class RightWorkspaceFrame {
                     marker.setAttribute('role', 'button');
                     const partMotionHandle = this.rigAuthoringKind === 'part'
                         && this.rigLensMode === 'motion';
+                    const boneMotion = this.rigAuthoringKind === 'deform'
+                        && this.rigLensMode === 'motion';
+                    const selectedBoneMotion = boneMotion
+                        && this.rigSelectedBoneId === bone.boneId;
                     const staticBoneMoveHandle = staticBoneEditAllowed
                         && this.rigSelectedBoneId === bone.boneId;
                     marker.classList.toggle('right-workspace-rig-bone-move-handle', staticBoneMoveHandle);
@@ -2740,6 +2818,56 @@ export class RightWorkspaceFrame {
                         return text;
                     })() : null;
                     if (staticSetup) return label ? [marker, label] : [marker];
+                    if (boneMotion) {
+                        const joint = document.createElementNS(ns, 'circle');
+                        joint.classList.add(
+                            'right-workspace-rig-bone-marker',
+                            'right-workspace-rig-bone-motion-joint'
+                        );
+                        joint.classList.toggle('is-selected', selectedBoneMotion);
+                        joint.setAttribute('cx', bone.tail.x);
+                        joint.setAttribute('cy', bone.tail.y);
+                        joint.setAttribute('r', '5');
+                        joint.setAttribute('aria-hidden', 'true');
+                        joint.setAttribute('data-rig-bone-id', bone.boneId || '');
+
+                        const handles = selectedBoneMotion ? ['move', 'rotate'].map(operation => {
+                            const group = document.createElementNS(ns, 'g');
+                            const move = operation === 'move';
+                            const point = move
+                                ? { x: bone.head.x - 18, y: bone.head.y - 19 }
+                                : { x: bone.tail.x + 17, y: bone.tail.y + 17 };
+                            const labelText = `${isStaticRoot ? 'Root' : 'Bone'}「${boneName}」を${move ? '移動' : '回転'}`;
+                            group.classList.add(
+                                'right-workspace-rig-motion-handle',
+                                `right-workspace-rig-motion-handle--${operation}`
+                            );
+                            group.setAttribute('transform', `translate(${point.x} ${point.y})`);
+                            group.setAttribute('data-rig-bone-id', bone.boneId || '');
+                            group.setAttribute('data-rig-operation', operation);
+                            group.setAttribute('role', 'button');
+                            group.setAttribute('aria-label', labelText);
+                            group.setAttribute('title', labelText);
+
+                            const hit = document.createElementNS(ns, 'circle');
+                            hit.classList.add('right-workspace-rig-motion-handle-hit');
+                            hit.setAttribute('cx', '0');
+                            hit.setAttribute('cy', '0');
+                            hit.setAttribute('r', '12');
+                            const glyph = document.createElementNS(ns, 'path');
+                            glyph.classList.add('right-workspace-rig-motion-handle-glyph');
+                            glyph.setAttribute('d', move
+                                ? 'M0 -8V8 M-8 0H8 M0 -8L-3 -4 M0 -8L3 -4 M0 8L-3 4 M0 8L3 4 M-8 0L-4 -3 M-8 0L-4 3 M8 0L4 -3 M8 0L4 3'
+                                : 'M-6 -4 A8 8 0 1 1 -3 7 M-3 7L-7 4 M-3 7L-2 2');
+                            group.append(hit, glyph);
+                            group.addEventListener('pointerdown', event => {
+                                if (event.button !== 0) return;
+                                this._startRigPoseGesture(bone, event, operation);
+                            });
+                            return group;
+                        }) : [];
+                        return [line, marker, joint, ...handles];
+                    }
                     if (this.rigLensMode !== 'motion' && !staticBoneTipHandle) {
                         return label ? [line, marker, label] : [line, marker];
                     }
@@ -3031,7 +3159,12 @@ export class RightWorkspaceFrame {
                 ariaLabel: `F${boneDraftSummary.localFrame + 1}の${boneDraftSummary.count} Bone Poseを一括Motion KEY確定`,
                 title: `このFrameの未確定 ${boneDraftSummary.count} Bone Poseを一つのHistory境界で確定`
             } : null,
-            showCancel: isMotion && pendingPose
+            showCancel: isMotion && pendingPose,
+            keepFrameNumberWithKey: true,
+            frameKeyState: isMotion && motionTarget?.ok
+                ? { exists: !!motionTarget.key }
+                : null,
+            showFrameKeyDelete: isMotion && !!motionTarget?.key && !boneDraftMatches && !pendingPose
         });
         this.rigKeyButton.hidden = !isMotion || !boneDraftMatches;
         if (!boneDraftMatches) {
@@ -3047,10 +3180,10 @@ export class RightWorkspaceFrame {
             : bindingGuardReason
                 ? bindingGuardReason
             : isMotion
-                ? (boneDraftMatches
+                    ? (boneDraftMatches
                     ? `未確定Pose ${boneDraftSummary.count} Bone · Frame単位で一括KEY確定`
                     : motionTarget?.ok
-                    ? (motionTarget.preview ? '未確定Pose' : motionTarget.key ? 'KEY設定済み' : 'KEY未設定')
+                    ? (motionTarget.preview ? '未確定Pose' : 'Poseを調整できます')
                     : motionTarget?.reason || '接続済みBoneを選択してください。')
                 : bindingAvailable
                     ? '選択Rasterの絵をBoneへ接続できます'
@@ -3125,6 +3258,8 @@ export class RightWorkspaceFrame {
             artwork.title = `Mesh: ${rigTarget.meshState} / Skin: ${rigTarget.weightState}`;
         }
         this.rigLensStructureContent.appendChild(artwork);
+        // Keep the structure overview with the hierarchy, before the selectable Bone list.
+        this.rigLensStructureContent.appendChild(this.rigStructureEditButton);
         this.rigCompactBoneTree = null;
         if (displayTarget?.ok && displayTarget.bones.length && !isMotion) {
             const list = document.createElement('div');

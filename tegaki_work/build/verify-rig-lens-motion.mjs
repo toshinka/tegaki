@@ -3,7 +3,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRasterSkinRenderPlan } from '../system/animation/raster-skin-render-plan.js';
-import { evaluateRigidBones, getRigBoneKeyAtFrame, resolveBoneRotationHandleDrag, upsertRigBoneKey } from '../system/animation/part-rig.js';
+import {
+    evaluateRigidBones,
+    getRigBoneKeyAtFrame,
+    resolveBoneRootHandleDrag,
+    resolveBoneRotationHandleDrag,
+    upsertRigBoneKey
+} from '../system/animation/part-rig.js';
+import { invertTransformMatrixPoint } from '../system/transform-math.js';
 
 globalThis.window = globalThis.window || {};
 const { TimelineModel } = await import('../system/animation/animation-data-model.js');
@@ -46,6 +53,25 @@ const transform = resolveBoneRotationHandleDrag({
     root: { x: 8, y: 4 }, startAngle: 0, currentPointer: { x: 9, y: 9 }
 });
 assert.ok(transform.rotation > 0);
+const translatedTransform = resolveBoneRootHandleDrag({
+    startTransform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+    startPointer: { x: 4, y: 7 }, currentPointer: { x: 9, y: 3 }
+});
+assert.deepEqual({ x: translatedTransform.x, y: translatedTransform.y }, { x: 5, y: -4 });
+const baseBoneEvaluation = evaluateRigidBones(asset, clip, 0);
+const translatedRootMotion = upsertRigBoneKey(clip.rigMotion, 'root', 0, translatedTransform);
+assert.equal(translatedRootMotion.ok, true);
+const translatedBoneEvaluation = evaluateRigidBones(
+    asset, { ...clip, rigMotion: translatedRootMotion.value }, 0
+);
+for (const boneId of ['root', 'child']) {
+    const baseMatrix = baseBoneEvaluation.poseByBoneId.get(boneId).worldMatrix;
+    const movedMatrix = translatedBoneEvaluation.poseByBoneId.get(boneId).worldMatrix;
+    assert.equal(movedMatrix.tx - baseMatrix.tx, translatedTransform.x,
+        `${boneId} consumes persisted Bone Motion x translation`);
+    assert.equal(movedMatrix.ty - baseMatrix.ty, translatedTransform.y,
+        `${boneId} consumes persisted Bone Motion y translation`);
+}
 const candidate = upsertRigBoneKey(clip.rigMotion, 'child', 0, transform);
 assert.equal(candidate.ok, true);
 const previewClip = { ...clip, rigMotion: candidate.value };
@@ -109,6 +135,9 @@ assert.notDeepEqual(frame0Plan.meshResults[0].vertices, frame1Plan.meshResults[0
 const root = path.dirname(fileURLToPath(import.meta.url));
 const popup = fs.readFileSync(path.join(root, '../ui/animation-table-popup.js'), 'utf8');
 const frame = fs.readFileSync(path.join(root, '../ui/right-workspace-frame.js'), 'utf8');
+const workspaceStyles = fs.readFileSync(
+    path.join(root, '../styles/components/layer-panel-surface.css'), 'utf8'
+);
 assert.match(popup, /_getRigLensPreviewClip[\s\S]*?upsertRigBoneKey/u);
 assert.match(popup, /const previewCel = this\._getRigLensPreviewClip\(cel, frame\)[\s\S]*?createRasterSkinRenderPlan\(asset, previewCel/u);
 const motionTargetStart = popup.indexOf('getRigLensMotionTarget(assetId, layerId, boneId)');
@@ -136,14 +165,48 @@ assert.match(frame, /commitRigLensBoneKey\?\.[\s\S]*?commitRigLensPartPoseFrame\
     'PointerUp commits the active DEFORM Bone or PART gesture through its existing owner');
 assert.match(frame, /this\.rigKeyButton\.hidden = !isMotion \|\| !boneDraftMatches/u,
     'ordinary Motion no longer presents a separate post-gesture KEY action');
+assert.match(frame,
+    /frameKeyState: isMotion && motionTarget\?\.ok[\s\S]*?showFrameKeyDelete: isMotion && !!motionTarget\?\.key && !boneDraftMatches/u,
+    'DEFORM Motion projects current selected-Bone KEY state and only offers deletion for an existing KEY');
+assert.match(frame,
+    /this\.rigFrameKeyState\.textContent = frameKeyState\?\.exists \? '◆' : ''/u,
+    'Frame row uses only the KEY diamond and omits empty-state text');
+assert.match(frame, /rigFrameKeyState\.hidden = !frameKeyState\?\.exists \|\| !keepFrameNumberWithKey/u,
+    'KEY indicator is absent when the current Bone has no Frame KEY');
+assert.match(frame,
+    /this\.rigFrameKeyState\.classList\.toggle\('is-keyed', !!frameKeyState\?\.exists\)/u,
+    'the KEY indicator styling tracks only an existing Frame KEY');
+assert.match(frame,
+    /this\.rigFrameKeyDeleteButton\.addEventListener\('click', \(\) => this\._deleteRigLensBoneKey\(\)\)/u,
+    'the Frame row delete action is a separate explicit control');
+assert.match(popup,
+    /deleteRigLensBoneKey\(assetId, layerId, boneId\)[\s\S]*?if \(!target\.key\)[\s\S]*?removeClipRigBoneKey\([\s\S]*?'caf-bone-key-delete'/u,
+    'selected-Bone deletion is KEY-only and uses the existing Timeline deletion History contract');
 assert.match(frame, /_startRigPoseGesture[\s\S]*?resolveBoneRotationHandleDrag/u);
+assert.match(frame,
+    /projectRigLensBoneMotionLocalPoint\?\.[\s\S]*?resolveBoneRootHandleDrag/u,
+    'Bone Move maps Canvas pointers into the current parent-local frame and reuses x/y Motion');
+assert.match(frame,
+    /const selectedBoneMotion = boneMotion[\s\S]*?selectedBoneMotion \? \['move', 'rotate'\][\s\S]*?data-rig-operation/u,
+    'only the selected DEFORM Bone receives separate Move and Rotate glyphs');
+assert.match(frame, /right-workspace-rig-bone-motion-joint/u,
+    'DEFORM Motion retains circular joints without treating them as Move/Rotate handles');
+assert.match(workspaceStyles,
+    /\.right-workspace-rig-motion-handle-glyph[\s\S]*?stroke-linejoin: round/u,
+    'Motion manipulation glyphs use clear stroked SVG paths');
+assert.match(frame,
+    /M0 -8V8 M-8 0H8[\s\S]*?M-6 -4 A8 8 0 1 1 -3 7/u,
+    'Move is directional while Rotate uses a curved arc glyph');
+assert.match(workspaceStyles,
+    /\.right-workspace-rig-frame-key-state[\s\S]*?pointer-events: none/u,
+    'the KEY diamond is a non-interactive status indicator');
 assert.match(frame, /rigKeyButton\.addEventListener\('click', \(\) => this\._commitRigPose\(\)\)/u);
 const boneSelectionStart = frame.indexOf('_selectRigLensBone(boneId)');
 const boneSelectionEnd = frame.indexOf('\n    _selectRigLensPart(', boneSelectionStart);
 assert.ok(boneSelectionStart >= 0 && boneSelectionEnd > boneSelectionStart);
 assert.doesNotMatch(frame.slice(boneSelectionStart, boneSelectionEnd), /_requireRigPoseResolution/u,
     'Bone selection does not require committing or cancelling another Bone draft');
-const poseGestureStart = frame.indexOf('_startRigPoseGesture(bone, event)');
+const poseGestureStart = frame.indexOf('_startRigPoseGesture(bone, event, operation =');
 const poseGestureEnd = frame.indexOf('\n    _startRigPartPoseGesture(', poseGestureStart);
 assert.ok(poseGestureStart >= 0 && poseGestureEnd > poseGestureStart);
 assert.doesNotMatch(frame.slice(poseGestureStart, poseGestureEnd), /_requireRigPoseResolution/u,
@@ -234,6 +297,121 @@ historyManager.redo();
 assert.ok(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'root', 3));
 assert.ok(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'child', 3));
 
+const rootKeyBeforeMove = getRigBoneKeyAtFrame(
+    model.findClipEntry('clip').clip.rigMotion, 'root', 3
+);
+const moveTarget = autoPopup.getRigLensMotionTarget('asset', 'raster', 'root');
+const moveStartTransform = { ...moveTarget.sampled };
+autoPopup.projectRigLensBoneMotionLocalPoint = () => ({ x: 7, y: -3 });
+const moveWorkspace = createPointerWorkspace({
+    kind: 'pose', operation: 'move', pointerId: 705, assetId: 'asset',
+    layerId: 'raster', boneId: 'root', startPointer: { x: 0, y: 0 },
+    startTransform: moveStartTransform, beforePreview: null,
+    startClientX: 10, startClientY: 10, moved: false
+});
+const moveResultingTransform = resolveBoneRootHandleDrag({
+    startTransform: moveStartTransform,
+    startPointer: { x: 0, y: 0 },
+    currentPointer: { x: 7, y: -3 }
+});
+moveWorkspace._onRigCanvasMove({
+    pointerId: 705, clientX: 20, clientY: 16,
+    preventDefault() {}, stopImmediatePropagation() {}
+});
+assert.deepEqual(
+    autoPopup.getRigLensMotionTarget('asset', 'raster', 'root').preview.transform,
+    moveResultingTransform,
+    'Move updates only the runtime Bone Pose draft before pointer-up'
+);
+moveWorkspace._onRigCanvasUp({
+    pointerId: 705, preventDefault() {}, stopImmediatePropagation() {}
+});
+const movedRootKey = getRigBoneKeyAtFrame(
+    model.findClipEntry('clip').clip.rigMotion, 'root', 3
+);
+assert.deepEqual({ x: movedRootKey.x, y: movedRootKey.y }, {
+    x: moveResultingTransform.x, y: moveResultingTransform.y
+});
+assert.equal(historyManager.stack.length, 3,
+    'one completed Move gesture auto-commits one KEY and one History operation');
+const translatedRevisit = new TimelineModel(model.serialize());
+assert.deepEqual({
+    x: getRigBoneKeyAtFrame(translatedRevisit.findClipEntry('clip').clip.rigMotion, 'root', 3).x,
+    y: getRigBoneKeyAtFrame(translatedRevisit.findClipEntry('clip').clip.rigMotion, 'root', 3).y
+}, { x: movedRootKey.x, y: movedRootKey.y },
+'Bone Motion translation survives project-model serialization and revisit');
+historyManager.undo();
+assert.deepEqual(
+    getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'root', 3),
+    rootKeyBeforeMove,
+    'one Undo restores the immediately preceding KEY after one Move gesture'
+);
+historyManager.redo();
+assert.deepEqual(
+    getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'root', 3),
+    movedRootKey
+);
+
+const deletionHistoryRecords = [];
+const deletePopup = Object.create(AnimationTablePopup.prototype);
+Object.assign(deletePopup, {
+    model,
+    selectedCelId: 'clip',
+    selectedInternalLayerId: 'raster',
+    isPlaying: false,
+    _rigLensBonePoseDraft: null,
+    _captureTimelineHistoryState: () => model.serialize(),
+    _recordTimelineHistory: (beforeState, afterState, name, meta) => {
+        deletionHistoryRecords.push({ beforeState, afterState, name, meta });
+        AnimationTablePopup.prototype._recordTimelineHistory.call(
+            deletePopup, beforeState, afterState, name, meta
+        );
+    },
+    _estimateTimelineHistoryTransitionBytes: () => 1,
+    _getTimelineHistoryStateStats: () => ({ snapshots: 0, snapshotPixelBytes: 0 }),
+    _restoreTimelineHistoryState: state => model.setClipRigMotion(
+        'clip', state.tracks[0].cels[0].rigMotion
+    ),
+    _invalidateSnapshotTextureCache() {},
+    render() {},
+    _flushLayerPanelSync() {},
+    _scheduleLaneReferencePreviewUpdate() {}
+});
+deletePopup._rigLensBonePoseDraft = {
+    assetId: 'asset', layerId: 'raster', clipId: 'clip', frame: 3, localFrame: 3,
+    poses: new Map([['root', { boneId: 'root', transform: { x: 1, y: 1 } }]])
+};
+assert.equal(deletePopup.deleteRigLensBoneKey('asset', 'raster', 'root').ok, false,
+    'KEY deletion waits for an existing matching Pose draft to be resolved');
+assert.equal(deletionHistoryRecords.length, 0);
+deletePopup._rigLensBonePoseDraft = null;
+const rootFrameTwoKey = getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'root', 2);
+const deletedRootKey = deletePopup.deleteRigLensBoneKey('asset', 'raster', 'root');
+assert.equal(deletedRootKey.ok, true);
+assert.equal(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'root', 3), null);
+assert.deepEqual(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'root', 2), rootFrameTwoKey,
+    'the adjacent Frame KEY is untouched');
+assert.ok(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'child', 3),
+    'the other Bone KEY at the same Frame is untouched');
+assert.equal(deletionHistoryRecords.length, 1, 'one KEY deletion creates one History record');
+assert.equal(deletionHistoryRecords[0].name, 'caf-bone-key-delete');
+assert.deepEqual({
+    type: deletionHistoryRecords[0].meta.type,
+    clipId: deletionHistoryRecords[0].meta.clipId,
+    boneId: deletionHistoryRecords[0].meta.boneId,
+    localFrame: deletionHistoryRecords[0].meta.localFrame
+}, { type: 'caf-bone-key-delete', clipId: 'clip', boneId: 'root', localFrame: 3 });
+assert.equal(historyManager.stack.length, 4);
+historyManager.undo();
+assert.ok(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'root', 3),
+    'Timeline Undo restores the deleted current-Frame KEY');
+historyManager.redo();
+assert.equal(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'root', 3), null,
+    'Timeline Redo reapplies the same current-Frame KEY deletion');
+assert.equal(deletePopup.deleteRigLensBoneKey('asset', 'raster', 'root').ok, false,
+    'the delete-only action cannot add a KEY when the current Frame has none');
+assert.equal(deletionHistoryRecords.length, 1);
+
 const cancelBefore = model.serialize();
 const cancelTarget = autoPopup.getRigLensMotionTarget('asset', 'raster', 'root');
 assert.equal(autoPopup.previewRigLensBonePose('asset', 'raster', 'root', {
@@ -247,7 +425,7 @@ cancelWorkspace._onRigCanvasCancel({
     pointerId: 703, preventDefault() {}, stopImmediatePropagation() {}
 });
 assert.deepEqual(model.serialize(), cancelBefore, 'pointercancel restores only the active preview gesture');
-assert.equal(historyManager.stack.length, 2, 'a canceled gesture adds no History operation');
+assert.equal(historyManager.stack.length, 4, 'a canceled gesture adds no History operation');
 assert.equal(autoPopup.hasRigLensBonePosePreview(), false);
 const blurTarget = autoPopup.getRigLensMotionTarget('asset', 'raster', 'root');
 assert.equal(autoPopup.previewRigLensBonePose('asset', 'raster', 'root', {
@@ -259,7 +437,19 @@ const blurWorkspace = createPointerWorkspace({
 });
 blurWorkspace._onRigWindowBlur();
 assert.equal(autoPopup.hasRigLensBonePosePreview(), false, 'window blur cancels the in-flight gesture preview');
-assert.equal(historyManager.stack.length, 2, 'window blur does not create History');
+assert.equal(historyManager.stack.length, 4, 'window blur does not create History');
+const escapeTarget = autoPopup.getRigLensMotionTarget('asset', 'raster', 'root');
+assert.equal(autoPopup.previewRigLensBonePose('asset', 'raster', 'root', {
+    ...escapeTarget.sampled, x: escapeTarget.sampled.x + 1
+}).ok, true);
+const escapeWorkspace = createPointerWorkspace({
+    kind: 'pose', operation: 'move', pointerId: 706, assetId: 'asset',
+    layerId: 'raster', boneId: 'root', beforePreview: null, moved: true
+});
+escapeWorkspace._cancelRigPlacement();
+assert.equal(autoPopup.hasRigLensBonePosePreview(), false,
+    'the existing Escape cancellation owner restores the in-flight Move preview');
+assert.equal(historyManager.stack.length, 4, 'Escape cancellation does not create History');
 window.coreEngine = originalCoreEngine;
 
 model.playback.currentFrame = 2;
@@ -309,6 +499,14 @@ assert.ok(getRigBoneKeyAtFrame(frameTwoPreviewClip.rigMotion, 'child', 2));
 const rootOnlyMotion = upsertRigBoneKey(batchClip.rigMotion, 'root', 2, rootPose).value;
 const rootOnlyEvaluation = evaluateRigidBones(batchAsset, { ...batchClip, rigMotion: rootOnlyMotion }, 2);
 const fullDraftEvaluation = evaluateRigidBones(batchAsset, frameTwoPreviewClip, 2);
+batchPopup._screenToRigProject = () => ({ x: 21, y: -7 });
+const childMoveLocalPoint = batchPopup.projectRigLensBoneMotionLocalPoint(
+    'asset', 'raster', 'child', {}
+);
+assert.deepEqual(childMoveLocalPoint, invertTransformMatrixPoint(
+    fullDraftEvaluation.poseByBoneId.get('root').worldMatrix, 21, -7
+), 'child Move coordinates invert the parent matrix including its current runtime preview');
+delete batchPopup._screenToRigProject;
 assert.notDeepEqual(
     frameTwoBeforeEvaluation.poseByBoneId.get('child').worldMatrix,
     rootOnlyEvaluation.poseByBoneId.get('child').worldMatrix,
@@ -398,4 +596,4 @@ if (process.argv[2]) {
     assert.notDeepEqual(first.meshResults[0].vertices, second.meshResults[0].vertices);
     console.log('PASS: R-05 exported Project JSON reloaded into TimelineModel with F1/F2 skin evaluation');
 }
-console.log('PASS: RIG Lens Pose isolation, explicit KEY, Project encoding round-trip, safe exit routing');
+console.log('PASS: RIG Lens Pose isolation, Frame KEY state/deletion, auto-key, Project round-trip, safe exit routing');
