@@ -8,8 +8,10 @@ import { evaluateRigidBones, getRigBoneKeyAtFrame, resolveBoneRotationHandleDrag
 globalThis.window = globalThis.window || {};
 const { TimelineModel } = await import('../system/animation/animation-data-model.js');
 const { HistoryManager } = await import('../system/history.js');
+const { historyManager } = await import('../system/history.js');
 const { ProjectManager } = await import('../system/project-manager.js');
 const { AnimationTablePopup } = await import('../ui/animation-table-popup.js');
+const { RightWorkspaceFrame } = await import('../ui/right-workspace-frame.js');
 
 const width = 16;
 const height = 8;
@@ -130,8 +132,10 @@ assert.match(popup, /commitRigLensBoneKey[\s\S]*?setClipRigMotion[\s\S]*?caf-rig
     'DEFORM Bone drafts use one validated Frame-level rigMotion commit');
 assert.match(popup, /restoreRigLensBonePoseDraft[\s\S]*?draft\.poses\.delete\(boneId\)/u,
     'gesture cancellation removes only the current Bone draft');
-assert.match(frame, /getRigLensBonePoseDraftSummary/u,
-    'Frame controls expose the count and scope of the pending Bone batch');
+assert.match(frame, /commitRigLensBoneKey\?\.[\s\S]*?commitRigLensPartPoseFrame\?\./u,
+    'PointerUp commits the active DEFORM Bone or PART gesture through its existing owner');
+assert.match(frame, /this\.rigKeyButton\.hidden = !isMotion \|\| !boneDraftMatches/u,
+    'ordinary Motion no longer presents a separate post-gesture KEY action');
 assert.match(frame, /_startRigPoseGesture[\s\S]*?resolveBoneRotationHandleDrag/u);
 assert.match(frame, /rigKeyButton\.addEventListener\('click', \(\) => this\._commitRigPose\(\)\)/u);
 const boneSelectionStart = frame.indexOf('_selectRigLensBone(boneId)');
@@ -149,6 +153,114 @@ assert.match(frame, /_getRigReturnDestination\(\)[\s\S]*?canStartTransformEditSe
 assert.match(frame, /_requireRigPoseResolution\(\)[\s\S]*?hasRigLensBonePosePreview/u);
 assert.match(frame, /rigLayerEntryButton\.addEventListener\('click', this\._rigEntryClickHandler\)/u);
 assert.match(frame, /event\.key\?\.toLowerCase\(\) === 'v'[\s\S]*?hasRigLensBonePosePreview/u);
+
+historyManager.clear();
+model.playback.currentFrame = 3;
+const autoPopup = Object.create(AnimationTablePopup.prototype);
+Object.assign(autoPopup, {
+    model,
+    selectedCelId: 'clip',
+    selectedCelIds: new Set(['clip']),
+    selectedInternalLayerId: 'raster',
+    selectedAssetId: 'asset',
+    selectedAssetFolderId: null,
+    activeLaneId: 'lane',
+    includedLaneIds: new Set(),
+    playbackScope: 'all',
+    isLaneOnlySelected: false,
+    isPlaying: false,
+    _rigLensPartPoseDraft: null,
+    _rigLensBonePoseDraft: null,
+    _animationPreviewKey: null
+});
+autoPopup._scheduleMotionEditPreviewRefresh = () => {};
+autoPopup._cancelMotionEditPreviewRefresh = () => {};
+autoPopup._applyVisibilityPreview = () => {};
+autoPopup._invalidateSnapshotTextureCache = () => {};
+autoPopup._flushLayerPanelSync = () => {};
+autoPopup._scheduleLaneReferencePreviewUpdate = () => {};
+autoPopup._activateClipEntry = () => {};
+autoPopup._syncWorkingLayersForCurrentFrame = () => {};
+autoPopup.render = () => {};
+const createPointerWorkspace = gesture => {
+    const workspace = Object.create(RightWorkspaceFrame.prototype);
+    Object.assign(workspace, {
+        rigLensActive: true,
+        rigLensMode: 'motion',
+        rigAuthoringKind: 'deform',
+        rigPlacementMode: null,
+        rigPointerGesture: gesture,
+        rigEntryMessage: '',
+        _getRigLensTable: () => autoPopup,
+        sync() {}
+    });
+    return workspace;
+};
+const originalCoreEngine = window.coreEngine;
+window.coreEngine = { getApp: () => ({ canvas: { releasePointerCapture() {} } }) };
+const finishBoneGesture = (boneId, transform, pointerId) => {
+    assert.equal(autoPopup.previewRigLensBonePose('asset', 'raster', boneId, transform).ok, true);
+    const workspace = createPointerWorkspace({
+        kind: 'pose', pointerId, assetId: 'asset', layerId: 'raster', boneId,
+        beforePreview: null, moved: true
+    });
+    const event = { pointerId, preventDefault() {}, stopImmediatePropagation() {} };
+    workspace._onRigCanvasUp(event);
+    assert.equal(autoPopup.hasRigLensBonePosePreview(), false,
+        'a completed Bone pointer gesture leaves no ordinary runtime draft');
+};
+const autoRootTarget = autoPopup.getRigLensMotionTarget('asset', 'raster', 'root');
+const autoRootPose = { ...autoRootTarget.sampled, x: autoRootTarget.sampled.x + 2 };
+finishBoneGesture('root', autoRootPose, 701);
+assert.equal(historyManager.stack.length, 1, 'one Bone gesture records one Timeline History operation');
+assert.ok(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'root', 3));
+const autoChildTarget = autoPopup.getRigLensMotionTarget('asset', 'raster', 'child');
+const autoChildPose = { ...autoChildTarget.sampled, rotation: autoChildTarget.sampled.rotation + 0.17 };
+finishBoneGesture('child', autoChildPose, 702);
+assert.equal(historyManager.stack.length, 2, 'the next Bone gesture is a separate Undo operation');
+assert.deepEqual(historyManager.stack.map(item => item.name), [
+    'caf-rig-lens-bone-frame-key', 'caf-rig-lens-bone-frame-key'
+]);
+assert.ok(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'root', 3),
+    'editing a second Bone preserves the first Bone KEY at the same Frame');
+assert.ok(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'child', 3));
+historyManager.undo();
+assert.equal(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'child', 3), null);
+assert.ok(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'root', 3));
+historyManager.undo();
+assert.equal(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'root', 3), null);
+historyManager.redo();
+historyManager.redo();
+assert.ok(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'root', 3));
+assert.ok(getRigBoneKeyAtFrame(model.findClipEntry('clip').clip.rigMotion, 'child', 3));
+
+const cancelBefore = model.serialize();
+const cancelTarget = autoPopup.getRigLensMotionTarget('asset', 'raster', 'root');
+assert.equal(autoPopup.previewRigLensBonePose('asset', 'raster', 'root', {
+    ...cancelTarget.sampled, x: cancelTarget.sampled.x + 5
+}).ok, true);
+const cancelWorkspace = createPointerWorkspace({
+    kind: 'pose', pointerId: 703, assetId: 'asset', layerId: 'raster', boneId: 'root',
+    beforePreview: null, moved: true
+});
+cancelWorkspace._onRigCanvasCancel({
+    pointerId: 703, preventDefault() {}, stopImmediatePropagation() {}
+});
+assert.deepEqual(model.serialize(), cancelBefore, 'pointercancel restores only the active preview gesture');
+assert.equal(historyManager.stack.length, 2, 'a canceled gesture adds no History operation');
+assert.equal(autoPopup.hasRigLensBonePosePreview(), false);
+const blurTarget = autoPopup.getRigLensMotionTarget('asset', 'raster', 'root');
+assert.equal(autoPopup.previewRigLensBonePose('asset', 'raster', 'root', {
+    ...blurTarget.sampled, y: blurTarget.sampled.y + 4
+}).ok, true);
+const blurWorkspace = createPointerWorkspace({
+    kind: 'pose', pointerId: 704, assetId: 'asset', layerId: 'raster', boneId: 'root',
+    beforePreview: null, moved: true
+});
+blurWorkspace._onRigWindowBlur();
+assert.equal(autoPopup.hasRigLensBonePosePreview(), false, 'window blur cancels the in-flight gesture preview');
+assert.equal(historyManager.stack.length, 2, 'window blur does not create History');
+window.coreEngine = originalCoreEngine;
 
 model.playback.currentFrame = 2;
 const batchHistoryRecords = [];

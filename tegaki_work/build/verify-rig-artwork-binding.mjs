@@ -8,6 +8,7 @@ import { createRasterSkinRenderPlan } from '../system/animation/raster-skin-rend
 globalThis.window = globalThis.window || {};
 const { TimelineModel, ClipAssetModel } = await import('../system/animation/animation-data-model.js');
 const { HistoryManager } = await import('../system/history.js');
+const { RightWorkspaceFrame } = await import('../ui/right-workspace-frame.js');
 
 const width = 12;
 const height = 6;
@@ -157,6 +158,70 @@ assert.equal(inspectStaticRigAuthoringTarget(multiRigAsset, 'raster', {
     allowExistingOtherRasterBindings: true
 }).ok, false, 'the newly connected selected target cannot be rebound by this first-bind action');
 
+function makeBindingWorkspace({ generationResult = { ok: true }, motionBoneIds = ['root'] } = {}) {
+    const bones = [
+        { boneId: 'root', parentBoneId: null },
+        { boneId: 'arm', parentBoneId: 'root' }
+    ];
+    let generationCalls = 0;
+    const table = {
+        getRigLensStaticTarget: () => ({ ok: true, bones }),
+        generateRigLensArtworkBinding: () => {
+            generationCalls += 1;
+            return generationResult;
+        },
+        getRigLensMotionTarget: (_assetId, _layerId, boneId) => motionBoneIds.includes(boneId)
+            ? { ok: true, bone: bones.find(bone => bone.boneId === boneId) }
+            : { ok: false, reason: '選択BoneのMesh / Skin接続を確認してください。' }
+    };
+    const workspace = Object.create(RightWorkspaceFrame.prototype);
+    Object.assign(workspace, {
+        rigLensActive: true,
+        rigAuthoringKind: 'deform',
+        rigLensMode: 'setup',
+        rigLensTarget: { assetId: 'asset', internalLayerId: 'raster' },
+        rigPointerGesture: null,
+        rigSelectedBoneId: 'arm',
+        rigEntryMessage: '',
+        sync() {},
+        _getRigLensTable: () => table
+    });
+    return { workspace, getGenerationCalls: () => generationCalls };
+}
+
+const bindingWithoutHumanConfirmation = makeBindingWorkspace();
+assert.equal(bindingWithoutHumanConfirmation.workspace._bindRigArtwork(), true,
+    'existing model guards, not a per-session human confirmation list, determine Binding entry');
+assert.equal(bindingWithoutHumanConfirmation.getGenerationCalls(), 1,
+    'a model-eligible structure reaches the existing Binding owner directly');
+assert.equal('rigPlacementVerifiedBoneIds' in bindingWithoutHumanConfirmation.workspace, false,
+    'the Workspace does not create an independent placement-validity state');
+
+const failedBinding = makeBindingWorkspace({ generationResult: { ok: false, reason: 'unknown-machine-reason' } });
+assert.equal(failedBinding.workspace._bindRigArtwork(), false);
+assert.equal(failedBinding.workspace.rigLensMode, 'setup',
+    'a failed Binding never enters MOTION');
+assert.match(failedBinding.workspace.rigEntryMessage, /Artworkを接続できませんでした/u,
+    'machine-only failure reasons use a non-speculative visible fallback');
+
+const knownBindingFailure = makeBindingWorkspace({ generationResult: { ok: false, reason: 'mesh-already-exists' } });
+assert.equal(knownBindingFailure.workspace._bindRigArtwork(), false);
+assert.match(knownBindingFailure.workspace.rigEntryMessage, /既にMesh／Skinへ接続/u,
+    'a known existing-Mesh conflict has a specific visible reason');
+
+const successfulBinding = makeBindingWorkspace({ motionBoneIds: ['root'] });
+assert.equal(successfulBinding.workspace._bindRigArtwork(), true,
+    'verified model Motion target permits automatic handoff');
+assert.equal(successfulBinding.workspace.rigSelectedBoneId, 'root',
+    'handoff chooses an actually connected Bone when the previous selection is not weighted');
+assert.equal(successfulBinding.workspace.rigLensMode, 'motion');
+
+const unverifiedMotion = makeBindingWorkspace({ motionBoneIds: [] });
+assert.equal(unverifiedMotion.workspace._bindRigArtwork(), false);
+assert.equal(unverifiedMotion.workspace.rigLensMode, 'setup',
+    'Binding without a verified Motion Bone does not perform an invalid handoff');
+assert.match(unverifiedMotion.workspace.rigEntryMessage, /有効なMotion Bone/u);
+
 const popupSource = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../ui/animation-table-popup.js'), 'utf8');
 const workspaceSource = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../ui/right-workspace-frame.js'), 'utf8');
 assert.match(popupSource, /generateRigLensArtworkBinding[\s\S]*?_generateRasterBoneSetupForTarget/u);
@@ -166,8 +231,46 @@ assert.match(popupSource, /_generateRasterBoneSetupForTarget[\s\S]*?generateClip
     'new and old UI use the same model, rollback, and CAF History boundary');
 assert.match(workspaceSource, /const bindingTarget = matchesTarget[\s\S]*?allowExistingOtherRasterBindings: true/u,
     'the Workspace resolves binding separately from immutable Bone authoring');
-assert.match(workspaceSource, /rigBindButton\.hidden = isMotion \|\| !bindingTarget\?\.ok/u,
-    'the Artwork binding action is exposed only for a valid unbound selected Raster');
-assert.match(workspaceSource, /rigRootButton\.hidden = !structureEditorOpen \|\| isMotion\s+\|\| !staticTarget\?\.ok \|\| staticTarget\.bones\.length !== 0/u,
+assert.match(workspaceSource, /const bindingAvailable = bindingTarget\?\.ok === true[\s\S]*?&& !rigTarget\.hasMesh/u,
+    'the Artwork binding action requires a valid target with no existing Mesh');
+assert.match(workspaceSource, /RIG_BINDING_FAILURE_MESSAGES = Object\.freeze\([\s\S]*?'mesh-already-exists':[\s\S]*?'history-unavailable':/u,
+    'known existing-Mesh and CAF History failures are explicitly surfaced');
+assert.match(workspaceSource, /rigBindButton\.hidden = isMotion \|\| !matchesTarget \|\| rigTarget\.hasMesh/u,
+    'an unbound selected Raster keeps the Binding action visible even when its model guard disables it');
+assert.match(workspaceSource, /rigBindButton\.disabled = !bindingAvailable/u,
+    'Binding availability is projected from the existing model guard, not a manual confirmation state');
+assert.match(workspaceSource, /rigBindButton\.title = bindingGuardReason[\s\S]*?既存Binding guard/u,
+    'a disabled Binding action exposes its existing guard reason');
+assert.match(workspaceSource, /const canEditStructure = staticTarget\?\.ok === true[\s\S]*?rigRootButton\.hidden = !structureEditorOpen \|\| isMotion\s+\|\| !canEditStructure \|\| staticTarget\.bones\.length !== 0/u,
     'Root authoring remains limited to the structure editor and an empty valid target');
+const propertyAppendStart = workspaceSource.indexOf('this.rigLensPropertiesContent.append(');
+const propertyAppendEnd = workspaceSource.indexOf(');', propertyAppendStart);
+const setupSurfaceAppend = workspaceSource.slice(propertyAppendStart, propertyAppendEnd);
+assert.doesNotMatch(setupSurfaceAppend, /rigRootButton|rigChildButton|rigBoneParentLabel/u,
+    'duplicate structure controls are absent from the normal SETUP surface');
+assert.match(workspaceSource, /rigStructureDialogActions\.append\(\s*this\.rigRootButton, this\.rigStructureAddBoneButton/u,
+    'Root and child creation remain owned by the structure editor');
+assert.match(workspaceSource, /rigStructureParentHost\.appendChild\(this\.rigBoneParentLabel\)/u,
+    'parent editing remains inside the structure editor');
+assert.match(workspaceSource, /const staticBoneTipHandle = !staticSetup\s+&& staticBoneMoveHandle/u,
+    'SETUP omits detailed tip hit targets rather than making them transparent');
+assert.match(workspaceSource, /const marker = document\.createElementNS\(ns, 'circle'\)/u,
+    'Root joint is a circle, not the detailed Bind diamond');
+const compactStart = workspaceSource.indexOf('_renderRigCompactBoneList(container, bones)');
+const compactEnd = workspaceSource.indexOf('\n    _renderRigBoneTree(', compactStart);
+const compactListSource = workspaceSource.slice(compactStart, compactEnd);
+assert.doesNotMatch(compactListSource, /parentLabel|right-workspace-rig-selected-bone-parent/u,
+    'the compact selection list does not duplicate hierarchy details');
+assert.match(workspaceSource, /rigToolHint\.hidden[\s\S]*?!bindingGuardReason/u,
+    'disabled/guarded binding feedback remains visible with a selected Bone');
+assert.doesNotMatch(workspaceSource, /rigPlacementVerifiedBoneIds|配置確認済み|配置確認待ち/u,
+    'SETUP readiness is no longer projected from a manual confirmation set');
+assert.match(workspaceSource, /getRigLensMotionTarget[\s\S]*?this\._setRigLensMode\('motion'\)/u,
+    'Binding handoff is based on the existing model Motion target');
+assert.match(popupSource, /requireHistory:\s*true/u,
+    'DEFORM Artwork Binding requires the existing CAF History boundary');
+assert.match(popupSource, /options\.requireHistory === true[\s\S]*?history-unavailable/u,
+    'the required History path is checked before mutating the Asset');
+assert.match(popupSource, /historyRecorded[\s\S]*?options\.requireHistory === true[\s\S]*?_restoreInternalLayerHistoryState/u,
+    'a Binding that cannot record CAF History restores its pre-mutation Asset');
 console.log('PASS: RIG Artwork Binding target, Mesh/Skin, Bone deformation, KEY isolation, History and round-trip');

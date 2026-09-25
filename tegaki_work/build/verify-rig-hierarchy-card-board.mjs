@@ -21,17 +21,22 @@ assert.match(popupSource, /removeRigLensStaticBone[\s\S]*?caf-rig-bone-remove/u,
 assert.match(frameSource, /allowBound: true[\s\S]*?readOnlyTarget/u,
     'guarded structures can be reopened for read-only inspection');
 assert.match(frameSource, /_renderRigHierarchyCardBoard\(container, bones, \{ readOnly = false \}/u);
-assert.match(frameSource, /staticBonePlacementPending[\s\S]*?staticBoneTipHandle = staticBoneMoveHandle && !staticBonePlacementPending/u,
-    'unverified placement hides the tip handle rather than only styling it away');
-assert.match(frameSource, /if \(!readOnly && !isRoot\)[\s\S]*?_onRigHierarchyCardDragStart/u,
-    'read-only structure cards do not acquire drag ownership');
+assert.match(frameSource, /const staticBoneTipHandle = !staticSetup && staticBoneMoveHandle/u,
+    'DEFORM SETUP omits tip hit targets rather than only styling them away');
+assert.match(frameSource, /card\.addEventListener\('pointerdown'[\s\S]*?_onRigHierarchyCardPointerDown/u,
+    'the whole card body participates in pointer selection and drag initiation');
+assert.match(frameSource, /card\.setPointerCapture\(event\.pointerId\)/u,
+    'card reparent gestures capture their initiating pointer');
+assert.match(frameSource, /Math\.hypot\(event\.clientX - drag\.startX,\s*event\.clientY - drag\.startY\) < 4/u,
+    'card click and drag use a small movement threshold');
 assert.match(frameSource, /name\.readOnly = readOnly \|\|/u,
     'read-only structure cards keep inline names non-editable');
 assert.match(frameSource, /_getRigHierarchyCardTree\(bones\)[\s\S]*?parentBoneId[\s\S]*?number: parts\.join\('-'\)/u,
     'display numbers are derived from parent links and serialized Bone enumeration');
 assert.match(frameSource, /serialized bones\[\] enumeration as sibling display order/u);
-assert.match(frameSource, /card\.draggable = !isRoot/u);
-assert.match(frameSource, /_onRigHierarchyCardDragOver[\s\S]*?is-drop-invalid[\s\S]*?_onRigHierarchyCardDrop/u);
+assert.match(frameSource, /card\.draggable = false/u,
+    'native browser drag does not compete with pointer capture');
+assert.match(frameSource, /_onRigHierarchyCardPointerMove[\s\S]*?is-drop-invalid[\s\S]*?_onRigHierarchyCardDrop/u);
 assert.match(frameSource, /appendToSiblingEnd: true/u);
 assert.doesNotMatch(frameSource, /rigStructureChildButton|rigStructureSiblingButton/u,
     'the board has no permanent child/sibling action column');
@@ -54,8 +59,12 @@ const compactListSource = frameSource.slice(compactListStart, compactListEnd);
 assert.match(compactListSource, /this\.rigSelectedBoneId === bone\.boneId/u);
 assert.match(compactListSource, /button\.addEventListener\('click',[\s\S]*?_selectRigLensBone\(bone\.boneId\)/u,
     'the flat selector uses the existing selected Bone ID and Canvas selection path');
-assert.match(compactListSource, /parentDetail[\s\S]*?placement[\s\S]*?action/u,
-    'the selected Bone card projects parent, placement, and current Canvas action');
+assert.match(compactListSource, /actionLabel/u,
+    'the selected Bone card projects the current Canvas action without duplicate placement status');
+assert.doesNotMatch(compactListSource, /配置確認済み|配置確認待ち/u,
+    'the compact selector has no independent placement-validity status');
+assert.doesNotMatch(compactListSource, /parentDetail|parentLabel|right-workspace-rig-selected-bone-parent/u,
+    'the flat Bone selector avoids duplicating hierarchy details');
 assert.match(frameSource, /_closeRigStructureEditor\(returnToCanvas\)[\s\S]*?pendingCreatedIds[\s\S]*?applyRigLensStaticInitialLayout/u,
     'returning from the board lays out only this-session unverified Bones');
 assert.match(frameSource, /right-workspace-rig-parent-link/u);
@@ -90,7 +99,6 @@ Object.assign(addFrame, {
     rigSelectedBoneId: 'root',
     rigStructureTreeRestoreFocusId: null,
     rigStructureEditorReadOnly: false,
-    rigPlacementVerifiedBoneIds: new Set(),
     rigTreeCollapsedBoneIds: new Set(),
     rigStructureNameInput: { value: 'Bone 1' },
     rigStructureStatus: { textContent: '' },
@@ -250,14 +258,12 @@ assert.equal(addFrame._deleteRigLensStructureBone(), false,
     'a Bone with descendants cannot be deleted or implicitly reparented');
 assert.equal(deleteCalls, 0);
 addFrame.rigSelectedBoneId = card4;
-addFrame.rigPlacementVerifiedBoneIds.add(card4);
 assert.equal(addFrame._deleteRigLensStructureBone(), true, 'an unreferenced leaf Bone can be deleted');
 assert.equal(deleteCalls, 1);
 assert.equal(deleteHistoryEntries, 1, 'one leaf deletion reaches one CAF-history boundary');
 assert.equal(addFrame.rigSelectedBoneId, card2, 'selection moves to the deleted Bone parent');
 assert.equal(addFrame.rigStructureTreeRestoreFocusId, card2);
 assert.equal(asset.rigDefinition.bones.some(bone => bone.boneId === card4), false);
-assert.equal(addFrame.rigPlacementVerifiedBoneIds.has(card4), false);
 assert.equal(addFrame.rigStructureCreatedBoneIds.has(card4), false);
 
 const savedBones = serializeRigDefinition(asset.rigDefinition).bones;
@@ -269,7 +275,58 @@ assert.deepEqual(reopened.map(bone => [bone.boneId, bone.parentBoneId]),
     'Project save/revisit preserves the hierarchy and its existing array order');
 assert.equal(model.findClipEntry('clip').clip.rigMotion, null, 'board edits do not create Motion KEYs');
 
-console.log('PASS: RIG hierarchy card numbering, Root-child creation, guarded D&D, append order, stable IDs, Bind World, and Project serialization');
+let capturedPointerId = null;
+let pointerParentCalls = 0;
+let pointerDragClassAdded = false;
+const pointerSourceCard = {
+    classList: { add(name) { if (name === 'is-dragging') pointerDragClassAdded = true; }, remove() {} },
+    setPointerCapture(pointerId) { capturedPointerId = pointerId; },
+    releasePointerCapture() {}
+};
+const pointerTargetCard = {
+    dataset: { rigBoneId: 'root' },
+    classList: { add() {}, remove() {}, toggle() {} }
+};
+const pointerBoard = {
+    querySelectorAll: () => [],
+    contains: card => card === pointerTargetCard
+};
+addFrame.rigStructureEditorTree = pointerBoard;
+addFrame.rigCompactBoneTree = null;
+addFrame.rigStructureEditorReadOnly = false;
+addFrame.rigStructureStatus = { textContent: '' };
+addFrame._getRigLensTable = () => ({
+    setRigLensStaticBoneParent: (assetId, layerId, boneId, parentBoneId, options) => {
+        pointerParentCalls += 1;
+        return model.setClipAssetRigBoneParent(assetId, boneId, parentBoneId, options);
+    }
+});
+const previousDocument = globalThis.document;
+globalThis.document = {
+    elementFromPoint: () => ({ closest: () => pointerTargetCard })
+};
+addFrame._onRigHierarchyCardPointerDown({
+    button: 0, isPrimary: true, pointerId: 91, clientX: 10, clientY: 10,
+    target: { closest: () => null }
+}, card3, pointerSourceCard);
+assert.equal(addFrame.rigSelectedBoneId, card3, 'pointerdown selects a card immediately');
+assert.equal(capturedPointerId, 91, 'card body captures the initiating pointer');
+assert.equal(addFrame.rigStructureDrag.pointerMode, true);
+let pointerMovePrevented = false;
+addFrame._onRigHierarchyCardPointerMove({
+    pointerId: 91, clientX: 16, clientY: 16, preventDefault() { pointerMovePrevented = true; }
+});
+assert.equal(pointerMovePrevented, true, 'movement beyond the small threshold becomes a drag');
+assert.equal(pointerDragClassAdded, true, 'the card body visibly enters its drag state');
+addFrame._onRigHierarchyCardPointerEnd({
+    pointerId: 91, clientX: 16, clientY: 16, preventDefault() {}
+});
+assert.equal(pointerParentCalls, 1, 'pointer drop uses the existing parent mutation owner once');
+assert.equal(asset.rigDefinition.bones.find(bone => bone.boneId === card3).parentBoneId, 'root');
+assert.equal(addFrame.rigSelectedBoneId, card3, 'the moved card remains selected');
+globalThis.document = previousDocument;
+
+console.log('PASS: RIG hierarchy numbering, pointer-captured card selection/reparent, guarded legacy adapter, stable IDs, Bind World, and Project serialization');
 
 const removalModel = new TimelineModel({
     totalFrames: 4,

@@ -9,6 +9,7 @@ globalThis.window = globalThis.window || {};
 const { AnimationTablePopup } = await import('../ui/animation-table-popup.js');
 const { TimelineModel } = await import('../system/animation/animation-data-model.js');
 const { ProjectManager } = await import('../system/project-manager.js');
+const { RightWorkspaceFrame } = await import('../ui/right-workspace-frame.js');
 
 const model = new TimelineModel({
     totalFrames: 3,
@@ -134,9 +135,27 @@ const clampedHand = applyTransformMatrix(clampedEval.poseByPartId.get('hand').wo
 assert.ok(Math.hypot(clampedHand.x - clamped.clampedTarget.x,
     clampedHand.y - clamped.clampedTarget.y) < 1e-7);
 
-assert.equal(popup.commitRigLensPartPoseFrame('ik-caf').ok, true);
+const ikWorkspace = Object.create(RightWorkspaceFrame.prototype);
+Object.assign(ikWorkspace, {
+    rigLensActive: true,
+    rigLensMode: 'motion',
+    rigAuthoringKind: 'part',
+    rigPlacementMode: null,
+    rigPointerGesture: {
+        kind: 'part-ik', pointerId: 801, assetId: 'ik-caf', partId: 'hand', moved: true
+    },
+    rigEntryMessage: '',
+    _getRigLensTable: () => popup,
+    sync() {}
+});
+const originalCoreEngine = window.coreEngine;
+window.coreEngine = { getApp: () => ({ canvas: { releasePointerCapture() {} } }) };
+ikWorkspace._onRigCanvasUp({
+    pointerId: 801, preventDefault() {}, stopImmediatePropagation() {}
+});
+window.coreEngine = originalCoreEngine;
 assert.deepEqual(historyFinishes.map(item => item.type), ['caf-rig-lens-part-frame-key'],
-    'the existing single frame-batch History boundary is used exactly once');
+    'PART IK PointerUp reaches the existing single frame-batch History boundary exactly once');
 assert.deepEqual(historyFinishes[0].before, { capture: 1 });
 const committedClip = model.findClipEntry('arm-clip').clip;
 for (const partId of ['torso', 'shoulder', 'forearm']) {
@@ -149,6 +168,51 @@ assert.equal(getRigPartKeyAtFrame(committedClip.rigMotion, 'shoulder', 0), null,
     'IK does not create keys on adjacent Frames');
 assert.equal(popup.hasRigLensPartPosePreview(), false,
     'successful KEY commit clears only the existing runtime draft');
+
+model.playback.currentFrame = 2;
+const handTargetAtTwo = popup.getRigLensPartMotionTarget('ik-caf', 'hand');
+const handMove = { ...handTargetAtTwo.sampled, x: handTargetAtTwo.sampled.x + 3 };
+assert.equal(popup.previewRigLensPartPose('ik-caf', 'hand', handMove).ok, true);
+const partWorkspace = Object.create(RightWorkspaceFrame.prototype);
+Object.assign(partWorkspace, {
+    rigLensActive: true,
+    rigLensMode: 'motion',
+    rigAuthoringKind: 'part',
+    rigPlacementMode: null,
+    rigPointerGesture: {
+        kind: 'part-pose', pointerId: 802, assetId: 'ik-caf', partId: 'hand',
+        operation: 'move', beforePreview: null, moved: true
+    },
+    rigEntryMessage: '',
+    _getRigLensTable: () => popup,
+    sync() {}
+});
+partWorkspace._onRigCanvasUp({
+    pointerId: 802, preventDefault() {}, stopImmediatePropagation() {}
+});
+assert.deepEqual(historyFinishes.map(item => item.type), [
+    'caf-rig-lens-part-frame-key', 'caf-rig-lens-part-frame-key'
+], 'a normal PART move is an independent single History operation after IK');
+assert.ok(getRigPartKeyAtFrame(model.findClipEntry('arm-clip').clip.rigMotion, 'hand', 2));
+assert.equal(popup.hasRigLensPartPosePreview(), false,
+    'a normal PART pointerup leaves no post-gesture draft');
+
+const cancelPartBefore = model.serialize();
+const handTargetForCancel = popup.getRigLensPartMotionTarget('ik-caf', 'hand');
+assert.equal(popup.previewRigLensPartPose('ik-caf', 'hand', {
+    ...handTargetForCancel.sampled, rotation: handTargetForCancel.sampled.rotation + 0.25
+}).ok, true);
+partWorkspace.rigPointerGesture = {
+    kind: 'part-pose', pointerId: 803, assetId: 'ik-caf', partId: 'hand',
+    operation: 'rotate', beforePreview: null, moved: true
+};
+partWorkspace._onRigCanvasCancel({
+    pointerId: 803, preventDefault() {}, stopImmediatePropagation() {}
+});
+assert.deepEqual(model.serialize(), cancelPartBefore,
+    'PART pointercancel restores the active gesture without canonical KEY writes');
+assert.equal(historyFinishes.length, 2, 'PART cancellation adds no History operation');
+assert.equal(popup.hasRigLensPartPosePreview(), false);
 
 const serialized = await Object.create(ProjectManager.prototype)._serializeAnimationForProject(model);
 const reloaded = new TimelineModel(JSON.parse(JSON.stringify(serialized)));

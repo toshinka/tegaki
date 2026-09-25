@@ -4650,7 +4650,8 @@ export class AnimationTablePopup {
         const entry = this.model.findClipEntry(this.selectedCelId);
         // The first binding never regenerates or replaces an existing Mesh/Skin.
         return this._generateRasterBoneSetupForTarget(asset, layer, entry.clip, 'alpha-fit-grid', {
-            allowRegenerate: false
+            allowRegenerate: false,
+            requireHistory: true
         });
     }
 
@@ -4807,6 +4808,10 @@ export class AnimationTablePopup {
             return { ok: false, changed: false, reason: 'correction-regeneration-cancelled' };
         }
         const beforeState = this._captureInternalLayerHistoryState(asset);
+        if (options.requireHistory === true
+            && (!beforeState || !historyManager || historyManager.isApplying)) {
+            return { ok: false, reason: 'history-unavailable' };
+        }
         const mode = RASTER_MESH_SETUP_MODES[generatorMode]
             || RASTER_MESH_SETUP_MODES['alpha-fit-grid'];
         const result = this.model.generateClipAssetRasterBoneSetup(asset.id, layer.id, {
@@ -4836,7 +4841,7 @@ export class AnimationTablePopup {
             return { ok: false, reason: 'unsupported-render-boundary' };
         }
         const historyType = mode.historyType;
-        this._recordInternalLayerHistory(asset, beforeState, historyType, {
+        const historyRecorded = this._recordInternalLayerHistory(asset, beforeState, historyType, {
             type: historyType,
             assetId: asset.id,
             layerId: layer.id,
@@ -4854,6 +4859,10 @@ export class AnimationTablePopup {
                 triangleCount: result.topology.metrics.triangleCount
             } : {})
         });
+        if (options.requireHistory === true && !historyRecorded) {
+            this._restoreInternalLayerHistoryState(asset.id, beforeState);
+            return { ok: false, reason: 'history-unavailable' };
+        }
         this._invalidateSnapshotTextureCache();
         this._animationPreviewKey = null;
         this._applyVisibilityPreview();

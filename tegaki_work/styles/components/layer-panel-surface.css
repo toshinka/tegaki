@@ -886,21 +886,12 @@
     padding: 3px 5px 4px 27px;
 }
 .right-workspace-rig-selected-bone-parent,
-.right-workspace-rig-selected-bone-placement,
 .right-workspace-rig-selected-bone-action {
     min-width: 0;
     color: var(--text-secondary);
     font-size: 9px;
     line-height: 1.35;
     overflow-wrap: anywhere;
-}
-.right-workspace-rig-selected-bone-placement.is-pending {
-    color: var(--active-border);
-    font-weight: 700;
-}
-.right-workspace-rig-selected-bone-placement.is-verified {
-    color: var(--futaba-medium);
-    font-weight: 700;
 }
 .right-workspace-rig-selected-bone-action {
     margin: 0;
@@ -982,18 +973,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.right-workspace-rig-bone-tree-placement {
-    min-width: 14px;
-    color: var(--futaba-medium) !important;
-    font-size: 8px !important;
-    font-weight: 700;
-    text-align: center;
-    white-space: nowrap;
-}
-.right-workspace-rig-bone-tree-placement.is-pending {
-    color: var(--active-border) !important;
-}
-
 .right-workspace-rig-structure-editor {
     position: fixed;
     inset: 50% auto auto 50%;
@@ -1180,7 +1159,7 @@
 }
 .right-workspace-rig-hierarchy-card {
     display: grid;
-    grid-template-columns: 42px minmax(0, 1fr) auto;
+    grid-template-columns: 42px minmax(0, 1fr);
     align-items: center;
     gap: 7px;
     width: 172px;
@@ -1258,16 +1237,6 @@
     border-color: var(--active-border);
     outline: 2px solid color-mix(in srgb, var(--active-border) 36%, transparent);
     outline-offset: 1px;
-}
-.right-workspace-rig-hierarchy-placement {
-    min-width: 16px;
-    color: var(--active-border);
-    font-size: 10px;
-    font-weight: 700;
-    text-align: center;
-}
-.right-workspace-rig-hierarchy-placement.is-verified {
-    color: var(--futaba-medium);
 }
 .right-workspace-rig-hierarchy-empty {
     align-self: center;
