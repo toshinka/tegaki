@@ -47,51 +47,52 @@ const stale = createRigAuthoringStatusProjection(asset, 'art', { meshState: 'sta
 assert.equal(stale.bendSetup?.state, 'stale');
 assert.equal(stale.bendSetup?.nextActionLabel, 'Meshを更新');
 
-for (const token of [
-    '_createContextRigBendProgressElement(projection)',
-    "progress.setAttribute('aria-label', '曲げRIG設定進捗')",
-    "appendRow('BONE', boneLabel)",
-    "appendRow('MESH', meshLabel)",
-    "appendRow('WEIGHT', weightLabel)",
-    "['bend', 'stale', 'conflict'].includes(projection?.status)",
-    'bendProgressButton.textContent = projection.bendSetup.nextActionLabel',
-    'context-rig-handoff-button context-rig-open-bend-button'
-]) {
-    assert.ok(renderer.includes(token), `right RIG bend progress must include ${token}`);
-}
+assert.doesNotMatch(renderer, /context-rig-bend-progress|context-rig-open-bend-button/u,
+    'Layer no longer projects legacy bend setup progress or a normal bend entry');
+assert.match(renderer, /getRigLensLegacyFallbackTarget[\s\S]*?openInternalRasterRigSetupFromExternal/u,
+    'unsupported bend setup can still reach its existing Raster editor through fallback');
 
+const legacyFallbackOpener = renderer.match(
+    /_openLegacyRigFallback\(button\)[\s\S]*?\n    \}/u
+)?.[0] || '';
 assert.match(
-    renderer,
-    /_openContextRasterRigSetup\(button\)[\s\S]*?openInternalRasterRigSetupFromExternal/u,
-    'the progress action reuses the existing Raster RIG editor handoff'
+    legacyFallbackOpener,
+    /getRigLensLegacyFallbackTarget[\s\S]*?fallback\.route === 'rigid-hierarchy'[\s\S]*?openInternalRasterRigSetupFromExternal/u,
+    'the conditional fallback revalidates the selected target before choosing an existing Workspace route'
 );
 const adapter = table.match(
-    /openInternalRasterRigSetupFromExternal\(assetId, layerId, options = \{\}\)[\s\S]*?\n    \}\n\n    openInternalRigidHierarchyFromExternal/u
+    /openInternalRasterRigSetupFromExternal\(assetId, layerId, options = \{\}\)[\s\S]*?\n    \}\n\n    _resolveInternalRigidHierarchyTarget/u
 )?.[0] || '';
 assert.match(adapter, /ok: true, changed: false/u, 'Raster setup handoff stays navigation-only');
 assert.match(
     adapter,
-    /_getRasterRigProjectionContext\([\s\S]*?projection,[\s\S]*?layer\.id,[\s\S]*?this\.selectedRigBoneId/u,
-    'the handoff resolves the Raster target before and after Mesh generation'
+    /_resolveInternalRasterRigSetupTarget\(assetId, layerId\)[\s\S]*?_selectRigRasterProjectionTarget\(context, \{[\s\S]*?focusRig: true,[\s\S]*?openInspector: true/u,
+    'the existing handoff consumes the shared exact-target preflight and selects that context'
 );
 assert.doesNotMatch(
     adapter,
     /generateClipAssetRasterBoneSetup|applyClipAssetRasterSkin|_recordInternalLayerHistory/u,
     'right RIG progress neither generates Mesh nor edits Weight or History'
 );
+const rasterResolver = table.match(
+    /_resolveInternalRasterRigSetupTarget\(assetId, layerId\)[\s\S]*?\n    \}\n\n    openInternalRasterRigSetupFromExternal/u
+)?.[0] || '';
+assert.match(
+    rasterResolver,
+    /_getRasterRigProjectionContext\([\s\S]*?projection,[\s\S]*?layer\.id,[\s\S]*?this\.selectedRigBoneId[\s\S]*?context\.layer\?\.id !== layer\.id/u,
+    'the resolver checks the selected Raster before and after Mesh generation without substituting a target'
+);
 
 for (const token of [
-    '.right-panel .context-rig-bend-progress',
-    '.right-panel .context-rig-bend-progress-row',
-    'color: var(--futaba-maroon)'
+    '.right-panel .layer-panel-legacy-rig-fallback',
+    '.right-panel .layer-panel-legacy-rig-fallback-button',
+    'color: var(--futaba-maroon)',
+    'background: var(--ui-layer-surface-hover)'
 ]) {
-    assert.ok(css.includes(token), `bend progress surface must include ${token}`);
+    assert.ok(css.includes(token), `bend fallback surface must include ${token}`);
 }
-assert.doesNotMatch(
-    css.match(/\.right-panel \.context-rig-hierarchy,[\s\S]*?\.context-rig-inspector-result/u)?.[0] || '',
-    /border\s*:/u,
-    'BONE / MESH / WEIGHT progress remains frameless'
-);
+assert.doesNotMatch(css, /context-rig-(?:bend-progress|hierarchy|inspector)/u,
+    'the retired Layer RIG inspector has no remaining component styles');
 
 for (const token of [
     'Stage C5 — Raster bend setup progress / Mesh-Bone handoff Gate',
@@ -102,4 +103,4 @@ for (const token of [
     assert.ok(phase.includes(token), `Phase 9n Stage C5 boundary must include ${token}`);
 }
 
-console.log('verify-right-rig-bend-setup-progress: candidate/connected Bone, Mesh freshness, Weight projection and existing handoff OK');
+console.log('verify-right-rig-bend-setup-progress: candidate/connected Bone, Mesh freshness, Weight projection and conditional fallback OK');

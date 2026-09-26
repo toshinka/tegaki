@@ -1562,60 +1562,8 @@ canvas {
     padding-top: 0;
 }
 
-.layer-panel-context-view-switch {
-    position: sticky;
-    top: 0;
-    z-index: 3;
+.layer-panel-legacy-rig-fallback {
     width: 100%;
-}
-
-.layer-panel-context-view-button svg {
-    width: 12px;
-    height: 12px;
-}
-
-.context-rig-inspector {
-    width: 100%;
-}
-
-.context-rig-method-actions {
-    width: 100%;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 2px;
-    margin-top: 7px;
-}
-
-.context-rig-method-actions[data-method-count="2"] {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.context-rig-method-button,
-.context-rig-handoff-button {
-    width: 100%;
-    min-width: 0;
-    white-space: nowrap;
-}
-
-@media (max-width: 620px) {
-    .context-rig-method-actions {
-        margin-top: 0;
-    }
-}
-
-.context-rig-inspector-target {
-    white-space: nowrap;
-}
-
-.context-rig-inspector-icon,
-.context-rig-inspector-icon svg {
-    width: 16px;
-    height: 16px;
-}
-
-.layer-panel-container.layer-panel-container--rig-view .layer-controls-row {
-    visibility: hidden;
-    pointer-events: none;
 }
 
 .layer-panel-items.layer-panel-items--scrollable {
@@ -1692,11 +1640,6 @@ canvas {
         --ui-transform-slider-group-height: 46px;
         --ui-transform-slider-row-height: 22px;
         --ui-transform-slider-width: 80px;
-    }
-
-    .layer-panel-context-view-button svg {
-        width: 16px;
-        height: 16px;
     }
 
     .sidebar {

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const popup = readFileSync(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8');
 const renderer = readFileSync(new URL('../ui/layer-panel-renderer.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../styles/main.css', import.meta.url), 'utf8');
+const componentCss = readFileSync(new URL('../styles/components/layer-panel-surface.css', import.meta.url), 'utf8');
 const phase = readFileSync(new URL('../../開発用資料保管庫/Archive/phase9n.md', import.meta.url), 'utf8');
 
 assert.match(popup, /anim-rig-lane-status[^>]*aria-label="RIG未設定">未設定</,
@@ -42,13 +43,19 @@ assert.match(popup, /button\.dataset\.motionTarget/);
 assert.match(popup, /data-rig-open-setup[^>]*>RIGを設定 &gt;</,
     'Motion未接続targetには明示RIG handoffを維持する');
 
-assert.match(renderer, /context-rig-open-bend-button/);
-assert.match(renderer, /context-rig-register-button/);
-assert.match(renderer, /openInternalRasterRigSetupFromExternal/,
-    'static Setup開始は右RIGから既存adapterへ委譲する');
+assert.doesNotMatch(renderer, /context-rig-(?:open-bend|register|hierarchy-open|root-pivot)-button/u,
+    'Layer no longer renders normal RIG setup or legacy editor entry controls');
+assert.match(renderer, /getRigLensLegacyFallbackTarget\?\.[\s\S]*?openInternalRigidHierarchyFromExternal[\s\S]*?openInternalRasterRigSetupFromExternal/u,
+    'Layer fallback rechecks eligibility and routes to the existing legacy editor');
+assert.doesNotMatch(renderer, /_createContextDockViewSwitch|_createCafRigInspectorElement/u,
+    'the retired Layer RIG inspector has no render path');
+assert.doesNotMatch(css + componentCss, /layer-panel-context-view-switch|layer-panel-context-view-button/u,
+    'the obsolete LAYERS / RIG view switch has no styling');
+assert.match(renderer, /textContent = '旧RIGで開く'/u,
+    'legacy editing is presented with an explicit secondary-action label');
 
 assert.match(phase, /Stage D2 — Lane \/ CLIP MOTION target entry parity Gate/);
 assert.match(phase, /CLIP MOTIONのtarget stripは[\s\S]*focus lens/);
 assert.match(phase, /`focusRig \/ openInspector`はfalse、Historyは0件/);
 
-console.log('verify-animation-table-rig-entry-parity: Lane selection-only, CLIP MOTION target lens retained, right RIG static entry OK');
+console.log('verify-animation-table-rig-entry-parity: Lane selection-only, CLIP MOTION target lens retained, conditional legacy fallback OK');

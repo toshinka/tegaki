@@ -104,8 +104,12 @@ assert.equal(blockedLayer.getTransformEditStartAvailability().reason, 'mesh-laye
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const frameSource = fs.readFileSync(path.join(root, '../ui/right-workspace-frame.js'), 'utf8');
-assert.match(frameSource, /transformModeButton\.disabled = !active && !!transformBlockMessage/u);
-assert.match(frameSource, /transformModeButton\.title = transformBlockMessage/u);
+assert.match(frameSource, /transformModeButton\.disabled = false/u,
+    'top-level Transform remains navigable while its unsafe edit is gated');
+assert.match(frameSource, /canStartTransformEditSession\?\.\(\) === false[\s\S]*?transformLensRequested = true/u,
+    'an unsafe target enters a view-only Transform lens without starting an edit');
+assert.match(frameSource, /transformGateNotice\.textContent = transformGateVisible[\s\S]*?transformBlockMessage/u,
+    'the model refusal reason remains visible in the Transform lens');
 assert.match(frameSource, /mesh-layer-unsupported[\s\S]*rig-part-layer-unsupported/u);
 
-console.log('PASS: normal and Clip-wide Transform remain available; DEFORM/PART internal, Folder and SOURCE entries are blocked with model reasons');
+console.log('PASS: normal and Clip-wide Transform remain available; DEFORM/PART unsafe edits are gated with model reasons inside the Transform lens');

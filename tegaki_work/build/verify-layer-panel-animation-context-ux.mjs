@@ -18,12 +18,12 @@ const [renderer, timelineUi, icons, mainCss, componentCss] = await Promise.all([
 ]);
 
 // ---------------------------------------------------------------------------
-// 1. Structure: C案 hierarchy in LayerPanelRenderer.render()
+// 1. Structure: CAF identity, conditional legacy fallback, and Layer content
 // ---------------------------------------------------------------------------
 assert.match(
     renderer,
-    /const cafContextHeader = hasAnimationContext \? this\.createCafContextHeader\(\) : null;[\s\S]*?if \(cafContextHeader\) \{[\s\S]*?this\.container\.appendChild\(cafContextHeader\);[\s\S]*?if \(rigInspectorContext\) \{[\s\S]*?this\.container\.appendChild\(this\._createContextDockViewSwitch\(\)\);[\s\S]*?if \(isRigViewActive\) \{[\s\S]*?this\.container\.appendChild\(this\._createCafRigInspectorElement\(rigInspectorContext\)\);[\s\S]*?\} else if \(hasAnimationContext\) \{[\s\S]*?const cafLayerContent = this\.createCafLayerContent\(\);/u,
-    'render() adopts C案 hierarchy: 1. CAF context header, 2. optional switch, 3. content body'
+    /const cafContextHeader = hasAnimationContext \? this\.createCafContextHeader\(\) : null;[\s\S]*?this\.container\.appendChild\(cafContextHeader\);[\s\S]*?if \(cafLayerContext\?\.legacyRigFallback\?\.ok === true\) \{[\s\S]*?this\._createLegacyRigFallbackElement\(cafLayerContext\)[\s\S]*?if \(hasAnimationContext\) \{[\s\S]*?const cafLayerContent = this\.createCafLayerContent\(\);/u,
+    'render() retains CAF context and Layer content, adding only a target-approved legacy fallback'
 );
 
 // Frame indicator is in #layer-panel-container, outside animation-content-group/layer-panel-items
@@ -33,7 +33,7 @@ assert.match(
     'frame-indicator is prepended directly to layer-panel-container as the top temporal compass'
 );
 
-// CAF identity exists and is retained even in RIG active view
+// CAF identity remains the Layer panel header
 assert.match(
     renderer,
     /createCafContextHeader\(\)\s*\{[\s\S]*?caf-simple-header--flat caf-context-header[\s\S]*?return header;\s*\}/u,
@@ -45,11 +45,11 @@ assert.match(
     'createCafLayerContent() generates content body mirror element independently'
 );
 
-// View Switch position: between CAF identity and Content Body
+// Conditional fallback position: between CAF identity and Layer content
 assert.match(
     renderer,
-    /this\.container\.appendChild\(cafContextHeader\);[\s\S]*?this\.container\.appendChild\(this\._createContextDockViewSwitch\(\)\);[\s\S]*?appendChild\(this\._createCafRigInspectorElement/u,
-    'View switch is located below CAF identity and above content body'
+    /this\.container\.appendChild\(cafContextHeader\);[\s\S]*?legacyRigFallback\?\.ok === true[\s\S]*?_createLegacyRigFallbackElement[\s\S]*?const cafLayerContent = this\.createCafLayerContent\(\)/u,
+    'eligible legacy fallback is located below CAF identity and above Layer content'
 );
 
 // Non-animation context: Animation Context UI is suppressed

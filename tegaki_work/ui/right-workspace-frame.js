@@ -53,6 +53,11 @@ const RIG_TRANSFORM_BLOCK_MESSAGES = Object.freeze({
     'mesh-layer-unsupported': 'Mesh/Skin接続済みのRasterは内部TransformやSOURCE変形を使用できません。Clip全体のTransformを選択してください。',
     'rig-part-layer-unsupported': 'PART所有のLayerは内部TransformやSOURCE変形を使用できません。Clip全体のTransformを選択してください。'
 });
+const rigTargetIdentityKey = target => target?.assetId && target?.internalLayerId
+    ? `${target.assetId}:${target.internalLayerId}`
+    : '';
+const RIG_TARGET_SWITCH_GESTURE_MESSAGE = 'RIG操作中です。操作を完了または取り消してから対象を切り替えてください。';
+const RIG_TARGET_SWITCH_POSE_MESSAGE = '未確定Poseがあります。Motion KEYへ確定またはPoseを取り消してから対象を切り替えてください。';
 
 function rigPartOperationMessage(result, fallback) {
     const reason = result?.reason;
@@ -68,11 +73,13 @@ export class RightWorkspaceFrame {
         this.panel = document.getElementById('layer-transform-panel');
         this.getTarget = getTarget;
         this.layerSystem = layerSystem;
+        this.transformLensRequested = false;
         this.rigLensActive = false;
         this.rigLensTarget = null;
         this.rigLensReturnMode = 'basic';
         this.rigEntryMessage = '';
         this.lastRigTargetKey = null;
+        this.rigTargetSwitchPending = false;
         this.rigPlacementMode = null;
         this.rigSelectedBoneId = null;
         this.rigStructureCreatedBoneIds = new Set();
@@ -83,10 +90,12 @@ export class RightWorkspaceFrame {
         this.rigStructureStatusMessage = '';
         this.rigStructureEditorReadOnly = false;
         this.rigLensMode = 'setup';
-        this.rigAuthoringKind = 'deform';
+        this.rigAuthoringKind = null;
         this.rigSelectedPartId = null;
         this.rigPartIkEffectorId = null;
         this.rigPointerGesture = null;
+        this.rigResetConfirmationOpen = false;
+        this.rigResetNotice = '';
         this.rigOverlay = null;
         this.rigOverlayFrame = null;
         this.eventBus = this.layerSystem?.eventBus || window.TegakiEventBus;
@@ -110,6 +119,10 @@ export class RightWorkspaceFrame {
         this.thumbnail.alt = '';
         this.label = document.createElement('span');
         this.title.append(this.thumbnail, this.label);
+        this.transformGateNotice = document.createElement('p');
+        this.transformGateNotice.className = 'right-workspace-transform-gate';
+        this.transformGateNotice.setAttribute('role', 'status');
+        this.transformGateNotice.hidden = true;
         this.actions = this.panel.querySelector('.transform-popup-actions');
         this.heading = this.panel.querySelector('.transform-popup-heading');
         this.endButton = document.createElement('button');
@@ -160,18 +173,8 @@ export class RightWorkspaceFrame {
         this.rigEntryRow.append(this.rigEntryButton, this.rigEntryMessageNode);
         this.panel.querySelector('.layer-transform-mode-strip')?.after(this.rigEntryRow);
         if (!this.rigEntryRow.parentElement) this.panel.appendChild(this.rigEntryRow);
-        this.rigLayerEntryButton = document.createElement('button');
-        this.rigLayerEntryButton.type = 'button';
-        this.rigLayerEntryButton.className = 'gui-control gui-control--s right-workspace-rig-layer-entry';
-        this.rigLayerEntryButton.textContent = 'RIGを編集';
-        this.rigLayerEntryButton.title = '選択中のCAF RasterのRIG SETUPを開く';
-        this.rigLayerEntryButton.setAttribute('aria-label', '選択中のCAF RasterのRIG SETUPを開く');
-        this.rigLayerEntryButton.addEventListener('click', this._rigEntryClickHandler);
-        this.rigLayerEntryButton.hidden = true;
-        this.root.appendChild(this.rigLayerEntryButton);
-
         this.rigView = this._createRigLensView();
-        this.host.append(this.title, this.rigView, this.panel);
+        this.host.append(this.title, this.transformGateNotice, this.rigView, this.panel);
         this._rigCanvasDownHandler = event => this._onRigCanvasDown(event);
         this._rigCanvasUpHandler = event => this._onRigCanvasUp(event);
         this._rigCanvasMoveHandler = event => this._onRigCanvasMove(event);
@@ -289,6 +292,7 @@ export class RightWorkspaceFrame {
         this.rigStructureEditButton.addEventListener('click', () => this._openRigStructureEditor());
         this.rigLensStructureContent = document.createElement('div');
         structure.appendChild(this.rigLensStructureContent);
+        this.rigLensStructureRegion = structure;
 
         const properties = makeRegion('right-workspace-rig-lens-properties', '選択パーツ');
         this.rigLensPropertiesTitle = properties.querySelector('h3');
@@ -416,10 +420,56 @@ export class RightWorkspaceFrame {
             this.rigBindButton, this.rigPartIkButton, this.rigToolHint
         );
         properties.appendChild(this.rigLensPropertiesContent);
+        this.rigLensPropertiesRegion = properties;
+
+        this.rigKindPrompt = document.createElement('p');
+        this.rigKindPrompt.className = 'right-workspace-rig-kind-prompt';
+        this.rigKindPrompt.textContent = 'PARTまたはDEFORMを選択してください。';
+        this.rigKindPrompt.hidden = true;
+
+        this.rigResetRegion = makeRegion('right-workspace-rig-reset', 'RIG設定');
+        this.rigResetActionButton = document.createElement('button');
+        this.rigResetActionButton.type = 'button';
+        this.rigResetActionButton.className = 'gui-control gui-control--s right-workspace-rig-reset-action';
+        this.rigResetActionButton.textContent = 'RIG設定をリセット';
+        this.rigResetActionButton.addEventListener('click', () => this._armRigResetConfirmation());
+        this.rigResetStatus = document.createElement('p');
+        this.rigResetStatus.className = 'right-workspace-rig-reset-status';
+        this.rigResetStatus.setAttribute('role', 'status');
+        this.rigResetStatus.setAttribute('aria-live', 'polite');
+        this.rigResetConfirmation = document.createElement('div');
+        this.rigResetConfirmation.className = 'right-workspace-rig-reset-confirmation';
+        this.rigResetConfirmation.hidden = true;
+        this.rigResetSummary = document.createElement('p');
+        this.rigResetSummary.className = 'right-workspace-rig-reset-summary';
+        this.rigResetConfirmation.appendChild(this.rigResetSummary);
+        this.rigResetConfirmationStatus = document.createElement('p');
+        this.rigResetConfirmationStatus.className = 'right-workspace-rig-reset-status';
+        this.rigResetConfirmationStatus.setAttribute('role', 'status');
+        this.rigResetConfirmationStatus.setAttribute('aria-live', 'polite');
+        const resetActions = document.createElement('div');
+        resetActions.className = 'right-workspace-rig-reset-actions';
+        this.rigResetCancelButton = document.createElement('button');
+        this.rigResetCancelButton.type = 'button';
+        this.rigResetCancelButton.className = 'gui-control gui-control--s';
+        this.rigResetCancelButton.textContent = 'キャンセル';
+        this.rigResetCancelButton.addEventListener('click', () => this._cancelRigResetConfirmation());
+        this.rigResetCommitButton = document.createElement('button');
+        this.rigResetCommitButton.type = 'button';
+        this.rigResetCommitButton.className = 'gui-control gui-control--s right-workspace-rig-reset-commit';
+        this.rigResetCommitButton.textContent = 'RIG設定をリセット';
+        this.rigResetCommitButton.addEventListener('click', () => this._confirmRigReset());
+        resetActions.append(this.rigResetCancelButton, this.rigResetCommitButton);
+        this.rigResetConfirmation.append(this.rigResetConfirmationStatus, resetActions);
+        this.rigResetRegion.append(
+            this.rigResetActionButton, this.rigResetStatus, this.rigResetConfirmation
+        );
 
         this.rigLensContent = document.createElement('div');
         this.rigLensContent.className = 'right-workspace-rig-lens-content';
-        this.rigLensContent.append(structure, properties, this.rigModeRow);
+        this.rigLensContent.append(
+            structure, properties, this.rigModeRow, this.rigKindPrompt, this.rigResetRegion
+        );
         this.rigLensTerminal = document.createElement('div');
         this.rigLensTerminal.className = 'right-workspace-rig-lens-terminal';
         this.rigLensTerminal.append(this.rigKeyButton);
@@ -524,16 +574,190 @@ export class RightWorkspaceFrame {
         this.rigStructureEditorDialog = dialog;
     }
 
+    _getRigResetFrameBlockReason() {
+        if (!this.rigLensActive || !this.rigLensTarget?.assetId) return 'RIG対象がありません。';
+        if (this.rigPointerGesture || this.rigStructureDrag || this.rigPlacementMode
+            || this.rigStructureEditorDialog?.open) {
+            return '進行中のRIG操作を完了または取消してからリセットしてください。';
+        }
+        const table = this._getRigLensTable();
+        if (this._hasRigPosePreview(table)) {
+            return '未確定PoseをKEY確定または取消してからリセットしてください。';
+        }
+        if (table?.isPlaying === true) return '再生中はRIG設定をリセットできません。';
+
+        const currentTarget = this.getTarget?.()?.rigTarget || null;
+        if (currentTarget?.eligible !== true
+            || currentTarget.assetId !== this.rigLensTarget.assetId
+            || currentTarget.internalLayerId !== this.rigLensTarget.internalLayerId) {
+            return 'Reset対象のCAF／Rasterが現在の選択と一致しません。';
+        }
+
+        const selection = window.CoreRuntime?.api?.selection;
+        const pixelSelection = window.pixelSelectionSystem || window.drawingApp?.pixelSelectionSystem;
+        if (selection?.getState?.()?.transformSessionActive === true
+            || pixelSelection?.getState?.()?.transformSessionActive === true) {
+            return '実行中の選択Transformを完了してからリセットしてください。';
+        }
+        if (selection?.hasSelection?.() === true || pixelSelection?.hasSelection?.() === true) {
+            return '選択範囲を解除してからリセットしてください。';
+        }
+
+        const keyboardActive = window.KeyboardHandler?.isVKeyPressed?.() === true;
+        const layerActive = this.layerSystem?.transform?.isVKeyPressed === true;
+        if (keyboardActive !== layerActive || keyboardActive || layerActive
+            || this.panel?.classList.contains('show') === true) {
+            return 'Transform操作を終了してからRIG設定をリセットしてください。';
+        }
+        const commitState = this.layerSystem?.getLayerMoveCommitState?.() || null;
+        if (commitState?.hasPendingTransform === true) {
+            return '未確定のTransformを確定または取消してからリセットしてください。';
+        }
+        return '';
+    }
+
+    _formatRigResetReason(reason) {
+        const messages = {
+            'asset-not-found': '対象CAFが見つかりません。',
+            'invalid-clip-set': 'CAFを参照するClip一覧を確認できません。',
+            'unsupported-rig-definition': 'RIG定義が未設定または検証できないため、リセットできません。',
+            'unsupported-rig-data': '現在のRIG Lensで扱わないRIGデータが含まれています。',
+            'unsupported-mesh-data': 'Mesh / Skinデータを確認できません。',
+            'mixed-part-deform-rig': 'PARTとDEFORMが混在しているため、リセットできません。',
+            'unsupported-part-target': '現在のRIG Lensが扱わないPART対象が含まれています。',
+            'unsupported-rig-composition': 'Rigid BindingまたはWARP Anchorの構成を安全に判定できません。',
+            'empty-rig-setup': 'このCAFにリセット対象のRIG設定はありません。',
+            'unsupported-deform-bones': '現在のRIG Lensで扱わないBone構造が含まれています。',
+            'unsupported-mesh-skinning': 'Mesh / Skin bindingを検証できません。',
+            'unsupported-mesh-generator': '手動、Legacy、または未対応のMeshはリセットできません。',
+            'unsupported-mesh-data': '現在のRIG Lensで扱わないMesh / Skinデータが含まれています。',
+            'unsupported-unowned-part-bone': 'PARTに所有されていないBoneが含まれています。',
+            'unsupported-part-ownership': 'PART / Bone / Anchorの所有関係を安全に解除できません。',
+            'invalid-part-evaluation': 'PART構造を現在の評価器で解決できません。',
+            'unsupported-deform-ownership': 'DEFORM Boneの所有関係を安全に解除できません。',
+            'invalid-deform-evaluation': 'DEFORM構造を現在の評価器で解決できません。',
+            'unsupported-clip-rig-motion': '対象Clipに未対応または不整合なRIG Motionがあります。',
+            'unsupported-mesh-ownership': 'Mesh / Skinの所有関係を安全に解除できません。',
+            'reset-plan-changed': 'RIG設定が変わりました。内容を確認してから再実行してください。'
+        };
+        return messages[reason] || reason || 'RIG設定を安全にリセットできません。';
+    }
+
+    _getRigResetStatus() {
+        if (!this.rigLensActive) return { ok: false, plan: null, reason: '' };
+        const blockReason = this._getRigResetFrameBlockReason();
+        const table = this._getRigLensTable();
+        const plan = table?.getRigLensResetPlan?.(this.rigLensTarget?.assetId) || null;
+        if (blockReason) {
+            return { ok: false, plan, reason: blockReason };
+        }
+        if (!plan?.ok) {
+            return { ok: false, plan, reason: this._formatRigResetReason(plan?.reason) };
+        }
+        return { ok: true, plan, reason: '' };
+    }
+
+    _renderRigResetSection() {
+        const status = this._getRigResetStatus();
+        const planReason = status.plan?.reason;
+        const hasResetCandidate = this.rigLensActive && !!this.rigLensTarget?.assetId
+            && planReason !== 'empty-rig-setup' && planReason !== 'asset-not-found'
+            && !!status.plan;
+        this.rigResetRegion.hidden = !hasResetCandidate;
+        if (!hasResetCandidate) {
+            this.rigResetConfirmationOpen = false;
+            this.rigResetActionButton.disabled = true;
+            this.rigResetConfirmation.hidden = true;
+            this.rigResetStatus.hidden = true;
+            return status;
+        }
+
+        this.rigResetActionButton.disabled = !status.ok;
+        this.rigResetActionButton.title = status.reason || '共有CAFのRIG設定をTimeline History付きで解除します。';
+        this.rigResetStatus.textContent = this.rigResetConfirmationOpen ? '' : status.reason;
+        this.rigResetStatus.hidden = this.rigResetConfirmationOpen || !status.reason;
+        this.rigResetConfirmation.hidden = !this.rigResetConfirmationOpen;
+        if (status.plan?.ok) {
+            const mode = status.plan.mode === 'part' ? 'PART' : 'DEFORM';
+            this.rigResetSummary.textContent = `${mode}方式のRIG設定を解除します。${status.plan.affectedClipCount}個のClip / ${status.plan.affectedRigKeyCount}個のRIG KEYに影響します。Undoで戻せます。`;
+        } else {
+            this.rigResetSummary.textContent = 'このRIG設定は現在のLensでは安全に解除できません。';
+        }
+        this.rigResetConfirmationStatus.textContent = this.rigResetNotice || status.reason;
+        this.rigResetConfirmationStatus.hidden = !this.rigResetNotice && !status.reason;
+        this.rigResetCommitButton.disabled = !status.ok;
+        return status;
+    }
+
+    _armRigResetConfirmation() {
+        const status = this._getRigResetStatus();
+        if (!status.ok) {
+            this.rigResetNotice = status.reason;
+            this.sync();
+            return false;
+        }
+        this.rigResetConfirmationOpen = true;
+        this.rigResetNotice = '';
+        this.sync();
+        this.rigResetCancelButton.focus({ preventScroll: true });
+        return true;
+    }
+
+    _cancelRigResetConfirmation() {
+        this.rigResetConfirmationOpen = false;
+        this.rigResetNotice = '';
+        this.sync();
+        this.rigResetActionButton.focus({ preventScroll: true });
+    }
+
+    _confirmRigReset() {
+        const status = this._getRigResetStatus();
+        if (!status.ok) {
+            this.rigResetNotice = status.reason;
+            this.sync();
+            return false;
+        }
+        const result = this._getRigLensTable()?.resetRigLensSetup?.(
+            this.rigLensTarget.assetId, status.plan.mode
+        );
+        if (!result?.ok) {
+            this.rigResetNotice = this._formatRigResetReason(result?.reason);
+            this.sync();
+            return false;
+        }
+
+        this.rigResetConfirmationOpen = false;
+        this.rigResetNotice = '';
+        this.rigAuthoringKind = null;
+        this.rigLensMode = 'setup';
+        this.rigSelectedPartId = null;
+        this.rigSelectedBoneId = null;
+        this.rigPartIkEffectorId = null;
+        this.rigPlacementMode = null;
+        this.rigStructureCreatedBoneIds.clear();
+        this.rigTreeCollapsedBoneIds.clear();
+        this.rigStructureStatusMessage = '';
+        this.rigEntryMessage = 'RIG設定をリセットしました。PARTまたはDEFORMを選択できます。Undoで元に戻せます。';
+        this.sync();
+        this.rigPartKindButton.focus({ preventScroll: true });
+        return true;
+    }
+
     _showRigEntryMessage(message) {
         this.rigEntryMessage = message || '';
         this.rigEntryMessageNode.textContent = this.rigEntryMessage;
         this.rigEntryMessageNode.hidden = !this.rigEntryMessage;
     }
 
-    _enterRigLens() {
+    _enterRigLens({ sync = true } = {}) {
         const target = this.getTarget?.()?.rigTarget || null;
         if (!target?.eligible || !target.assetId || !target.internalLayerId) {
             this._showRigEntryMessage(target?.reason || 'CAF内のRasterを選択してください。');
+            return false;
+        }
+
+        if (this.rigLensActive && (this.rigPointerGesture || this.rigStructureDrag)) {
+            this._showRigEntryMessage(RIG_TARGET_SWITCH_GESTURE_MESSAGE);
             return false;
         }
 
@@ -569,6 +793,8 @@ export class RightWorkspaceFrame {
             return false;
         }
 
+        if (this.rigStructureEditorDialog?.open) this._closeRigStructureEditor(false);
+
         this.rigLensReturnMode = this.layerSystem?.transform?.getTransformMode?.() === 'warp'
             ? 'warp'
             : 'basic';
@@ -589,26 +815,79 @@ export class RightWorkspaceFrame {
             layerName: target.layerName
         };
         const partTarget = this._getRigLensTable()?.getRigLensPartTarget?.(target.assetId);
-        this.rigAuthoringKind = partTarget?.layers?.length >= 2 && !target.hasMesh
-            && !(partTarget.asset?.rigDefinition?.bones?.length > 0) ? 'part' : 'deform';
+        const existingParts = partTarget?.asset?.rigDefinition?.parts?.length || 0;
+        const existingBones = partTarget?.asset?.rigDefinition?.bones?.length || 0;
+        const rigAsset = partTarget?.asset;
+        const hasRigData = existingParts > 0 || existingBones > 0
+            || (rigAsset?.rigDefinition?.rigidBindings?.length || 0) > 0
+            || (rigAsset?.rigDefinition?.warpAnchorConstraints?.length || 0) > 0
+            || (rigAsset?.meshDefinitions?.length || 0) > 0
+            || (rigAsset?.skinBindings?.length || 0) > 0;
+        this.rigAuthoringKind = !target.hasMesh
+            && (existingParts > 0
+                || (!hasRigData && existingBones === 0 && (partTarget?.layers?.length || 0) >= 2))
+            ? 'part'
+            : 'deform';
         this.rigSelectedPartId = target.internalLayerId;
         this.rigPartIkEffectorId = null;
-        this.lastRigTargetKey = this.rigAuthoringKind === 'part'
-            ? target.assetId : `${target.assetId}:${target.internalLayerId}`;
+        this.lastRigTargetKey = rigTargetIdentityKey(target);
+        this.rigTargetSwitchPending = false;
         this.rigPlacementMode = null;
         this.rigSelectedBoneId = null;
         this.rigStructureCreatedBoneIds.clear();
         this.rigTreeCollapsedBoneIds.clear();
         this.rigLensMode = 'setup';
-        const motionEntry = this._resolveRigLensInitialMotionEntry();
-        if (motionEntry.ok) {
-            if (this.rigAuthoringKind === 'deform') this.rigSelectedBoneId = motionEntry.boneId;
-            this.rigLensMode = 'motion';
+        this.rigResetConfirmationOpen = false;
+        this.rigResetNotice = '';
+        if (this.rigAuthoringKind) {
+            const motionEntry = this._resolveRigLensInitialMotionEntry();
+            if (motionEntry.ok) {
+                if (this.rigAuthoringKind === 'deform') this.rigSelectedBoneId = motionEntry.boneId;
+                this.rigLensMode = 'motion';
+            }
         }
         this._showRigEntryMessage('');
+        this.transformLensRequested = false;
         this.rigLensActive = true;
-        this.sync();
+        if (sync) this.sync();
         return true;
+    }
+
+    _syncActiveRigLensTarget(target) {
+        if (!this.rigLensActive) return 'inactive';
+        const selectedKey = target?.eligible === true ? rigTargetIdentityKey(target) : '';
+        const activeKey = rigTargetIdentityKey(this.rigLensTarget);
+        if (selectedKey && selectedKey === activeKey) {
+            this.rigLensTarget = {
+                ...this.rigLensTarget,
+                assetName: target.assetName,
+                layerName: target.layerName
+            };
+            this.lastRigTargetKey = selectedKey;
+            if (this.rigTargetSwitchPending) {
+                this.rigEntryMessage = '';
+                this.rigTargetSwitchPending = false;
+            }
+            return 'same-target';
+        }
+
+        this.rigTargetSwitchPending = true;
+        if (this.rigPointerGesture || this.rigStructureDrag) {
+            this.rigEntryMessage = RIG_TARGET_SWITCH_GESTURE_MESSAGE;
+            return 'deferred';
+        }
+        if (this._hasRigPosePreview()) {
+            this.rigEntryMessage = RIG_TARGET_SWITCH_POSE_MESSAGE;
+            return 'deferred';
+        }
+        if (!selectedKey) {
+            const exited = this._exitRigToLayer({ sync: false });
+            if (exited) this.rigTargetSwitchPending = false;
+            return exited ? 'layer' : 'deferred';
+        }
+
+        if (this._enterRigLens({ sync: false })) return 'retargeted';
+        return 'guarded';
     }
 
     _returnToTransform() {
@@ -680,17 +959,19 @@ export class RightWorkspaceFrame {
         return true;
     }
 
-    _exitRigToLayer() {
+    _exitRigToLayer({ showTransformGate = false, sync = true } = {}) {
         if (this.rigPointerGesture || this._requireRigPoseResolution()) return false;
         if (this.rigStructureEditorDialog?.open) this._closeRigStructureEditor(false);
         this.rigLensActive = false;
+        this.transformLensRequested = showTransformGate;
         this.rigLensTarget = null;
+        this.rigTargetSwitchPending = false;
         this.rigPlacementMode = null;
         this.rigStructureCreatedBoneIds.clear();
         this.rigPartIkEffectorId = null;
         this.rigEntryMessage = '';
-        this.sync();
-        this.layerModeButton?.focus({ preventScroll: true });
+        if (sync) this.sync();
+        (showTransformGate ? this.transformModeButton : this.layerModeButton)?.focus({ preventScroll: true });
         return true;
     }
 
@@ -816,8 +1097,21 @@ export class RightWorkspaceFrame {
 
     _setRigAuthoringKind(kind) {
         if (!this.rigLensActive || this.rigPointerGesture || this._requireRigPoseResolution()) return;
-        if (kind === 'part' && !this._getRigLensTable()?.getRigLensPartTarget?.(
-            this.rigLensTarget.assetId)?.layers?.length) return;
+        const partTarget = kind === 'part'
+            ? this._getRigLensTable()?.getRigLensPartTarget?.(this.rigLensTarget.assetId)
+            : null;
+        if (kind === 'part' && !partTarget?.layers?.length) return;
+        if (!['part', 'deform'].includes(kind)) return;
+        if (kind === 'part') {
+            const selectedPartIsVisible = partTarget.layers.some(layer => layer.id === this.rigSelectedPartId);
+            if (!selectedPartIsVisible) {
+                this.rigSelectedPartId = partTarget.layers.some(
+                    layer => layer.id === this.rigLensTarget.internalLayerId
+                ) ? this.rigLensTarget.internalLayerId : partTarget.layers[0].id;
+            }
+        }
+        this.rigResetConfirmationOpen = false;
+        this.rigResetNotice = '';
         this.rigAuthoringKind = kind;
         this.rigLensMode = 'setup';
         this.rigPartIkEffectorId = null;
@@ -827,7 +1121,7 @@ export class RightWorkspaceFrame {
     }
 
     _setRigLensMode(mode) {
-        if (!this.rigLensActive || this.rigPointerGesture) return false;
+        if (!this.rigLensActive || !this.rigAuthoringKind || this.rigPointerGesture) return false;
         if (this.rigAuthoringKind === 'part') {
             if (mode === 'motion') {
                 const result = this._getRigLensTable()?.getRigLensPartMotionTarget?.(
@@ -1829,6 +2123,7 @@ export class RightWorkspaceFrame {
         }
         if (!drag.moved) {
             this._clearRigStructureDragState();
+            this.sync();
             return;
         }
         const hit = document.elementFromPoint?.(event.clientX, event.clientY);
@@ -1890,6 +2185,7 @@ export class RightWorkspaceFrame {
             this._clearRigStructureDragState();
             this.rigStructureStatusMessage = message;
             this.rigStructureStatus.textContent = message;
+            this.sync();
             return false;
         }
         const result = this._getRigLensTable()?.setRigLensStaticBoneParent?.(
@@ -1915,6 +2211,7 @@ export class RightWorkspaceFrame {
         this._clearRigStructureDragState();
         this.rigStructureStatusMessage = message;
         this.rigStructureStatus.textContent = message;
+        this.sync();
         return false;
     }
 
@@ -3060,8 +3357,15 @@ export class RightWorkspaceFrame {
         const partTarget = this.rigLensTarget?.assetId
             ? this._getRigLensTable()?.getRigLensPartTarget?.(this.rigLensTarget.assetId)
             : null;
+        this._renderRigResetSection();
         this.rigKindRow.hidden = !this.rigLensActive;
-        this.rigModeRow.hidden = !this.rigLensActive;
+        const kindSelected = this.rigAuthoringKind === 'part' || this.rigAuthoringKind === 'deform';
+        this.rigModeRow.hidden = !this.rigLensActive || !kindSelected;
+        this.rigLensStructureRegion.hidden = !kindSelected;
+        this.rigLensPropertiesRegion.hidden = !kindSelected;
+        this.rigKindPrompt.hidden = !this.rigLensActive || kindSelected;
+        this.rigPartFrameRow.hidden = !kindSelected;
+        this.rigLensTerminal.hidden = !kindSelected;
         const phaseActionLabel = this.rigLensMode === 'setup' ? 'MOTIONへ進む →' : '← SETUPへ戻る';
         this.rigModeActionButton.textContent = phaseActionLabel;
         this.rigModeActionButton.setAttribute('aria-label', phaseActionLabel);
@@ -3072,8 +3376,17 @@ export class RightWorkspaceFrame {
             : 'PART方式にできる未Mesh接続Rasterがありません。既存Bindingと同じRasterへ重ねて登録できません。';
         this.rigPartKindButton.setAttribute('aria-pressed', String(this.rigAuthoringKind === 'part'));
         this.rigDeformKindButton.setAttribute('aria-pressed', String(this.rigAuthoringKind === 'deform'));
-        this.rigView.dataset.authoringKind = this.rigAuthoringKind;
+        this.rigView.dataset.authoringKind = kindSelected ? this.rigAuthoringKind : 'none';
         this.rigView.dataset.mode = this.rigLensMode;
+        if (!kindSelected) {
+            this.rigLensHeading.textContent = 'CAF · RIG';
+            this.rigLensHeading.setAttribute('aria-label', 'CAF · RIG');
+            this.rigView.setAttribute('aria-label', 'RIG方式を選択');
+            this.rigLensWarning.hidden = !this.rigEntryMessage;
+            this.rigLensWarning.textContent = this.rigEntryMessage;
+            this.rigKindPrompt.textContent = 'PARTまたはDEFORMを選択してください。';
+            return;
+        }
         if (this.rigAuthoringKind === 'part') {
             this._renderRigPartLens(target, partTarget);
             this._renderRigPendingPoseRecovery(target);
@@ -3110,9 +3423,8 @@ export class RightWorkspaceFrame {
         this.rigLensPropertiesTitle.textContent = isMotion ? 'Pose状態' : '次の操作';
         this.rigLensPropertiesTitle.hidden = !isMotion;
         this.rigLensWarning.hidden = matchesTarget && !this.rigEntryMessage;
-        this.rigLensWarning.textContent = !matchesTarget
-            ? 'CAFまたはRasterの選択が変わっています。対象を確認してからTransformへ戻ってください。'
-            : this.rigEntryMessage;
+        this.rigLensWarning.textContent = this.rigEntryMessage
+            || (matchesTarget ? '' : 'RIG対象が現在の選択と一致しません。');
         this.rigLensStructureContent.replaceChildren();
         const staticTarget = matchesTarget ? this._getRigLensEditTarget() : null;
         const bindGestureTarget = matchesTarget && !isMotion
@@ -3515,7 +3827,7 @@ export class RightWorkspaceFrame {
         this.rigLensPropertiesTitle.textContent = motion ? 'このPartの操作' : 'Canvas操作';
         this.rigLensWarning.hidden = matchesAsset && !this.rigEntryMessage;
         this.rigLensWarning.textContent = this.rigEntryMessage
-            || (matchesAsset ? '' : '選択中のCAFが変わっています。');
+            || (matchesAsset ? '' : 'RIG対象が選択中のCAFと一致しません。');
         this.rigLensWarning.title = this.rigEntryMessage || '';
         this.rigLensStructureContent.replaceChildren();
         this.rigPartRegisterButton.hidden = true;
@@ -3679,33 +3991,68 @@ export class RightWorkspaceFrame {
             this.transformModeButton.dataset.workspaceMode = 'transform';
             this.transformModeButton.textContent = 'TRANSFORM';
 
-            this.modeSwitch.append(this.layerModeButton, this.transformModeButton);
+            this.rigModeButton = document.createElement('button');
+            this.rigModeButton.type = 'button';
+            this.rigModeButton.className = 'right-workspace-mode-segment';
+            this.rigModeButton.dataset.workspaceMode = 'rig';
+            this.rigModeButton.textContent = 'RIG';
+
+            this.modeSwitch.append(this.layerModeButton, this.transformModeButton, this.rigModeButton);
             this.root.insertBefore(this.modeSwitch, this.drawing);
         } else {
             this.layerModeButton = this.modeSwitch.querySelector('[data-workspace-mode="layer"]');
             this.transformModeButton = this.modeSwitch.querySelector('[data-workspace-mode="transform"]');
+            this.rigModeButton = this.modeSwitch.querySelector('[data-workspace-mode="rig"]');
+            if (!this.rigModeButton) {
+                this.rigModeButton = document.createElement('button');
+                this.rigModeButton.type = 'button';
+                this.rigModeButton.className = 'right-workspace-mode-segment';
+                this.rigModeButton.dataset.workspaceMode = 'rig';
+                this.rigModeButton.textContent = 'RIG';
+                this.modeSwitch.appendChild(this.rigModeButton);
+            }
         }
 
         this._layerModeClickHandler = () => this._requestWorkspaceMode('layer');
         this._transformModeClickHandler = () => this._requestWorkspaceMode('transform');
+        this._rigModeClickHandler = () => this._requestWorkspaceMode('rig');
         this.layerModeButton?.addEventListener('click', this._layerModeClickHandler);
         this.transformModeButton?.addEventListener('click', this._transformModeClickHandler);
+        this.rigModeButton?.addEventListener('click', this._rigModeClickHandler);
     }
 
     _requestWorkspaceMode(mode) {
         if (this.rigLensActive) {
             if (mode === 'layer') {
                 this._exitRigToLayer();
-            } else {
-                this._returnToTransform();
+            } else if (mode === 'transform') {
+                if (this.layerSystem?.canStartTransformEditSession?.() === false) {
+                    this._exitRigToLayer({ showTransformGate: true });
+                } else {
+                    this._returnToTransform();
+                }
             }
+            return;
+        }
+        if (mode === 'rig') {
+            this._enterRigLens();
             return;
         }
         const transformActive = this.panel?.classList.contains('show') === true;
         if (mode === 'transform') {
             if (transformActive) return;
+            if (this.layerSystem?.canStartTransformEditSession?.() === false) {
+                this.transformLensRequested = true;
+                this.sync();
+                return;
+            }
             // The existing V entry remains the sole guard and state owner.
             window.KeyboardHandler?.toggleLayerTransform?.('right-workspace-segment');
+            this.sync();
+            return;
+        }
+        if (this.transformLensRequested && !transformActive) {
+            this.transformLensRequested = false;
             this.sync();
             return;
         }
@@ -3843,26 +4190,44 @@ export class RightWorkspaceFrame {
     sync() {
         if (!this.host || !this.panel || !this.drawing) return;
         const transformSessionVisible = this.panel.classList.contains('show');
+        if (transformSessionVisible) this.transformLensRequested = false;
         if (transformSessionVisible && this.rigLensActive) {
             this._getRigLensTable()?.cancelRigLensBonePosePreview?.();
             this.rigLensActive = false;
             this.rigLensTarget = null;
         }
+        let target = this.getTarget?.() || {};
+        let rigTarget = target.rigTarget || null;
+        if (this.rigLensActive) {
+            this._syncActiveRigLensTarget(rigTarget);
+            if (!this.rigLensActive) {
+                target = this.getTarget?.() || {};
+                rigTarget = target.rigTarget || null;
+            }
+        }
         const rigLensVisible = this.rigLensActive;
-        const active = transformSessionVisible || rigLensVisible;
-        const surface = rigLensVisible ? 'rig' : (transformSessionVisible ? 'transform' : 'layer');
+        const transformGateVisible = this.transformLensRequested && !transformSessionVisible && !rigLensVisible;
+        const active = transformSessionVisible || transformGateVisible || rigLensVisible;
+        const surface = rigLensVisible ? 'rig' : (active ? 'transform' : 'layer');
         const previousSurface = this.currentSurface || surface;
         const transformAvailability = this.layerSystem?.getTransformEditStartAvailability?.();
         const transformBlockMessage = !transformAvailability?.ok
             ? RIG_TRANSFORM_BLOCK_MESSAGES[transformAvailability?.reason] || '' : '';
-        this.transformModeButton.disabled = !active && !!transformBlockMessage;
+        this.transformModeButton.disabled = false;
         this.transformModeButton.title = transformBlockMessage;
-        this.transformModeButton.setAttribute('aria-label', transformBlockMessage
-            ? `TRANSFORMを使用できません: ${transformBlockMessage}` : 'TRANSFORM');
-        this.layerModeButton?.classList.toggle('is-selected', !active);
-        this.layerModeButton?.setAttribute('aria-pressed', String(!active));
-        this.transformModeButton?.classList.toggle('is-selected', active);
-        this.transformModeButton?.setAttribute('aria-pressed', String(active));
+        this.transformModeButton.setAttribute('aria-label', 'TRANSFORM');
+        this.rigModeButton.disabled = !rigLensVisible && rigTarget?.eligible !== true;
+        this.rigModeButton.title = this.rigModeButton.disabled ? rigTarget?.reason || 'CAF内のRasterを選択してください。' : '';
+        this.rigModeButton.setAttribute('aria-label', this.rigModeButton.disabled
+            ? `RIGを使用できません: ${this.rigModeButton.title}` : 'RIG');
+        for (const [button, selected] of [
+            [this.layerModeButton, !active],
+            [this.transformModeButton, surface === 'transform'],
+            [this.rigModeButton, rigLensVisible]
+        ]) {
+            button?.classList.toggle('is-selected', selected);
+            button?.setAttribute('aria-pressed', String(selected));
+        }
         if (!active) this.actions?.classList.remove('is-exit-choice-requested');
         this.root.classList.toggle('has-transform-workspace', active);
         this.root.classList.toggle('is-rig-lens-active', rigLensVisible);
@@ -3873,18 +4238,14 @@ export class RightWorkspaceFrame {
         this.host.hidden = !active;
         this.host.inert = !active;
         this.host.setAttribute('aria-label', rigLensVisible ? 'RIG SETUP作業面' : 'Transform 作業面');
-        this.title.hidden = rigLensVisible;
+        this.title.hidden = rigLensVisible || transformGateVisible;
+        this.transformGateNotice.hidden = !transformGateVisible;
+        this.transformGateNotice.textContent = transformGateVisible
+            ? transformBlockMessage || 'この対象のTransformは開始できません。対象と編集状態を確認してください。'
+            : '';
         this.rigView.hidden = !rigLensVisible;
-        this.panel.hidden = rigLensVisible;
+        this.panel.hidden = rigLensVisible || transformGateVisible;
         this.rigEntryRow.hidden = rigLensVisible;
-        const target = this.getTarget?.() || {};
-        const layerRigTarget = target.rigTarget;
-        const hasSelectedPart = layerRigTarget?.assetId && layerRigTarget?.internalLayerId
-            && this._getRigLensTable()?.getRigLensPartTarget?.(layerRigTarget.assetId)
-                ?.parts?.some(part => part.partId === layerRigTarget.internalLayerId);
-        this.rigLayerEntryButton.hidden = active || target.rigTarget?.eligible !== true
-            || (target.rigTarget?.hasMesh !== true && !hasSelectedPart)
-            || this.layerSystem?.canStartTransformEditSession?.() !== false;
         const label = target.label || 'Transform';
         this.label.textContent = label;
         this.title.title = label;
@@ -3895,17 +4256,14 @@ export class RightWorkspaceFrame {
         if (source && this.thumbnail.getAttribute('src') !== source.getAttribute('src')) {
             this.thumbnail.setAttribute('src', source.getAttribute('src'));
         }
-        const rigTarget = target.rigTarget || null;
-        const rigTargetKey = rigTarget?.assetId && rigTarget?.internalLayerId
-            ? (this.rigAuthoringKind === 'part'
-                ? rigTarget.assetId : `${rigTarget.assetId}:${rigTarget.internalLayerId}`)
-            : '';
-        if (rigTargetKey !== this.lastRigTargetKey) {
+        const rigTargetKey = rigTarget?.eligible === true ? rigTargetIdentityKey(rigTarget) : '';
+        if (!rigLensVisible && rigTargetKey !== this.lastRigTargetKey) {
             if (this._hasRigPosePreview()) {
                 this.rigEntryMessage = '未確定Poseがあります。対象を切り替える前にMotion KEY確定またはPose取消を行ってください。';
             } else {
                 this.lastRigTargetKey = rigTargetKey;
                 this.rigEntryMessage = '';
+                this.rigTargetSwitchPending = false;
                 this.rigPlacementMode = null;
                 this.rigPartIkEffectorId = null;
                 this.rigSelectedBoneId = null;
@@ -3965,10 +4323,9 @@ export class RightWorkspaceFrame {
         this.resizeObserver?.disconnect();
         this.layerModeButton?.removeEventListener('click', this._layerModeClickHandler);
         this.transformModeButton?.removeEventListener('click', this._transformModeClickHandler);
+        this.rigModeButton?.removeEventListener('click', this._rigModeClickHandler);
         this.rigEntryButton?.removeEventListener('click', this._rigEntryClickHandler);
-        this.rigLayerEntryButton?.removeEventListener('click', this._rigEntryClickHandler);
         this.rigEntryRow?.remove();
-        this.rigLayerEntryButton?.remove();
         this.rigView?.remove();
         this.modeSwitch?.remove();
         if (this.eventBus?.off) {

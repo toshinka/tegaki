@@ -33,33 +33,17 @@ assert.equal(linked.hasRootBoneBinding, true, 'parent linking keeps the Part PIV
 assert.equal(linked.parentLinkState, 'linked');
 assert.equal(linked.parentLayer?.name, '体');
 
-for (const token of [
-    '_createContextRigHierarchyElement(projection)',
-    "hierarchy.dataset.parentState = parentState",
-    "appendRow('PIVOT', boneLabel)",
-    "appendRow('PARENT', parentLabel)",
-    "? 'なし（ROOT）'",
-    'context-rig-hierarchy-open-button',
-    "hierarchyButton.textContent = '接続を編集'",
-    '_openContextRigHierarchy(rigHierarchyButton)',
-    'openInternalRigidHierarchyFromExternal',
-    "{ source: 'right-rig-inspector' }"
-]) {
-    assert.ok(renderer.includes(token), `right RIG hierarchy handoff must include ${token}`);
-}
-
-assert.match(
-    renderer,
-    /_openContextRigHierarchy\(button\)[\s\S]*?projection\?\.hasRootBoneBinding === true[\s\S]*?openInternalRigidHierarchyFromExternal/u,
-    'the handoff rechecks the fresh configured target before opening the existing editor'
-);
+assert.doesNotMatch(renderer, /context-rig-hierarchy-open-button|接続を編集/u,
+    'the Layer panel no longer exposes the hierarchy editor as a normal action');
+assert.match(renderer, /getRigLensLegacyFallbackTarget[\s\S]*?openInternalRigidHierarchyFromExternal[\s\S]*?openInternalRasterRigSetupFromExternal/u,
+    'legacy hierarchy and Raster editors are exposed only through the conditional fallback route');
 
 const externalAdapter = table.match(
-    /openInternalRigidHierarchyFromExternal\(assetId, layerId, options = \{\}\)[\s\S]*?\n    \}\n\n    registerInternalRigPartFromExternal/u
+    /openInternalRigidHierarchyFromExternal\(assetId, layerId, options = \{\}\)[\s\S]*?\n    \}/u
 )?.[0] || '';
 assert.match(
     externalAdapter,
-    /_getSelectedCafRigProjection\(\)[\s\S]*?_selectRigFolderProjectionTarget\(context, \{[\s\S]*?focusRig: true,[\s\S]*?openInspector: true/u,
+    /_resolveInternalRigidHierarchyTarget\(assetId, layerId\)[\s\S]*?_selectRigFolderProjectionTarget\(context, \{[\s\S]*?focusRig: true,[\s\S]*?openInspector: true/u,
     'the external adapter opens the selected existing RIG Setup context'
 );
 assert.match(externalAdapter, /ok: true, changed: false/u, 'hierarchy handoff is explicit navigation only');
@@ -68,15 +52,20 @@ assert.doesNotMatch(
     /_recordInternalLayerHistory|setClipAssetRigBoneParent|registerClipAssetRootBoneBinding|rigDefinition\s*=/u,
     'hierarchy handoff neither changes parent links nor owns History'
 );
+const targetResolver = table.match(
+    /_resolveInternalRigidHierarchyTarget\(assetId, layerId\)[\s\S]*?\n    \}\n\n    openInternalRigidHierarchyFromExternal/u
+)?.[0] || '';
+assert.match(targetResolver, /rigidBindings[\s\S]*?bones[\s\S]*?_getSelectedCafRigProjection\(\)[\s\S]*?candidate\?\.layer\?\.id === layer\.id/u,
+    'fallback eligibility and the opener share the exact bound Part / Bone projection');
 
 for (const token of [
-    '.right-panel .context-rig-handoff-button',
-    'border: none',
-    'color: var(--futaba-maroon)',
-    '.right-panel .context-rig-hierarchy',
-    'grid-template-columns: 38px minmax(0, 1fr)'
+    '.right-panel .layer-panel-legacy-rig-fallback-button',
+    'border: 1px solid var(--ui-panel-glass-border)',
+    'color: var(--futaba-medium)',
+    '.right-panel .layer-panel-legacy-rig-fallback-description',
+    'grid-column: 1 / -1'
 ]) {
-    assert.ok(css.includes(token), `hierarchy surface must include ${token}`);
+    assert.ok(css.includes(token), `legacy hierarchy fallback surface must include ${token}`);
 }
 
 for (const token of [
@@ -88,4 +77,4 @@ for (const token of [
     assert.ok(phase.includes(token), `Phase 9n Stage C4 boundary must include ${token}`);
 }
 
-console.log('verify-right-rig-parent-link-handoff: bound Bone vs ROOT / read-only hierarchy / existing editor navigation / no mutation OK');
+console.log('verify-right-rig-parent-link-handoff: bound Bone vs ROOT / conditional hierarchy escape hatch / no mutation OK');

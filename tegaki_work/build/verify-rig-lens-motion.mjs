@@ -220,7 +220,8 @@ assert.doesNotMatch(frame.slice(poseGestureStart, poseGestureEnd), /_requireRigP
 assert.match(frame, /restoreRigLensBonePoseDraft\?\./u);
 assert.match(frame, /_getRigReturnDestination\(\)[\s\S]*?canStartTransformEditSession/u);
 assert.match(frame, /_requireRigPoseResolution\(\)[\s\S]*?hasRigLensBonePosePreview/u);
-assert.match(frame, /rigLayerEntryButton\.addEventListener\('click', this\._rigEntryClickHandler\)/u);
+assert.doesNotMatch(frame, /rigLayerEntryButton|right-workspace-rig-layer-entry/u,
+    'ordinary Layer-side RIG entry uses the top-level RIG lens instead of a duplicate CTA');
 assert.match(frame, /event\.key\?\.toLowerCase\(\) === 'v'[\s\S]*?hasRigLensBonePosePreview/u);
 
 historyManager.clear();

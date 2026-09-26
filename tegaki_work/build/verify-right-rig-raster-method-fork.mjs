@@ -10,25 +10,24 @@ const [renderer, table, componentCss, mainCss, phase] = await Promise.all([
 ]);
 
 for (const token of [
-    'context-rig-method-actions',
-    "actions.dataset.methodCount = canCreateRootPivot || hasRootPivot || canOpenBendSetup || isFolderTarget ? '1' : '2'",
-    "(isFolderTarget ? '親子RIGの設定' : '一枚RasterのRIG方式')",
-    'context-rig-open-bend-button',
-    "bendButton.textContent = '曲げRIG'",
-    "setupButton.textContent = isFolderTarget ? '親子RIGを開始' : '全体PIVOT'",
+    'layer-panel-legacy-rig-fallback-button',
+    "button.textContent = '旧RIGで開く'",
+    'getRigLensLegacyFallbackTarget',
     'openInternalRasterRigSetupFromExternal',
-    "{ source: 'right-rig-inspector' }"
+    "{ source: 'layer-panel-legacy-fallback' }"
 ]) {
-    assert.ok(renderer.includes(token), `right RIG method fork must include ${token}`);
+    assert.ok(renderer.includes(token), `legacy Raster fallback must include ${token}`);
 }
+assert.doesNotMatch(renderer, /context-rig-(?:method-actions|open-bend-button|register-button)/u,
+    'new curve/whole setup entry buttons are retired from the Layer panel');
 
 assert.match(
     table,
-    /openInternalRasterRigSetupFromExternal\(assetId, layerId, options = \{\}\)[\s\S]*?entry\?\.clip\?\.assetId !== asset\.id[\s\S]*?_getSelectedCafRigProjection\(\)[\s\S]*?if \(!this\.isVisible\) \{[\s\S]*?this\.show\(\)[\s\S]*?_selectRigRasterProjectionTarget\(context, \{[\s\S]*?focusRig: true,[\s\S]*?openInspector: true/u,
-    'the external handoff reuses selected CAF projection and the existing Raster RIG inspector'
+    /openInternalRasterRigSetupFromExternal\(assetId, layerId, options = \{\}\)[\s\S]*?_resolveInternalRasterRigSetupTarget\(assetId, layerId\)[\s\S]*?_selectRigRasterProjectionTarget\(context, \{[\s\S]*?focusRig: true,[\s\S]*?openInspector: true/u,
+    'the external handoff reuses the exact selected target resolver and existing Raster RIG inspector'
 );
 const externalAdapter = table.match(
-    /openInternalRasterRigSetupFromExternal\(assetId, layerId, options = \{\}\)[\s\S]*?\n    \}/u
+    /openInternalRasterRigSetupFromExternal\(assetId, layerId, options = \{\}\)[\s\S]*?\n    \}\n\n    _resolveInternalRigidHierarchyTarget/u
 )?.[0] || '';
 assert.doesNotMatch(
     externalAdapter,
@@ -40,19 +39,24 @@ assert.match(
     /ok: true, changed: false/u,
     'opening curve RIG setup is an explicit no-mutation navigation result'
 );
+const targetResolver = table.match(
+    /_resolveInternalRasterRigSetupTarget\(assetId, layerId\)[\s\S]*?\n    \}\n\n    openInternalRasterRigSetupFromExternal/u
+)?.[0] || '';
+assert.match(targetResolver, /entry\?\.clip\?\.assetId !== asset\.id[\s\S]*?_getSelectedCafRigProjection\(\)[\s\S]*?_getRasterRigProjectionContext/u,
+    'eligibility uses the same selected CAF / Raster projection as the legacy opener');
+assert.match(targetResolver, /context\.layer\?\.id !== layer\.id/u,
+    'legacy Raster preflight refuses a stale or substituted target');
 
 for (const token of [
-    '.right-panel .context-rig-method-button',
-    'border: none',
-    'color: var(--deformer-bind-point)',
-    '.context-rig-method-actions[data-method-count="2"]',
-    'grid-template-columns: repeat(2, minmax(0, 1fr))',
-    '@media (max-width: 620px)',
-    'margin-top: 0',
-    '.right-panel .context-rig-inspector-target',
-    'white-space: nowrap'
+    '.right-panel .layer-panel-legacy-rig-fallback',
+    'grid-template-columns: minmax(0, 1fr) auto',
+    '.right-panel .layer-panel-legacy-rig-fallback-button',
+    'min-height: 26px',
+    'background: var(--ui-layer-surface-hover)',
+    '@media (pointer: coarse)',
+    'min-height: 38px'
 ]) {
-    assert.ok(componentCss.includes(token) || mainCss.includes(token), `method fork CSS must include ${token}`);
+    assert.ok(componentCss.includes(token) || mainCss.includes(token), `legacy fallback CSS must include ${token}`);
 }
 for (const token of [
     'Stage C2 — Raster method fork Gate',
@@ -62,4 +66,4 @@ for (const token of [
     assert.ok(phase.includes(token), `Phase 9n Stage C2 boundary must include ${token}`);
 }
 
-console.log('verify-right-rig-raster-method-fork: explicit curve/whole fork / existing inspector handoff / no setup mutation OK');
+console.log('verify-right-rig-raster-method-fork: unsupported Raster fallback / exact existing Workspace handoff / no setup mutation OK');

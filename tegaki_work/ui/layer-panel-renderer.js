@@ -1,8 +1,8 @@
 /**
  * ============================================================================
  * ファイル名: ui/layer-panel-renderer.js
- * 責務: レイヤーパネルのUI（レイヤー一覧、選択、可視性、透明度、合成モード、クリッピング状態、並び替え）と
- *       既存RIG概要を描画する。右作業面の置換はRightWorkspaceFrameへ委譲する。
+ * 責務: レイヤーパネルのUI（レイヤー一覧、選択、可視性、透明度、合成モード、クリッピング状態、並び替え）を描画する。
+ *       legacy RIG fallbackはRight Workspaceの既存route adapterへ委譲する。
  * 依存: layer-system.js, thumbnail-system.js, event-bus.js, config.js, rig-authoring-status-projection.js
  * 被依存: ui-panels.js, core-engine.js
  * 公開API: LayerPanelRenderer, getDiagnosticsSnapshot(), resetDiagnostics()
@@ -15,10 +15,8 @@
  * - CAF表示はClipAsset.internalLayers + parentLayerIdをmirror adapterで投影する。
  * - Animation Tableを閉じてもCAF編集contextは継続する。Table visibilityを正本切替に使わない。
  * - animation working Layerは表示・入力adapterであり、Panel順や保存階層の正本にしない。
- * - RIG badgeはClipAssetのstatic正本からpure導出した表示であり、第二RIG stateやMotion authorityを持たない。
- * - 右RIG viewのSetup actionはAnimationTablePopupのexternal adapterへ委譲し、本fileでRig / Historyを直接mutationしない。
- * - 右RIG viewは対象・方式・進捗・handoffのoverviewであり、static controlsを複製しない。
- *   authoringはoverlay root上の単一RIG WORKSPACEへ委譲し、同じtarget / History adapterを使う。
+ * - RIG statusはClipAssetのstatic正本からpure導出し、通常authoringはtop-level RIG lensへ集約する。
+ * - legacy fallbackはAnimationTablePopupの既存route adapterへ委譲し、本fileでRig / Historyを直接mutationしない。
  * - Mesh前Bone候補はAnimationTablePopupのruntime focus一致時だけ表示し、static Rig ownerとして保存しない。
  * ============================================================================
  */
@@ -65,13 +63,11 @@ export class LayerPanelRenderer {
         this._cardDragSuppressClick = false;
         this._legacyNamePointerTap = null;
         this._clipMirrorNameClickTimer = null;
-        this._contextDockView = 'layers';
         this._handleAttributePopupOutsidePointerDown = this._handleAttributePopupOutsidePointerDown.bind(this);
         this._handleAttributePopupKeydown = this._handleAttributePopupKeydown.bind(this);
         this._handleAttributePopupDragMove = this._handleAttributePopupDragMove.bind(this);
         this._handleAttributePopupDragEnd = this._handleAttributePopupDragEnd.bind(this);
         this._handleLayerPanelKeydown = this._handleLayerPanelKeydown.bind(this);
-        this._handleContextDockViewKeydown = this._handleContextDockViewKeydown.bind(this);
         this._handleLayerPanelCardPointerDown = this._handleLayerPanelCardPointerDown.bind(this);
         this._handleLayerPanelCardPointerMove = this._handleLayerPanelCardPointerMove.bind(this);
         this._handleLayerPanelCardPointerUp = this._handleLayerPanelCardPointerUp.bind(this);
@@ -79,7 +75,6 @@ export class LayerPanelRenderer {
         this.workspaceFrame = new RightWorkspaceFrame(container, () => this._getContextInspectorTarget(), layerSystem);
         this._setupEventListeners();
         document.addEventListener('keydown', this._handleLayerPanelKeydown, true);
-        this.container.addEventListener('keydown', this._handleContextDockViewKeydown);
         this.container.addEventListener('pointerdown', this._handleLayerPanelCardPointerDown);
         this.container.addEventListener('contextmenu', (e) => {
             if (!this._hasAnimationContext()) return;
@@ -91,29 +86,9 @@ export class LayerPanelRenderer {
 
         // Layer PanelカードとCAFヘッダーのクリックイベント（共通委譲）
         this.container.addEventListener('click', (e) => {
-            const rigHierarchyButton = e.target.closest('.context-rig-hierarchy-open-button');
-            if (rigHierarchyButton && this.container.contains(rigHierarchyButton)) {
-                this._openContextRigHierarchy(rigHierarchyButton);
-                return;
-            }
-            const rigRootPivotButton = e.target.closest('.context-rig-root-pivot-button');
-            if (rigRootPivotButton && this.container.contains(rigRootPivotButton)) {
-                this._registerContextRigRootPivot(rigRootPivotButton);
-                return;
-            }
-            const rigBendButton = e.target.closest('.context-rig-open-bend-button');
-            if (rigBendButton && this.container.contains(rigBendButton)) {
-                this._openContextRasterRigSetup(rigBendButton);
-                return;
-            }
-            const rigRegisterButton = e.target.closest('.context-rig-register-button');
-            if (rigRegisterButton && this.container.contains(rigRegisterButton)) {
-                this._registerContextRigTarget(rigRegisterButton);
-                return;
-            }
-            const contextViewButton = e.target.closest('.layer-panel-context-view-button');
-            if (contextViewButton && this.container.contains(contextViewButton)) {
-                this._setContextDockView(contextViewButton.dataset.layerPanelView);
+            const legacyRigFallbackButton = e.target.closest('.layer-panel-legacy-rig-fallback-button');
+            if (legacyRigFallbackButton && this.container.contains(legacyRigFallbackButton)) {
+                this._openLegacyRigFallback(legacyRigFallbackButton);
                 return;
             }
             if (this._consumeLayerPanelCardSuppressedClick(e)) {
@@ -1015,7 +990,7 @@ export class LayerPanelRenderer {
 
     _getContextInspectorTarget() {
         const animationTable = window.PopupManager?.get?.('animationTable');
-        const cafContext = this._resolveCafRigInspectorContext(animationTable);
+        const cafContext = this._resolveSelectedCafLayerContext(animationTable);
         if (cafContext?.asset) {
             const assetLabel = cafContext.asset.name || cafContext.asset.id || 'CAF';
             const targetLayer = cafContext.targetLayer;
@@ -1248,9 +1223,10 @@ export class LayerPanelRenderer {
         const renderStartedAt = diagnosticsEnabled ? this._getDiagnosticsNow() : 0;
         const animationTable = window.PopupManager?.get?.('animationTable');
         const hasAnimationContext = this._hasAnimationContext(animationTable);
-        const rigInspectorContext = this._resolveCafRigInspectorContext(animationTable);
-        if (!rigInspectorContext) this._contextDockView = 'layers';
-        const isRigViewActive = !!rigInspectorContext && this._contextDockView === 'rig';
+        const cafLayerContext = this._resolveSelectedCafLayerContext(
+            animationTable,
+            { includeLegacyFallback: true }
+        );
 
         this.container.innerHTML = '';
         this.container.classList.remove('layer-panel-items--folder-dragging');
@@ -1262,22 +1238,20 @@ export class LayerPanelRenderer {
         const cafContextHeader = hasAnimationContext ? this.createCafContextHeader() : null;
         const panelContainer = this.container.closest?.('.layer-panel-container');
         panelContainer?.classList.toggle('layer-panel-container--caf', !!cafContextHeader);
-        panelContainer?.classList.toggle('layer-panel-container--rig-view', isRigViewActive);
 
-        // 1. CAF Parent Header (常に最上部。RIGビュー時も維持)
+        // CAF identity remains the first row in the Layer panel.
         if (cafContextHeader) {
             this.container.appendChild(cafContextHeader);
         }
 
-        // 2. 暫定Context View Switch (CAF identityの直下に配置)
-        if (rigInspectorContext) {
-            this.container.appendChild(this._createContextDockViewSwitch());
+        // Legacy editors are shown only when the new RIG inspection rejects the
+        // selected target and an existing legacy route resolves that same target.
+        if (cafLayerContext?.legacyRigFallback?.ok === true) {
+            this.container.appendChild(this._createLegacyRigFallbackElement(cafLayerContext));
         }
 
         // 3. Content Body
-        if (isRigViewActive) {
-            this.container.appendChild(this._createCafRigInspectorElement(rigInspectorContext));
-        } else if (hasAnimationContext) {
+        if (hasAnimationContext) {
             const cafLayerContent = this.createCafLayerContent();
             if (cafLayerContent) {
                 this._appendLayerPanelCardParts(this.container, cafLayerContent);
@@ -1290,7 +1264,7 @@ export class LayerPanelRenderer {
         const hideAnimationWorkingLayers = true;
         const hideNormalLayersForAnimationContext = hasAnimationContext;
 
-        if (!isRigViewActive) reversedLayers.forEach((layer, reversedIndex) => {
+        reversedLayers.forEach((layer, reversedIndex) => {
             const originalIndex = layers.length - 1 - reversedIndex;
             const isActive = originalIndex === activeIndex;
             const isSelected = selectedLayerIds.has(layer.layerData?.id);
@@ -1322,7 +1296,6 @@ export class LayerPanelRenderer {
                 activeIndex,
                 animationTable,
                 hasAnimationContext,
-                isRigViewActive,
                 renderStartedAt
             });
         }
@@ -1348,7 +1321,6 @@ export class LayerPanelRenderer {
         activeIndex = -1,
         animationTable = null,
         hasAnimationContext = false,
-        isRigViewActive = false,
         renderStartedAt = 0
     } = {}) {
         const domRows = [...this.container.querySelectorAll('.layer-panel-card-row')].map(row => ({
@@ -1366,13 +1338,11 @@ export class LayerPanelRenderer {
         const relevantDomRows = hasAnimationContext
             ? domRows.filter(row => row.cardKind === 'clip-layer-mirror' && row.assetId === authority.assetId)
             : domRows.filter(row => row.cardKind === 'legacy-layer');
-        const hierarchyMatches = isRigViewActive
-            ? relevantDomRows.length === 0
-            : authority.rows.length === relevantDomRows.length
-                && authority.rows.every((row, index) => {
-                    const rendered = relevantDomRows[index];
-                    return rendered?.id === row.id && rendered.depth === row.depth;
-                });
+        const hierarchyMatches = authority.rows.length === relevantDomRows.length
+            && authority.rows.every((row, index) => {
+                const rendered = relevantDomRows[index];
+                return rendered?.id === row.id && rendered.depth === row.depth;
+            });
 
         recordLayerPanelRender({
             timestamp: Date.now(),
@@ -3683,15 +3653,6 @@ export class LayerPanelRenderer {
             || groups[0];
     }
 
-    _setContextDockView(view) {
-        const nextView = view === 'rig' ? 'rig' : (view === 'layers' ? 'layers' : null);
-        if (!nextView || nextView === this._contextDockView) return false;
-        if (nextView === 'rig' && !this._resolveCafRigInspectorContext()) return false;
-        this._contextDockView = nextView;
-        this.requestUpdate({ force: true });
-        return true;
-    }
-
     _getRigPartRegistrationFailureLabel(reason) {
         return {
             'asset-not-found': 'CAFを確認',
@@ -3705,160 +3666,57 @@ export class LayerPanelRenderer {
         }[reason] || '登録できません';
     }
 
-    _registerContextRigTarget(button) {
-        const context = this._resolveCafRigInspectorContext();
+    _openLegacyRigFallback(button) {
+        const context = this._resolveSelectedCafLayerContext();
         const matchesCurrentTarget = !!context?.targetLayer
             && context.asset?.id === button?.dataset.assetId
             && context.targetLayer.id === button?.dataset.internalLayerId;
-        const result = matchesCurrentTarget
-            ? context.animationTable?.registerInternalRigPartFromExternal?.(
+        const fallback = matchesCurrentTarget
+            ? context.animationTable?.getRigLensLegacyFallbackTarget?.(
                 context.asset.id,
-                context.targetLayer.id,
-                { source: 'right-rig-inspector' }
+                context.targetLayer.id
             )
-            : { ok: false, reason: 'layer-not-found' };
-
-        if (result?.ok) {
-            this.requestUpdate({ force: true });
-            return result;
+            : null;
+        if (!fallback?.ok) {
+            const status = button.closest('.layer-panel-legacy-rig-fallback')
+                ?.querySelector('.layer-panel-legacy-rig-fallback-status');
+            if (status) {
+                status.hidden = false;
+                status.textContent = fallback?.reason || '対象を再選択してください。';
+            }
+            button.title = fallback?.reason || '選択中の対象を確認できません。';
+            return { ok: false, reason: fallback?.reason || 'layer-not-found' };
         }
 
-        const label = this._getRigPartRegistrationFailureLabel(result?.reason);
-        button.textContent = label;
-        button.title = result?.reason || 'Rig Part登録に失敗しました';
-        button.disabled = true;
-        const feedback = button.closest('.context-rig-inspector')
-            ?.querySelector('.context-rig-inspector-result');
-        if (feedback) {
-            feedback.hidden = false;
-            feedback.textContent = label;
-        }
-        return result;
-    }
-
-    _openContextRasterRigSetup(button) {
-        const context = this._resolveCafRigInspectorContext();
-        const matchesCurrentTarget = context?.targetLayer?.type === 'raster'
-            && context.asset?.id === button?.dataset.assetId
-            && context.targetLayer.id === button?.dataset.internalLayerId;
-        const result = matchesCurrentTarget
-            ? context.animationTable?.openInternalRasterRigSetupFromExternal?.(
-                context.asset.id,
-                context.targetLayer.id,
-                { source: 'right-rig-inspector' }
-            )
-            : { ok: false, reason: 'layer-not-found' };
-
-        if (result?.ok) return result;
-        const label = result?.reason === 'animation-table-open-pending'
-            ? 'Tableを確認'
-            : this._getRigPartRegistrationFailureLabel(result?.reason);
-        button.textContent = label;
-        button.title = result?.reason || '曲げRIG設定を開けません';
-        button.disabled = true;
-        const feedback = button.closest('.context-rig-inspector')
-            ?.querySelector('.context-rig-inspector-result');
-        if (feedback) {
-            feedback.hidden = false;
-            feedback.textContent = label;
-        }
-        return result;
-    }
-
-    _getRigRootPivotFailureMessage(reason, targetKind) {
-        if (reason === 'empty-part') {
-            return targetKind === 'folder'
-                ? 'Folder内に描画が必要です'
-                : 'Rasterに描画が必要です';
-        }
-        return {
-            'asset-not-found': 'CAFを確認してください',
-            'layer-not-found': '対象を再選択してください',
-            'part-not-found': 'RIG対象を再登録してください',
-            'part-target-type-unsupported': 'Folder / RasterのみPIVOTを作成できます'
-        }[reason] || 'PIVOTを作成できません';
-    }
-
-    _registerContextRigRootPivot(button) {
-        const context = this._resolveCafRigInspectorContext();
-        const projection = context?.rigProjection || null;
-        const matchesCurrentTarget = !!context?.targetLayer
-            && context.asset?.id === button?.dataset.assetId
-            && context.targetLayer.id === button?.dataset.internalLayerId
-            && ['folder', 'raster'].includes(projection?.targetKind)
-            && ['parent', 'whole'].includes(projection?.status)
-            && projection?.hasPart === true
-            && projection?.hasRootBoneBinding !== true;
-        const result = matchesCurrentTarget
-            ? context.animationTable?.registerInternalRootBoneFromExternal?.(
-                context.asset.id,
-                context.targetLayer.id,
-                { source: 'right-rig-inspector' }
-            )
-            : { ok: false, reason: 'layer-not-found' };
-
-        if (result?.ok) {
-            this.requestUpdate({ force: true });
-            return result;
-        }
-
-        const message = this._getRigRootPivotFailureMessage(
-            result?.reason,
-            projection?.targetKind
-        );
-        button.textContent = result?.reason === 'empty-part' ? '描画が必要' : '作成できません';
-        button.title = message;
-        button.disabled = true;
-        const feedback = button.closest('.context-rig-inspector')
-            ?.querySelector('.context-rig-inspector-result');
-        if (feedback) {
-            feedback.hidden = false;
-            feedback.textContent = message;
-        }
-        return result;
-    }
-
-    _openContextRigHierarchy(button) {
-        const context = this._resolveCafRigInspectorContext();
-        const projection = context?.rigProjection || null;
-        const matchesCurrentTarget = !!context?.targetLayer
-            && context.asset?.id === button?.dataset.assetId
-            && context.targetLayer.id === button?.dataset.internalLayerId
-            && ['parent', 'whole'].includes(projection?.status)
-            && projection?.hasRootBoneBinding === true;
-        const result = matchesCurrentTarget
+        const result = fallback.route === 'rigid-hierarchy'
             ? context.animationTable?.openInternalRigidHierarchyFromExternal?.(
                 context.asset.id,
                 context.targetLayer.id,
-                { source: 'right-rig-inspector' }
+                { source: 'layer-panel-legacy-fallback' }
             )
-            : { ok: false, changed: false, reason: 'layer-not-found' };
-
+            : context.animationTable?.openInternalRasterRigSetupFromExternal?.(
+                context.asset.id,
+                context.targetLayer.id,
+                { source: 'layer-panel-legacy-fallback' }
+            );
         if (result?.ok) return result;
-        const label = result?.reason === 'animation-table-open-pending'
-            ? 'Tableを確認'
-            : '開けません';
-        button.textContent = label;
-        button.title = result?.reason || '親子接続設定を開けません';
-        button.disabled = true;
-        const feedback = button.closest('.context-rig-inspector')
-            ?.querySelector('.context-rig-inspector-result');
-        if (feedback) {
-            feedback.hidden = false;
-            feedback.textContent = label;
+
+        const status = button.closest('.layer-panel-legacy-rig-fallback')
+            ?.querySelector('.layer-panel-legacy-rig-fallback-status');
+        if (status) {
+            status.hidden = false;
+            status.textContent = result?.reason === 'animation-table-open-pending'
+                ? 'Animation Tableを開いてから再試行してください。'
+                : '旧RIG Workspaceを開けませんでした。';
         }
-        return result;
+        button.title = result?.reason || '旧RIG Workspaceを開けませんでした。';
+        return result || { ok: false, reason: 'legacy-rig-route-unavailable' };
     }
 
-    _handleContextDockViewKeydown(e) {
-        if (!['Enter', ' ', 'Spacebar'].includes(e.key)) return;
-        const button = e.target.closest?.('.layer-panel-context-view-button');
-        if (!button || !this.container.contains(button)) return;
-        e.preventDefault();
-        this._setContextDockView(button.dataset.layerPanelView);
-    }
-
-    _resolveCafRigInspectorContext(animationTable = window.PopupManager?.get?.('animationTable')) {
+    _resolveSelectedCafLayerContext(
+        animationTable = window.PopupManager?.get?.('animationTable'),
+        { includeLegacyFallback = false } = {}
+    ) {
         if (!this._hasAnimationContext(animationTable) || !animationTable?.selectedCelId) return null;
         const entry = animationTable.model?.findClipEntry?.(animationTable.selectedCelId) || null;
         const asset = entry?.clip?.assetId
@@ -3875,7 +3733,9 @@ export class LayerPanelRenderer {
         const rigProjection = targetLayer
             ? createRigAuthoringStatusProjection(asset, targetLayer.id, { meshStatus })
             : null;
-        const candidateFocus = animationTable.getRigRasterCandidateFocusForExternal?.() || null;
+        const legacyRigFallback = includeLegacyFallback && targetLayer
+            ? animationTable.getRigLensLegacyFallbackTarget?.(asset.id, targetLayer.id) || null
+            : null;
         return {
             animationTable,
             entry,
@@ -3883,303 +3743,42 @@ export class LayerPanelRenderer {
             selectedInternalLayerId,
             targetLayer,
             rigProjection,
-            candidateFocus: candidateFocus?.assetId === asset.id
-                && candidateFocus?.layerId === targetLayer?.id
-                ? candidateFocus
-                : null
+            legacyRigFallback
         };
     }
 
-    _createContextDockViewSwitch() {
+    _createLegacyRigFallbackElement(context = {}) {
+        const fallback = context.legacyRigFallback;
+        const layer = context.targetLayer;
+        if (fallback?.ok !== true || !layer?.id) return null;
+
         const group = document.createElement('div');
-        group.className = 'layer-panel-context-view-switch';
-        group.setAttribute('role', 'group');
-        group.setAttribute('aria-label', '右パネル表示');
+        group.className = 'layer-panel-legacy-rig-fallback';
 
-        const createButton = ({ view, label, icon, title }) => {
-            const isActive = this._contextDockView === view;
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = this._createLayerPanelClassName(
-                'layer-panel-context-view-button',
-                this._createLayerPanelStateClassNames({ 'is-active': isActive })
-            );
-            button.dataset.layerPanelView = view;
-            button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-            button.title = title;
-            button.innerHTML = `<span aria-hidden="true">${icon}</span><span>${label}</span>`;
-            return button;
-        };
+        const description = document.createElement('p');
+        description.className = 'layer-panel-legacy-rig-fallback-description';
+        description.textContent = 'この既存RIGは新しい編集面で扱えません。旧Workspaceを利用できます。';
+        group.appendChild(description);
 
-        group.appendChild(createButton({
-            view: 'layers',
-            label: 'LAYERS',
-            icon: UI_ICONS.layers,
-            title: 'Layer一覧を表示'
-        }));
-        group.appendChild(createButton({
-            view: 'rig',
-            label: 'RIG',
-            icon: UI_ICONS.rigNode,
-            title: '選択対象のRIG構造を表示'
-        }));
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'gui-control gui-control--s layer-panel-legacy-rig-fallback-button';
+        button.dataset.assetId = context.asset?.id || '';
+        button.dataset.internalLayerId = layer.id;
+        button.textContent = '旧RIGで開く';
+        button.title = fallback.reason || description.textContent;
+        button.setAttribute('aria-label', `旧RIG Workspaceで開く: ${context.asset?.name || 'CAF'} / ${layer.name || 'Layer'}`);
+        group.appendChild(button);
+
+        const status = document.createElement('p');
+        status.className = 'layer-panel-legacy-rig-fallback-status';
+        status.hidden = true;
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        group.appendChild(status);
         return group;
     }
 
-    _createContextRigHierarchyElement(projection) {
-        const bone = projection?.boundBone || projection?.rootBone || null;
-        if (!bone) return null;
-        const parentState = projection?.parentLinkState || 'root';
-        const hierarchy = document.createElement('dl');
-        hierarchy.className = 'context-rig-hierarchy';
-        hierarchy.dataset.parentState = parentState;
-        hierarchy.setAttribute('aria-label', 'PIVOT接続済み');
-
-        const appendRow = (label, value, title = value) => {
-            const row = document.createElement('div');
-            row.className = 'context-rig-hierarchy-row';
-            const term = document.createElement('dt');
-            term.textContent = label;
-            const detail = document.createElement('dd');
-            detail.textContent = value;
-            detail.title = title;
-            row.append(term, detail);
-            hierarchy.appendChild(row);
-        };
-        const boneLabel = bone.name || projection?.layer?.name || 'PIVOT';
-        const parentLabel = parentState === 'root'
-            ? 'なし（ROOT）'
-            : (parentState === 'linked'
-                ? (projection?.parentLayer?.name || projection?.parentBone?.name || 'BONE')
-                : '接続不明');
-        appendRow('PIVOT', boneLabel);
-        appendRow('PARENT', parentLabel);
-        return hierarchy;
-    }
-
-    _createContextRigBendProgressElement(projection) {
-        const setup = projection?.bendSetup || null;
-        if (!setup) return null;
-        const progress = document.createElement('dl');
-        progress.className = 'context-rig-bend-progress';
-        progress.dataset.setupState = setup.state || 'unknown';
-        progress.setAttribute('aria-label', '曲げRIG設定進捗');
-
-        const appendRow = (label, value) => {
-            const row = document.createElement('div');
-            row.className = 'context-rig-bend-progress-row';
-            const term = document.createElement('dt');
-            term.textContent = label;
-            const detail = document.createElement('dd');
-            detail.textContent = value;
-            detail.title = value;
-            row.append(term, detail);
-            progress.appendChild(row);
-        };
-        const boneLabel = setup.boneState === 'candidate'
-            ? `${setup.boneCount}本 候補`
-            : (setup.boneState === 'connected'
-                ? `${setup.boneCount}本 接続`
-                : (setup.boneState === 'broken' ? '要確認' : '未作成'));
-        const meshLabel = setup.meshState === 'missing'
-            ? '未生成'
-            : (setup.meshState === 'stale'
-                ? `${setup.meshGeneratorLabel} 要更新`
-                : `${setup.meshGeneratorLabel} 設定済み`);
-        const weightLabel = setup.weightState === 'connected'
-            ? '接続済み'
-            : (setup.weightState === 'broken' ? '要確認' : '未接続');
-        appendRow('BONE', boneLabel);
-        appendRow('MESH', meshLabel);
-        appendRow('WEIGHT', weightLabel);
-        return progress;
-    }
-
-    _createCafRigInspectorElement(context = {}) {
-        const projection = context.rigProjection || null;
-        const targetLayer = context.targetLayer || null;
-        const isEligibleTarget = projection?.isEligibleTarget === true;
-        const hasPreMeshCandidateFocus = projection?.targetKind === 'raster'
-            && projection?.status === 'none'
-            && projection?.bendSetup?.state === 'bone-ready'
-            && context.candidateFocus?.layerId === targetLayer?.id;
-        const kindLabel = projection?.targetKind === 'folder'
-            ? 'FOLDER'
-            : (projection?.targetKind === 'raster' ? 'RASTER' : 'NO TARGET');
-        const statusLabel = !targetLayer
-            ? '対象未選択'
-            : (hasPreMeshCandidateFocus
-                ? '曲げRIG 準備中'
-                : (isEligibleTarget ? projection.label : 'RIG 対象外'));
-        const isRigidPartStatus = ['parent', 'whole'].includes(projection?.status)
-            && projection?.hasPart === true;
-        const canCreateRootPivot = !!targetLayer
-            && isEligibleTarget
-            && isRigidPartStatus
-            && projection?.hasRootBoneBinding !== true;
-        const hasRootPivot = isRigidPartStatus
-            && projection?.hasRootBoneBinding === true;
-        const hasBendProgress = projection?.targetKind === 'raster'
-            && (hasPreMeshCandidateFocus || ['bend', 'stale', 'conflict'].includes(projection?.status))
-            && !!projection?.bendSetup;
-        const canOpenBendSetup = hasBendProgress
-            && projection?.status !== 'conflict'
-            && projection?.hasPart !== true;
-        let description = !targetLayer
-            ? 'LAYERSまたはAnimation TableでFolder / Rasterを選択してください。'
-            : (isEligibleTarget
-                ? projection.tooltip
-                : 'この内部LayerはRIG authoring対象ではありません。');
-        if (canCreateRootPivot) description += ' PIVOTは未作成です。';
-
-        const inspector = document.createElement('section');
-        inspector.className = 'context-rig-inspector';
-        inspector.dataset.rigStatus = projection?.status || 'none';
-        inspector.dataset.rigFocus = hasPreMeshCandidateFocus ? 'pre-mesh' : 'none';
-        inspector.dataset.targetKind = projection?.targetKind || 'none';
-        inspector.dataset.targetInternalLayerId = targetLayer?.id || '';
-        inspector.setAttribute('role', 'region');
-        inspector.setAttribute('aria-label', '選択対象のRIG構造');
-
-        const header = document.createElement('div');
-        header.className = 'context-rig-inspector-header';
-        header.innerHTML = `<span class="context-rig-inspector-icon" aria-hidden="true">${UI_ICONS.rigNode}</span><span>RIG</span>`;
-        inspector.appendChild(header);
-
-        const target = document.createElement('div');
-        target.className = 'context-rig-inspector-target';
-        target.textContent = targetLayer?.name || context.asset?.name || 'CAF';
-        target.title = target.textContent;
-        inspector.appendChild(target);
-
-        const meta = document.createElement('div');
-        meta.className = 'context-rig-inspector-meta';
-        const kind = document.createElement('span');
-        kind.className = 'context-rig-inspector-kind';
-        kind.textContent = kindLabel;
-        const status = document.createElement('span');
-        status.className = 'context-rig-inspector-status';
-        status.dataset.rigStatus = projection?.status || 'none';
-        status.dataset.rigFocus = hasPreMeshCandidateFocus ? 'pre-mesh' : 'none';
-        status.textContent = statusLabel;
-        meta.append(kind, status);
-        inspector.appendChild(meta);
-
-        const canRegisterTarget = !!targetLayer
-            && isEligibleTarget
-            && projection?.status === 'none'
-            && !hasPreMeshCandidateFocus;
-        if (canRegisterTarget || canCreateRootPivot || hasRootPivot || canOpenBendSetup) {
-            const isFolderTarget = projection?.targetKind === 'folder';
-            const actions = document.createElement('div');
-            actions.className = 'context-rig-method-actions';
-            actions.dataset.methodCount = canCreateRootPivot || hasRootPivot || canOpenBendSetup || isFolderTarget ? '1' : '2';
-            actions.setAttribute('role', 'group');
-            actions.setAttribute('aria-label', hasRootPivot
-                ? 'BONE接続の編集'
-                : (canCreateRootPivot
-                    ? 'RIG PIVOTの設定'
-                    : (canOpenBendSetup
-                        ? '曲げRIG設定を続ける'
-                        : (isFolderTarget ? '親子RIGの設定' : '一枚RasterのRIG方式'))));
-            if (canCreateRootPivot) {
-                const pivotButton = document.createElement('button');
-                pivotButton.type = 'button';
-                pivotButton.className = 'context-rig-method-button context-rig-root-pivot-button';
-                pivotButton.dataset.assetId = context.asset?.id || '';
-                pivotButton.dataset.internalLayerId = targetLayer.id;
-                pivotButton.textContent = 'PIVOTを作成';
-                pivotButton.title = isFolderTarget
-                    ? 'Folder内の描画範囲中央へ親PIVOTを作成'
-                    : 'Rasterの描画範囲中央へ全体PIVOTを作成';
-                actions.appendChild(pivotButton);
-            } else if (hasRootPivot) {
-                const hierarchyButton = document.createElement('button');
-                hierarchyButton.type = 'button';
-                hierarchyButton.className = 'context-rig-handoff-button context-rig-hierarchy-open-button';
-                hierarchyButton.dataset.assetId = context.asset?.id || '';
-                hierarchyButton.dataset.internalLayerId = targetLayer.id;
-                hierarchyButton.textContent = '接続を編集';
-                hierarchyButton.title = 'RIG WORKSPACEで親BONEとPIVOT位置を編集';
-                actions.appendChild(hierarchyButton);
-            } else if (canOpenBendSetup) {
-                const bendProgressButton = document.createElement('button');
-                bendProgressButton.type = 'button';
-                bendProgressButton.className = 'context-rig-handoff-button context-rig-open-bend-button';
-                bendProgressButton.dataset.assetId = context.asset?.id || '';
-                bendProgressButton.dataset.internalLayerId = targetLayer.id;
-                bendProgressButton.textContent = projection.bendSetup.nextActionLabel;
-                bendProgressButton.title = 'RIG WORKSPACEでBone / Mesh / Weightを確認';
-                actions.appendChild(bendProgressButton);
-            } else if (!isFolderTarget) {
-                const bendButton = document.createElement('button');
-                bendButton.type = 'button';
-                bendButton.className = 'context-rig-method-button context-rig-open-bend-button';
-                bendButton.dataset.assetId = context.asset?.id || '';
-                bendButton.dataset.internalLayerId = targetLayer.id;
-                bendButton.textContent = '曲げRIG';
-                bendButton.title = 'BONEとMeshで一枚絵を曲げるRIG設定を開く';
-                actions.appendChild(bendButton);
-            }
-            if (canRegisterTarget) {
-                const setupButton = document.createElement('button');
-                setupButton.type = 'button';
-                setupButton.className = 'context-rig-method-button context-rig-register-button';
-                setupButton.dataset.assetId = context.asset?.id || '';
-                setupButton.dataset.internalLayerId = targetLayer.id;
-                setupButton.textContent = isFolderTarget ? '親子RIGを開始' : '全体PIVOT';
-                setupButton.title = isFolderTarget
-                    ? '選択中のFolderを親子RIG対象へ登録'
-                    : '選択中のRasterを変形しない全体PIVOT対象へ登録';
-                actions.appendChild(setupButton);
-            }
-            inspector.appendChild(actions);
-
-            const result = document.createElement('p');
-            result.className = 'context-rig-inspector-result';
-            result.hidden = true;
-            result.setAttribute('role', 'status');
-            result.setAttribute('aria-live', 'polite');
-            inspector.appendChild(result);
-        }
-
-        if (hasRootPivot) {
-            const hierarchy = this._createContextRigHierarchyElement(projection);
-            if (hierarchy) inspector.appendChild(hierarchy);
-        } else if (hasBendProgress) {
-            const progress = this._createContextRigBendProgressElement(projection);
-            if (progress) inspector.appendChild(progress);
-            if (projection?.status === 'conflict') {
-                const handoff = document.createElement('p');
-                handoff.className = 'context-rig-inspector-handoff';
-                handoff.textContent = 'RIG WORKSPACEで全体PIVOTとMeshの重複を確認してください。';
-                inspector.appendChild(handoff);
-            }
-        } else {
-            const body = document.createElement('p');
-            body.className = 'context-rig-inspector-description';
-            body.textContent = description;
-            inspector.appendChild(body);
-
-            const handoff = document.createElement('p');
-            handoff.className = 'context-rig-inspector-handoff';
-            handoff.textContent = canCreateRootPivot
-                ? (projection?.targetKind === 'folder'
-                    ? 'Folder内の描画範囲中央へ親PIVOTを作ります。'
-                    : '描画範囲中央へ全体PIVOTを作ります。')
-                : (canRegisterTarget
-                    ? (projection?.targetKind === 'raster'
-                    ? '曲げはBONE / Mesh、全体は一枚のまま動かします。'
-                    : '登録後の親子設定はRIG WORKSPACEで行います。')
-                    : '設定はRIG WORKSPACEで行います。');
-            inspector.appendChild(handoff);
-        }
-        return inspector;
-    }
-
-    /**
-     * 選択中CAFとその内部LayerをFlat projectionとして表示する (Phase 9l)
-     */
     createCafReadonlyHeader() {
         const animationTable = window.PopupManager?.get?.('animationTable');
         if (!animationTable || !animationTable.model) return null;
@@ -4331,7 +3930,7 @@ export class LayerPanelRenderer {
 
     /**
      * CAF親見出し（Identityヘッダー）のみを描画する (Phase 9q C案)
-     * Frame Compassの下、Layer本文の親として配置される。RIGビュー時も維持される。
+     * Frame Compassの下、Layer本文の親として配置される。
      */
     createCafContextHeader() {
         const animationTable = window.PopupManager?.get?.('animationTable');

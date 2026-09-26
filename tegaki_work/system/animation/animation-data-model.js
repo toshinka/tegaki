@@ -70,6 +70,7 @@ import {
 } from './raster-bone-skinning.js';
 import { preflightInternalLayerReparent } from './internal-layer-reparent-gate.js';
 import { resolveInternalClippingContract, getInternalFolderRasterDescendants } from './internal-layer-clipping-contract.js';
+import { createClipAssetRigResetPlan } from './rig-reset.js';
 import {
     createAlphaFitRasterBoneSetup,
     getAlphaFitRasterMeshStatus,
@@ -1444,6 +1445,67 @@ export class TimelineModel {
         asset.rigDefinition = validation.value;
         asset.updatedAt = Date.now();
         return { ok: true, changed: true, asset, bone, rigDefinition: validation.value };
+    }
+
+    getClipAssetRigResetPlan(assetId) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found', affectedClipCount: 0, affectedRigKeyCount: 0 };
+        const plan = createClipAssetRigResetPlan(asset, this.getClipInstancesForAsset(assetId));
+        if (!plan.ok) return plan;
+        return {
+            ok: true,
+            assetId,
+            mode: plan.mode,
+            affectedClipCount: plan.affectedClipCount,
+            affectedRigKeyCount: plan.affectedRigKeyCount
+        };
+    }
+
+    resetClipAssetRig(assetId, options = {}) {
+        const asset = this.getClipAsset(assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const plan = createClipAssetRigResetPlan(asset, this.getClipInstancesForAsset(assetId));
+        if (!plan.ok) return plan;
+        if (options.expectedMode && options.expectedMode !== plan.mode) {
+            return { ok: false, reason: 'reset-plan-changed' };
+        }
+
+        const before = {
+            rigDefinition: asset.rigDefinition,
+            meshDefinitions: asset.meshDefinitions,
+            skinBindings: asset.skinBindings,
+            updatedAt: asset.updatedAt,
+            clips: plan.clipUpdates.map(update => ({ clip: update.clip, rigMotion: update.clip.rigMotion }))
+        };
+        const appliedClipUpdates = [];
+        try {
+            asset.rigDefinition = plan.nextRigDefinition;
+            asset.meshDefinitions = plan.nextMeshDefinitions;
+            asset.skinBindings = plan.nextSkinBindings;
+            for (const update of plan.clipUpdates) {
+                const previousRigMotion = update.clip.rigMotion;
+                update.clip.rigMotion = update.rigMotion;
+                appliedClipUpdates.push({ clip: update.clip, rigMotion: previousRigMotion });
+            }
+            asset.updatedAt = Date.now();
+            return {
+                ok: true,
+                changed: true,
+                assetId,
+                mode: plan.mode,
+                affectedClipCount: plan.affectedClipCount,
+                affectedRigKeyCount: plan.affectedRigKeyCount
+            };
+        } catch (error) {
+            asset.rigDefinition = before.rigDefinition;
+            asset.meshDefinitions = before.meshDefinitions;
+            asset.skinBindings = before.skinBindings;
+            asset.updatedAt = before.updatedAt;
+            for (const update of appliedClipUpdates.reverse()) {
+                try { update.clip.rigMotion = update.rigMotion; } catch { /* keep rolling back remaining updates */ }
+            }
+            return { ok: false, reason: 'reset-mutation-failed', error };
+        }
     }
 
     _hasClipAssetPartMotion(assetId) {

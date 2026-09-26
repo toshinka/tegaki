@@ -3235,7 +3235,7 @@ export class AnimationTablePopup {
         return true;
     }
 
-    openInternalRasterRigSetupFromExternal(assetId, layerId, options = {}) {
+    _resolveInternalRasterRigSetupTarget(assetId, layerId) {
         const asset = assetId ? this.model.getClipAsset(assetId) : null;
         const layer = asset?.internalLayers?.find(candidate => candidate?.id === layerId) || null;
         if (!asset) return { ok: false, changed: false, reason: 'asset-not-found' };
@@ -3263,9 +3263,17 @@ export class AnimationTablePopup {
             layer.id,
             this.selectedRigBoneId
         );
-        if (!context || context.targetKind !== 'raster') {
+        if (!context || context.targetKind !== 'raster' || context.layer?.id !== layer.id) {
             return { ok: false, changed: false, reason: 'rig-target-context-not-found' };
         }
+
+        return { ok: true, changed: false, reason: null, asset, layer, context };
+    }
+
+    openInternalRasterRigSetupFromExternal(assetId, layerId, options = {}) {
+        const target = this._resolveInternalRasterRigSetupTarget(assetId, layerId);
+        if (!target.ok) return target;
+        const { asset, layer, context } = target;
 
         if (!this.isVisible) {
             this.show();
@@ -3282,7 +3290,7 @@ export class AnimationTablePopup {
             : { ok: false, changed: false, reason: 'rig-inspector-open-failed' };
     }
 
-    openInternalRigidHierarchyFromExternal(assetId, layerId, options = {}) {
+    _resolveInternalRigidHierarchyTarget(assetId, layerId) {
         const asset = assetId ? this.model.getClipAsset(assetId) : null;
         const layer = asset?.internalLayers?.find(candidate => candidate?.id === layerId) || null;
         if (!asset) return { ok: false, changed: false, reason: 'asset-not-found' };
@@ -3318,6 +3326,14 @@ export class AnimationTablePopup {
             return { ok: false, changed: false, reason: 'rig-target-context-not-found' };
         }
 
+        return { ok: true, changed: false, reason: null, asset, layer, part, bone, context };
+    }
+
+    openInternalRigidHierarchyFromExternal(assetId, layerId, options = {}) {
+        const target = this._resolveInternalRigidHierarchyTarget(assetId, layerId);
+        if (!target.ok) return target;
+        const { asset, layer, part, bone, context } = target;
+
         if (!this.isVisible) {
             this.show();
             if (!this.isVisible) {
@@ -3331,6 +3347,61 @@ export class AnimationTablePopup {
         return opened
             ? { ok: true, changed: false, reason: null, asset, layer, part, bone, source: options.source || 'unknown' }
             : { ok: false, changed: false, reason: 'rig-inspector-open-failed' };
+    }
+
+    /**
+     * Layer fallback is available only when the current RIG inspection rejects
+     * the selected structure and one of the existing legacy Workspace routes
+     * can resolve that exact target. The UI owns no compatibility list.
+     */
+    getRigLensLegacyFallbackTarget(assetId, layerId) {
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const asset = assetId ? this.model.getClipAsset(assetId) : null;
+        const layer = asset?.internalLayers?.find(candidate => candidate?.id === layerId) || null;
+        if (!entry?.clip || entry.clip.assetId !== assetId || !asset || !layer
+            || this.selectedInternalLayerId !== layerId) {
+            return { ok: false, reason: '選択中のCAF／Layerが変わっています。' };
+        }
+
+        const staticTarget = inspectStaticRigAuthoringTarget(asset, layerId);
+        const partTarget = this.getRigLensPartTarget(assetId);
+        const partLensTarget = layer.type === 'raster'
+            && layer.isBackground !== true
+            && layer.parentLayerId == null
+            && partTarget?.ok === true
+            && partTarget.layers.some(candidate => candidate?.id === layerId)
+            && partTarget.parts.some(candidate => candidate?.partId === layerId);
+        const meshStatus = layer.type === 'raster'
+            ? this.model.getClipAssetRasterMeshStatus?.(assetId, layerId)
+            : null;
+        const deformTarget = layer.type === 'raster'
+            ? inspectStaticRigBindGestureTarget(asset, layerId, { meshStatus })
+            : { ok: false, reason: staticTarget.reason };
+
+        if (staticTarget.ok || deformTarget.ok || partLensTarget) {
+            return { ok: false, reason: '新しいRIG Lensで編集できます。' };
+        }
+
+        const hierarchyTarget = this._resolveInternalRigidHierarchyTarget(assetId, layerId);
+        if (hierarchyTarget.ok) {
+            return {
+                ok: true,
+                route: 'rigid-hierarchy',
+                reason: staticTarget.reason || deformTarget.reason || '既存の親子RIGは新しいRIG Lensで編集できません。'
+            };
+        }
+        const rasterTarget = this._resolveInternalRasterRigSetupTarget(assetId, layerId);
+        if (rasterTarget.ok) {
+            return {
+                ok: true,
+                route: 'raster-setup',
+                reason: staticTarget.reason || deformTarget.reason || '既存のMesh／Weight構造は新しいRIG Lensで編集できません。'
+            };
+        }
+        return {
+            ok: false,
+            reason: staticTarget.reason || deformTarget.reason || hierarchyTarget.reason || rasterTarget.reason || ''
+        };
     }
 
     registerInternalRigPartFromExternal(assetId, layerId, options = {}) {
@@ -3593,6 +3664,115 @@ export class AnimationTablePopup {
             frame: this.model.playback.currentFrame,
             staticSetupAllowed,
             staticSetupReason: staticSetupAllowed ? '' : '既存Part Motion KEYがあるため静的Setupを編集できません。'
+        };
+    }
+
+    getRigLensResetPlan(assetId) {
+        const plan = this.model?.getClipAssetRigResetPlan?.(assetId);
+        if (!plan?.ok) return plan || {
+            ok: false, reason: 'RIG設定を確認できません。',
+            affectedClipCount: 0, affectedRigKeyCount: 0
+        };
+        const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
+        const asset = this.model.getClipAsset(assetId);
+        const selectedLayer = asset?.internalLayers?.find(layer => layer?.id === this.selectedInternalLayerId);
+        if (!entry?.clip || entry.clip.assetId !== assetId || !selectedLayer
+            || selectedLayer.type !== 'raster' || selectedLayer.isBackground === true
+            || selectedLayer.parentLayerId != null) {
+            return { ...plan, ok: false, reason: 'Reset対象のCAF／Rasterが現在の選択と一致しません。' };
+        }
+        if (this.hasRigLensBonePosePreview?.() || this.hasRigLensPartPosePreview?.()
+            || this._rigPivotGesture || this._rigSkinWeightBrushGesture
+            || this._rigMeshVertexEditGesture || this._rigSkinWeightCorrectionActive
+            || this._rigSkinWeightBrushActive || this._rigMeshVertexEditActive) {
+            return { ...plan, ok: false, reason: '未確定のRIG操作を完了または取消してからリセットしてください。' };
+        }
+        if (this.isClipEditModeActive) {
+            return { ...plan, ok: false, reason: 'Clip編集を終了してからRIG設定をリセットしてください。' };
+        }
+        if (this.isPlaying) {
+            return { ...plan, ok: false, reason: '再生中はRIG設定をリセットできません。' };
+        }
+        if (!historyManager || historyManager.isApplying || historyManager.isRecordingSuppressed?.()) {
+            return { ...plan, ok: false, reason: 'Timeline Historyへ記録できない状態です。' };
+        }
+        return plan;
+    }
+
+    resetRigLensSetup(assetId, expectedMode = null) {
+        const plan = this.getRigLensResetPlan(assetId);
+        if (!plan?.ok) return plan || { ok: false, reason: 'RIG設定を確認できません。' };
+        if (expectedMode && expectedMode !== plan.mode) {
+            return { ok: false, reason: 'RIG設定が変わりました。内容を確認してから再実行してください。' };
+        }
+
+        let beforeState;
+        try {
+            beforeState = this._captureTimelineHistoryState();
+        } catch {
+            return { ok: false, reason: 'Timeline History用の復元状態を作成できませんでした。' };
+        }
+        if (!beforeState) return { ok: false, reason: 'Timeline History用の復元状態を作成できませんでした。' };
+
+        const historyStackBefore = historyManager.stack.slice();
+        const historyIndexBefore = historyManager.index;
+        const mutation = this.model.resetClipAssetRig?.(assetId, { expectedMode: plan.mode });
+        if (!mutation?.ok) return mutation || { ok: false, reason: 'RIG設定をリセットできませんでした。' };
+
+        let afterState = null;
+        try {
+            afterState = this._captureTimelineHistoryState();
+        } catch { /* rollback below */ }
+
+        let recorded = false;
+        if (afterState && !historyManager.isApplying && !historyManager.isRecordingSuppressed?.()) {
+            try {
+                recorded = this._recordTimelineHistory(
+                    beforeState,
+                    afterState,
+                    'caf-rig-lens-reset',
+                    {
+                        type: 'caf-rig-lens-reset',
+                        assetId,
+                        rigMode: plan.mode,
+                        source: 'right-workspace-rig-lens'
+                    }
+                ) === true;
+                const command = historyManager.stack[historyManager.index];
+                recorded = recorded && command !== historyStackBefore[historyIndexBefore]
+                    && command?.meta?.historyKind === 'timeline'
+                    && command?.meta?.type === 'caf-rig-lens-reset'
+                    && command?.meta?.assetId === assetId;
+            } catch { /* rollback below */ }
+        }
+
+        if (!recorded) {
+            historyManager.stack.splice(0, historyManager.stack.length, ...historyStackBefore);
+            historyManager.index = historyIndexBefore;
+            let rolledBack = false;
+            try {
+                rolledBack = this._restoreTimelineHistoryState(beforeState) === true;
+            } catch { /* surface both failures to the RIG Lens */ }
+            return {
+                ok: false,
+                reason: rolledBack
+                    ? 'Timeline Historyへ記録できないため、RIG設定を操作前へ戻しました。'
+                    : 'Timeline Historyへ記録できず、操作前への復元も完了できませんでした。',
+                rolledBack
+            };
+        }
+
+        this._invalidateSnapshotTextureCache();
+        this._animationPreviewKey = null;
+        this._applyVisibilityPreview();
+        this.render();
+        this._flushLayerPanelSync();
+        this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+        return {
+            ok: true,
+            mode: mutation.mode,
+            affectedClipCount: mutation.affectedClipCount,
+            affectedRigKeyCount: mutation.affectedRigKeyCount
         };
     }
 

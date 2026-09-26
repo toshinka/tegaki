@@ -54,14 +54,18 @@ assert.match(frame, /rigTreeCollapsedBoneIds = new Set\(\)/u,
     'fold state is runtime-only and separate from Bone hierarchy data');
 assert.match(frame, /rigStructureTreeRestoreFocusId[\s\S]*?activeVariant/u,
     'keyboard focus restoration targets the currently visible tree projection');
-assert.match(frame, /staticBoneEditAllowed\s*&&\s*this\.rigSelectedBoneId === bone\.boneId/u,
-    'only the selected static Bone exposes Bind move and rotation handles');
+assert.match(frame, /getRigLensStaticBindGestureTarget\?\.[\s\S]*?\?\.ok === true/u,
+    'SETUP Bind gestures use the current CAF target permission');
+assert.match(frame, /staticBoneBindDraggable = staticBoneEditAllowed[\s\S]*?staticBoneMoveHandle = staticBoneEditAllowed\s*&& this\.rigSelectedBoneId === bone\.boneId/u,
+    'safe joints move directly while only the selected Bone shows its move affordance');
 assert.match(frame, /const marker = document\.createElementNS\(ns, 'circle'\);[\s\S]*?if \(isStaticRoot\) marker\.classList\.add\('right-workspace-rig-bone-root-marker'\)/u,
     'SETUP Root and Bone joints share the circle marker contract');
-assert.match(frame, /rigPlacementVerifiedBoneIds = new Set\(\)/u,
-    'Canvas placement confirmation remains transient and is not persisted as another model');
-assert.match(frame, /rigBindButton\.disabled = pendingPlacementCount > 0/u,
-    'AUTO Mesh/Skin binding is blocked until every Bone placement is confirmed');
+assert.doesNotMatch(frame, /rigPlacementVerifiedBoneIds|pendingPlacementCount/u,
+    'SETUP does not keep a parallel manual placement-validity model');
+assert.match(frame, /getRigLensStaticTarget\?\.[\s\S]*?allowExistingOtherRasterBindings: true[\s\S]*?bindingTarget\.bones\.length > 0 && !rigTarget\.hasMesh/u,
+    'Binding availability requires a model-valid target, a Bone, and no target Mesh');
+assert.match(frame, /rigBindButton\.disabled = !bindingAvailable/u,
+    'Binding button projects the current model guard result');
 assert.match(frame, /getRigLensStaticEditTarget/u,
     'static structure UI uses the editability guard rather than display-only eligibility');
 assert.match(frame, /子Boneを追加/u, 'RIG lens exposes child Bone placement');
@@ -69,10 +73,10 @@ assert.match(frame, /rigChildButton\.addEventListener\('click',[\s\S]*?_onRigChi
     'the visible child action enters the existing placement mode');
 assert.match(frame, /_onRigChildPlacementClick\(\)[\s\S]*?_armRigPlacement\('child'\)/u,
     'the actual child action handler uses the existing runtime placement state');
-assert.match(frame, /rigView\.dataset\.authoringKind = this\.rigAuthoringKind[\s\S]*?rigView\.dataset\.mode = this\.rigLensMode/u,
-    'existing RIG view state drives the setup/motion surface projection');
-assert.match(frame, /rigLensContent\.append\(structure, properties, this\.rigModeRow\)/u,
-    'one shared phase action follows the target and operation content inside its scroll owner');
+assert.match(frame, /const kindSelected = this\.rigAuthoringKind === 'part' \|\| this\.rigAuthoringKind === 'deform'[\s\S]*?rigPartKindButton\.setAttribute\('aria-pressed', String\(this\.rigAuthoringKind === 'part'\)\)[\s\S]*?rigDeformKindButton\.setAttribute\('aria-pressed', String\(this\.rigAuthoringKind === 'deform'\)\)[\s\S]*?rigView\.dataset\.authoringKind = kindSelected \? this\.rigAuthoringKind : 'none'[\s\S]*?rigView\.dataset\.mode = this\.rigLensMode/u,
+    'RIG selection buttons and view projection expose the explicit unselected state');
+assert.match(frame, /rigLensContent\.append\(\s*structure, properties, this\.rigModeRow, this\.rigKindPrompt, this\.rigResetRegion\s*\)/u,
+    'one shared phase action and the top-level reset region stay inside the existing RIG scroll owner');
 assert.doesNotMatch(frame, /rigSetupButton|rigPoseButton/u,
     'the upper SETUP/MOTION segment is not duplicated');
 assert.match(frame, /MOTIONへ進む →[\s\S]*?← SETUPへ戻る/u,
@@ -85,8 +89,10 @@ assert.match(frame, /_syncRigModeAction\(motionTarget, matchesTarget\)[\s\S]*?ri
     'the next-step action is enabled only for the current resolved target');
 assert.match(frame, /_selectRigLensBone\(bone\.boneId\)/u,
     'Bone list and Canvas selection route through the guarded selector');
-assert.match(frame, /_startRigStaticBoneGesture\(bone, 'move', event\)[\s\S]*?_startRigStaticBoneGesture\(bone, 'rotate', event\)/u,
-    'static Bone head and selected tip handles edit Bind placement and direction');
+assert.match(frame, /staticBoneBindDraggable[\s\S]*?_startRigStaticBoneGesture\(bone, 'move', event\)/u,
+    'a safe SETUP joint starts Bind move directly');
+assert.match(frame, /right-workspace-rig-bind-rotate[\s\S]*?_startRigStaticBoneGesture\(bone, 'rotate', event\)/u,
+    'the selected SETUP Bone rotation arc starts Bind rotate');
 assert.match(frame, /resolveBoneRootHandleDrag[\s\S]*?previewRigLensStaticBoneBind/u,
     'static Bind translation uses the existing Bone drag resolver and setup adapter');
 assert.match(frame, /rigBoneParentSelect\.addEventListener\('change',[\s\S]*?_setRigLensBoneParent/u,
@@ -95,10 +101,19 @@ assert.doesNotMatch(frame, /target\.bones\.length\s*(?:>=|<)\s*3/u,
     'RIG Lens authoring has no former three-Bone UI cap');
 assert.match(frame, /_renderRigPendingPoseRecovery\(target\)[\s\S]*?Poseを取消/u,
     'an explicit cancel remains available if a target changes during a pending Pose');
-const targetChangeGuard = frame.match(/if \(rigTargetKey !== this\.lastRigTargetKey\) \{([\s\S]*?)\n        \}/u)?.[1] || '';
-assert.match(targetChangeGuard, /_hasRigPosePreview\(\)/u,
-    'target changes are held behind the existing pending-Pose guard');
-assert.doesNotMatch(targetChangeGuard, /cancelRigLensBonePosePreview/u,
+assert.match(frame, /_syncActiveRigLensTarget\(target\)[\s\S]*?if \(this\._hasRigPosePreview\(\)\)[\s\S]*?RIG_TARGET_SWITCH_POSE_MESSAGE/u,
+    'active RIG selection changes reuse the existing pending-Pose guard');
+assert.match(frame, /if \(this\.rigPointerGesture \|\| this\.rigStructureDrag\)[\s\S]*?RIG_TARGET_SWITCH_GESTURE_MESSAGE/u,
+    'active pointer and structure gestures defer target replacement');
+assert.match(frame, /_enterRigLens\(\{ sync: false \}\)/u,
+    'a safe valid target change re-enters through the existing RIG entry path');
+assert.match(frame, /_exitRigToLayer\(\{ sync: false \}\)/u,
+    'an invalid target falls back to LAYER through existing navigation');
+assert.doesNotMatch(frame, /対象を確認してからTransformへ戻ってください/u,
+    'RIG target mismatch copy no longer describes Transform as the parent lens');
+const activeTargetSync = frame.match(/_syncActiveRigLensTarget\(target\)[\s\S]*?\n    _returnToTransform\(\)/u)?.[0] || '';
+assert.ok(activeTargetSync, 'active selection synchronization has one bounded implementation');
+assert.doesNotMatch(activeTargetSync, /cancelRigLensBonePosePreview/u,
     'target projection never silently cancels a Bone Pose');
 assert.match(frame, /this\.rigLensStructureTitle\.textContent = isMotion \? 'Bone' : 'Bone \/ Artwork'/u,
     'DEFORM setup combines static structure and artwork status while motion focuses the Bone list');
@@ -182,7 +197,6 @@ const createFrame = () => {
         rigLensMode: 'setup',
         rigLensTarget: { assetId: 'asset', internalLayerId: 'raster' },
         rigSelectedBoneId: 'root',
-        rigPlacementVerifiedBoneIds: new Set(),
         rigPlacementMode: null,
         rigPointerGesture: null,
         rigEntryMessage: '',
@@ -244,5 +258,42 @@ assert.equal(registeredGestures.length, 1, 'pointercancel creates no Bone');
 assert.equal(cancelFrame.rigPointerGesture, null);
 assert.equal(cancelFrame.rigPlacementMode, null);
 assert.equal(cancelEvent.defaultPrevented && cancelEvent.immediateStopped, true);
+
+// Binding uses the selected CAF/Raster model guard and a Bone, without a
+// separate per-Bone placement-confirmation list.
+const bindingCase = (target, generationResult = { ok: true }) => {
+    let generationCalls = 0;
+    const instance = Object.create(RightWorkspaceFrame.prototype);
+    Object.assign(instance, {
+        rigLensActive: true,
+        rigAuthoringKind: 'deform',
+        rigLensMode: 'setup',
+        rigLensTarget: { assetId: 'asset', internalLayerId: 'raster' },
+        rigPointerGesture: null,
+        rigSelectedBoneId: 'root',
+        rigEntryMessage: '',
+        sync() {}
+    });
+    instance._getRigLensTable = () => ({
+        getRigLensStaticTarget: (_assetId, _layerId, options) => options.allowBound
+            ? { ok: true, bones: [{ boneId: 'root', parentBoneId: null }] } : target,
+        generateRigLensArtworkBinding: () => { generationCalls++; return generationResult; },
+        getRigLensMotionTarget: () => ({ ok: true, bone: { boneId: 'root' } })
+    });
+    instance._setRigLensMode = mode => mode === 'motion';
+    return { instance, getGenerationCalls: () => generationCalls };
+};
+const invalidBinding = bindingCase({ ok: false, reason: '既存Bindingと競合します。', bones: [] });
+assert.equal(invalidBinding.instance._bindRigArtwork(), false);
+assert.equal(invalidBinding.getGenerationCalls(), 0, 'invalid model target cannot start Binding');
+assert.equal(invalidBinding.instance.rigEntryMessage, '既存Bindingと競合します。');
+const rootlessBinding = bindingCase({ ok: true, bones: [] });
+assert.equal(rootlessBinding.instance._bindRigArtwork(), false);
+assert.equal(rootlessBinding.getGenerationCalls(), 0, 'a valid target still needs a Root Bone');
+const readyBinding = bindingCase({ ok: true, bones: [{ boneId: 'root', parentBoneId: null }] });
+assert.equal(readyBinding.instance._bindRigArtwork(), true,
+    'a model-valid target with a Bone reaches Binding and Motion without manual confirmation');
+assert.equal(readyBinding.getGenerationCalls(), 1);
+assert.equal('rigPlacementVerifiedBoneIds' in readyBinding.instance, false);
 
 console.log('PASS: Right Workspace RIG lens projection, target guard, static Bone handoff, and Dock-preserving return contracts');

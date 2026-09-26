@@ -1,5 +1,5 @@
 /**
- * Primary Layer / Transform segmented switch contract.
+ * Primary Layer / Transform / Rig segmented switch contract.
  *
  * The switch is presentation-only: Transform's existing show class and V
  * lifecycle remain authoritative, while pending edits are routed to the
@@ -21,6 +21,9 @@ assert.match(frameSource, /querySelector\(':scope > \.right-workspace-mode-switc
     'mount reuses an existing direct child instead of duplicating the switch');
 assert.match(frameSource, /textContent = 'LAYER'/);
 assert.match(frameSource, /textContent = 'TRANSFORM'/);
+assert.match(frameSource, /textContent = 'RIG'/);
+assert.match(frameSource, /_rigModeClickHandler = \(\) => this\._requestWorkspaceMode\('rig'\)/,
+    'the third top-level segment enters the existing RIG lens');
 assert.match(frameSource, /setAttribute\('role', 'group'\)/,
     'segmented switch exposes a grouped button contract');
 
@@ -53,22 +56,24 @@ assert.doesNotMatch(transformStyleSource, /#layer-transform-reset-btn\.is-transf
 assert.doesNotMatch(frameSource, /panel\?\.classList\.(?:add|remove|toggle)\('show'/,
     'the segmented switch never writes Transform visibility state');
 
-for (const projection of [
-    "setAttribute('aria-pressed', String(!active))",
-    "setAttribute('aria-pressed', String(active))"
-]) {
-    assert.ok(frameSource.includes(projection), `state projection includes ${projection}`);
-}
+assert.match(frameSource, /\[this\.layerModeButton, !active\][\s\S]*?\[this\.transformModeButton, surface === 'transform'\][\s\S]*?\[this\.rigModeButton, rigLensVisible\]/,
+    'one active top-level segment follows the projected Layer, Transform or RIG surface');
+assert.match(frameSource, /transformModeButton\.disabled = false[\s\S]*?rigModeButton\.disabled = !rigLensVisible && rigTarget\?\.eligible !== true/,
+    'RIG ownership never disables the top-level Transform navigation');
+assert.match(frameSource, /transformGateNotice\.textContent = transformGateVisible[\s\S]*?transformBlockMessage/,
+    'unsafe Transform targets display the existing R-38 reason inside the lens');
 
 const switchStyle = styleSource.match(
-    /\/\* Primary Layer \/ Transform presentation switch\.[\s\S]*?@media \(pointer: coarse\) \{[\s\S]*?\n\}/u
+    /\/\* Primary Layer \/ Transform \/ Rig navigation\.[\s\S]*?@media \(pointer: coarse\) \{[\s\S]*?\n\}/u
 )?.[0] || '';
 assert.ok(switchStyle, 'primary segmented switch owns a scoped component style block');
-assert.match(switchStyle, /width: min\(178px, 100%\)/,
+assert.match(switchStyle, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/,
+    'the three lenses share one navigation hierarchy');
+assert.match(switchStyle, /width: min\(210px, 100%\)/,
     'compact switch width stays inside the existing content column');
 assert.match(switchStyle, /min-height: 32px/);
 assert.match(switchStyle, /min-height: 26px/);
-assert.match(switchStyle, /font-size: 10px/);
+assert.match(switchStyle, /font-size: 9px/);
 assert.match(switchStyle, /font-weight: 700/);
 assert.match(switchStyle, /border-radius: 999px/);
 assert.match(switchStyle, /background: color-mix\(in srgb, var\(--futaba-background\) 58%, transparent\)/,
@@ -122,4 +127,74 @@ assert.match(mainStyleSource,
     /:root\.animation-table-bottom-dock-active\.right-workspace-transform-active[\s\S]*?--ui-bottom-dock-right: var\(--ui-canvas-right\)/u,
     'Transform keeps its existing context-adaptive Dock geometry');
 
-console.log('verify-right-workspace-layer-transform-switch: single mount, V authority, fixed rail geometry, Dock clearance and pointer ownership OK');
+globalThis.window = globalThis.window || {};
+const { RightWorkspaceFrame } = await import('../ui/right-workspace-frame.js');
+const navigationFrame = (rigActive, canStart) => {
+    const calls = [];
+    const instance = Object.create(RightWorkspaceFrame.prototype);
+    instance.rigLensActive = rigActive;
+    instance.transformLensRequested = false;
+    instance.panel = { classList: { contains: () => false } };
+    instance.layerSystem = { canStartTransformEditSession: () => canStart };
+    instance.sync = () => calls.push('sync');
+    instance._enterRigLens = () => calls.push('enter-rig');
+    instance._exitRigToLayer = options => calls.push(options?.showTransformGate ? 'rig-to-gate' : 'rig-to-layer');
+    instance._returnToTransform = () => calls.push('rig-to-transform');
+    window.KeyboardHandler = { toggleLayerTransform: () => calls.push('enter-transform') };
+    return { instance, calls };
+};
+const fromLayer = navigationFrame(false, true);
+fromLayer.instance._requestWorkspaceMode('rig');
+assert.deepEqual(fromLayer.calls, ['enter-rig'], 'RIG tab delegates once to the existing entry');
+const activeRig = navigationFrame(true, true);
+activeRig.instance._requestWorkspaceMode('rig');
+activeRig.instance._requestWorkspaceMode('transform');
+assert.deepEqual(activeRig.calls, ['rig-to-transform'], 'reselecting RIG cannot double-enter');
+const blockedRig = navigationFrame(true, false);
+blockedRig.instance._requestWorkspaceMode('transform');
+assert.deepEqual(blockedRig.calls, ['rig-to-gate'], 'unsafe target enters the Transform lens without a V session');
+const blockedTransform = navigationFrame(false, false);
+blockedTransform.instance._requestWorkspaceMode('transform');
+assert.deepEqual(blockedTransform.calls, ['sync'], 'R-38 guard prevents starting unsafe Transform');
+assert.equal(blockedTransform.instance.transformLensRequested, true);
+blockedTransform.instance._requestWorkspaceMode('layer');
+assert.equal(blockedTransform.instance.transformLensRequested, false);
+assert.deepEqual(blockedTransform.calls, ['sync', 'sync'], 'the view-only Transform lens returns to Layer');
+const allowedTransform = navigationFrame(false, true);
+allowedTransform.instance._requestWorkspaceMode('transform');
+assert.deepEqual(allowedTransform.calls, ['enter-transform', 'sync'],
+    'valid targets continue through the existing V entry exactly once');
+
+const rigEntryCase = ({ hasMesh = false, parts = [], bones = [], layerCount = 2 } = {}) => {
+    const instance = Object.create(RightWorkspaceFrame.prototype);
+    instance.getTarget = () => ({ rigTarget: {
+        eligible: true, assetId: 'asset', internalLayerId: 'raster', hasMesh
+    } });
+    instance.panel = { classList: { contains: () => false } };
+    instance.layerSystem = { transform: {
+        isVKeyPressed: false, getTransformMode: () => 'basic'
+    } };
+    instance.rigEntryMessageNode = { textContent: '', hidden: true };
+    instance.rigStructureCreatedBoneIds = new Set();
+    instance.rigTreeCollapsedBoneIds = new Set();
+    instance._getRigLensTable = () => ({ getRigLensPartTarget: () => ({
+        layers: Array.from({ length: layerCount }),
+        asset: { rigDefinition: { parts, bones } }
+    }) });
+    instance._resolveRigLensInitialMotionEntry = () => ({ ok: false });
+    instance.sync = () => {};
+    instance.transformLensRequested = true;
+    instance.rigAuthoringKind = 'wrong';
+    assert.equal(instance._enterRigLens(), true);
+    assert.equal(instance.transformLensRequested, false);
+    return instance.rigAuthoringKind;
+};
+assert.equal(rigEntryCase({ parts: [{ partId: 'raster' }], bones: [{ boneId: 'root' }] }), 'part',
+    'existing PART ownership wins over generic Bone presence on re-entry');
+assert.equal(rigEntryCase({ hasMesh: true, parts: [{ partId: 'raster' }] }), 'deform',
+    'an existing target Mesh restores DEFORM');
+assert.equal(rigEntryCase({ bones: [{ boneId: 'root' }] }), 'deform',
+    'an unbound DEFORM Bone structure restores DEFORM');
+assert.equal(rigEntryCase(), 'part', 'a new multi-Raster CAF keeps PART as its initial candidate');
+
+console.log('verify-right-workspace-layer-transform-switch: three lenses, V/RIG authority, guarded navigation, Dock clearance and pointer ownership OK');

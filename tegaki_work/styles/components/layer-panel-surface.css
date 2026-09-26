@@ -164,15 +164,15 @@
     z-index: 1;
 }
 
-/* Primary Layer / Transform presentation switch. The selected capsule follows
-   the existing Transform panel state; this surface never owns edit state. */
+/* Primary Layer / Transform / Rig navigation. The selected capsule projects
+   the existing edit sessions and RIG lens; it never owns their edit state. */
 .right-workspace-frame > .right-workspace-mode-switch {
     grid-area: 1 / 1;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 2px;
     box-sizing: border-box;
-    width: min(178px, 100%);
+    width: min(210px, 100%);
     min-width: 0;
     min-height: 32px;
     padding: 2px;
@@ -189,16 +189,16 @@
 .right-workspace-mode-segment {
     min-width: 0;
     min-height: 26px;
-    padding: 3px 5px;
+    padding: 3px 2px;
     overflow: hidden;
     border: 1px solid transparent;
     border-radius: 999px;
     color: var(--text-secondary);
     background: transparent;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
     line-height: 1;
-    letter-spacing: 0.01em;
+    letter-spacing: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
     cursor: pointer;
@@ -226,6 +226,20 @@
     outline: 2px solid var(--active-border);
     outline-offset: -1px;
 }
+
+.right-workspace-transform-gate {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 8px;
+    border: 1px solid var(--ui-panel-glass-border);
+    border-radius: 9px;
+    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--futaba-background) 70%, transparent);
+    font-size: 11px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+.right-workspace-transform-gate[hidden] { display: none; }
 
 @media (pointer: coarse) {
     .right-workspace-frame > .right-workspace-mode-switch {
@@ -339,16 +353,6 @@
     pointer-events: none;
 }
 .right-workspace-rig-entry[hidden] {
-    display: none;
-}
-.right-workspace-frame > .right-workspace-rig-layer-entry {
-    position: absolute;
-    top: 40px;
-    right: calc(var(--ui-layer-panel-rail-column) + 8px);
-    z-index: 3;
-    pointer-events: auto;
-}
-.right-workspace-frame > .right-workspace-rig-layer-entry[hidden] {
     display: none;
 }
 .right-workspace-rig-entry > button {
@@ -532,6 +536,10 @@
     padding: 4px 2px;
     pointer-events: auto;
 }
+.right-workspace-rig-lens-region[hidden],
+.right-workspace-rig-lens-terminal[hidden] {
+    display: none !important;
+}
 .right-workspace-rig-lens-properties {
     border-top: 1px solid color-mix(in srgb, var(--futaba-maroon) 20%, transparent);
 }
@@ -550,6 +558,61 @@
     font-size: 10px;
     line-height: 1.4;
     overflow-wrap: anywhere;
+}
+.right-workspace-rig-kind-prompt {
+    flex: 0 0 auto;
+    margin: 3px 2px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    line-height: 1.4;
+    pointer-events: none;
+}
+.right-workspace-rig-reset {
+    border-top: 1px solid color-mix(in srgb, var(--futaba-maroon) 16%, transparent);
+}
+.right-workspace-rig-reset-action {
+    justify-self: start;
+    min-height: var(--ui-control-height-s);
+    padding-inline: 7px;
+    border-color: color-mix(in srgb, var(--futaba-maroon) 30%, transparent);
+    color: var(--text-secondary);
+    font-size: 9px;
+}
+.right-workspace-rig-reset-action:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+}
+.right-workspace-rig-reset-confirmation {
+    display: grid;
+    gap: 5px;
+    padding: 5px;
+    border: 1px solid color-mix(in srgb, var(--futaba-maroon) 24%, transparent);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--futaba-cream) 74%, transparent);
+}
+.right-workspace-rig-reset-confirmation[hidden] {
+    display: none;
+}
+.right-workspace-rig-reset-summary {
+    font-weight: 650;
+}
+.right-workspace-rig-reset-status {
+    color: var(--futaba-light-maroon) !important;
+}
+.right-workspace-rig-reset-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+}
+.right-workspace-rig-reset-commit {
+    border-color: color-mix(in srgb, var(--futaba-maroon) 56%, transparent);
+    color: var(--futaba-maroon);
+    font-weight: 700;
+}
+.right-workspace-rig-reset-commit:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
 }
 .right-workspace-rig-lens-properties > div {
     display: flex;
@@ -1440,271 +1503,59 @@
     color: var(--ui-layer-text);
 }
 
-.right-panel .layer-panel-context-view-switch {
+.right-panel .layer-panel-legacy-rig-fallback {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 2px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 3px 6px;
     box-sizing: border-box;
-    padding: 2px;
-    color: var(--ui-layer-text);
-    background: color-mix(in srgb, var(--ui-panel-glass-surface) 72%, transparent);
-    border: 1px solid var(--ui-panel-glass-border);
-    border-radius: var(--ui-radius-control);
-    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
-    backdrop-filter: var(--ui-panel-glass-backdrop);
-}
-
-.right-panel .layer-panel-context-view-button {
-    min-width: 0;
-    min-height: 24px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    padding: 2px 3px;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    color: var(--ui-layer-text);
-    background: transparent;
-    font-size: 8px;
-    font-weight: 800;
-    line-height: 1;
-    cursor: pointer;
-}
-
-.right-panel .layer-panel-context-view-button:hover {
-    background: var(--ui-layer-surface-hover);
-}
-
-.right-panel .layer-panel-context-view-button.is-active,
-.right-panel .layer-panel-context-view-button[aria-pressed="true"] {
-    color: var(--futaba-maroon);
-    background: var(--ui-layer-surface-accent-selected);
-    box-shadow: inset 0 -2px 0 var(--active-border);
-}
-
-.right-panel .layer-panel-context-view-button:focus-visible {
-    outline: 2px solid var(--active-border);
-    outline-offset: -2px;
-}
-
-.right-panel .layer-panel-context-view-button svg {
-    flex: 0 0 auto;
-    stroke: currentColor;
-}
-
-.right-panel .context-rig-inspector {
-    box-sizing: border-box;
-    min-height: 142px;
-    padding: 9px 8px 10px;
-    color: var(--ui-layer-text);
-    background: var(--ui-layer-context-surface);
-    -webkit-backdrop-filter: var(--ui-layer-context-backdrop);
-    backdrop-filter: var(--ui-layer-context-backdrop);
-}
-
-.right-panel .context-rig-inspector-header {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    min-height: 18px;
-    color: var(--futaba-maroon);
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: 0.06em;
-}
-
-.right-panel .context-rig-inspector-icon svg {
-    display: block;
-    stroke: currentColor;
-}
-
-.right-panel .context-rig-inspector-target {
-    margin-top: 8px;
-    overflow: hidden;
-    color: var(--futaba-maroon);
-    font-size: 11px;
-    font-weight: 800;
-    line-height: 1.25;
-    text-overflow: ellipsis;
-}
-
-.right-panel .context-rig-inspector-meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px;
-    margin-top: 5px;
-}
-
-.right-panel .context-rig-inspector-kind,
-.right-panel .context-rig-inspector-status {
-    display: inline-flex;
-    align-items: center;
-    min-height: 16px;
-    box-sizing: border-box;
-    padding: 2px 4px;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    font-size: 8px;
-    font-weight: 800;
-    line-height: 1;
-}
-
-.right-panel .context-rig-inspector-kind {
-    color: var(--ui-layer-text);
-    background: var(--ui-layer-surface-hover);
-}
-
-.right-panel .context-rig-inspector-status {
-    color: var(--deformer-bind-point);
-    border-color: var(--deformer-bind-line);
-    background: color-mix(in srgb, var(--deformer-bind-line) 14%, var(--futaba-cream));
-}
-
-.right-panel .context-rig-inspector-status[data-rig-status="none"] {
-    color: var(--ui-layer-text);
-    border-color: transparent;
-    background: var(--ui-layer-surface-hover);
-}
-
-.right-panel .context-rig-inspector-status[data-rig-status="stale"],
-.right-panel .context-rig-inspector-status[data-rig-status="conflict"] {
-    color: var(--futaba-maroon);
-    border-color: var(--active-border);
-    background: color-mix(in srgb, var(--active-border) 18%, var(--futaba-cream));
-}
-
-.right-panel .context-rig-inspector-description,
-.right-panel .context-rig-inspector-handoff {
-    margin: 7px 0 0;
-    color: var(--ui-layer-text);
-    font-size: 9px;
-    line-height: 1.45;
-}
-
-.right-panel .context-rig-inspector-handoff {
-    opacity: 0.68;
-}
-
-.right-panel .context-rig-method-button {
-    min-height: 26px;
     padding: 4px 6px;
-    border: none;
-    border-radius: 5px;
-    color: var(--deformer-bind-point);
-    background: color-mix(in srgb, var(--deformer-bind-line) 18%, var(--futaba-cream));
-    font-size: 9px;
-    font-weight: 850;
-    line-height: 1.2;
-    cursor: pointer;
-}
-
-.right-panel .context-rig-method-button:hover {
-    background: color-mix(in srgb, var(--deformer-bind-line) 28%, var(--futaba-cream));
-}
-
-.right-panel .context-rig-method-button:focus-visible {
-    outline: 2px solid var(--deformer-bind-point);
-    outline-offset: -2px;
-}
-
-.right-panel .context-rig-method-button:disabled {
-    cursor: default;
-    opacity: var(--ui-opacity-disabled);
-}
-
-.right-panel .context-rig-handoff-button {
-    min-height: 26px;
-    padding: 4px 6px;
-    border: none;
-    border-radius: 5px;
-    color: var(--futaba-maroon);
-    background: var(--ui-layer-surface-hover);
-    font-size: 9px;
-    font-weight: 850;
-    line-height: 1.2;
-    cursor: pointer;
-}
-
-.right-panel .context-rig-handoff-button:hover {
-    background: var(--ui-layer-surface-accent-selected);
-}
-
-.right-panel .context-rig-handoff-button:focus-visible {
-    outline: 2px solid var(--active-border);
-    outline-offset: -2px;
-}
-
-.right-panel .context-rig-handoff-button:disabled {
-    cursor: default;
-    opacity: var(--ui-opacity-disabled);
-}
-
-.right-panel .context-rig-hierarchy,
-.right-panel .context-rig-bend-progress {
-    display: grid;
-    gap: 2px;
-    margin: 6px 0 0;
-    font-size: 8px;
-    line-height: 1.3;
-}
-
-.right-panel .context-rig-hierarchy-row,
-.right-panel .context-rig-bend-progress-row {
-    display: grid;
-    grid-template-columns: 38px minmax(0, 1fr);
-    gap: 4px;
-    align-items: baseline;
-}
-
-.right-panel .context-rig-hierarchy-row dt,
-.right-panel .context-rig-bend-progress-row dt {
     color: var(--ui-layer-text);
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    opacity: 0.68;
+    border-bottom: 1px solid var(--ui-panel-glass-border);
 }
 
-.right-panel .context-rig-hierarchy-row dd,
-.right-panel .context-rig-bend-progress-row dd {
+.right-panel .layer-panel-legacy-rig-fallback-description,
+.right-panel .layer-panel-legacy-rig-fallback-status {
     min-width: 0;
     margin: 0;
-    overflow: hidden;
-    color: var(--futaba-maroon);
-    font-weight: 850;
-    text-overflow: ellipsis;
-    text-wrap: nowrap;
-}
-
-.right-panel .context-rig-inspector-result {
-    margin: 5px 0 0;
-    color: var(--futaba-maroon);
+    color: var(--ui-layer-text);
     font-size: 8px;
-    font-weight: 800;
     line-height: 1.35;
 }
 
-@media (max-width: 620px) {
-    .right-panel .context-rig-inspector-target {
-        margin-top: 0;
-    }
+.right-panel .layer-panel-legacy-rig-fallback-button {
+    min-height: 26px;
+    padding: 3px 7px;
+    border: 1px solid var(--ui-panel-glass-border);
+    border-radius: var(--ui-radius-control);
+    color: var(--futaba-medium);
+    background: var(--ui-layer-surface-hover);
+    font-size: 9px;
+    font-weight: 750;
+    line-height: 1.15;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.right-panel .layer-panel-legacy-rig-fallback-button:hover {
+    color: var(--futaba-maroon);
+    background: var(--ui-layer-surface-accent-selected);
+}
+
+.right-panel .layer-panel-legacy-rig-fallback-button:focus-visible {
+    outline: 2px solid var(--active-border);
+    outline-offset: -2px;
+}
+
+.right-panel .layer-panel-legacy-rig-fallback-status {
+    grid-column: 1 / -1;
+    color: var(--futaba-maroon);
 }
 
 @media (pointer: coarse) {
-    .right-panel .layer-panel-context-view-button {
-        min-height: 38px;
-        font-size: 10px;
-    }
-
-    .right-panel .context-rig-method-button {
+    .right-panel .layer-panel-legacy-rig-fallback-button {
         min-height: 38px;
     }
-
-    .right-panel .context-rig-handoff-button {
-        min-height: 38px;
-    }
-
 }
 
 .right-panel .caf-simple-group {
@@ -1986,8 +1837,7 @@
  * the gaps between cards and the area below the list pass-through without
  * changing the existing delegated Layer/D&D listeners.
  * ------------------------------------------------------------------------- */
-.right-workspace-frame > .layer-panel-container:not(.layer-panel-container--rig-view)
-    > .layer-panel-items,
+.right-workspace-frame > .layer-panel-container > .layer-panel-items,
 .right-workspace-frame:not(.has-transform-workspace) .layer-panel-card-group,
 .right-workspace-frame:not(.has-transform-workspace) .layer-panel-card-list,
 .right-workspace-frame:not(.has-transform-workspace) .caf-simple-header,
@@ -1995,15 +1845,10 @@
     pointer-events: none;
 }
 
-.right-workspace-frame > .layer-panel-container.layer-panel-container--rig-view
-    > .layer-panel-items,
 .right-workspace-frame .layer-panel-card-row,
 .right-workspace-frame .caf-simple-group-title,
 .right-workspace-frame .caf-simple-asset,
-.right-workspace-frame .layer-panel-context-view-switch,
-.right-workspace-frame .layer-panel-context-view-button,
-.right-workspace-frame .context-rig-inspector,
-.right-workspace-frame .context-rig-method-actions,
+.right-workspace-frame .layer-panel-legacy-rig-fallback,
 .right-workspace-frame .layer-controls-row,
 .right-workspace-frame .layer-controls-row > * {
     pointer-events: auto;

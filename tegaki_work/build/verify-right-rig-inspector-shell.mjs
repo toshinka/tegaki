@@ -1,99 +1,57 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [renderer, css, mainCss, domBuilder, phase] = await Promise.all([
+const [renderer, css, mainCss, domBuilder, popup, frame] = await Promise.all([
     readFile(new URL('../ui/layer-panel-renderer.js', import.meta.url), 'utf8'),
     readFile(new URL('../styles/components/layer-panel-surface.css', import.meta.url), 'utf8'),
     readFile(new URL('../styles/main.css', import.meta.url), 'utf8'),
     readFile(new URL('../ui/dom-builder.js', import.meta.url), 'utf8'),
-    readFile(new URL('../../開発用資料保管庫/Archive/phase9n.md', import.meta.url), 'utf8')
+    readFile(new URL('../ui/animation-table-popup.js', import.meta.url), 'utf8'),
+    readFile(new URL('../ui/right-workspace-frame.js', import.meta.url), 'utf8')
 ]);
 
-for (const token of [
-    "this._contextDockView = 'layers'",
-    "nextView === 'rig'",
-    'animationTable.selectedInternalLayerId || null',
-    'createRigAuthoringStatusProjection(asset, targetLayer.id, { meshStatus })',
-    'layer-panel-context-view-switch',
-    "button.type = 'button'",
-    "button.setAttribute('aria-pressed'",
-    "['Enter', ' ', 'Spacebar'].includes(e.key)",
-    '_setContextDockView(button.dataset.layerPanelView)',
-    "inspector.setAttribute('role', 'region')",
-    'context-rig-inspector-target',
-    'context-rig-inspector-status',
-    'RIG WORKSPACE'
-]) {
-    assert.ok(renderer.includes(token), `right RIG shell must include ${token}`);
-}
+const render = renderer.slice(
+    renderer.indexOf('render(layers, activeIndex, animationSystem = null)'),
+    renderer.indexOf('    getDiagnosticsSnapshot() {')
+);
+assert.match(render, /legacyRigFallback\?\.ok === true[\s\S]*?_createLegacyRigFallbackElement/u,
+    'the old route appears only from the selected target fallback projection');
+assert.doesNotMatch(render, /_createContextDockViewSwitch|_createCafRigInspectorElement/u,
+    'Layer no longer renders an ordinary RIG view or switch');
+assert.match(renderer, /getRigLensLegacyFallbackTarget\?\./u,
+    'the fallback click revalidates the selected CAF target');
+assert.match(popup, /inspectStaticRigAuthoringTarget[\s\S]*?inspectStaticRigBindGestureTarget[\s\S]*?_resolveInternalRigidHierarchyTarget[\s\S]*?_resolveInternalRasterRigSetupTarget/u,
+    'fallback eligibility joins existing RIG inspection and legacy route resolvers');
+assert.match(popup, /openInternalRasterRigSetupFromExternal\(assetId, layerId, options = \{\}\)/u,
+    'the legacy Raster Workspace route remains callable');
+assert.match(popup, /openInternalRigidHierarchyFromExternal\(assetId, layerId, options = \{\}\)/u,
+    'the legacy hierarchy Workspace route remains callable');
+assert.match(frame, /textContent = 'RIG'/u,
+    'top-level RIG remains in the primary Layer / Transform / RIG navigation');
+assert.doesNotMatch(frame, /rigLayerEntryButton|right-workspace-rig-layer-entry/u,
+    'the Layer surface has no duplicate RIG primary CTA');
 
-assert.match(
-    renderer,
-    /if \(!rigInspectorContext\) this\._contextDockView = 'layers';[\s\S]*?if \(rigInspectorContext\) \{[\s\S]*?_createContextDockViewSwitch/u,
-    'normal drawing resets the runtime lens and does not expose the switch'
-);
-assert.match(
-    renderer,
-    /_resolveCafRigInspectorContext[\s\S]*?!animationTable\?\.selectedCelId[\s\S]*?findClipEntry\?\.\(animationTable\.selectedCelId\)/u,
-    'RIG context derives from selectedCelId instead of Table visibility'
-);
-assert.doesNotMatch(
-    renderer,
-    /_rigSelected(?:Asset|Layer|Clip)|localStorage|sessionStorage/u,
-    'Stage B must not create a second target selection or saved view state'
-);
-assert.doesNotMatch(
-    renderer,
-    /Animation TableのRIG設定/u,
-    'right RIG handoff copy must name the single RIG WORKSPACE host'
-);
-
-for (const token of [
-    '.right-panel .layer-panel-context-view-switch',
-    '.right-panel .layer-panel-context-view-button.is-active',
-    'box-shadow: inset 0 -2px 0 var(--active-border)',
-    '.right-panel .context-rig-inspector',
-    '.right-panel .context-rig-inspector-status[data-rig-status="stale"]',
-    '@media (pointer: coarse)',
-    'min-height: 38px'
-]) {
-    assert.ok(css.includes(token), `right RIG shell CSS must include ${token}`);
-}
-assert.doesNotMatch(
-    mainCss,
-    /layer-panel-container--rig-view[\s\S]{0,160}display:\s*none/u,
-    'RIG view hides the mutation rail without collapsing its footprint'
-);
-for (const token of [
+for (const obsoleteSelector of [
     '.layer-panel-context-view-switch',
-    'position: sticky',
-    '.context-rig-inspector',
-    '.layer-panel-container.layer-panel-container--rig-view .layer-controls-row',
-    'visibility: hidden',
-    'pointer-events: none'
+    '.layer-panel-context-view-button',
+    '.right-workspace-rig-layer-entry'
 ]) {
-    assert.ok(mainCss.includes(token), `right RIG shell geometry must include ${token}`);
+    assert.equal(css.includes(obsoleteSelector), false, `${obsoleteSelector} component styling is retired`);
+    assert.equal(mainCss.includes(obsoleteSelector), false, `${obsoleteSelector} global styling is retired`);
 }
-
+assert.match(css, /\.right-panel \.layer-panel-legacy-rig-fallback-button[\s\S]*?min-height:\s*26px/u,
+    'the fallback receives a compact secondary-action surface');
+assert.doesNotMatch(mainCss, /layer-panel-container--rig-view[\s\S]{0,160}visibility:\s*hidden/u,
+    'Layer mutation controls are no longer hidden by a second RIG view');
 assert.equal(
     (domBuilder.match(/className:\s*'right-panel'/gu) || []).length,
     1,
-    'Stage B keeps one right-panel DOM owner'
+    'the fallback stays inside the existing right-panel DOM owner'
 );
 assert.doesNotMatch(
     domBuilder,
-    /context-rig-inspector|layer-panel-context-view-switch/u,
-    'Stage B stays inside the existing LayerPanelRenderer instead of adding a second DOM owner'
+    /layer-panel-legacy-rig-fallback|layer-panel-context-view-switch/u,
+    'the fallback remains inside LayerPanelRenderer instead of adding a new DOM owner'
 );
 
-for (const token of [
-    'Stage B — read-only RIG Panel shell（checkpoint完了）',
-    'selectedCelId / selectedInternalLayerId',
-    '132px content column',
-    'accessibility treeごと隠す',
-    'Setup青はmutation actionがまだ無いため使わない'
-]) {
-    assert.ok(phase.includes(token), `Phase 9n Stage B contract must include ${token}`);
-}
-
-console.log('verify-right-rig-inspector-shell: one right dock / shared CAF selection / read-only RIG projection / stable rail footprint OK');
+console.log('verify-right-rig-inspector-shell: top-level RIG primary / exact-target legacy escape hatch / one right-panel owner OK');

@@ -304,8 +304,8 @@ assert.match(surface, /right-workspace-rig-part-item:has\(> \.right-workspace-ri
     'the existing Part selection projects one Futaba active outline around the whole card');
 assert.match(frame, /rigKindRow\.hidden = !this\.rigLensActive/u);
 assert.match(frame, /rigPartKindButton\.disabled = !hasPartCandidate/u);
-assert.match(frame, /hasSelectedPart[\s\S]*?rigLayerEntryButton\.hidden/u,
-    'registered Part remains reachable from LAYER when Transform is blocked');
+assert.doesNotMatch(frame, /hasSelectedPart|rigLayerEntryButton|right-workspace-rig-layer-entry/u,
+    'registered Part does not add a duplicate Layer-side RIG primary entry');
 assert.match(frame, /this\.rigPartFrameRow\.hidden = !matchesTarget \|\| !hasLocalFrame/u,
     'RIG Frame row is shown only for the selected target Clip and a valid frame');
 assert.match(frame, /_renderRigPartLens[\s\S]*?authoringKind: 'part'[\s\S]*?frameTarget: partTarget/u,
