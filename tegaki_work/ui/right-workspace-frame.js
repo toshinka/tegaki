@@ -49,6 +49,10 @@ const RIG_BINDING_FAILURE_MESSAGES = Object.freeze({
     'unsupported-render-boundary': 'ClippingまたはFolder WARP／rigid対象のRasterには接続できません。',
     'history-unavailable': 'CAF Historyへ記録できないため、Artworkを接続しませんでした。'
 });
+const RIG_TRANSFORM_BLOCK_MESSAGES = Object.freeze({
+    'mesh-layer-unsupported': 'Mesh/Skin接続済みのRasterは内部TransformやSOURCE変形を使用できません。Clip全体のTransformを選択してください。',
+    'rig-part-layer-unsupported': 'PART所有のLayerは内部TransformやSOURCE変形を使用できません。Clip全体のTransformを選択してください。'
+});
 
 function rigPartOperationMessage(result, fallback) {
     const reason = result?.reason;
@@ -1315,6 +1319,9 @@ export class RightWorkspaceFrame {
         const list = document.createElement('ul');
         list.className = 'right-workspace-rig-bone-selection-list';
         list.setAttribute('role', 'presentation');
+        const bindAdjustment = this._getRigLensTable()?.getRigLensStaticBindGestureTarget?.(
+            this.rigLensTarget?.assetId, this.rigLensTarget?.internalLayerId
+        ) || null;
         bones.forEach(bone => {
             const selected = this.rigSelectedBoneId === bone.boneId;
             const root = bone.parentBoneId == null;
@@ -1332,9 +1339,12 @@ export class RightWorkspaceFrame {
             button.dataset.rigTreeSelect = 'true';
             button.dataset.rigBoneId = bone.boneId;
             const name = bone.name || (root ? 'Root' : 'Bone');
-            const actionLabel = this.layerSystem?.cameraSystem?.isCanvasMoveMode?.()
-                ? 'Canvas移動モードを解除してBind位置を調整'
-                : 'Canvasで関節をドラッグしてBind位置を調整';
+            // Promise only the gesture the current target actually permits.
+            const actionLabel = bindAdjustment?.ok !== true
+                ? `Bind位置は調整できません: ${bindAdjustment?.reason || '対象を確認してください。'}`
+                : this.layerSystem?.cameraSystem?.isCanvasMoveMode?.()
+                    ? 'Canvas移動モードを解除してBind位置を調整'
+                    : 'Canvasで関節をドラッグして移動 · 弧をドラッグして回転';
             button.setAttribute('aria-label', `${name} · ${actionLabel}`);
             button.title = name;
             const glyph = document.createElement('span');
@@ -2140,6 +2150,7 @@ export class RightWorkspaceFrame {
             startClientY: event.clientY,
             startPointer: started.startPointer,
             startTransform: bind,
+            permissionMode: started.permissionMode,
             root: { x: bind.x, y: bind.y },
             startAngle: Math.atan2(
                 started.startPointer.y - bind.y,
@@ -2563,7 +2574,7 @@ export class RightWorkspaceFrame {
             const result = valid
                 ? table?.finishRigLensStaticBoneGesture?.(
                     gesture.assetId, gesture.layerId, gesture.boneId,
-                    gesture.startTransform, gesture.beforeState
+                    gesture.startTransform, gesture.beforeState, gesture.permissionMode
                 )
                 : { ok: false, reason: '対象が変わったためBind位置の編集を取り消しました。' };
             if (!result?.ok) {
@@ -2692,7 +2703,9 @@ export class RightWorkspaceFrame {
                 ? this.rigPointerGesture : null;
             const staticBoneEditAllowed = this.rigAuthoringKind === 'deform'
                 && this.rigLensMode === 'setup'
-                && table?.getRigLensStaticEditTarget?.(ids?.assetId, ids?.internalLayerId)?.ok === true;
+                && table?.getRigLensStaticBindGestureTarget?.(
+                    ids?.assetId, ids?.internalLayerId
+                )?.ok === true;
             const key = JSON.stringify([
                 bones, selectedId, this.rigLensMode, this.rigAuthoringKind, staticBoneEditAllowed,
                 this.rigPartIkEffectorId, this.rigPlacementMode,
@@ -2720,17 +2733,85 @@ export class RightWorkspaceFrame {
                     link.setAttribute('data-child-bone-id', bone.boneId);
                     return [link];
                 }) : [];
+                const svgArcPath = (cx, cy, radius, from, to) => {
+                    const x0 = cx + Math.cos(from) * radius;
+                    const y0 = cy + Math.sin(from) * radius;
+                    const x1 = cx + Math.cos(to) * radius;
+                    const y1 = cy + Math.sin(to) * radius;
+                    const large = Math.abs(to - from) > Math.PI ? 1 : 0;
+                    const sweep = to > from ? 1 : 0;
+                    return `M${x0} ${y0} A${radius} ${radius} 0 ${large} ${sweep} ${x1} ${y1}`;
+                };
+                // Short chevrons at both arc ends communicate "swing around this pivot".
+                const svgArcArrowPath = (cx, cy, radius, from, to, size = 3.5) => [from, to]
+                    .map((angle, index) => {
+                        const direction = index === 0 ? -1 : 1;
+                        const x = cx + Math.cos(angle) * radius;
+                        const y = cy + Math.sin(angle) * radius;
+                        const tx = -Math.sin(angle) * direction;
+                        const ty = Math.cos(angle) * direction;
+                        const nx = Math.cos(angle);
+                        const ny = Math.sin(angle);
+                        const bx = x - tx * size;
+                        const by = y - ty * size;
+                        return `M${bx + nx * size * 0.8} ${by + ny * size * 0.8}L${x} ${y}`
+                            + `L${bx - nx * size * 0.8} ${by - ny * size * 0.8}`;
+                    }).join(' ');
+                const boneAngle = bone => Math.atan2(bone.tail.y - bone.head.y, bone.tail.x - bone.head.x);
+                const setLayer = (node, layer) => {
+                    node.setAttribute('data-rig-layer', String(layer));
+                    return node;
+                };
+                const makeRotateAffordance = (bone, {
+                    radius, halfSpan, className, label, onPointerDown, extraHits = []
+                }) => {
+                    const group = document.createElementNS(ns, 'g');
+                    const angle = Number.isFinite(boneAngle(bone)) ? boneAngle(bone) : 0;
+                    const from = angle - halfSpan;
+                    const to = angle + halfSpan;
+                    group.classList.add('right-workspace-rig-rotate-affordance', className);
+                    group.setAttribute('data-rig-bone-id', bone.boneId || '');
+                    group.setAttribute('data-rig-operation', 'rotate');
+                    group.setAttribute('role', 'button');
+                    group.setAttribute('aria-label', label);
+                    group.setAttribute('title', label);
+                    const hit = document.createElementNS(ns, 'path');
+                    hit.classList.add('right-workspace-rig-rotate-hit');
+                    hit.setAttribute('d', svgArcPath(bone.head.x, bone.head.y, radius, from, to));
+                    const arc = document.createElementNS(ns, 'path');
+                    arc.classList.add('right-workspace-rig-rotate-arc');
+                    arc.setAttribute('d', `${svgArcPath(bone.head.x, bone.head.y, radius, from, to)} `
+                        + svgArcArrowPath(bone.head.x, bone.head.y, radius, from, to));
+                    group.append(...extraHits, hit, arc);
+                    group.addEventListener('pointerdown', event => {
+                        if (event.button !== 0) return;
+                        onPointerDown(event);
+                    });
+                    return group;
+                };
                 const nodes = bones.flatMap(bone => {
                     const line = staticSetup ? null : document.createElementNS(ns, 'line');
+                    const isStaticRoot = this.rigAuthoringKind === 'deform'
+                        && this.rigLensMode === 'setup' && bone.parentBoneId == null;
+                    const partMotionHandle = this.rigAuthoringKind === 'part'
+                        && this.rigLensMode === 'motion';
+                    const boneMotion = this.rigAuthoringKind === 'deform'
+                        && this.rigLensMode === 'motion';
+                    const selectedBoneMotion = boneMotion
+                        && this.rigSelectedBoneId === bone.boneId;
+                    // Every joint on an explicitly safe Bind target is a direct position handle.
+                    const staticBoneBindDraggable = staticBoneEditAllowed;
+                    const staticBoneMoveHandle = staticBoneEditAllowed
+                        && this.rigSelectedBoneId === bone.boneId;
                     if (line) {
                         line.classList.add('right-workspace-rig-bone-line');
+                        line.classList.toggle('is-selected', selectedBoneMotion);
                         line.setAttribute('x1', bone.head.x);
                         line.setAttribute('y1', bone.head.y);
                         line.setAttribute('x2', bone.tail.x);
                         line.setAttribute('y2', bone.tail.y);
+                        setLayer(line, 1);
                     }
-                    const isStaticRoot = this.rigAuthoringKind === 'deform'
-                        && this.rigLensMode === 'setup' && bone.parentBoneId == null;
                     const marker = document.createElementNS(ns, 'circle');
                     marker.classList.add('right-workspace-rig-bone-marker');
                     if (isStaticRoot) marker.classList.add('right-workspace-rig-bone-root-marker');
@@ -2738,18 +2819,12 @@ export class RightWorkspaceFrame {
                     marker.setAttribute('data-rig-bone-id', bone.boneId || '');
                     marker.setAttribute('cx', bone.head.x);
                     marker.setAttribute('cy', bone.head.y);
-                    marker.setAttribute('r', isStaticRoot ? '10' : '9');
+                    marker.setAttribute('r', boneMotion ? '6' : isStaticRoot ? '10' : '9');
                     marker.setAttribute('role', 'button');
-                    const partMotionHandle = this.rigAuthoringKind === 'part'
-                        && this.rigLensMode === 'motion';
-                    const boneMotion = this.rigAuthoringKind === 'deform'
-                        && this.rigLensMode === 'motion';
-                    const selectedBoneMotion = boneMotion
-                        && this.rigSelectedBoneId === bone.boneId;
-                    const staticBoneMoveHandle = staticBoneEditAllowed
-                        && this.rigSelectedBoneId === bone.boneId;
                     marker.classList.toggle('right-workspace-rig-bone-move-handle', staticBoneMoveHandle);
+                    marker.classList.toggle('is-bind-draggable', staticBoneBindDraggable);
                     marker.classList.toggle('right-workspace-rig-part-move-handle', partMotionHandle);
+                    marker.classList.toggle('right-workspace-rig-bone-motion-origin', boneMotion);
                     const isIkTarget = partMotionHandle
                         && this.rigPartIkEffectorId === bone.partId;
                     marker.classList.toggle('right-workspace-rig-part-ik-target', isIkTarget);
@@ -2760,11 +2835,12 @@ export class RightWorkspaceFrame {
                             ? `Part ${bone.partId}を選択、ドラッグして移動`
                         : this.rigAuthoringKind === 'part'
                             ? `Part ${bone.partId}を選択`
-                        : staticBoneMoveHandle
-                                ? `${isStaticRoot ? 'Root' : 'Bone'}「${boneName}」を選択、ドラッグしてBind位置を移動`
+                        : staticBoneBindDraggable
+                                ? `${isStaticRoot ? 'Root' : 'Bone'}「${boneName}」の関節をドラッグしてBind位置を移動`
                                 : `${isStaticRoot ? 'Root' : 'Bone'}「${boneName}」を選択`;
                     marker.setAttribute('aria-label', markerLabel);
                     marker.setAttribute('title', markerLabel);
+                    setLayer(marker, (bone.partId || bone.boneId) === selectedId ? 6 : 5);
                     marker.addEventListener('pointerdown', event => {
                         if (event.button !== 0) return;
                         if (this.rigAuthoringKind === 'part') {
@@ -2782,7 +2858,9 @@ export class RightWorkspaceFrame {
                             if (this.rigSelectedPartId !== bone.partId) this.rigPartIkEffectorId = null;
                             this.rigSelectedPartId = bone.partId;
                         } else {
-                            if (staticBoneMoveHandle
+                            // SETUP: pressing any joint of a safe Bind target starts the move at once;
+                            // a press without movement only selects (no History).
+                            if (staticBoneBindDraggable
                                 && this._startRigStaticBoneGesture(bone, 'move', event)) return;
                             this._selectRigLensBone(bone.boneId);
                             event.preventDefault();
@@ -2793,7 +2871,6 @@ export class RightWorkspaceFrame {
                         event.preventDefault();
                         event.stopPropagation();
                     });
-                    const staticBoneTipHandle = !staticSetup && staticBoneMoveHandle;
                     const label = staticSetup ? (() => {
                         const text = document.createElementNS(ns, 'text');
                         const dx = bone.tail.x - bone.head.x;
@@ -2815,9 +2892,20 @@ export class RightWorkspaceFrame {
                         text.setAttribute('data-rig-bone-name', bone.boneId);
                         text.setAttribute('title', fullName);
                         text.textContent = compactName;
-                        return text;
+                        return setLayer(text, 4);
                     })() : null;
-                    if (staticSetup) return label ? [marker, label] : [marker];
+                    if (staticSetup) {
+                        // Bind rotation is a short arc outside the joint. Its hit band (radius 13-23)
+                        // never overlaps the joint circle, and joints render above it.
+                        const rotate = staticBoneMoveHandle ? setLayer(makeRotateAffordance(bone, {
+                            radius: 18,
+                            halfSpan: 0.9,
+                            className: 'right-workspace-rig-bind-rotate',
+                            label: `${isStaticRoot ? 'Root' : 'Bone'}「${boneName}」の弧をドラッグしてBind方向を回転`,
+                            onPointerDown: event => this._startRigStaticBoneGesture(bone, 'rotate', event)
+                        }), 3) : null;
+                        return [rotate, marker, label].filter(Boolean);
+                    }
                     if (boneMotion) {
                         const joint = document.createElementNS(ns, 'circle');
                         joint.classList.add(
@@ -2827,48 +2915,87 @@ export class RightWorkspaceFrame {
                         joint.classList.toggle('is-selected', selectedBoneMotion);
                         joint.setAttribute('cx', bone.tail.x);
                         joint.setAttribute('cy', bone.tail.y);
-                        joint.setAttribute('r', '5');
+                        joint.setAttribute('r', '4');
                         joint.setAttribute('aria-hidden', 'true');
                         joint.setAttribute('data-rig-bone-id', bone.boneId || '');
-
-                        const handles = selectedBoneMotion ? ['move', 'rotate'].map(operation => {
-                            const group = document.createElementNS(ns, 'g');
-                            const move = operation === 'move';
-                            const point = move
-                                ? { x: bone.head.x - 18, y: bone.head.y - 19 }
-                                : { x: bone.tail.x + 17, y: bone.tail.y + 17 };
-                            const labelText = `${isStaticRoot ? 'Root' : 'Bone'}「${boneName}」を${move ? '移動' : '回転'}`;
-                            group.classList.add(
-                                'right-workspace-rig-motion-handle',
-                                `right-workspace-rig-motion-handle--${operation}`
-                            );
-                            group.setAttribute('transform', `translate(${point.x} ${point.y})`);
-                            group.setAttribute('data-rig-bone-id', bone.boneId || '');
-                            group.setAttribute('data-rig-operation', operation);
-                            group.setAttribute('role', 'button');
-                            group.setAttribute('aria-label', labelText);
-                            group.setAttribute('title', labelText);
-
-                            const hit = document.createElementNS(ns, 'circle');
-                            hit.classList.add('right-workspace-rig-motion-handle-hit');
-                            hit.setAttribute('cx', '0');
-                            hit.setAttribute('cy', '0');
-                            hit.setAttribute('r', '12');
-                            const glyph = document.createElementNS(ns, 'path');
-                            glyph.classList.add('right-workspace-rig-motion-handle-glyph');
-                            glyph.setAttribute('d', move
-                                ? 'M0 -8V8 M-8 0H8 M0 -8L-3 -4 M0 -8L3 -4 M0 8L-3 4 M0 8L3 4 M-8 0L-4 -3 M-8 0L-4 3 M8 0L4 -3 M8 0L4 3'
-                                : 'M-6 -4 A8 8 0 1 1 -3 7 M-3 7L-7 4 M-3 7L-2 2');
-                            group.append(hit, glyph);
-                            group.addEventListener('pointerdown', event => {
+                        setLayer(joint, 4);
+                        const screenLength = Math.hypot(bone.tail.x - bone.head.x, bone.tail.y - bone.head.y);
+                        const angle = boneAngle(bone);
+                        const bodyStart = Math.min(12, screenLength * 0.4);
+                        const makeBodyHit = () => {
+                            const hit = document.createElementNS(ns, 'line');
+                            hit.classList.add('right-workspace-rig-bone-body-hit');
+                            hit.setAttribute('x1', bone.head.x + Math.cos(angle) * bodyStart);
+                            hit.setAttribute('y1', bone.head.y + Math.sin(angle) * bodyStart);
+                            hit.setAttribute('x2', bone.tail.x);
+                            hit.setAttribute('y2', bone.tail.y);
+                            return hit;
+                        };
+                        const boneLabel = `${isStaticRoot ? 'Root' : 'Bone'}「${boneName}」`;
+                        if (!selectedBoneMotion) {
+                            // Unselected Bones carry no manipulation handle: the body only selects.
+                            const selectHit = makeBodyHit();
+                            selectHit.setAttribute('data-rig-bone-id', bone.boneId || '');
+                            selectHit.setAttribute('aria-label', `${boneLabel}を選択`);
+                            selectHit.addEventListener('pointerdown', event => {
                                 if (event.button !== 0) return;
-                                this._startRigPoseGesture(bone, event, operation);
+                                this._selectRigLensBone(bone.boneId);
+                                event.preventDefault();
+                                event.stopPropagation();
                             });
-                            return group;
-                        }) : [];
-                        return [line, marker, joint, ...handles];
+                            return [line, setLayer(selectHit, 2), marker, joint];
+                        }
+                        // Selected Bone: the body (and the short arc through its tip) rotates around
+                        // the origin; the origin joint moves. No detached buttons.
+                        const bodyHit = makeBodyHit();
+                        bodyHit.classList.add('right-workspace-rig-rotate-hit');
+                        const rotate = makeRotateAffordance(bone, {
+                            extraHits: [bodyHit],
+                            radius: Math.max(16, screenLength),
+                            halfSpan: Math.min(0.5, Math.max(0.08, 13 / Math.max(16, screenLength))),
+                            className: 'right-workspace-rig-motion-handle--rotate',
+                            label: `${boneLabel}を回転`,
+                            onPointerDown: event => this._startRigPoseGesture(bone, event, 'rotate')
+                        });
+                        rotate.classList.add('right-workspace-rig-motion-handle');
+                        const move = document.createElementNS(ns, 'g');
+                        move.classList.add(
+                            'right-workspace-rig-motion-handle',
+                            'right-workspace-rig-motion-handle--move'
+                        );
+                        move.setAttribute('data-rig-bone-id', bone.boneId || '');
+                        move.setAttribute('data-rig-operation', 'move');
+                        move.setAttribute('role', 'button');
+                        move.setAttribute('aria-label', `${boneLabel}を移動`);
+                        move.setAttribute('title', `${boneLabel}を移動`);
+                        const moveHit = document.createElementNS(ns, 'circle');
+                        moveHit.classList.add('right-workspace-rig-move-hit');
+                        moveHit.setAttribute('cx', bone.head.x);
+                        moveHit.setAttribute('cy', bone.head.y);
+                        moveHit.setAttribute('r', '12');
+                        // Four short outward ticks around the origin: a crosshair, not another circle.
+                        const cue = document.createElementNS(ns, 'path');
+                        cue.classList.add('right-workspace-rig-move-cue');
+                        cue.setAttribute('d', [0, 1, 2, 3].map(step => {
+                            const a = step * Math.PI / 2;
+                            const cx = Math.cos(a);
+                            const cy = Math.sin(a);
+                            const x0 = bone.head.x + cx * 9;
+                            const y0 = bone.head.y + cy * 9;
+                            const x1 = bone.head.x + cx * 14;
+                            const y1 = bone.head.y + cy * 14;
+                            return `M${x0} ${y0}L${x1} ${y1}`
+                                + `M${x1 - cx * 2.5 - cy * 2.2} ${y1 - cy * 2.5 + cx * 2.2}L${x1} ${y1}`
+                                + `L${x1 - cx * 2.5 + cy * 2.2} ${y1 - cy * 2.5 - cx * 2.2}`;
+                        }).join(' '));
+                        move.append(moveHit, cue);
+                        move.addEventListener('pointerdown', event => {
+                            if (event.button !== 0) return;
+                            this._startRigPoseGesture(bone, event, 'move');
+                        });
+                        return [line, marker, joint, setLayer(move, 7), setLayer(rotate, 3)];
                     }
-                    if (this.rigLensMode !== 'motion' && !staticBoneTipHandle) {
+                    if (this.rigLensMode !== 'motion') {
                         return label ? [line, marker, label] : [line, marker];
                     }
                     const tip = document.createElementNS(ns, 'circle');
@@ -2879,25 +3006,22 @@ export class RightWorkspaceFrame {
                     tip.setAttribute('cy', bone.tail.y);
                     tip.setAttribute('r', '9');
                     tip.setAttribute('role', 'button');
-                    const tipLabel = this.rigLensMode === 'motion'
-                        ? `${bone.partId || bone.boneId} の先端をドラッグして回転`
-                        : childPlacementActive && bone.boneId === selectedId
-                            ? `「${boneName}」の先端からドラッグして子Boneを追加`
-                            : `「${boneName}」の先端をドラッグしてBind方向を変更`;
+                    const tipLabel = `${bone.partId || bone.boneId} の先端をドラッグして回転`;
                     tip.setAttribute('aria-label', tipLabel);
                     tip.setAttribute('title', tipLabel);
+                    setLayer(tip, tip.classList.contains('is-selected') ? 9 : 8);
                     tip.addEventListener('pointerdown', event => {
                         if (this.rigAuthoringKind === 'part') {
                             this._startRigPartPoseGesture(bone, event);
-                        } else if (this.rigLensMode === 'motion') {
-                            this._startRigPoseGesture(bone, event);
                         } else {
-                            this._startRigStaticBoneGesture(bone, 'rotate', event);
+                            this._startRigPoseGesture(bone, event);
                         }
                     });
-                    return label ? [line, marker, tip, label] : [line, marker, tip];
+                    const visibleLine = line ? [line] : [];
+                    return label
+                        ? [...visibleLine, marker, tip, label]
+                        : [...visibleLine, marker, tip];
                 });
-                const tips = nodes.filter(node => node.classList.contains('right-workspace-rig-bone-tip'));
                 const placementParent = placementGesture?.moved
                     ? bones.find(bone => bone.boneId === placementGesture.parentBoneId)
                     : null;
@@ -2915,11 +3039,15 @@ export class RightWorkspaceFrame {
                     endpoint.setAttribute('r', '5');
                     return [line, endpoint];
                 })() : [];
+                // Paint order is hit precedence: joints above rotation arcs/bodies, the selected
+                // Bone's controls above neighbours. Stable sort keeps Bone order within a layer.
+                const layerOf = node => Number(node.getAttribute?.('data-rig-layer') ?? 5);
                 this.rigOverlay.replaceChildren(
                     ...parentLinks,
-                    ...nodes.filter(node => !tips.includes(node)),
-                    ...tips.filter(node => !node.classList.contains('is-selected')),
-                    ...tips.filter(node => node.classList.contains('is-selected')),
+                    ...nodes
+                        .map((node, index) => ({ node, index, layer: layerOf(node) }))
+                        .sort((left, right) => left.layer - right.layer || left.index - right.index)
+                        .map(entry => entry.node),
                     ...placementPreview
                 );
             }
@@ -2987,6 +3115,10 @@ export class RightWorkspaceFrame {
             : this.rigEntryMessage;
         this.rigLensStructureContent.replaceChildren();
         const staticTarget = matchesTarget ? this._getRigLensEditTarget() : null;
+        const bindGestureTarget = matchesTarget && !isMotion
+            ? this._getRigLensTable()?.getRigLensStaticBindGestureTarget?.(
+                rigTarget.assetId, rigTarget.internalLayerId
+            ) : null;
         const bindingTarget = matchesTarget
             ? this._getRigLensTable()?.getRigLensStaticTarget?.(
                 rigTarget.assetId, rigTarget.internalLayerId, { allowExistingOtherRasterBindings: true }
@@ -3185,6 +3317,12 @@ export class RightWorkspaceFrame {
                     : motionTarget?.ok
                     ? (motionTarget.preview ? '未確定Pose' : 'Poseを調整できます')
                     : motionTarget?.reason || '接続済みBoneを選択してください。')
+                : bindGestureTarget?.mode === 'pre_bind' && bindGestureTarget.ok
+                    ? 'Canvasで関節をdragしてBind位置を調整 · 選択Boneの弧で回転'
+                : bindGestureTarget?.mode === 'safe_rebind' && bindGestureTarget.ok
+                    ? 'AUTO GRID接続済み · 関節と弧で安全にBindを再調整できます'
+                : displayBones.length > 0 && bindGestureTarget?.mode === 'blocked'
+                    ? bindGestureTarget.reason || 'Bind位置を調整できません。'
                 : bindingAvailable
                     ? '選択Rasterの絵をBoneへ接続できます'
                 : !staticTarget?.ok && rigTarget.hasMesh
@@ -3200,13 +3338,13 @@ export class RightWorkspaceFrame {
                             : staticTarget.bones.length === 0
                                 ? 'RootはArtworkの不透明範囲中心へ作成されます'
                                 : this.rigSelectedBoneId
-                                    ? 'Boneの頭をdragして移動、先端をdragして方向を変更'
+                                    ? '関節をdragして移動、関節の外側の弧をdragして回転'
                                     : 'Bone一覧またはCanvas上の頭markerから選択';
         this.rigToolHint.title = isMotion
-            ? '選択Boneの先端をドラッグしてPoseを調整します。PointerUpでKEYへ反映され、Undoで戻せます。'
+            ? '選択Boneの本体か先端の弧をドラッグして回転、関節をドラッグして移動します。PointerUpでKEYへ反映され、Undoで戻せます。'
             : this.rigPlacementMode === 'child'
                 ? `${selectedParentLabel}を親として先端からdragし、子Boneを作成します。Escまたはボタン再押下で取消できます。`
-                : '骨格構造を作成してからCanvas位置を調整します。選択Boneの頭はBind移動、先端は方向変更です。';
+                : '骨格構造を作成してからCanvas位置を調整します。関節はBind移動、選択Boneの外側の弧は回転です。';
         this.rigToolHint.hidden = !isMotion && !this.rigPlacementMode
             && !bindingGuardReason
             && staticTarget?.ok === true
@@ -3714,6 +3852,13 @@ export class RightWorkspaceFrame {
         const active = transformSessionVisible || rigLensVisible;
         const surface = rigLensVisible ? 'rig' : (transformSessionVisible ? 'transform' : 'layer');
         const previousSurface = this.currentSurface || surface;
+        const transformAvailability = this.layerSystem?.getTransformEditStartAvailability?.();
+        const transformBlockMessage = !transformAvailability?.ok
+            ? RIG_TRANSFORM_BLOCK_MESSAGES[transformAvailability?.reason] || '' : '';
+        this.transformModeButton.disabled = !active && !!transformBlockMessage;
+        this.transformModeButton.title = transformBlockMessage;
+        this.transformModeButton.setAttribute('aria-label', transformBlockMessage
+            ? `TRANSFORMを使用できません: ${transformBlockMessage}` : 'TRANSFORM');
         this.layerModeButton?.classList.toggle('is-selected', !active);
         this.layerModeButton?.setAttribute('aria-pressed', String(!active));
         this.transformModeButton?.classList.toggle('is-selected', active);

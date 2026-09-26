@@ -188,20 +188,32 @@ export class LayerSystem {
         return this._transformEditAdapter !== null;
     }
 
-    canStartTransformEditSession() {
+    getTransformEditStartAvailability() {
         const activeLayer = this.getActiveLayer?.();
-        if (!activeLayer?.layerData || activeLayer.layerData.isBackground) return false;
-        if (!this._transformEditAdapter?.canStart) return !this._hasAnimationLayerContext();
+        if (!activeLayer?.layerData || activeLayer.layerData.isBackground) {
+            return { ok: false, reason: 'active-layer-required' };
+        }
+        if (!this._transformEditAdapter?.canStart) {
+            return this._hasAnimationLayerContext()
+                ? { ok: false, reason: 'animation-transform-adapter-required' }
+                : { ok: true };
+        }
         const result = this._transformEditAdapter.canStart({
             layerId: activeLayer.layerData.id,
             isFolder: activeLayer.layerData.isFolder === true
         });
-        if (result?.ok !== true) return false;
+        if (result?.ok !== true) return result || { ok: false, reason: 'transform-target-unavailable' };
         const target = result.transaction?.target;
         if (isTransformTimelineKeyTarget(target)) {
-            return activeLayer.layerData.isAnimationWorkingLayer === true;
+            return activeLayer.layerData.isAnimationWorkingLayer === true
+                ? result : { ok: false, reason: 'clip-working-layer-required' };
         }
-        return target === TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE;
+        return target === TRANSFORM_EDIT_TRANSACTION_TARGET.LAYER_SOURCE
+            ? result : { ok: false, reason: 'transform-target-unavailable' };
+    }
+
+    canStartTransformEditSession() {
+        return this.getTransformEditStartAvailability().ok === true;
     }
 
     getActiveTransformEditTarget() {

@@ -252,7 +252,7 @@ assert.match(workspaceSource, /rigStructureDialogActions\.append\(\s*this\.rigRo
     'Root and child creation remain owned by the structure editor');
 assert.match(workspaceSource, /rigStructureParentHost\.appendChild\(this\.rigBoneParentLabel\)/u,
     'parent editing remains inside the structure editor');
-assert.match(workspaceSource, /const staticBoneTipHandle = !staticSetup\s+&& staticBoneMoveHandle/u,
+assert.match(workspaceSource, /if \(staticSetup\) \{[\s\S]*?return \[rotate, marker, label\]\.filter\(Boolean\);/u,
     'SETUP omits detailed tip hit targets rather than making them transparent');
 assert.match(workspaceSource, /const marker = document\.createElementNS\(ns, 'circle'\)/u,
     'Root joint is a circle, not the detailed Bind diamond');

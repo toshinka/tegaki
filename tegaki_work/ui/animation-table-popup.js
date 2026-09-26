@@ -58,12 +58,15 @@ import {
 } from '../system/transform-math.js';
 import { sampleClipTransform } from '../system/animation/clip-transform-sampler.js';
 import {
+    inspectStaticRigBindAdjustmentTarget,
+    inspectStaticRigBindGestureTarget,
     inspectStaticRigAuthoringTarget,
     planStaticRigBone,
     planStaticRigInitialBoneLayout,
     planStaticRigStructureBone,
     resolveStaticRigRootCenter
 } from '../system/animation/rig-static-authoring.js';
+import { runStaticRigBindRebindTransaction } from '../system/animation/rig-bind-rebind-transaction.js';
 import {
     projectTransformEditContext,
     TRANSFORM_EDIT_AUTHORITY,
@@ -3547,6 +3550,30 @@ export class AnimationTablePopup {
         return target;
     }
 
+    /** Existing-Bone Bind transform edits have their own narrow AUTO GRID rebind permission. */
+    getRigLensStaticBindAdjustmentTarget(assetId, layerId) {
+        const target = this.getRigLensStaticTarget(assetId, layerId, { allowBound: true });
+        if (!target.ok) return target;
+        if (this.isPlaying) {
+            return { ...target, ok: false, reason: '再生中は静的Boneを編集できません。' };
+        }
+        const asset = this.model.getClipAsset(assetId);
+        const meshStatus = this.model.getClipAssetRasterMeshStatus(assetId, layerId);
+        return inspectStaticRigBindAdjustmentTarget(asset, layerId, { meshStatus });
+    }
+
+    /** Initial Setup and connected AUTO GRID rebind share a gesture, not a permission. */
+    getRigLensStaticBindGestureTarget(assetId, layerId) {
+        const target = this.getRigLensStaticTarget(assetId, layerId, { allowBound: true });
+        if (!target.ok) return { ...target, mode: 'blocked' };
+        if (this.isPlaying) {
+            return { ...target, ok: false, mode: 'blocked', reason: '再生中は静的Boneを編集できません。' };
+        }
+        const asset = this.model.getClipAsset(assetId);
+        const meshStatus = this.model.getClipAssetRasterMeshStatus(assetId, layerId);
+        return inspectStaticRigBindGestureTarget(asset, layerId, { meshStatus });
+    }
+
     /** PART Lens は同じ選択CAFの直下Rasterだけを対象にする。 */
     getRigLensPartTarget(assetId) {
         const entry = this.selectedCelId ? this.model.findClipEntry(this.selectedCelId) : null;
@@ -4529,7 +4556,7 @@ export class AnimationTablePopup {
     }
 
     beginRigLensStaticBoneGesture(assetId, layerId, boneId, event) {
-        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+        const target = this.getRigLensStaticBindGestureTarget(assetId, layerId);
         if (!target.ok) return target;
         const bone = target.bones.find(candidate => candidate.boneId === boneId) || null;
         const asset = this.model.getClipAsset(assetId);
@@ -4544,17 +4571,22 @@ export class AnimationTablePopup {
         if (![startPointer?.x, startPointer?.y].every(Number.isFinite)) {
             return { ok: false, reason: 'Canvas上のBone座標を取得できません。' };
         }
+        const beforeState = this._captureInternalLayerHistoryState(asset);
+        if (!beforeState?.asset || beforeState.assetId !== assetId) {
+            return { ok: false, reason: 'CAF Asset History用のgesture前状態を取得できません。' };
+        }
         return {
             ok: true,
             bone,
             startTransform: { ...bone.bindTransform },
             startPointer,
-            beforeState: this._captureInternalLayerHistoryState(asset)
+            beforeState,
+            permissionMode: target.mode
         };
     }
 
     projectRigLensStaticBonePoint(assetId, layerId, boneId, event) {
-        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+        const target = this.getRigLensStaticBindGestureTarget(assetId, layerId);
         if (!target.ok) return null;
         const bone = target.bones.find(candidate => candidate.boneId === boneId) || null;
         const entry = this.model.findClipEntry(this.selectedCelId);
@@ -4567,7 +4599,7 @@ export class AnimationTablePopup {
     }
 
     previewRigLensStaticBoneBind(assetId, layerId, boneId, transform) {
-        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+        const target = this.getRigLensStaticBindGestureTarget(assetId, layerId);
         if (!target.ok) return target;
         const bone = target.bones.find(candidate => candidate.boneId === boneId) || null;
         if (!bone || !['x', 'y', 'rotation'].every(field => Number.isFinite(transform?.[field]))) {
@@ -4579,27 +4611,110 @@ export class AnimationTablePopup {
         return this.model.setClipAssetRigBoneBindTransform(assetId, boneId, transform);
     }
 
-    finishRigLensStaticBoneGesture(assetId, layerId, boneId, startTransform, beforeState) {
-        const target = this.getRigLensStaticEditTarget(assetId, layerId);
+    finishRigLensStaticBoneGesture(assetId, layerId, boneId, startTransform, beforeState, permissionMode) {
+        const target = this.getRigLensStaticBindGestureTarget(assetId, layerId);
         const bone = target?.bones?.find(candidate => candidate.boneId === boneId) || null;
-        if (!target?.ok || !bone || !beforeState || !startTransform) {
+        if (!target?.ok || target.mode !== permissionMode || !bone || !beforeState || !startTransform) {
             return { ok: false, reason: target?.reason || 'Bone編集を確定できません。' };
         }
         const changed = ['x', 'y', 'rotation'].some(field => (
             bone.bindTransform?.[field] !== startTransform[field]
         ));
         if (changed) {
-            const asset = this.model.getClipAsset(assetId);
-            this._recordInternalLayerHistory(asset, beforeState, 'caf-rig-bone-bind-gesture', {
-                type: 'caf-rig-bone-bind-gesture', assetId, layerId, boneId,
-                source: 'right-workspace-rig-lens'
+            if (target.mode === 'pre_bind') {
+                const asset = this.model.getClipAsset(assetId);
+                let afterState = null;
+                try {
+                    afterState = this._captureInternalLayerHistoryState(asset);
+                } catch { /* restore the CAF asset below */ }
+                let recorded = false;
+                if (afterState && historyManager && !historyManager.isApplying
+                    && !historyManager.isRecordingSuppressed?.()) {
+                    const previousCommand = historyManager.stack[historyManager.index];
+                    try {
+                        recorded = this._recordInternalLayerHistoryFromStates(
+                            asset, beforeState, afterState, 'caf-rig-bone-bind-setup', {
+                                type: 'caf-rig-bone-bind-setup', assetId, layerId, boneId,
+                                source: 'right-workspace-rig-lens'
+                            }
+                        ) === true;
+                        const command = historyManager.stack[historyManager.index];
+                        recorded = recorded && command !== previousCommand
+                            && command?.meta?.type === 'caf-rig-bone-bind-setup'
+                            && command?.meta?.assetId === assetId;
+                    } catch { /* restore the CAF asset below */ }
+                }
+                if (!recorded) {
+                    const rolledBack = this._restoreInternalLayerHistoryState(assetId, beforeState);
+                    const reason = rolledBack
+                        ? 'CAF Asset Historyへ記録できないため、Bind編集をgesture前へ戻しました。'
+                        : 'CAF Asset Historyへ記録できず、gesture前への復元も完了できませんでした。';
+                    showFeedbackToast(reason);
+                    return { ok: false, reason, changed: false, rolledBack };
+                }
+                this._invalidateSnapshotTextureCache();
+                this._animationPreviewKey = null;
+                this._applyVisibilityPreview();
+                this.render();
+                this._flushLayerPanelSync();
+                this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+                return { ok: true, changed: true, bone };
+            }
+            const transaction = runStaticRigBindRebindTransaction({
+                regenerate: () => {
+                    const result = this.model.generateClipAssetRasterBoneSetup(
+                        assetId, layerId, { generatorMode: 'alpha-fit-grid' }
+                    );
+                    if (!result.ok) return result;
+                    const refreshedTarget = this.getRigLensStaticBindAdjustmentTarget(assetId, layerId);
+                    return refreshedTarget.ok
+                        ? result
+                        : { ok: false, reason: refreshedTarget.reason };
+                },
+                captureAfterState: () => this._captureInternalLayerHistoryState(
+                    this.model.getClipAsset(assetId)
+                ),
+                recordHistory: afterState => {
+                    if (!historyManager || historyManager.isApplying
+                        || historyManager.isRecordingSuppressed?.()) return false;
+                    const previousIndex = historyManager.index;
+                    const recorded = this._recordInternalLayerHistoryFromStates(
+                        this.model.getClipAsset(assetId), beforeState, afterState,
+                        'caf-rig-bone-bind-rebind', {
+                            type: 'caf-rig-bone-bind-rebind', assetId, layerId, boneId,
+                            generatorMode: 'alpha-fit-grid',
+                            source: 'right-workspace-rig-lens'
+                        }
+                    );
+                    const command = historyManager.stack[historyManager.index];
+                    return recorded === true
+                        && historyManager.index === previousIndex + 1
+                        && command?.meta?.type === 'caf-rig-bone-bind-rebind'
+                        && command?.meta?.assetId === assetId;
+                },
+                rollback: () => this._restoreInternalLayerHistoryState(assetId, beforeState)
             });
+            if (!transaction.ok) {
+                const rollbackNote = transaction.rolledBack
+                    ? '変更をgesture前へ戻しました。'
+                    : 'gesture前への復元も完了できませんでした。';
+                const reason = `${transaction.reason} ${rollbackNote}`;
+                showFeedbackToast(`Bind再生成を中止しました。${reason}`);
+                return { ok: false, reason, changed: false, rolledBack: transaction.rolledBack };
+            }
             this._invalidateSnapshotTextureCache();
             this._animationPreviewKey = null;
             this._applyVisibilityPreview();
             this.render();
             this._flushLayerPanelSync();
             this._scheduleLaneReferencePreviewUpdate({ immediate: true });
+            return {
+                ok: true,
+                changed: true,
+                bone: this.model.getClipAsset(assetId)?.rigDefinition?.bones
+                    ?.find(candidate => candidate.boneId === boneId) || null,
+                regenerationMs: transaction.regenerationMs
+            };
         }
         return { ok: true, changed, bone };
     }
@@ -13045,6 +13160,18 @@ export class AnimationTablePopup {
         const context = this.getTransformEditContext(canonicalLayerId);
         if (context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_LAYER_TRANSFORM_KEY) {
             const check = this.model.preflightClipLayerEffectTarget(context.clipId, context.internalLayerId);
+            if (!check.ok) return { ...check, blocked: true };
+        }
+        if (context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_FOLDER_TRANSFORM_KEY) {
+            const check = this.model.preflightClipFolderTransformTarget(context.clipId, context.folderLayerId);
+            if (!check.ok) return { ...check, blocked: true };
+        }
+        if (context.authority === TRANSFORM_EDIT_AUTHORITY.LAYER_SOURCE
+            && entry?.clip && asset && this.canEditSelectedWorkingLayer(canonicalLayerId)
+            && this.layerSystem?.getActiveLayer?.()?.layerData?.id === canonicalLayerId
+            && this.layerSystem?.getActiveLayer?.()?.layerData?.isAnimationWorkingLayer === true) {
+            const internalLayerId = this._resolveInternalLayerIdForWorkingLayer(asset, canonicalLayerId);
+            const check = this.model.preflightClipRasterSourceTransformTarget(entry.clip.id, internalLayerId);
             if (!check.ok) return { ...check, blocked: true };
         }
         const motionState = context.authority === TRANSFORM_EDIT_AUTHORITY.CLIP_FOLDER_TRANSFORM_KEY

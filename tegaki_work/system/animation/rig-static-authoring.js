@@ -4,6 +4,10 @@
  */
 import { evaluateRigidBones } from './part-rig.js';
 import { applyTransformMatrix, invertTransformMatrixPoint } from '../transform-math.js';
+import { ALPHA_FIT_GRID_GENERATOR } from './raster-bone-auto-setup.js';
+import { FIXED_VERTEX_POSITION_EDIT_MODE } from './raster-mesh-vertex-position-edit.js';
+import { LIMITED_SKIN_CORRECTION_MODE } from './skin-influence-correction.js';
+import { FIXED_TOPOLOGY_SKIN_WEIGHT_BRUSH_MODE } from './skin-weight-brush.js';
 
 const finitePoint = point => Number.isFinite(point?.x) && Number.isFinite(point?.y);
 const STRUCTURE_BONE_LENGTH = 48;
@@ -67,6 +71,62 @@ export function inspectStaticRigAuthoringTarget(asset, layerId, options = {}) {
         return { ok: false, reason: '既存Bone構造を安全に編集できません。', bones: [] };
     }
     return { ok: true, bones };
+}
+
+/**
+ * Existing Bone Bind-position/rotation edits may rebind only one current AUTO GRID Raster.
+ * This operation-specific preflight intentionally does not unlock structure authoring.
+ */
+export function inspectStaticRigBindAdjustmentTarget(asset, layerId, { meshStatus } = {}) {
+    const target = inspectStaticRigAuthoringTarget(asset, layerId, { allowBound: true });
+    if (!target.ok) return target;
+
+    const meshes = Array.isArray(asset.meshDefinitions) ? asset.meshDefinitions : [];
+    if (meshes.length !== 1 || meshes[0]?.targetInternalLayerId !== layerId) {
+        return { ok: false, reason: '対象Rasterだけの単一Meshが必要です。', bones: [] };
+    }
+    const mesh = meshes[0];
+    const generator = mesh.generator;
+    if (generator?.type !== ALPHA_FIT_GRID_GENERATOR
+        || mesh.manual === true || mesh.isManual === true || generator?.manual === true) {
+        return { ok: false, reason: 'AUTO GRID MeshだけBind調整できます。', bones: [] };
+    }
+    if (generator.topologyEditMode === FIXED_VERTEX_POSITION_EDIT_MODE) {
+        return { ok: false, reason: 'Mesh位置編集済みの対象はBind再生成できません。', bones: [] };
+    }
+    if ([LIMITED_SKIN_CORRECTION_MODE, FIXED_TOPOLOGY_SKIN_WEIGHT_BRUSH_MODE]
+        .includes(generator.weightCorrectionMode)) {
+        return { ok: false, reason: 'Weight補正済みの対象はBind再生成できません。', bones: [] };
+    }
+
+    const skinBindings = Array.isArray(asset.skinBindings) ? asset.skinBindings : [];
+    if (skinBindings.length !== 1 || skinBindings[0]?.meshId !== mesh.meshId) {
+        return { ok: false, reason: '対象Meshに対応する単一Skinが必要です。', bones: [] };
+    }
+    if (meshStatus?.state !== 'current' || meshStatus.mesh?.meshId !== mesh.meshId) {
+        return { ok: false, reason: 'AUTO GRID Meshが最新状態ではありません。', bones: [] };
+    }
+    const rootCount = target.bones.filter(bone => bone?.parentBoneId == null).length;
+    if (target.bones.length === 0 || rootCount !== 1) {
+        return { ok: false, reason: '既存contractの単一Rootが必要です。', bones: [] };
+    }
+    return { ...target, mesh, skinBinding: skinBindings[0] };
+}
+
+/** Existing-Bone gestures distinguish initial Setup from the narrow connected rebind route. */
+export function inspectStaticRigBindGestureTarget(asset, layerId, { meshStatus } = {}) {
+    const target = inspectStaticRigAuthoringTarget(asset, layerId, { allowBound: true });
+    if (!target.ok) return { ...target, mode: 'blocked' };
+    if (target.bones.length === 0) {
+        return { ...target, ok: false, mode: 'blocked', reason: '先にRootを作成してください。' };
+    }
+    const meshes = Array.isArray(asset.meshDefinitions) ? asset.meshDefinitions : [];
+    const skins = Array.isArray(asset.skinBindings) ? asset.skinBindings : [];
+    if (meshes.length === 0 && skins.length === 0) {
+        return { ...target, mode: 'pre_bind' };
+    }
+    const rebind = inspectStaticRigBindAdjustmentTarget(asset, layerId, { meshStatus });
+    return { ...rebind, mode: rebind.ok ? 'safe_rebind' : 'blocked' };
 }
 
 export function planStaticRigBone(asset, layerId, { kind, start, end, parentBoneId } = {}) {

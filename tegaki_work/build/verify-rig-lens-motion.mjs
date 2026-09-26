@@ -187,16 +187,22 @@ assert.match(frame,
     /projectRigLensBoneMotionLocalPoint\?\.[\s\S]*?resolveBoneRootHandleDrag/u,
     'Bone Move maps Canvas pointers into the current parent-local frame and reuses x/y Motion');
 assert.match(frame,
-    /const selectedBoneMotion = boneMotion[\s\S]*?selectedBoneMotion \? \['move', 'rotate'\][\s\S]*?data-rig-operation/u,
-    'only the selected DEFORM Bone receives separate Move and Rotate glyphs');
+    /const selectedBoneMotion = boneMotion[\s\S]*?if \(!selectedBoneMotion\)[\s\S]*?right-workspace-rig-motion-handle--rotate[\s\S]*?data-rig-operation', 'move'/u,
+    'only the selected DEFORM Bone receives separate Move and Rotate affordances');
 assert.match(frame, /right-workspace-rig-bone-motion-joint/u,
     'DEFORM Motion retains circular joints without treating them as Move/Rotate handles');
 assert.match(workspaceStyles,
-    /\.right-workspace-rig-motion-handle-glyph[\s\S]*?stroke-linejoin: round/u,
-    'Motion manipulation glyphs use clear stroked SVG paths');
-assert.match(frame,
-    /M0 -8V8 M-8 0H8[\s\S]*?M-6 -4 A8 8 0 1 1 -3 7/u,
-    'Move is directional while Rotate uses a curved arc glyph');
+    /\.right-workspace-rig-rotate-arc,\s*\.right-workspace-rig-move-cue\s*\{[^}]*stroke-linejoin: round[^}]*pointer-events: none/su,
+    'Motion manipulation cues are quiet stroked SVG paths that never own input');
+assert.match(workspaceStyles,
+    /\.right-workspace-rig-rotate-hit\s*\{[^}]*stroke: transparent[^}]*pointer-events: stroke/su,
+    'visual cues stay small while invisible hit geometry stays grabbable');
+assert.doesNotMatch(frame, /right-workspace-rig-motion-handle-hit/u,
+    'Motion no longer draws detached circular Move / Rotate buttons');
+assert.match(frame, /cue\.classList\.add\('right-workspace-rig-move-cue'\)/u,
+    'Move is a crosshair cue on the Bone origin');
+assert.match(frame, /arc\.setAttribute\('d', `\$\{svgArcPath\(bone\.head\.x, bone\.head\.y, radius, from, to\)\}/u,
+    'Rotate is an arc centred on the Bone pivot');
 assert.match(workspaceStyles,
     /\.right-workspace-rig-frame-key-state[\s\S]*?pointer-events: none/u,
     'the KEY diamond is a non-interactive status indicator');

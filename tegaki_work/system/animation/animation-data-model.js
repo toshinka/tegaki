@@ -153,8 +153,10 @@ function hasInternalClippingParticipation(asset, internalLayerId) {
 }
 
 // Shared add/update guard. Explicit removal does not add an effect and bypasses this guard.
-function layerEffectConflictReason(asset, internalLayerId) {
-    if (hasInternalClippingParticipation(asset, internalLayerId)) return 'internal-clipping-unsupported';
+function layerEffectConflictReason(asset, internalLayerId, { ignoreInternalClipping = false } = {}) {
+    if (!ignoreInternalClipping && hasInternalClippingParticipation(asset, internalLayerId)) {
+        return 'internal-clipping-unsupported';
+    }
     if (findOwningRigPartId(asset, internalLayerId)) return 'rig-part-layer-unsupported';
     if (getRasterMeshIdsForInternalLayers(asset.meshDefinitions, new Set([internalLayerId])).length > 0) {
         return 'mesh-layer-unsupported';
@@ -910,6 +912,43 @@ export class TimelineModel {
         return reason ? { ok: false, reason, internalLayerId } : { ok: true };
     }
 
+    /** SOURCE bake keeps its existing non-RIG rules, but cannot rewrite RIG-owned artwork. */
+    preflightClipRasterSourceTransformTarget(clipId, internalLayerId) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+        const asset = this.getClipAsset(entry.clip.assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const layer = asset.internalLayers.find(item => item.id === internalLayerId);
+        if (layer?.type !== 'raster' || layer.isBackground === true) {
+            return { ok: false, reason: 'drawable-raster-required' };
+        }
+        const reason = layerEffectConflictReason(asset, internalLayerId, { ignoreInternalClipping: true });
+        return reason ? { ok: false, reason, internalLayerId } : { ok: true };
+    }
+
+    /** Read-only counterpart of the Folder Transform setter's subtree conflict guard. */
+    preflightClipFolderTransformTarget(clipId, folderLayerId) {
+        const entry = this.findClipEntry(clipId);
+        if (!entry?.clip) return { ok: false, reason: 'clip-not-found' };
+        const asset = this.getClipAsset(entry.clip.assetId);
+        if (!asset) return { ok: false, reason: 'asset-not-found' };
+        const folder = asset.internalLayers.find(layer => layer.id === folderLayerId);
+        if (folder?.type !== 'folder') return { ok: false, reason: 'folder-not-found' };
+        const subtreeIds = [
+            folderLayerId,
+            ...getInternalFolderRasterDescendants(asset, folderLayerId).map(layer => layer.id)
+        ];
+        for (const internalLayerId of subtreeIds) {
+            const reason = layerEffectConflictReason(asset, internalLayerId);
+            if (reason) return { ok: false, reason, folderLayerId, internalLayerId };
+        }
+        if (normalizeClipFolderDeformers(entry.clip.folderDeformers)?.targets
+            ?.some(target => target.folderLayerId === folderLayerId)) {
+            return { ok: false, reason: 'folder-deformer-motion-unsupported', folderLayerId };
+        }
+        return { ok: true };
+    }
+
     setClipLayerTransformTracks(clipId, tracks = []) {
         const entry = this.findClipEntry(clipId);
         if (!entry) return { ok: false, reason: 'clip-not-found' };
@@ -943,20 +982,8 @@ export class TimelineModel {
         }
         for (const track of validation.value) {
             if (!track.keyframes.length) continue;
-            const subtreeIds = [
-                track.folderLayerId,
-                ...getInternalFolderRasterDescendants(asset, track.folderLayerId).map(layer => layer.id)
-            ];
-            for (const internalLayerId of subtreeIds) {
-                const reason = layerEffectConflictReason(asset, internalLayerId);
-                if (reason) {
-                    return { ok: false, reason, folderLayerId: track.folderLayerId, internalLayerId };
-                }
-            }
-            if (normalizeClipFolderDeformers(entry.clip.folderDeformers)?.targets
-                ?.some(target => target.folderLayerId === track.folderLayerId)) {
-                return { ok: false, reason: 'folder-deformer-motion-unsupported', folderLayerId: track.folderLayerId };
-            }
+            const check = this.preflightClipFolderTransformTarget(clipId, track.folderLayerId);
+            if (!check.ok) return check;
         }
         entry.clip.folderTransformTracks = validation.value;
         return { ok: true, lane: entry.lane, clip: entry.clip };

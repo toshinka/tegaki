@@ -21,7 +21,7 @@ assert.match(popupSource, /removeRigLensStaticBone[\s\S]*?caf-rig-bone-remove/u,
 assert.match(frameSource, /allowBound: true[\s\S]*?readOnlyTarget/u,
     'guarded structures can be reopened for read-only inspection');
 assert.match(frameSource, /_renderRigHierarchyCardBoard\(container, bones, \{ readOnly = false \}/u);
-assert.match(frameSource, /const staticBoneTipHandle = !staticSetup && staticBoneMoveHandle/u,
+assert.match(frameSource, /if \(staticSetup\) \{[\s\S]*?return \[rotate, marker, label\]\.filter\(Boolean\);/u,
     'DEFORM SETUP omits tip hit targets rather than only styling them away');
 assert.match(frameSource, /card\.addEventListener\('pointerdown'[\s\S]*?_onRigHierarchyCardPointerDown/u,
     'the whole card body participates in pointer selection and drag initiation');

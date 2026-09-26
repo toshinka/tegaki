@@ -204,9 +204,14 @@
     cursor: pointer;
 }
 
-.right-workspace-mode-segment:hover:not(.is-selected) {
+.right-workspace-mode-segment:hover:not(.is-selected):not(:disabled) {
     color: var(--futaba-maroon);
     background: color-mix(in srgb, var(--futaba-cream) 42%, transparent);
+}
+
+.right-workspace-mode-segment:disabled {
+    color: var(--futaba-medium);
+    cursor: not-allowed;
 }
 
 .right-workspace-mode-segment.is-selected,
@@ -801,40 +806,78 @@
     stroke-width: 2;
     cursor: pointer;
     pointer-events: auto;
+    touch-action: none;
 }
 .right-workspace-rig-bone-marker.is-selected {
     fill: var(--active-border);
+}
+.right-workspace-rig-bone-marker.is-bind-draggable {
+    cursor: move;
+}
+.right-workspace-rig-bone-motion-origin {
+    stroke-width: 1.75;
 }
 .right-workspace-rig-bone-motion-joint {
     stroke-width: 1.5;
     cursor: default;
     pointer-events: none;
 }
+.right-workspace-rig-bone-line.is-selected {
+    stroke: var(--active-border);
+}
+/* Direct-manipulation affordances: small visible glyphs, larger invisible hit geometry. */
+.right-workspace-rig-bone-body-hit,
+.right-workspace-rig-rotate-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 14;
+    stroke-linecap: round;
+    pointer-events: stroke;
+    touch-action: none;
+}
+.right-workspace-rig-bone-body-hit {
+    cursor: pointer;
+}
+.right-workspace-rig-bind-rotate .right-workspace-rig-rotate-hit {
+    stroke-width: 10;
+    stroke-linecap: butt;
+}
+.right-workspace-rig-rotate-affordance,
 .right-workspace-rig-motion-handle {
     cursor: grab;
     pointer-events: auto;
+    touch-action: none;
 }
+.right-workspace-rig-rotate-affordance:active,
 .right-workspace-rig-motion-handle:active {
     cursor: grabbing;
 }
-.right-workspace-rig-motion-handle-hit {
-    fill: var(--futaba-cream);
-    fill-opacity: 0.94;
-    stroke: var(--futaba-maroon);
-    stroke-width: 1.5;
-    pointer-events: all;
+.right-workspace-rig-motion-handle--move {
+    cursor: move;
 }
-.right-workspace-rig-motion-handle-glyph {
+.right-workspace-rig-rotate-arc,
+.right-workspace-rig-move-cue {
     fill: none;
     stroke: var(--futaba-maroon);
-    stroke-width: 2;
+    stroke-width: 1.75;
     stroke-linecap: round;
     stroke-linejoin: round;
+    opacity: 0.55;
     pointer-events: none;
 }
-.right-workspace-rig-motion-handle:hover .right-workspace-rig-motion-handle-hit {
-    fill: var(--active-border);
-    fill-opacity: 0.9;
+.right-workspace-rig-move-hit {
+    fill: transparent;
+    stroke: none;
+    pointer-events: all;
+    touch-action: none;
+}
+.right-workspace-rig-rotate-affordance:hover .right-workspace-rig-rotate-arc,
+.right-workspace-rig-rotate-affordance:active .right-workspace-rig-rotate-arc,
+.right-workspace-rig-motion-handle--move:hover .right-workspace-rig-move-cue,
+.right-workspace-rig-motion-handle--move:active .right-workspace-rig-move-cue {
+    stroke: var(--active-border);
+    stroke-width: 2.25;
+    opacity: 1;
 }
 .right-workspace-rig-part-move-handle {
     cursor: move;
