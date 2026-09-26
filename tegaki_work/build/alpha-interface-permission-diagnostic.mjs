@@ -64,7 +64,7 @@ function lowestCommonAncestor(a, b, parents) {
     return null;
 }
 
-function componentsOfEdges(edges) {
+export function componentsOfEdges(edges) {
     const incidence = new Map();
     for (let i = 0; i < edges.length; i++) {
         for (const endpoint of [edges[i].from, edges[i].to]) {
@@ -90,7 +90,7 @@ function componentsOfEdges(edges) {
     return result.sort((a, b) => a[0].id.localeCompare(b[0].id));
 }
 
-function nearestAlphaDistances(snapshot, alpha, ownershipPixels, seed, pair) {
+export function nearestAlphaDistances(snapshot, alpha, ownershipPixels, seed, pair) {
     const { width, height } = snapshot;
     const costs = new Float64Array(width * height).fill(Infinity);
     const heap = new MinHeap();
@@ -122,7 +122,7 @@ function nearestAlphaDistances(snapshot, alpha, ownershipPixels, seed, pair) {
     return { costs, starts };
 }
 
-function costToEdge(edge, distances, width) {
+export function costToEdge(edge, distances, width) {
     let best = Infinity;
     if (edge.from[0] === edge.to[0]) {
         const x = edge.from[0];
@@ -140,7 +140,7 @@ function costToEdge(edge, distances, width) {
     return best + 0.5;
 }
 
-function allowedCorridor(group, anchor, limit) {
+export function allowedCorridor(group, anchor, limit) {
     const adjacency = new Map();
     for (const edge of group) for (const endpoint of [edge.from, edge.to]) {
         const id = coord(...endpoint);
