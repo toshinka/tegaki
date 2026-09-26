@@ -7,6 +7,8 @@ import {
 } from '../system/animation/raster-bone-auto-setup.js';
 import { evaluateRasterBoneSkinning } from '../system/animation/raster-bone-skinning.js';
 import { deformRasterSnapshotWithSkin } from '../system/animation/raster-skin-render-plan.js';
+import { assertCanonicalRigGeometry, canonicalHumanoidBones, canonicalChainBones,
+    canonicalBranchBones, degreesToRadians } from './verify-rig-canonical-geometry.mjs';
 
 const WIDTH = 200;
 const HEIGHT = 200;
@@ -69,15 +71,6 @@ function bone(boneId, parentBoneId, length, x, y, rotation = 0) {
     };
 }
 
-function humanoidBones() {
-    return [
-        bone('root', null, 0, 20, 100),
-        bone('arm', 'root', 40, 20, 0, 180),
-        bone('head', 'root', 50, 80, -40, -90),
-        bone('leg', 'root', 50, 80, 40, 90)
-    ];
-}
-
 const humanoidRegions = [
     { id: 'arm', x0: 0, y0: 92, x1: 40, y1: 108, channel: 0 },
     { id: 'head', x0: 70, y0: 10, x1: 120, y1: 55, channel: 1 },
@@ -88,7 +81,7 @@ const fixtures = [
     {
         id: 'disconnected-islands',
         expectedAlphaComponents: 3,
-        bones: humanoidBones(),
+        bones: canonicalHumanoidBones(),
         rectangles: [
             { x0: 0, y0: 92, x1: 40, y1: 108, color: 'arm' },
             { x0: 70, y0: 10, x1: 120, y1: 55, color: 'head' },
@@ -101,7 +94,7 @@ const fixtures = [
     {
         id: 'connected-humanoid',
         expectedAlphaComponents: 1,
-        bones: humanoidBones(),
+        bones: canonicalHumanoidBones(),
         rectangles: [
             { x0: 35, y0: 50, x1: 81, y1: 151, color: 'torso' },
             { x0: 0, y0: 92, x1: 40, y1: 108, color: 'arm' },
@@ -115,11 +108,7 @@ const fixtures = [
     {
         id: 'simple-chain',
         expectedAlphaComponents: 1,
-        bones: [
-            bone('root', null, 0, 20, 50),
-            bone('upper', 'root', 80, 0, 0),
-            bone('lower', 'upper', 80, 80, 0)
-        ],
+        bones: canonicalChainBones(),
         rectangles: [
             { x0: 20, y0: 44, x1: 100, y1: 56, color: 'arm' },
             { x0: 100, y0: 44, x1: 180, y1: 56, color: 'head' }
@@ -131,17 +120,12 @@ const fixtures = [
         movingBoneId: 'lower',
         rootBoneId: 'root',
         joint: { x: 100, y: 50, parentBoneId: 'upper', childBoneId: 'lower' },
-        motion: { x: 0, y: 0, rotation: 45 }
+        motion: { x: 0, y: 0, rotation: degreesToRadians(45) }
     },
     {
         id: 'branched-skeleton',
         expectedAlphaComponents: 1,
-        bones: [
-            bone('root', null, 0, 100, 100),
-            bone('left', 'root', 80, 0, 0, 180),
-            bone('right', 'root', 80, 0, 0),
-            bone('center', 'root', 80, 0, 0, -90)
-        ],
+        bones: canonicalBranchBones(),
         rectangles: [
             { x0: 90, y0: 84, x1: 110, y1: 116, color: 'torso' },
             { x0: 20, y0: 92, x1: 101, y1: 108, color: 'torso' },
@@ -468,6 +452,7 @@ const policies = [
 const results = [];
 const fixtureInfo = [];
 for (const fixture of fixtures) {
+    assertCanonicalRigGeometry(fixture.id, fixture.bones, fixture.rectangles);
     const snapshot = makeSnapshot(fixture.id, fixture.rectangles);
     const alphaComponents = countOpaqueComponents(snapshot);
     assert.equal(alphaComponents, fixture.expectedAlphaComponents,
@@ -503,10 +488,10 @@ const currentDisconnected = results.find(row => (
 assert.equal(currentDisconnected.meshVertices, 32);
 assert.equal(currentDisconnected.triangles, 42);
 assert.ok(Math.abs(currentDisconnected.unrelated.find(row => row.id === 'head').pixelCentroidDx
-    - 5.895240317312172) < 1e-6, 'R-43 Head baseline matches');
+    - 5.48062213156553) < 1e-6, 'canonical R-43 Head baseline matches');
 assert.ok(Math.abs(currentDisconnected.unrelated.find(row => row.id === 'leg').pixelCentroidDx
-    - 5.70152413209145) < 1e-6, 'R-43 Leg baseline matches');
-assert.equal(currentDisconnected.movingBonePositiveVertexCount, 27);
+    - 6.23890214797136) < 1e-6, 'canonical R-43 Leg baseline matches');
+assert.equal(currentDisconnected.movingBonePositiveVertexCount, 28);
 
 function benchmarkGenerator(boneCount) {
     const width = 512;
@@ -524,7 +509,7 @@ function benchmarkGenerator(boneCount) {
     const bones = [bone('root', null, 0, 256, 256)];
     for (let index = 1; index < boneCount; index++) {
         bones.push(bone(`branch-${index}`, 'root', 120, 0, 0,
-            Math.round(360 * (index - 1) / (boneCount - 1))));
+            degreesToRadians(360 * (index - 1) / (boneCount - 1))));
     }
     const asset = makeAsset({ id: snapshot.id, bones });
     const parentById = new Map(bones.map(item => [item.boneId, item.parentBoneId]));

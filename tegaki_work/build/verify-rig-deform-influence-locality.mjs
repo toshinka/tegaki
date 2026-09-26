@@ -12,6 +12,7 @@ import {
 import { evaluateRigidBones } from '../system/animation/part-rig.js';
 import { applyTransformMatrix, invertTransformMatrix, multiplyTransformMatrices } from '../system/transform-math.js';
 import { deformRasterSnapshotWithSkin } from '../system/animation/raster-skin-render-plan.js';
+import { assertCanonicalRigGeometry, canonicalHumanoidBones } from './verify-rig-canonical-geometry.mjs';
 
 const WIDTH = 200;
 const HEIGHT = 200;
@@ -28,9 +29,15 @@ function fillRect(x0, y0, x1, y1, rgba) {
 }
 
 // Three separated opaque islands: Arm (left), Head (upper right), Leg (lower right).
-fillRect(0, 92, 40, 108, [255, 0, 0, 255]);
-fillRect(70, 10, 120, 55, [0, 255, 0, 255]);
-fillRect(70, 140, 120, 190, [0, 0, 255, 255]);
+const artworkRegions = [
+    { color: 'arm', x0: 0, y0: 92, x1: 40, y1: 108 },
+    { color: 'head', x0: 70, y0: 10, x1: 120, y1: 55 },
+    { color: 'leg', x0: 70, y0: 140, x1: 120, y1: 190 }
+];
+const regionColor = { arm: [255, 0, 0, 255], head: [0, 255, 0, 255], leg: [0, 0, 255, 255] };
+for (const region of artworkRegions) {
+    fillRect(region.x0, region.y0, region.x1, region.y1, regionColor[region.color]);
+}
 
 const snapshot = {
     id: 'deform-influence-locality-fixture',
@@ -41,33 +48,16 @@ const snapshot = {
     pixels
 };
 
-const unit = { scaleX: 1, scaleY: 1, pivotX: 0, pivotY: 0 };
 const baseAsset = {
     id: 'deform-influence-locality-fixture',
     internalLayers: [{ id: 'art', type: 'raster', parentLayerId: null }],
     rigDefinition: {
         version: 1,
         parts: [],
-        bones: [
-            {
-                boneId: 'root', parentBoneId: null, length: 0,
-                bindTransform: { ...unit, x: 20, y: 100, rotation: 0 }
-            },
-            {
-                boneId: 'arm', parentBoneId: 'root', length: 40,
-                bindTransform: { ...unit, x: 20, y: 0, rotation: 180 }
-            },
-            {
-                boneId: 'head', parentBoneId: 'root', length: 50,
-                bindTransform: { ...unit, x: 80, y: -40, rotation: -90 }
-            },
-            {
-                boneId: 'leg', parentBoneId: 'root', length: 50,
-                bindTransform: { ...unit, x: 80, y: 40, rotation: 90 }
-            }
-        ]
+        bones: canonicalHumanoidBones()
     }
 };
+assertCanonicalRigGeometry('disconnected-islands', baseAsset.rigDefinition.bones, artworkRegions);
 
 const bindAsset = JSON.stringify(baseAsset);
 let nextId = 0;
