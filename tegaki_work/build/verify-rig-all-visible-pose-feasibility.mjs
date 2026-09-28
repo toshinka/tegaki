@@ -12,9 +12,11 @@ import { hashes, hash, systemFor, lpSoft, skinFrom, runPrimary,
     from './verify-rig-pose-envelope-feasibility.mjs';
 import { sourceSupport, proxyAtPose } from './alpha-area-support-diagnostic.mjs';
 import { allVisibleSystemFor } from './all-visible-pose-diagnostic.mjs';
+import { writeCanonicalAvwVisualizer } from './r54-avw-visualizer.mjs';
 
 const lpPath=fileURLToPath(new URL('./junction-pose-feasibility-lp.py',import.meta.url));
 const nlpPath=fileURLToPath(new URL('./junction-pose-envelope-nlp.py',import.meta.url));
+const visualize=process.argv.includes('--visualize');
 const solve=(path,payload)=>{
     const run=spawnSync('python',[path],{input:JSON.stringify(payload),
         encoding:'utf8',maxBuffer:10*1024*1024,timeout:180000});
@@ -270,6 +272,11 @@ else {
                 &&t.targetAlpha>=.85&&r.targetAlpha>=.85
                 &&t.retention>=.85&&r.retention>=.85
                 &&t.overlap===0&&r.overlap===0;
+            if (visualize&&entry.fixture==='branched-skeleton'
+                &&candidate.name==='AVW'&&good) {
+                writeCanonicalAvwVisualizer(p,candidate.skin,{
+                    fingerprint:hashes[entry.fixture],translation:t,rotation:r});
+            }
             const tolerance=1e-9;
             const robustness=minRatio<=100*tolerance?'NUMERICALLY FRAGILE'
                 :minRatio<=1000*tolerance?'MARGINAL':'ROBUST NUMERIC MARGIN';
