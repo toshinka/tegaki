@@ -102,6 +102,99 @@ def solve(payload):
                 alpha_threshold - alpha_values_grad(w)[0])))
         return checks
 
+    def r58_area_run(request):
+        """One diagnostic area search on the existing R-54 variables/poses."""
+        triangle_ids = np.asarray(request['triangleVertices'], dtype=int)
+        area_bind_all = np.asarray(request['bind'], dtype=float)
+        source = np.asarray(request['source'], dtype=float)
+        assert len(triangle_ids) == len(area_bind_all) == len(source)
+        assert np.all(area_bind_all > 0) and np.all(source >= 0)
+        assert abs(np.sum(source) - request['sourceTotal']) < 1e-6
+        whole_coeff = source / area_bind_all / request['sourceTotal']
+        groups = {}
+        for name, indices in request['groups'].items():
+            mask = np.zeros(len(source), dtype=float)
+            mask[np.asarray(indices, dtype=int)] = 1
+            total = float(source @ mask)
+            assert total > 0
+            groups[name] = (total, source * mask / area_bind_all / total)
+        floor = float(request['marginFloor'])
+        baseline = np.asarray(request['baseline'], dtype=float)
+        regional_min = request.get('regionalMin', {})
+
+        def proxy(w):
+            area, jac = area_gradient_for(w, triangle_ids, deltas[:1])
+            return area, jac, float(whole_coeff @ area), whole_coeff @ jac
+
+        def region_values(w):
+            area, _, _, _ = proxy(w)
+            return {name: float(coeff @ area)
+                    for name, (_, coeff) in groups.items()}
+
+        def region_constraint(w):
+            values = region_values(w)
+            return np.asarray([values[name] - threshold
+                               for name, threshold in regional_min.items()])
+
+        def region_jac(w):
+            _, jac, _, _ = proxy(w)
+            return np.asarray([groups[name][1] @ jac
+                               for name in regional_min]).reshape(-1, n)
+
+        def margin_constraint(w):
+            return areas_and_grad(w)[0] - floor * area_bind
+
+        constraints = [
+            {'type': 'eq', 'fun': lambda w: eq_jac[:, :n] @ w - 1,
+             'jac': lambda w: eq_jac[:, :n]},
+            {'type': 'ineq', 'fun': lambda w: dom_jac[:, :n] @ w,
+             'jac': lambda w: dom_jac[:, :n]},
+            {'type': 'ineq', 'fun': margin_constraint,
+             'jac': lambda w: areas_and_grad(w)[1]},
+            {'type': 'ineq',
+             'fun': lambda w: alpha_values_grad(w)[0] - alpha_threshold,
+             'jac': lambda w: alpha_values_grad(w)[1]},
+        ]
+        if regional_min:
+            constraints.append({'type': 'ineq', 'fun': region_constraint,
+                                'jac': region_jac})
+        result = minimize(lambda w: -proxy(w)[2], baseline,
+                          jac=lambda w: -proxy(w)[3], method='SLSQP',
+                          bounds=[(0, 1)] * n, constraints=constraints,
+                          options={'maxiter': 300, 'ftol': 1e-10, 'disp': False})
+        w = result.x
+        area, _, whole, _ = proxy(w)
+        region = region_values(w)
+        pose_area, _ = areas_and_grad(w)
+        checks = dict(simplex=float(np.max(np.abs(np.sum(w[triples], axis=1)-1))),
+                      dominance=float(np.max(np.maximum(0, -dom_jac[:, :n] @ w)))
+                      if len(dominance) else 0.,
+                      bounds=float(max(0, -np.min(w), np.max(w)-1)),
+                      orientation=float(np.max(np.maximum(0,
+                          floor*area_bind-pose_area))),
+                      targetAlpha=float(np.max(np.maximum(0,
+                          alpha_threshold-alpha_values_grad(w)[0]))),
+                      regional=float(np.max(np.maximum(0, -region_constraint(w))))
+                      if regional_min else 0.)
+        return dict(solverSuccess=bool(result.success),
+                    solverStatus=int(result.status), message=str(result.message),
+                    iterations=int(result.nit),
+                    feasible=bool(all(v <= 1e-7 for v in checks.values())),
+                    proxyWhole=whole,
+                    proxyBaseline=proxy(baseline)[2],
+                    regional=region,
+                    regionalSlack={name: region[name]-minimum
+                                   for name, minimum in regional_min.items()},
+                    minimumPoseRatio=float(np.min(pose_area/area_bind)),
+                    alphaProxy=alpha_values_grad(w)[0].tolist(),
+                    activeOrientation=int(np.sum(pose_area/area_bind-floor < 1e-6)),
+                    activeDominance=int(np.sum(dom_jac[:, :n] @ w < 1e-6)),
+                    constraintViolation=checks, weights=w.tolist())
+
+    if payload.get('r58Area'):
+        assert alpha_values_grad is not None
+        return r58_area_run(payload['r58Area'])
+
     def p1_run(label, start):
         initial_m, _, _ = quality(start)
         x0 = np.r_[start, initial_m - 1e-7]

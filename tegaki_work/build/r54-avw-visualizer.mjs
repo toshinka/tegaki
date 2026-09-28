@@ -37,7 +37,7 @@ function htmlFor(data) {
     // The only browser work is presenting the already-rasterized RGBA buffers.
     return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>R-54 BRANCH AVW · Diagnostic Visualizer</title>
+<title>${data.title||'R-54 BRANCH AVW · Diagnostic Visualizer'}</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#eee8dc;color:#352b29;font:14px/1.45 system-ui,sans-serif}
 header{padding:16px 20px;background:#fffaf0;border-bottom:2px solid #800000}
@@ -50,15 +50,15 @@ label{margin-right:16px}footer{padding:10px 20px;font-size:12px;color:#5a4c45}
 @media(max-width:850px){.poses{grid-template-columns:repeat(2,minmax(260px,1fr))}}
 @media(max-width:570px){.poses{grid-template-columns:1fr}}
 </style></head><body>
-<header><h1>R-54 canonical BRANCH AVW · diagnostic only</h1>
-<p>One optimized Weight field. Production CPU mesh skinning and raster deformation. No project data.</p>
+<header><h1>${data.heading||'R-54 canonical BRANCH AVW · diagnostic only'}</h1>
+<p>${data.description||'One optimized Weight field. Production CPU mesh skinning and raster deformation. No project data.'}</p>
 <p class="meta" id="identity"></p></header>
 <main><div class="controls"><label><input id="ghost" type="checkbox"> Neutral reference ghost</label>
 <label><input id="mesh" type="checkbox"> Mesh edges</label></div><section class="poses" id="poses"></section></main>
-<footer>All panels share world coordinates and scale. The lower crop uses the same 65×65 world window around the Junction. Colors are the canonical BRANCH fixture markers.</footer>
+<footer>All panels share world coordinates and scale. The lower crop uses the same ${data.detail?'world':'65×65 world'} window around the Junction. Colors are the canonical BRANCH fixture markers.</footer>
 <script>
 const data=${JSON.stringify(data)};
-const frame=data.frame,detail={x:70,y:70,width:65,height:65};
+const frame=data.frame,detail=${data.detail?JSON.stringify(data.detail):'{x:70,y:70,width:65,height:65}'};
 const decoded=data.states.map(state=>{
   const raw=atob(state.image.rgba),bytes=new Uint8ClampedArray(raw.length);
   for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
@@ -68,7 +68,7 @@ const decoded=data.states.map(state=>{
   return {...state,source};
 });
 document.getElementById('identity').textContent='fixture '+data.fixture+' · topology SHA-256 '+data.topology.fingerprint+
-  ' · '+data.topology.vertices+' vertices / '+data.topology.triangles+' triangles · AVW SHA-256 '+data.avwHash;
+  ' · '+data.topology.vertices+' vertices / '+data.topology.triangles+' triangles · AVW SHA-256 '+data.avwHash${data.apwHash?"+' · APW SHA-256 '+data.apwHash":''};
 const host=document.getElementById('poses');
 for(const state of decoded){
   const card=document.createElement('article');
@@ -158,4 +158,74 @@ export function writeCanonicalAvwVisualizer(p,skin,expected) {
     writeFileSync(outputPath,htmlFor(payload));
     console.error(`R-54 AVW diagnostic visualizer: ${outputPath}`);
     return {outputPath,payload};
+}
+
+// R-59 uses the same CPU raster buffers and browser presentation as R-56.
+export function writeCanonicalWeightComparison(p,avwSkin,apwSkin,expected) {
+    assert.equal(p.fixture.id,'branched-skeleton');
+    assert.equal(hash(p),expected.fingerprint);
+    assert.deepEqual([p.mesh.vertices.length,p.mesh.triangles.length],[61,80]);
+    const output=fileURLToPath(new URL('./r59-avw-apw-comparison.html',import.meta.url));
+    const asset={...p.asset,meshDefinitions:[p.mesh],skinBindings:[avwSkin]};
+    const neutral=evaluateRasterBoneSkinning(asset,null,0);
+    assert.equal(neutral.ok,true);
+    const bindMesh=neutral.resultByMeshId.get(p.mesh.meshId);
+    const bindImage=deformRasterSnapshotWithSkin(p.snapshot,bindMesh);
+    assert.ok(bindImage?.pixels);
+    const targetChannel=p.fixture.regions.find(v=>v.id==='left').channel;
+    const rightChannel=p.fixture.regions.find(v=>v.id==='right').channel;
+    const bindTarget=pixelStats(bindImage,targetChannel);
+    const bindRight=pixelStats(bindImage,rightChannel);
+    const states=[{id:'T0',label:'T0 — Neutral',
+        description:'Shared bind pose / source silhouette',
+        metric:'Canonical bind state',image:renderImage(p,bindMesh),
+        vertices:bindMesh.vertices.map(v=>({x:v.x,y:v.y}))}];
+    const bounds=[bindImage.bounds];
+    for(const [name,skin] of [['AVW',avwSkin],['APW',apwSkin]]) {
+        for(const [id,kind,magnitude,metric] of [
+            ['T60','translation',60,expected[name.toLowerCase()].translation],
+            ['R45','rotation',45,expected[name.toLowerCase()].rotation]]) {
+            const pose=summaryAtPose(p,skin,roleMetadata(p.mesh,p.topology.diagnostic),
+                kind,magnitude);
+            const image=deformRasterSnapshotWithSkin(p.snapshot,pose.posed);
+            assert.ok(image?.pixels);
+            const target=pixelStats(image,targetChannel);
+            const right=pixelStats(image,rightChannel);
+            near(target.marker/bindTarget.marker,metric.targetAlpha,`${name} ${id} target alpha`);
+            near(target.alpha/bindTarget.alpha,metric.wholeAlpha,`${name} ${id} whole alpha`);
+            near(Math.hypot(right.x-bindRight.x,right.y-bindRight.y),
+                metric.remoteRight,`${name} ${id} remote Right`);
+            assert.equal(pose.raster.visibleInversion,metric.inversion);
+            assert.equal(overlapPixelCenters(pose.posed).multiple,metric.overlap);
+            const minimum=Math.min(...pose.areas.filter(v=>v.support!=='transparent-only')
+                .map(v=>v.ratio));
+            near(minimum,metric.minimumVisibleRatio,`${name} ${id} minimum area`);
+            bounds.push(image.bounds);
+            states.push({id:`${name}-${id}`,label:`${name} — ${id}`,
+                description:id==='T60'?'Target left · x +60px':'Target left · +45°',
+                metric:`Target α ${metric.targetAlpha.toFixed(4)} · Whole α ${metric.wholeAlpha.toFixed(4)} · Right ${metric.remoteRight.toFixed(2)}px`,
+                image:renderImage(p,pose.posed),
+                vertices:pose.posed.vertices.map(v=>({x:v.x,y:v.y}))});
+        }
+    }
+    // Keep AVW and APW adjacent at each pose in the comparison grid.
+    states.splice(2,2,states[3],states[2]);
+    const x=Math.floor(Math.min(...bounds.map(v=>v.x)))-10;
+    const y=Math.floor(Math.min(...bounds.map(v=>v.y)))-10;
+    const right=Math.ceil(Math.max(...bounds.map(v=>v.x+v.width)))+10;
+    const bottom=Math.ceil(Math.max(...bounds.map(v=>v.y+v.height)))+10;
+    const skinHash=skin=>createHash('sha256').update(JSON.stringify(skin.vertexWeights))
+        .digest('hex');
+    const payload={title:'R-59 AVW vs APW · Diagnostic Comparison',
+        heading:'R-59 canonical BRANCH · AVW vs APW',
+        description:'Two diagnostic Weight fields. Identical world frame and CPU raster path. No project data.',
+        fixture:p.fixture.id,
+        topology:{fingerprint:expected.fingerprint,vertices:p.mesh.vertices.length,
+            triangles:p.mesh.triangles.length},
+        avwHash:skinHash(avwSkin),apwHash:skinHash(apwSkin),
+        triangles:bindMesh.triangleIndices,
+        frame:{x,y,width:right-x,height:bottom-y},
+        detail:{x:85,y:65,width:85,height:75},states};
+    writeFileSync(output,htmlFor(payload));
+    return {outputPath:output,payload};
 }

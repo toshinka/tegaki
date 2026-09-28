@@ -253,6 +253,8 @@ else {
         const p2=solve(nlpPath,p2Payload).p2;
         report[entry.fixture].stage2.secondary=p2
             ?(({weights,...v})=>v)(p2):null;
+        if (process.argv.includes('--emit-avw')&&entry.fixture==='branched-skeleton')
+            report[entry.fixture].avwWeights=p2?.feasible?p2.weights:null;
         const candidates=[{name:'P1',skin:final.skin,
             solver:final.solved.selected}];
         if (p2?.feasible) candidates.push({name:'AVW',
