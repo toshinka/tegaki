@@ -42,7 +42,7 @@ function htmlFor(data) {
 *{box-sizing:border-box}body{margin:0;background:#eee8dc;color:#352b29;font:14px/1.45 system-ui,sans-serif}
 header{padding:16px 20px;background:#fffaf0;border-bottom:2px solid #800000}
 h1{font-size:20px;margin:0 0 5px}p{margin:3px 0}.meta{font-family:ui-monospace,monospace;font-size:11px;overflow-wrap:anywhere}
-main{padding:16px;max-width:1500px;margin:auto}.controls{margin-bottom:12px}.poses{display:grid;grid-template-columns:repeat(3,minmax(260px,1fr));gap:12px}
+main{padding:16px;max-width:${data.columns===4?1800:1500}px;margin:auto}.controls{margin-bottom:12px}.poses{display:grid;grid-template-columns:repeat(${data.columns||3},minmax(260px,1fr));gap:12px}
 article{background:#fffaf0;border:1px solid #bba99c;padding:12px;min-width:0}h2{font-size:16px;margin:0 0 3px;color:#800000}
 .caption{min-height:2.8em}.image{display:block;width:100%;height:auto;border:1px solid #cbbfb0;background:#fffdf8;image-rendering:pixelated}
 .detail{max-width:260px;margin-top:8px}.metric{font-family:ui-monospace,monospace;font-size:12px;margin-top:8px}
@@ -67,8 +67,8 @@ const decoded=data.states.map(state=>{
   source.getContext('2d').putImageData(new ImageData(bytes,source.width,source.height),0,0);
   return {...state,source};
 });
-document.getElementById('identity').textContent='fixture '+data.fixture+' · topology SHA-256 '+data.topology.fingerprint+
-  ' · '+data.topology.vertices+' vertices / '+data.topology.triangles+' triangles · AVW SHA-256 '+data.avwHash${data.apwHash?"+' · APW SHA-256 '+data.apwHash":''};
+${data.identity?"document.getElementById('identity').textContent=data.identity;":`document.getElementById('identity').textContent='fixture '+data.fixture+' · topology SHA-256 '+data.topology.fingerprint+
+  ' · '+data.topology.vertices+' vertices / '+data.topology.triangles+' triangles · AVW SHA-256 '+data.avwHash${data.apwHash?"+' · APW SHA-256 '+data.apwHash":''}${data.mswHash?"+' · MSW SHA-256 '+data.mswHash":''};`}
 const host=document.getElementById('poses');
 for(const state of decoded){
   const card=document.createElement('article');
@@ -161,11 +161,14 @@ export function writeCanonicalAvwVisualizer(p,skin,expected) {
 }
 
 // R-59 uses the same CPU raster buffers and browser presentation as R-56.
-export function writeCanonicalWeightComparison(p,avwSkin,apwSkin,expected) {
+export function writeCanonicalWeightComparison(p,avwSkin,apwSkin,expected,mswSkin=null) {
     assert.equal(p.fixture.id,'branched-skeleton');
     assert.equal(hash(p),expected.fingerprint);
     assert.deepEqual([p.mesh.vertices.length,p.mesh.triangles.length],[61,80]);
-    const output=fileURLToPath(new URL('./r59-avw-apw-comparison.html',import.meta.url));
+    assert.equal(!!mswSkin,!!expected.msw);
+    const output=fileURLToPath(new URL(mswSkin
+        ?'./r60-avw-apw-msw-comparison.html':'./r59-avw-apw-comparison.html',
+    import.meta.url));
     const asset={...p.asset,meshDefinitions:[p.mesh],skinBindings:[avwSkin]};
     const neutral=evaluateRasterBoneSkinning(asset,null,0);
     assert.equal(neutral.ok,true);
@@ -181,7 +184,9 @@ export function writeCanonicalWeightComparison(p,avwSkin,apwSkin,expected) {
         metric:'Canonical bind state',image:renderImage(p,bindMesh),
         vertices:bindMesh.vertices.map(v=>({x:v.x,y:v.y}))}];
     const bounds=[bindImage.bounds];
-    for(const [name,skin] of [['AVW',avwSkin],['APW',apwSkin]]) {
+    const fields=[['AVW',avwSkin],['APW',apwSkin]];
+    if(mswSkin) fields.push(['MSW',mswSkin]);
+    for(const [name,skin] of fields) {
         for(const [id,kind,magnitude,metric] of [
             ['T60','translation',60,expected[name.toLowerCase()].translation],
             ['R45','rotation',45,expected[name.toLowerCase()].rotation]]) {
@@ -208,22 +213,105 @@ export function writeCanonicalWeightComparison(p,avwSkin,apwSkin,expected) {
                 vertices:pose.posed.vertices.map(v=>({x:v.x,y:v.y}))});
         }
     }
-    // Keep AVW and APW adjacent at each pose in the comparison grid.
-    states.splice(2,2,states[3],states[2]);
+    // Keep each pose's Weight fields adjacent in the comparison grid.
+    const byId=new Map(states.map(state=>[state.id,state]));
+    const order=mswSkin
+        ?['T0','AVW-T60','APW-T60','MSW-T60','AVW-R45','APW-R45','MSW-R45']
+        :['T0','AVW-T60','APW-T60','AVW-R45','APW-R45'];
+    states.splice(0,states.length,...order.map(id=>byId.get(id)));
     const x=Math.floor(Math.min(...bounds.map(v=>v.x)))-10;
     const y=Math.floor(Math.min(...bounds.map(v=>v.y)))-10;
     const right=Math.ceil(Math.max(...bounds.map(v=>v.x+v.width)))+10;
     const bottom=Math.ceil(Math.max(...bounds.map(v=>v.y+v.height)))+10;
     const skinHash=skin=>createHash('sha256').update(JSON.stringify(skin.vertexWeights))
         .digest('hex');
-    const payload={title:'R-59 AVW vs APW · Diagnostic Comparison',
-        heading:'R-59 canonical BRANCH · AVW vs APW',
-        description:'Two diagnostic Weight fields. Identical world frame and CPU raster path. No project data.',
+    const payload={title:mswSkin?'R-60 AVW vs APW vs MSW · Diagnostic Comparison'
+        :'R-59 AVW vs APW · Diagnostic Comparison',
+        heading:mswSkin?'R-60 canonical BRANCH · AVW vs APW vs MSW'
+            :'R-59 canonical BRANCH · AVW vs APW',
+        description:mswSkin
+            ?'Three diagnostic Weight fields. Identical world frame and CPU raster path. No project data.'
+            :'Two diagnostic Weight fields. Identical world frame and CPU raster path. No project data.',
         fixture:p.fixture.id,
         topology:{fingerprint:expected.fingerprint,vertices:p.mesh.vertices.length,
             triangles:p.mesh.triangles.length},
         avwHash:skinHash(avwSkin),apwHash:skinHash(apwSkin),
+        ...(mswSkin?{mswHash:skinHash(mswSkin)}:{}),
         triangles:bindMesh.triangleIndices,
+        frame:{x,y,width:right-x,height:bottom-y},
+        detail:{x:85,y:65,width:85,height:75},
+        ...(mswSkin?{columns:4}:{}),states};
+    writeFileSync(output,htmlFor(payload));
+    return {outputPath:output,payload};
+}
+
+// R-61 keeps the R-60 raster and display path, with two diagnostic fields.
+export function writeCanonicalJunctionBalanceComparison(p,mswSkin,jbwSkin,expected) {
+    assert.equal(p.fixture.id,'branched-skeleton');
+    assert.equal(hash(p),expected.fingerprint);
+    assert.deepEqual([p.mesh.vertices.length,p.mesh.triangles.length],[61,80]);
+    const output=fileURLToPath(new URL('./r61-msw-jbw-comparison.html',import.meta.url));
+    const asset={...p.asset,meshDefinitions:[p.mesh],skinBindings:[mswSkin]};
+    const neutral=evaluateRasterBoneSkinning(asset,null,0);
+    assert.equal(neutral.ok,true);
+    const bindMesh=neutral.resultByMeshId.get(p.mesh.meshId);
+    const bindImage=deformRasterSnapshotWithSkin(p.snapshot,bindMesh);
+    assert.ok(bindImage?.pixels);
+    const targetChannel=p.fixture.regions.find(v=>v.id==='left').channel;
+    const rightChannel=p.fixture.regions.find(v=>v.id==='right').channel;
+    const bindTarget=pixelStats(bindImage,targetChannel);
+    const bindRight=pixelStats(bindImage,rightChannel);
+    const states=[{id:'T0',label:'T0 — Neutral',
+        description:'Shared bind pose / source silhouette',
+        metric:'Canonical bind state',image:renderImage(p,bindMesh),
+        vertices:bindMesh.vertices.map(v=>({x:v.x,y:v.y}))}];
+    const bounds=[bindImage.bounds];
+    for(const [name,skin,metrics] of [
+        ['MSW',mswSkin,expected.msw],['JBW',jbwSkin,expected.jbw]]) {
+        for(const [id,kind,magnitude,metric] of [
+            ['T60','translation',60,metrics.translation],
+            ['R45','rotation',45,metrics.rotation]]) {
+            const pose=summaryAtPose(p,skin,roleMetadata(p.mesh,p.topology.diagnostic),
+                kind,magnitude);
+            const image=deformRasterSnapshotWithSkin(p.snapshot,pose.posed);
+            assert.ok(image?.pixels);
+            const target=pixelStats(image,targetChannel);
+            const right=pixelStats(image,rightChannel);
+            near(target.marker/bindTarget.marker,metric.targetAlpha,`${name} ${id} target alpha`);
+            near(target.alpha/bindTarget.alpha,metric.wholeAlpha,`${name} ${id} whole alpha`);
+            near(Math.hypot(right.x-bindRight.x,right.y-bindRight.y),
+                metric.remoteRight,`${name} ${id} remote Right`);
+            assert.equal(pose.raster.visibleInversion,metric.inversion);
+            assert.equal(overlapPixelCenters(pose.posed).multiple,metric.overlap);
+            const minimum=Math.min(...pose.areas.filter(v=>v.support!=='transparent-only')
+                .map(v=>v.ratio));
+            near(minimum,metric.minimumVisibleRatio,`${name} ${id} minimum area`);
+            bounds.push(image.bounds);
+            states.push({id:`${name}-${id}`,label:`${name} — ${id}`,
+                description:id==='T60'?'Target left · x +60px':'Target left · +45°',
+                metric:`Target α ${metric.targetAlpha.toFixed(4)} · Whole α ${metric.wholeAlpha.toFixed(4)} · Right ${metric.remoteRight.toFixed(2)}px`,
+                image:renderImage(p,pose.posed),
+                vertices:pose.posed.vertices.map(v=>({x:v.x,y:v.y}))});
+        }
+    }
+    const byId=new Map(states.map(state=>[state.id,state]));
+    const order=['T0','MSW-T60','JBW-T60','MSW-R45','JBW-R45'];
+    states.splice(0,states.length,...order.map(id=>byId.get(id)));
+    const x=Math.floor(Math.min(...bounds.map(v=>v.x)))-10;
+    const y=Math.floor(Math.min(...bounds.map(v=>v.y)))-10;
+    const right=Math.ceil(Math.max(...bounds.map(v=>v.x+v.width)))+10;
+    const bottom=Math.ceil(Math.max(...bounds.map(v=>v.y+v.height)))+10;
+    const skinHash=skin=>createHash('sha256').update(JSON.stringify(skin.vertexWeights))
+        .digest('hex');
+    const mswHash=skinHash(mswSkin),jbwHash=skinHash(jbwSkin);
+    const payload={title:'R-61 MSW vs JBW · Diagnostic Comparison',
+        heading:'R-61 canonical BRANCH · MSW vs JBW',
+        description:'Two diagnostic Weight fields. Identical world frame and CPU raster path. No project data.',
+        identity:`fixture ${p.fixture.id} · topology SHA-256 ${expected.fingerprint} · 61 vertices / 80 triangles · MSW SHA-256 ${mswHash} · JBW SHA-256 ${jbwHash}`,
+        fixture:p.fixture.id,
+        topology:{fingerprint:expected.fingerprint,vertices:p.mesh.vertices.length,
+            triangles:p.mesh.triangles.length},
+        mswHash,jbwHash,triangles:bindMesh.triangleIndices,
         frame:{x,y,width:right-x,height:bottom-y},
         detail:{x:85,y:65,width:85,height:75},states};
     writeFileSync(output,htmlFor(payload));

@@ -195,6 +195,111 @@ def solve(payload):
         assert alpha_values_grad is not None
         return r58_area_run(payload['r58Area'])
 
+    def r61_shape_run(request):
+        """One source-weighted Junction area-balance solve from canonical MSW."""
+        triangle_ids = np.asarray(request['triangleVertices'], dtype=int)
+        area_bind_all = np.asarray(request['bind'], dtype=float)
+        source = np.asarray(request['source'], dtype=float)
+        junction_ids = np.asarray(request['junctionIndices'], dtype=int)
+        baseline = np.asarray(request['baseline'], dtype=float)
+        floor = float(request['marginFloor'])
+        assert len(triangle_ids) == len(area_bind_all) == len(source)
+        assert len(baseline) == n and len(junction_ids) > 0
+        assert np.all(area_bind_all > 0) and np.all(source >= 0)
+        assert np.all(source[junction_ids] > 0)
+        whole_coeff = source / area_bind_all / float(np.sum(source))
+        junction_coeff = source[junction_ids] / float(np.sum(source[junction_ids]))
+        groups = {}
+        for name, indices in request['groups'].items():
+            mask = np.zeros(len(source), dtype=float)
+            mask[np.asarray(indices, dtype=int)] = 1
+            total = float(source @ mask)
+            assert total > 0
+            groups[name] = source * mask / area_bind_all / total
+        regional_min = request['regionalMin']
+        whole_min = float(request['wholeMin'])
+
+        def proxy(w):
+            return area_gradient_for(w, triangle_ids, deltas[:1])
+
+        def shape(w):
+            area, jac = proxy(w)
+            ratio = area[junction_ids] / area_bind_all[junction_ids]
+            error = ratio - 1
+            value = float(junction_coeff @ (error * error))
+            gradient = 2 * (junction_coeff * error / area_bind_all[junction_ids]) \
+                @ jac[junction_ids]
+            return value, gradient, ratio
+
+        def regional(w):
+            area, _ = proxy(w)
+            return {name: float(coeff @ area) for name, coeff in groups.items()}
+
+        def regional_constraint(w):
+            values = regional(w)
+            return np.asarray([values[name] - minimum
+                               for name, minimum in regional_min.items()])
+
+        def regional_jac(w):
+            _, jac = proxy(w)
+            return np.asarray([groups[name] @ jac
+                               for name in regional_min]).reshape(-1, n)
+
+        def whole(w):
+            area, jac = proxy(w)
+            return float(whole_coeff @ area), whole_coeff @ jac
+
+        constraints = [
+            {'type': 'eq', 'fun': lambda w: eq_jac[:, :n] @ w - 1,
+             'jac': lambda w: eq_jac[:, :n]},
+            {'type': 'ineq', 'fun': lambda w: dom_jac[:, :n] @ w,
+             'jac': lambda w: dom_jac[:, :n]},
+            {'type': 'ineq',
+             'fun': lambda w: areas_and_grad(w)[0] - floor * area_bind,
+             'jac': lambda w: areas_and_grad(w)[1]},
+            {'type': 'ineq',
+             'fun': lambda w: alpha_values_grad(w)[0] - alpha_threshold,
+             'jac': lambda w: alpha_values_grad(w)[1]},
+            {'type': 'ineq', 'fun': regional_constraint,
+             'jac': regional_jac},
+            {'type': 'ineq', 'fun': lambda w: whole(w)[0] - whole_min,
+             'jac': lambda w: whole(w)[1]},
+        ]
+        result = minimize(lambda w: shape(w)[0], baseline,
+                          jac=lambda w: shape(w)[1], method='SLSQP',
+                          bounds=[(0, 1)] * n, constraints=constraints,
+                          options={'maxiter': 300, 'ftol': 1e-10, 'disp': False})
+        w = result.x
+        pose_area, _ = areas_and_grad(w)
+        values = regional(w)
+        whole_value = whole(w)[0]
+        checks = dict(simplex=float(np.max(np.abs(np.sum(w[triples], axis=1)-1))),
+                      dominance=float(np.max(np.maximum(0, -dom_jac[:, :n] @ w)))
+                      if len(dominance) else 0.,
+                      bounds=float(max(0, -np.min(w), np.max(w)-1)),
+                      orientation=float(np.max(np.maximum(0,
+                          floor*area_bind-pose_area))),
+                      targetAlpha=float(np.max(np.maximum(0,
+                          alpha_threshold-alpha_values_grad(w)[0]))),
+                      regional=float(np.max(np.maximum(0, -regional_constraint(w)))),
+                      whole=max(0., whole_min-whole_value))
+        return dict(solverSuccess=bool(result.success),
+                    solverStatus=int(result.status), message=str(result.message),
+                    iterations=int(result.nit),
+                    feasible=bool(all(v <= 1e-7 for v in checks.values())),
+                    objectiveBaseline=shape(baseline)[0],
+                    objectiveCandidate=shape(w)[0],
+                    wholeProxyBaseline=whole(baseline)[0],
+                    wholeProxyCandidate=whole_value,
+                    regional=values,
+                    minimumPoseRatio=float(np.min(pose_area/area_bind)),
+                    alphaProxy=alpha_values_grad(w)[0].tolist(),
+                    constraintViolation=checks, weights=w.tolist())
+
+    if payload.get('r61Shape'):
+        assert alpha_values_grad is not None
+        return r61_shape_run(payload['r61Shape'])
+
     def p1_run(label, start):
         initial_m, _, _ = quality(start)
         x0 = np.r_[start, initial_m - 1e-7]

@@ -709,10 +709,16 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
  * The Dock remains the existing layout and interaction owner; these rules only
  * refine its surface, spacing, and the shared label/grid alignment.
  */
+/*
+ * Bottom Dock timeline board geometry: the single source of truth.
+ * Label column, ruler, rows, cells and the JS dock-height calculation all read
+ * these values; do not redefine them further down this file.
+ */
 #animation-table-popup.is-bottom-dock {
     --ui-anim-track-width: 96px;
     --ui-anim-timeline-header-height: 18px;
-    --ui-anim-lane-row-height: 24px;
+    --ui-anim-lane-row-height: 22px;
+    --ui-anim-grid-line: color-mix(in srgb, var(--ui-panel-glass-border) 62%, transparent);
     background: var(--ui-surface-glass-panel);
     border: 1px solid var(--ui-panel-glass-border);
     border-radius: var(--ui-radius-panel) var(--ui-radius-panel) 0 0;
@@ -805,7 +811,7 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
     gap: 3px;
     padding-inline: 4px;
     background: color-mix(in srgb, var(--ui-panel-glass-surface) 86%, transparent);
-    border-bottom-color: color-mix(in srgb, var(--ui-panel-glass-border) 78%, transparent);
+    border-bottom-color: var(--ui-anim-grid-line);
 }
 
 #animation-table-popup.is-bottom-dock .anim-track-name {
@@ -819,7 +825,7 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
 
 #animation-table-popup.is-bottom-dock .anim-timeline-row {
     height: var(--ui-anim-lane-row-height);
-    border-bottom-color: color-mix(in srgb, var(--ui-panel-glass-border) 62%, transparent);
+    border-bottom-color: var(--ui-anim-grid-line);
 }
 
 /* The dock and the rehosted common Status share one derived lower slot. Keep
@@ -840,7 +846,9 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
 
 /* Both columns are independent flex stacks. Explicit border-box rows prevent
    a one-pixel cumulative drift between labels and timeline cells, including
-   projected child Layer / Bone rows. */
+   projected child Layer / Bone rows. Every row type that exists on both sides
+   (including the RIG Bone group header) must be listed here, or the label
+   column and the grid drift apart by the difference. */
 #animation-table-popup.is-bottom-dock .anim-track-header,
 #animation-table-popup.is-bottom-dock .anim-timeline-header {
     box-sizing: border-box;
@@ -850,6 +858,7 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
 }
 
 #animation-table-popup.is-bottom-dock .anim-track-item,
+#animation-table-popup.is-bottom-dock .anim-rig-bone-group-row,
 #animation-table-popup.is-bottom-dock .anim-timeline-row {
     box-sizing: border-box;
     flex: 0 0 var(--ui-anim-lane-row-height);
@@ -858,9 +867,15 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
     line-height: 1;
 }
 
+/* Ruler ticks and grid columns share one line so frame boundaries read as
+   continuous from the ruler into the board. */
 #animation-table-popup.is-bottom-dock .anim-frame-num {
     background: color-mix(in srgb, var(--futaba-background) 70%, transparent);
-    border-right-color: color-mix(in srgb, var(--ui-panel-glass-border) 62%, transparent);
+    border-right-color: var(--ui-anim-grid-line);
+}
+
+#animation-table-popup.is-bottom-dock .anim-cell-slot:not(.is-clip-range) {
+    border-right-color: var(--ui-anim-grid-line);
 }
 
 #animation-table-popup.is-bottom-dock .anim-dock-secondary-body {
@@ -885,8 +900,6 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
  * clips, and actionable controls retain their existing contrast.
  */
 #animation-table-popup.is-bottom-dock {
-    --ui-anim-timeline-header-height: 18px;
-    --ui-anim-lane-row-height: 22px;
     --ui-bottom-dock-surface: rgba(255, 255, 238, 0.52);
     --ui-bottom-dock-inner-surface: rgba(255, 255, 238, 0.08);
     background: var(--ui-bottom-dock-surface);
@@ -976,9 +989,16 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
     -webkit-backdrop-filter: none;
 }
 
+/* The ruler (sticky top) and the label column (sticky left) cover the board
+   while it scrolls, so their surfaces are opaque: frame numbers and grid lines
+   must not show through the labels. Same tint as the former 62% glass. */
 #animation-table-popup.is-bottom-dock .anim-track-header,
 #animation-table-popup.is-bottom-dock .anim-timeline-header {
-    background: rgba(240, 224, 214, 0.62);
+    background: color-mix(in srgb, rgb(240, 224, 214) 62%, var(--futaba-background));
+}
+
+#animation-table-popup.is-bottom-dock .anim-track-list {
+    background: var(--futaba-background);
 }
 
 #animation-table-popup.is-bottom-dock .anim-frame-num {

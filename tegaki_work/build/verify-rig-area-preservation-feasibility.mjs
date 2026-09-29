@@ -175,6 +175,7 @@ const trim=({weights,...rest})=>rest;
 const report={classification,topology:{fixture:fixture.id,
     fingerprint:hashes[fixture.id],vertices:p.mesh.vertices.length,
     triangles:p.mesh.triangles.length},
+    r54Margin:avw.margin,r58AreaFloor:areaFloor,
     sourceSupportTotal:support.sourceTotal,
     baseline:{...baseline,regional},
     phaseA:{solver:trim(phaseA),runtime:upper},
@@ -183,6 +184,7 @@ const report={classification,topology:{fixture:fixture.id,
         regionalRegressions:regionRegressions,
         runtimeColorRegressions:colorRegressions},
     avwWeights:process.argv.includes('--emit-weights')?r54Branch.avwWeights:null,
+    phaseBWeights:process.argv.includes('--emit-weights')?phaseB.weights:null,
     apwWeights:classification==='A'?witnessWeights:null,
     sameSkinBindingPerPose:true};
 console.log('verify-rig-area-preservation-feasibility: PASS (diagnostic executed)');

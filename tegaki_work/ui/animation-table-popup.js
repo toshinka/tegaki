@@ -977,9 +977,11 @@ export class AnimationTablePopup {
             const chrome = this._getBottomDockChromeHeight();
             const bounds = this._getBottomDockHeightBounds(chrome);
             const laneCount = Math.max(1, content.querySelectorAll('.anim-timeline-row').length);
+            // Read the row height from the Dock scope that the rows actually use; the
+            // :root token belongs to the floating layout and is taller.
             const laneHeight = Number.parseFloat(
-                getComputedStyle(document.documentElement).getPropertyValue('--ui-anim-lane-row-height')
-            ) || 26;
+                getComputedStyle(this.panel).getPropertyValue('--ui-anim-lane-row-height')
+            ) || 22;
             const timelineHeader = content.querySelector('.anim-track-header')?.getBoundingClientRect().height || 24;
             const naturalBodyHeight = Math.max(
                 timelineHeader + Math.min(laneCount, 4) * laneHeight + 8,
@@ -20711,7 +20713,7 @@ export class AnimationTablePopup {
                             gridHtml += `
                                 <div class="anim-timeline-row anim-rig-bone-group-timeline-row${item.collapsed ? ' is-collapsed' : ''}${item.activeBoneCount > 0 ? ' has-active-bone' : ''}"
                                     data-rig-bone-group-id="${this._escapeHtml(item.collapseKey)}">
-                                    <div class="anim-rig-bone-group-timeline-fill" style="width:${totalFrames * this.timelineCellWidth}px"></div>
+                                    <div class="anim-rig-bone-group-timeline-fill" style="width:calc(var(--anim-cell-width) * ${totalFrames})"></div>
                                 </div>`;
                             return;
                         }

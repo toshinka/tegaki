@@ -1,6 +1,6 @@
 # TEGAKI — 外部WEB AI向け GitHub読解リンク集
 
-更新日: 2026-09-18
+更新日: 2026-09-29（R-62: CURRENT ROUTE / Animation Dock導線を追加）
 対象: 現行コード・製品思想・技術契約・現在の計画。Archive / 過去Reviewは収録しない。
 このリンク集は外部AI向けの案内であり、仕様の第二正本ではない。
 
@@ -11,6 +11,20 @@
 ソースファイル内のRELATED等はリポジトリ相対パスを使用する。
 ソースヘッダーへの絶対GitHub URL埋め込みは要求しない。
 本ファイル（GITHUB.txt）が外部URL解決ナビゲーション層を担当する。
+
+---
+
+## CURRENT ROUTE（2026-09-29 / R-62時点）
+
+- 現在の主軸: 機能・製品作業（Animation Dock / RIGの制作導線）。
+- DEFORM Weight研究: R-61で一旦停止。R-47 topology/supportが研究baseline。AVW/APW/MSW/JBWは診断用witnessであり、production Weight生成器ではない（production未統合）。JBWはJunction過膨張を減らしたが中央の細い接続は残存。support/topology再検討は明示的に再開されるまで保留。
+- R-60/R-61の診断ファイル（tegaki_work/build/ の r60-*/r61-* 比較HTML、junction/weight-direction系 verifier・generator等）はローカル未commitのまま保持。R-62以降のCardで整理・削除しない。
+- R-62 Animation Dock timeline board alignment: 完了（下記「4. INTERACTION / TIMELINE」のDock board routeとR-62 NOTE参照）。
+- NEXT ROUTE:
+  - Animation Dockの細部polish（ruler秒バッジ、current列表示等）は後でLuna/Geminiへ小Cardとして委譲可。
+  - Transformの美観監査は後回し。
+  - PART表示の統一は後回し。
+  - WARP × RIGのownership / scale問題は保留のまま。
 
 ---
 
@@ -135,6 +149,26 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui
 - tegaki_work/ui/layer-panel-renderer.js [SOURCE EVIDENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/layer-panel-renderer.js
 - tegaki_work/ui/layer-transform-warp-controller.js [SOURCE EVIDENCE / 終端契約リファレンス]（URLはCURRENT REVIEW PACKET参照）
+
+ANIMATION DOCK BOARD ROUTE（ruler / grid / rows / current列の幾何）:
+- Dock入口・描画: tegaki_work/ui/animation-table-popup.js（URLは上記）
+  - render(): --anim-cell-width（=timelineCellWidth、TIMELINE_ZOOM_STEPS）をpanelへ設定し、track list（左ラベル列）とtimeline grid（ruler + 行）をHTML生成
+  - _queueBottomDockLayout(): Dock高さ計算（Dock scopeの--ui-anim-lane-row-heightを読む）
+  - _injectStyles(): 旧来の基礎CSS（.anim-track-list / .anim-timeline-header / .anim-frame-num / .anim-timeline-row / .anim-cell-slot）
+- Bottom Dockの幾何正本: tegaki_work/styles/components/animation-table-utility-lod.css [SOURCE EVIDENCE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/styles/components/animation-table-utility-lod.css
+  - #animation-table-popup.is-bottom-dock の最初のblockが --ui-anim-track-width / --ui-anim-timeline-header-height / --ui-anim-lane-row-height / --ui-anim-grid-line を一度だけ定義（coarse pointer @mediaのみ上書き）
+  - 左ラベル行と右timeline行（Bone group headerを含む）は同一のborder-box行規則を共有
+- 子行（Part / RIG folder / Bone / Bone group）の配色・入れ子: tegaki_work/styles/main.css（URLはPRODUCT / UI参照）
+- 幾何契約verifier: tegaki_work/build/verify-animation-dock-board-geometry.mjs [VERIFIER]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-dock-board-geometry.mjs
+
+R-62 NOTE（Animation Dock timeline board alignment）:
+- 理由: Bone group見出し行が左18px / 右22pxとなり、以下の全行が1 groupごとに4px縦ずれしていた。Dock高さ計算がDockではなく:rootの行高(26px)を読んでいた。行高tokenが同一ファイル内で二重定義（24→22）。ruler目盛りとgrid列線が別の線で、横scroll時に半透明のsticky左列からruler数字・grid線が透けていた。
+- 主ファイル: tegaki_work/styles/components/animation-table-utility-lod.css、tegaki_work/ui/animation-table-popup.js
+- 確立した契約: Dock board tokenは一箇所。行高はtrack itemとtimeline row（Bone group含む）が同一規則。ruler/grid列線は--ui-anim-grid-line共有。sticky ruler / 左列は不透明。Bone group fill幅は--anim-cell-width由来。
+- 検証: 上記verifier、既存Animation Table / Timeline verifier、vite build、Browser（headless Chromium 1600×1000、全zoom段・横scroll・current Frameで列/行誤差0px）。
+- 未解決（隣接）: compact Dock高さは初回layoutで固定されLane追加で伸びない。ruler秒バッジが2桁数字と重なる。verify-animation-table-utility-lod-productionはR-62前から失敗。
 
 OPTIONAL — DIAGNOSTIC EVIDENCE:
 - tegaki_work/build/verify-timeline-pointer-terminal.mjs [VERIFIER / DIAGNOSTIC]（URLはCURRENT REVIEW PACKET参照）
