@@ -14,7 +14,7 @@
 
 ---
 
-## CURRENT ROUTE（2026-09-29 / R-66時点）
+## CURRENT ROUTE（2026-09-29 / R-68時点）
 
 - 現在の主軸: 機能・製品作業。DEFORM数値Weight研究は停止、Animation Dock基盤（R-62〜R-64）は当面完了、現在のproduction route = 新RIG PART基盤（R-66 PART NOTE参照）。
 - DEFORM Weight研究: R-61で一旦停止。R-47 topology/supportが研究baseline。AVW/APW/MSW/JBWは診断用witnessであり、production Weight生成器ではない（production未統合）。JBWはJunction過膨張を減らしたが中央の細い接続は残存。support/topology再検討は明示的に再開されるまで保留。
@@ -256,6 +256,11 @@ R-66 PART NOTE:
 - それ以外（Folder Part、Folder内Raster Part、旧全体PIVOT / Bone結合、WARP Anchor、不整合）: 新Lensは閲覧のみ（階層・親・PIVOT表示、編集・Motion無効）。変換・平坦化はしない。旧RIG routeはその対象で再び提示される。
 - 入場・選択・PART↔DEFORM切替・再入場はHistory 0件、rigDefinition不変（Browser確認済み）。
 - 保留: 新UIでのFolder / nested Part編集、旧全体PIVOT構造の移行、PART表示の最終統一、Dock選択との同期（現在はLens内runtime選択のみ）。Motion / IKは既存実装を維持しR-66では変更なし。
+
+R-68 PART ACCEPTANCE NOTE（Result A / production変更なし）:
+- CAF直下Raster A→B→Cで既存実装を実ブラウザ受入: 登録・親変更・pivotドラッグ（1操作=History+1、Undo/Redo可、Esc=0件）、親追従（B/Cが幾何期待値と一致）、move/rotate直接操作、非0 FrameのMotion KEY（KEY設定済み表示）、多世代合成、2-link IK（手先到達・長さ保存）は全てPASS。再発見・再実装しない。
+- Nested Raster PART は R-67 以降も保留（新Lensは閲覧のみ、nested-part判定を維持）。
+- 既知の周辺事項: Undo/Redo直後にRIG設定リセット欄が「Timeline Historyへ記録できない状態です。」で無効のまま残る（getRigLensResetPlan が historyManager.isApplying を見た状態が再描画されない疑い）。未修正。
 
 
 ### 7. HISTORY / SAVE / EXPORT
