@@ -484,6 +484,8 @@ export class AnimationTablePopup {
         this.panel = null;
         this._bottomDockMode = true;
         this._bottomDockState = 'compact';
+        // Normal (compact) Dock height. null = AUTO: derived from the visible row count on every
+        // layout. A number is ONLY ever an intentional user resize (_finishBottomDockResize).
         this._bottomDockNormalHeight = null;
         this._bottomDockExpandedHeight = null;
         this._bottomDockResizeSession = null;
@@ -835,28 +837,10 @@ export class AnimationTablePopup {
         }
     }
 
-    _rememberBottomDockNormalHeight() {
-        if (this._bottomDockNormalHeight !== null) return;
-        const currentHeight = Number.parseFloat(
-            document.documentElement.style.getPropertyValue('--ui-bottom-dock-open-height')
-        );
-        if (Number.isFinite(currentHeight) && currentHeight > 0) {
-            this._bottomDockNormalHeight = currentHeight;
-            return;
-        }
-        const panelHeight = this.panel?.getBoundingClientRect?.().height;
-        if (Number.isFinite(panelHeight) && panelHeight > 0) {
-            this._bottomDockNormalHeight = panelHeight;
-        }
-    }
-
     // Presentation only: no Frame, selection, playback or edit terminal changes.
     _setBottomDockState(state) {
         if (!['collapsed', 'compact', 'expanded'].includes(state)) return;
         const previousState = this._bottomDockState;
-        if (previousState === 'compact' && state !== 'compact') {
-            this._rememberBottomDockNormalHeight();
-        }
         if (state === 'compact' && previousState !== 'compact') {
             this._bottomDockExpandedHeight = null;
         }
@@ -976,6 +960,8 @@ export class AnimationTablePopup {
             const state = this._bottomDockState || 'compact';
             const chrome = this._getBottomDockChromeHeight();
             const bounds = this._getBottomDockHeightBounds(chrome);
+            // Timeline structure (Lane add/remove, child rows) reaches this path through render();
+            // AUTO height is recomputed here every time and never cached.
             const laneCount = Math.max(1, content.querySelectorAll('.anim-timeline-row').length);
             // Read the row height from the Dock scope that the rows actually use; the
             // :root token belongs to the floating layout and is taller.
@@ -1006,9 +992,6 @@ export class AnimationTablePopup {
                 height = compactDesired;
             }
             height = Math.ceil(Math.max(bounds.min, Math.min(bounds.max, height)));
-            if (state === 'compact' && this._bottomDockNormalHeight === null) {
-                this._bottomDockNormalHeight = height;
-            }
             this._setBottomDockHeight(height);
         });
     }

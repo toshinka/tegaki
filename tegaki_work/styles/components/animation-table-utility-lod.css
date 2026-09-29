@@ -1005,11 +1005,42 @@ html.animation-table-bottom-dock-active #layer-panel-container .frame-indicator 
     background: rgba(255, 255, 238, 0.48);
 }
 
+/* Reserve the lower eight pixels for the second marker without changing the
+   R-62 ruler height or the frame cell width. */
+#animation-table-popup.is-bottom-dock .anim-frame-num:has(.anim-second-badge) {
+    box-sizing: border-box;
+    padding-bottom: 8px;
+}
+
+#animation-table-popup.is-bottom-dock .anim-second-badge {
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0.7;
+}
+
 #animation-table-popup.is-bottom-dock .anim-frame-num.current {
     box-sizing: border-box;
     background: var(--futaba-maroon);
     color: var(--futaba-cream);
     border: 1px solid var(--futaba-cream);
+    box-shadow: inset 0 -2px var(--active-border);
+}
+
+/* The shared accent edge continues through every row. A translucent wash
+   leaves clip ranges and key markers visible beneath the current column. */
+#animation-table-popup.is-bottom-dock .anim-cell-slot.current-col {
+    background-image: linear-gradient(
+        color-mix(in srgb, var(--active-border) 10%, transparent),
+        color-mix(in srgb, var(--active-border) 10%, transparent)
+    );
+    box-shadow: inset 1px 0 var(--active-border);
+}
+
+#animation-table-popup.is-bottom-dock .anim-timeline-row.active .anim-cell-slot.current-col {
+    background-image: linear-gradient(
+        color-mix(in srgb, var(--active-border) 16%, transparent),
+        color-mix(in srgb, var(--active-border) 16%, transparent)
+    );
 }
 
 #animation-table-popup.is-bottom-dock .anim-dock-secondary-body {

@@ -20,6 +20,7 @@
 - DEFORM Weight研究: R-61で一旦停止。R-47 topology/supportが研究baseline。AVW/APW/MSW/JBWは診断用witnessであり、production Weight生成器ではない（production未統合）。JBWはJunction過膨張を減らしたが中央の細い接続は残存。support/topology再検討は明示的に再開されるまで保留。
 - R-60/R-61の診断ファイル（tegaki_work/build/ の r60-*/r61-* 比較HTML、junction/weight-direction系 verifier・generator等）はローカル未commitのまま保持。R-62以降のCardで整理・削除しない。
 - R-62 Animation Dock timeline board alignment: 完了（下記「4. INTERACTION / TIMELINE」のDock board routeとR-62 NOTE参照）。
+- R-64 bottom Dock dynamic height: 完了（R-64 NOTE参照）。
 - NEXT ROUTE:
   - Animation Dockの細部polish（ruler秒バッジ、current列表示等）は後でLuna/Geminiへ小Cardとして委譲可。
   - Transformの美観監査は後回し。
@@ -162,13 +163,28 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/st
 - 子行（Part / RIG folder / Bone / Bone group）の配色・入れ子: tegaki_work/styles/main.css（URLはPRODUCT / UI参照）
 - 幾何契約verifier: tegaki_work/build/verify-animation-dock-board-geometry.mjs [VERIFIER]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-dock-board-geometry.mjs
+- 高さ契約verifier: tegaki_work/build/verify-animation-dock-dynamic-height.mjs [VERIFIER]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-animation-dock-dynamic-height.mjs
 
 R-62 NOTE（Animation Dock timeline board alignment）:
 - 理由: Bone group見出し行が左18px / 右22pxとなり、以下の全行が1 groupごとに4px縦ずれしていた。Dock高さ計算がDockではなく:rootの行高(26px)を読んでいた。行高tokenが同一ファイル内で二重定義（24→22）。ruler目盛りとgrid列線が別の線で、横scroll時に半透明のsticky左列からruler数字・grid線が透けていた。
 - 主ファイル: tegaki_work/styles/components/animation-table-utility-lod.css、tegaki_work/ui/animation-table-popup.js
 - 確立した契約: Dock board tokenは一箇所。行高はtrack itemとtimeline row（Bone group含む）が同一規則。ruler/grid列線は--ui-anim-grid-line共有。sticky ruler / 左列は不透明。Bone group fill幅は--anim-cell-width由来。
 - 検証: 上記verifier、既存Animation Table / Timeline verifier、vite build、Browser（headless Chromium 1600×1000、全zoom段・横scroll・current Frameで列/行誤差0px）。
-- 未解決（隣接）: compact Dock高さは初回layoutで固定されLane追加で伸びない。ruler秒バッジが2桁数字と重なる。verify-animation-table-utility-lod-productionはR-62前から失敗。
+- 未解決（隣接）: compact Dock高さは初回layoutで固定されLane追加で伸びない（→R-64で解消）。ruler秒バッジが2桁数字と重なる。verify-animation-table-utility-lod-productionはR-62前から失敗。
+
+R-63 NOTE（Animation Dock detail polish）:
+- ruler秒バッジとフレーム番号の縦領域を分け、current列のアクセントを全timeline行へ揃えた。
+- R-62の行高・列幅・ruler/grid座標は維持。
+
+R-64 NOTE（bottom Dock dynamic height）:
+- 原因: _bottomDockNormalHeight が「AUTO高さのcache」と「ユーザーresize値」を兼ねており、初回layoutの値が固定されてLane追加/削除・再表示で更新されなかった。
+- 契約: _bottomDockNormalHeight はユーザーresize専用（null=AUTO）。書き込みは constructor(null) / _finishBottomDockResize / resize cancel復元のみ。AUTO高さは _queueBottomDockLayout が毎回 compactDesired（既存: header + min(visible rows, 4) × 22px + chrome）から再計算しcacheしない。
+- 所有: render() → _queueBottomDockLayout() → _setBottomDockHeight()（--ui-bottom-dock-open-height の唯一の書き手。app.resize / camera recenter、右Workspace下端も同変数で追従）。Lane追加/削除コードはDock/Canvasを直接触らない。
+- cap: 既存のcompact 4行 + bounds（max=min(440, viewport 52%, Canvas-safe ceiling)）。超過分はDock内縦scroll。expandedは従来どおりbounds.max。
+- manual resize: ユーザーがresizeするとその高さが固定され、Lane変更で上書きされない（解除UIは従来から無し）。
+- 検証: verify-animation-dock-dynamic-height.mjs（HEADではFAIL）、R-62 verifier、既存Timeline verifier、vite build、headless Chromiumで+1〜+6 Lane / expanded往復 / 削除 / 閉じて再表示 / manual resize。
+- UNKNOWN: 実RIG（Bone group行）状態でのdynamic-height実測。
 
 OPTIONAL — DIAGNOSTIC EVIDENCE:
 - tegaki_work/build/verify-timeline-pointer-terminal.mjs [VERIFIER / DIAGNOSTIC]（URLはCURRENT REVIEW PACKET参照）
