@@ -66,6 +66,7 @@ import {
     planStaticRigStructureBone,
     resolveStaticRigRootCenter
 } from '../system/animation/rig-static-authoring.js';
+import { projectRigPartStructure } from '../system/animation/rig-part-projection.js';
 import { runStaticRigBindRebindTransaction } from '../system/animation/rig-bind-rebind-transaction.js';
 import {
     projectTransformEditContext,
@@ -3354,6 +3355,7 @@ export class AnimationTablePopup {
             && layer.isBackground !== true
             && layer.parentLayerId == null
             && partTarget?.ok === true
+            && partTarget.support?.editable === true
             && partTarget.layers.some(candidate => candidate?.id === layerId)
             && partTarget.parts.some(candidate => candidate?.partId === layerId);
         const meshStatus = layer.type === 'raster'
@@ -3643,12 +3645,26 @@ export class AnimationTablePopup {
                 mesh.targetInternalLayerId === layer.id));
         const parts = (asset.rigDefinition?.parts || []).filter(part =>
             layers.some(layer => layer.id === part.partId));
-        const staticSetupAllowed = this.model._hasClipAssetPartMotion(assetId) !== true;
+        // Read-only projection of the stored PART rig (R-66). The new Lens edits only the simple
+        // rigid-Raster case; composite / legacy structures are inspected here and edited on the
+        // legacy RIG Workspace route. Nothing is converted or written back by this projection.
+        const projection = projectRigPartStructure(asset);
+        const unsupportedReason = projection.support.editable
+            ? ''
+            : `この構造は新しいRIG Lensでは閲覧のみです（${projection.support.message}）。編集は旧RIG Workspace（Layerに「旧RIGで開く」が出る対象）で行います。`;
+        const motionLocked = this.model._hasClipAssetPartMotion(assetId) === true;
+        const staticSetupAllowed = projection.support.editable && !motionLocked;
         return {
             ok: true, asset, entry, layers, parts,
+            structure: projection.structure,
+            support: projection.support,
             frame: this.model.playback.currentFrame,
             staticSetupAllowed,
-            staticSetupReason: staticSetupAllowed ? '' : '既存Part Motion KEYがあるため静的Setupを編集できません。'
+            staticSetupReason: !projection.support.editable
+                ? unsupportedReason
+                : motionLocked ? '既存Part Motion KEYがあるため静的Setupを編集できません。' : '',
+            motionAllowed: projection.support.editable,
+            unsupportedReason
         };
     }
 
@@ -3876,6 +3892,7 @@ export class AnimationTablePopup {
         if (!target.ok || this.isPlaying) {
             return { ok: false, reason: target.reason || '再生中はPoseを編集できません。' };
         }
+        if (target.motionAllowed === false) return { ok: false, reason: target.unsupportedReason };
         const part = target.parts.find(candidate => candidate.partId === partId);
         if (!part) return { ok: false, reason: 'Partを登録してください。' };
         const frame = target.frame;

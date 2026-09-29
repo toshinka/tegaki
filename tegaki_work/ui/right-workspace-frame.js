@@ -3832,22 +3832,45 @@ export class RightWorkspaceFrame {
         this.rigLensStructureContent.replaceChildren();
         this.rigPartRegisterButton.hidden = true;
         this.rigPartParentLabel.hidden = true;
+        // Structure = read-only projection of the stored rigDefinition.parts (hierarchy order),
+        // followed by top-level Rasters that are not Parts yet. Selection stays transient.
+        const structure = partTarget?.structure || [];
+        const editable = partTarget?.support?.editable !== false;
+        const layerIds = new Set(layers.map(layer => layer.id));
+        const rows = [
+            ...structure.map(node => ({ node, layer: layers.find(layer => layer.id === node.partId) || null })),
+            ...layers.filter(layer => !parts.some(part => part.partId === layer.id))
+                .map(layer => ({ node: null, layer }))
+        ];
+        if (matchesAsset && !editable) {
+            const notice = document.createElement('p');
+            notice.className = 'right-workspace-rig-part-unsupported';
+            notice.setAttribute('role', 'status');
+            notice.textContent = partTarget.unsupportedReason;
+            this.rigLensStructureContent.appendChild(notice);
+        }
         const list = document.createElement('ul');
-        list.setAttribute('aria-label', 'CAF内Raster Part');
+        list.setAttribute('aria-label', 'CAF内Part構造');
         list.className = 'right-workspace-rig-part-list';
-        layers.forEach(layer => {
-            const part = parts.find(candidate => candidate.partId === layer.id);
-            const parent = layers.find(candidate => candidate.id === part?.parentPartId);
-            const isSelected = layer.id === this.rigSelectedPartId;
+        rows.forEach(({ node, layer }) => {
+            const rowId = node?.partId || layer.id;
+            const selectable = !!layer && layerIds.has(rowId);
+            const part = node ? parts.find(candidate => candidate.partId === node.partId) : null;
+            const isSelected = selectable && rowId === this.rigSelectedPartId;
             const item = document.createElement('li');
+            item.className = 'right-workspace-rig-part-item';
+            item.dataset.rigPartId = rowId;
+            if (node?.depth) item.style.setProperty('--rig-part-depth', String(Math.min(node.depth, 4)));
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'gui-control gui-control--s right-workspace-rig-part-row';
             button.setAttribute('aria-pressed', String(isSelected));
-            button.title = layer.name || 'Raster';
-            const thumbnailUrl = window.layerPanelRenderer?.getRigLensRasterThumbnailUrl?.(
-                assetId, layer.id
-            ) || '';
+            button.disabled = !selectable;
+            const displayName = node?.name || layer?.name || 'Raster';
+            button.title = selectable ? displayName : `${displayName}（${node?.layerKind === 'folder' ? 'Folder Part' : '新Lens対象外'}）`;
+            const thumbnailUrl = selectable
+                ? window.layerPanelRenderer?.getRigLensRasterThumbnailUrl?.(assetId, rowId) || ''
+                : '';
             if (thumbnailUrl) {
                 const image = document.createElement('img');
                 image.className = 'right-workspace-rig-part-thumb';
@@ -3858,19 +3881,21 @@ export class RightWorkspaceFrame {
             }
             const name = document.createElement('span');
             name.className = 'right-workspace-rig-part-name';
-            name.textContent = layer.name || 'Raster';
+            name.textContent = displayName;
             button.appendChild(name);
-            button.addEventListener('click', () => {
-                this._selectRigLensPart(layer.id);
-            });
+            if (selectable) {
+                button.addEventListener('click', () => {
+                    this._selectRigLensPart(rowId);
+                });
+            }
             const details = document.createElement('span');
             details.className = 'right-workspace-rig-part-meta';
-            item.className = 'right-workspace-rig-part-item';
             item.appendChild(button);
-            if (part) {
-                const parentName = part.parentPartId
-                    ? (parent?.name || '不明') : 'ROOT';
-                if (!motion && isSelected) {
+            if (node) {
+                const parentName = node.parentPartId ? (node.parentName || '不明') : 'ROOT';
+                const pivotText = `PIVOT ${node.pivot.x.toFixed(1)}, ${node.pivot.y.toFixed(1)}`;
+                details.title = `親：${parentName} · ${pivotText}`;
+                if (editable && part && !motion && isSelected) {
                     const options = [{ id: '', label: 'ROOT' },
                         ...parts.filter(candidate => candidate.partId !== part.partId)
                             .map(candidate => ({ id: candidate.partId, label: layers.find(layerItem =>
@@ -3892,18 +3917,22 @@ export class RightWorkspaceFrame {
                     details.textContent = `親：${parentName}`;
                     item.appendChild(details);
                 }
-            } else {
-                if (!motion && isSelected) {
-                    this.rigPartRegisterButton.disabled = !staticAllowed;
-                    this.rigPartRegisterButton.title = staticAllowed
-                        ? 'Artwork Bounds中心を初期PIVOTとしてPart作成。Canvas上の中心候補をdragしても同時に登録できます。'
-                        : partTarget?.staticSetupReason || 'Motion KEYがあるため静的Setupを編集できません。';
-                    this.rigPartRegisterButton.hidden = false;
-                    item.appendChild(this.rigPartRegisterButton);
-                } else {
-                    details.textContent = '未登録';
-                    item.appendChild(details);
+                if (isSelected || !editable) {
+                    const pivot = document.createElement('span');
+                    pivot.className = 'right-workspace-rig-part-meta right-workspace-rig-part-pivot';
+                    pivot.textContent = pivotText;
+                    item.appendChild(pivot);
                 }
+            } else if (editable && !motion && isSelected) {
+                this.rigPartRegisterButton.disabled = !staticAllowed;
+                this.rigPartRegisterButton.title = staticAllowed
+                    ? 'Artwork Bounds中心を初期PIVOTとしてPart作成。Canvas上の中心候補をdragしても同時に登録できます。'
+                    : partTarget?.staticSetupReason || 'Motion KEYがあるため静的Setupを編集できません。';
+                this.rigPartRegisterButton.hidden = false;
+                item.appendChild(this.rigPartRegisterButton);
+            } else {
+                details.textContent = '未登録';
+                item.appendChild(details);
             }
             list.appendChild(item);
         });
@@ -3956,6 +3985,8 @@ export class RightWorkspaceFrame {
                     : motionTarget?.ok
                     ? (motionTarget.preview ? '変更中' : motionTarget.key ? 'KEY設定済み' : 'KEY未設定')
                     : motionTarget?.reason || '登録済みPartを選択してください。')
+                : !editable
+                    ? '閲覧のみ · PIVOTと親子は上の一覧で確認'
                 : !staticAllowed
                     ? partTarget?.staticSetupReason || 'Motion KEYがあるため静的Setupを編集できません。'
                     : selectedPart

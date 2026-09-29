@@ -14,9 +14,9 @@
 
 ---
 
-## CURRENT ROUTE（2026-09-29 / R-62時点）
+## CURRENT ROUTE（2026-09-29 / R-66時点）
 
-- 現在の主軸: 機能・製品作業（Animation Dock / RIGの制作導線）。
+- 現在の主軸: 機能・製品作業。DEFORM数値Weight研究は停止、Animation Dock基盤（R-62〜R-64）は当面完了、現在のproduction route = 新RIG PART基盤（R-66 PART NOTE参照）。
 - DEFORM Weight研究: R-61で一旦停止。R-47 topology/supportが研究baseline。AVW/APW/MSW/JBWは診断用witnessであり、production Weight生成器ではない（production未統合）。JBWはJunction過膨張を減らしたが中央の細い接続は残存。support/topology再検討は明示的に再開されるまで保留。
 - R-60/R-61の診断ファイル（tegaki_work/build/ の r60-*/r61-* 比較HTML、junction/weight-direction系 verifier・generator等）はローカル未commitのまま保持。R-62以降のCardで整理・削除しない。
 - R-62 Animation Dock timeline board alignment: 完了（下記「4. INTERACTION / TIMELINE」のDock board routeとR-62 NOTE参照）。
@@ -239,6 +239,23 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/clip-layer-key-bundle.js
 - tegaki_work/system/animation/part-rig.js [SOURCE EVIDENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/part-rig.js
+
+NEW RIG PART ROUTE（R-66）:
+- 永続正本: ClipAsset.rigDefinition.parts（partId = internal Layer id / parentPartId / bindTransform.x,y,rotation,pivotX,pivotY）と ClipInstance.rigMotion.partTracks。schema・検証は part-rig.js、保存はanimation-data-model.js。新PART専用の保存データは無い。
+- 読み取り専用projection: tegaki_work/system/animation/rig-part-projection.js [SOURCE EVIDENCE]（projectRigPartStructure: 階層順・depth・親名・pivot・support判定。入力を変更しない）
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/system/animation/rig-part-projection.js
+- Lens入口 / 選択: tegaki_work/ui/right-workspace-frame.js [SOURCE EVIDENCE]（_enterRigLens → rigAuthoringKind 'part'、_renderRigPartLens、選択は runtime の rigSelectedPartId のみ）
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/right-workspace-frame.js
+- Data bridge: animation-table-popup.js の getRigLensPartTarget（projection + staticSetupAllowed / motionAllowed）、既存のregister / parent / pivot / Motion / IK APIはすべてこのtargetを通る。
+- 旧RIG（capability bank）: animation-table-popup.js の getRigLensLegacyFallbackTarget → rigid-hierarchy / raster-setup route（Layerの「旧RIGで開く」）。削除しない。
+- verifier: tegaki_work/build/verify-rig-part-foundation.mjs [VERIFIER]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/build/verify-rig-part-foundation.mjs
+
+R-66 PART NOTE:
+- 新Lensで編集可（support.editable）: 全PartがCAF直下の非背景Raster、Meshなし、rigidBindings / warpAnchorConstraintsなし、親子が閉じて有効。
+- それ以外（Folder Part、Folder内Raster Part、旧全体PIVOT / Bone結合、WARP Anchor、不整合）: 新Lensは閲覧のみ（階層・親・PIVOT表示、編集・Motion無効）。変換・平坦化はしない。旧RIG routeはその対象で再び提示される。
+- 入場・選択・PART↔DEFORM切替・再入場はHistory 0件、rigDefinition不変（Browser確認済み）。
+- 保留: 新UIでのFolder / nested Part編集、旧全体PIVOT構造の移行、PART表示の最終統一、Dock選択との同期（現在はLens内runtime選択のみ）。Motion / IKは既存実装を維持しR-66では変更なし。
 
 
 ### 7. HISTORY / SAVE / EXPORT

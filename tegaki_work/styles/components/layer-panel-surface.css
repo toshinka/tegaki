@@ -769,6 +769,31 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+/* R-66: stored PART hierarchy is shown indented by rig depth; pivot is inspected on its own
+   line. Values come from the read-only rigDefinition projection. */
+.right-workspace-rig-part-list > .right-workspace-rig-part-item {
+    flex-wrap: wrap;
+    margin-inline-start: calc(var(--rig-part-depth, 0) * 10px);
+}
+.right-workspace-rig-part-meta.right-workspace-rig-part-pivot {
+    flex: 1 0 100%;
+    max-width: none;
+    padding-inline-start: 6px;
+    text-align: left;
+    font-variant-numeric: tabular-nums;
+}
+.right-workspace-rig-part-row:disabled {
+    opacity: 0.72;
+    cursor: default;
+}
+.right-workspace-rig-part-unsupported {
+    margin: 0 0 4px;
+    padding: 4px 6px;
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    line-height: 1.4;
+    border-inline-start: 2px solid var(--active-border);
+}
 .right-workspace-rig-part-create {
     flex: 0 1 46%;
     min-width: 0;

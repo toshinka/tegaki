@@ -280,7 +280,7 @@ assert.doesNotMatch(frame, /rigPartFrameRow\.addEventListener\('wheel'/u,
     'frame controls and surrounding Inspector do not capture wheel input');
 assert.match(frame, /details\.textContent = `親：\$\{parentName\}`[\s\S]*?item\.appendChild\(details\)/u,
     'parent hierarchy is projected inside each Part card');
-assert.match(frame, /if \(!motion && isSelected\)[\s\S]*?item\.appendChild\(this\.rigPartParentLabel\)/u,
+assert.match(frame, /if \((?:editable && part && )?!motion && isSelected\)[\s\S]*?item\.appendChild\(this\.rigPartParentLabel\)/u,
     'parent editing is inline in the selected Setup card only');
 assert.match(frame, /item\.appendChild\(this\.rigPartRegisterButton\)/u,
     'Part creation remains reachable from its selected Layer card');
