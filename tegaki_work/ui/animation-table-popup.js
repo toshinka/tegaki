@@ -707,6 +707,7 @@ export class AnimationTablePopup {
         this.selectedAssetId = null;
         this.selectedAssetFolderId = null; // null = Uncategorized
         this.selectedInternalLayerId = null; // Phase 4z7
+        this._rigLensActivePartProjection = null;
         this._internalFolderTransformContext = null;
         this._internalLayerClipboard = null;
         
@@ -2784,15 +2785,57 @@ export class AnimationTablePopup {
         return renderPlan.status === 'ready' ? { entry, asset, renderPlan } : null;
     }
 
+    setRigLensActivePartProjection(projection, { render = true } = {}) {
+        let next = null;
+        if (typeof projection?.assetId === 'string'
+            && projection.assetId
+            && typeof projection?.partId === 'string'
+            && projection.partId) {
+            const target = this.getRigLensPartTarget(projection.assetId);
+            const isSupportedPart = target?.ok === true
+                && target.support?.editable === true
+                && target.parts?.some(part => part?.partId === projection.partId)
+                && target.layers?.some(layer => layer?.id === projection.partId);
+            if (isSupportedPart) {
+                next = { assetId: projection.assetId, partId: projection.partId };
+            }
+        }
+
+        const current = this._rigLensActivePartProjection;
+        if (current?.assetId === next?.assetId && current?.partId === next?.partId) return false;
+        this._rigLensActivePartProjection = next;
+        if (render && this.isVisible) this.render();
+        return true;
+    }
+
+    _getRigLensActivePartFolder(projection = this._getSelectedCafRigProjection()) {
+        const active = this._rigLensActivePartProjection;
+        if (!active?.assetId || !active?.partId
+            || projection?.asset?.id !== active.assetId
+            || projection?.entry?.clip?.assetId !== active.assetId) return null;
+
+        const target = this.getRigLensPartTarget(active.assetId);
+        const isSupportedPart = target?.ok === true
+            && target.support?.editable === true
+            && target.parts?.some(part => part?.partId === active.partId)
+            && target.layers?.some(layer => layer?.id === active.partId);
+        if (!isSupportedPart) return null;
+        return projection.folders.find(candidate => (
+            candidate.layer?.id === active.partId
+            && candidate.part?.partId === active.partId
+        )) || null;
+    }
+
     _getSelectedFolderPartTimelineContext(frameIndex = this.model.playback.currentFrame) {
         const projection = this._getSelectedCafRigProjection(frameIndex);
         if (!projection) return null;
+        const projectedFolder = this._getRigLensActivePartFolder(projection);
         const selectedFolder = this.selectedInternalLayerId
             ? projection.folders.find(candidate => candidate.layer.id === this.selectedInternalLayerId) || null
             : null;
-        const folder = selectedFolder?.part
+        const folder = projectedFolder || (selectedFolder?.part
             ? selectedFolder
-            : projection.folders.find(candidate => candidate.part) || null;
+            : projection.folders.find(candidate => candidate.part) || null);
         if (!folder) return null;
         return {
             entry: projection.entry,
@@ -20444,6 +20487,7 @@ export class AnimationTablePopup {
 
         const selectedCafRigProjection = this._getSelectedCafRigProjection();
         const selectedCafRigBoneDisplayPlan = this._getRigBoneTableDisplayPlan(selectedCafRigProjection);
+        const projectedRigPartFolder = this._getRigLensActivePartFolder(selectedCafRigProjection);
 
         if (trackList) {
             let trackHtml = `
@@ -20494,12 +20538,19 @@ export class AnimationTablePopup {
                         const rowClasses = rigFolder.bone
                             ? ' anim-bone-track-item'
                             : ' anim-rig-folder-candidate';
+                        const isProjectedRigPart = projectedRigPartFolder?.layer?.id === rigFolder.layer.id
+                            && projectedRigPartFolder?.part?.partId === rigFolder.part?.partId;
                         const action = rigFolder.bone
                             ? `<button class="anim-bone-key-toggle${rigFolder.boneKey ? ' active' : ''}"
                                 type="button" aria-pressed="${rigFolder.boneKey ? 'true' : 'false'}"
                                 title="${boneKeyTitle}"
                                 ${rigFolder.isFrameInClip && !this.isPlaying ? '' : 'disabled'}>◆</button>`
-                            : `<span class="anim-rig-lane-status" aria-label="RIG未設定">未設定</span>`;
+                            : isProjectedRigPart
+                                ? '<span class="anim-rig-lane-status" aria-label="Active RIG PART target">ACTIVE</span>'
+                                : '<span class="anim-rig-lane-status" aria-label="RIG未設定">未設定</span>';
+                        const activeRigPartStatus = isProjectedRigPart && rigFolder.bone
+                            ? '<span class="anim-rig-lane-status" aria-label="Active RIG PART target">ACTIVE</span>'
+                            : '';
                         trackHtml += `
                             <div class="anim-track-item anim-rig-folder-track-item${rowClasses}${targetSelected ? ' is-selected' : ''}"
                                 data-track-id="${track.id}"
@@ -20510,6 +20561,7 @@ export class AnimationTablePopup {
                                 <span class="anim-part-track-prefix" aria-hidden="true">↳</span>
                                 <span class="anim-track-name anim-part-track-name" aria-label="Rig target: ${this._escapeHtml(rigFolder.layer.name)}">${this._escapeHtml(rigFolder.layer.name)}</span>
                                 <span class="anim-rig-pivot-indicator" aria-label="${rigFolder.targetKind === 'raster' ? 'Root Raster' : 'Folder'}のBONE PIVOT設定">${rigFolder.bone ? '✓' : '○'}</span>
+                                ${activeRigPartStatus}
                                 ${action}
                             </div>`;
                     });
@@ -20700,8 +20752,11 @@ export class AnimationTablePopup {
                                 sampled: rigFolder.boneSampled
                             }, totalFrames, currentFrame, showCurrentFrame);
                         } else {
+                            const projectedPart = projectedRigPartFolder?.layer?.id === rigFolder.layer.id
+                                && projectedRigPartFolder?.part?.partId === rigFolder.part?.partId
+                                ? rigFolder.part : null;
                             gridHtml += this._renderSelectedCafFolderTimelineRow(
-                                { ...rigFolder, part: null },
+                                { ...rigFolder, part: projectedPart },
                                 totalFrames,
                                 currentFrame,
                                 showCurrentFrame

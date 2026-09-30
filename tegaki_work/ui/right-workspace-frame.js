@@ -979,6 +979,36 @@ export class RightWorkspaceFrame {
         return window.PopupManager?.get?.('animationTable') || null;
     }
 
+    _syncRigLensActivePartProjection(target) {
+        const table = this._getRigLensTable();
+        if (!table?.setRigLensActivePartProjection) return false;
+
+        let projection = null;
+        const assetId = this.rigLensTarget?.assetId;
+        const partId = this.rigSelectedPartId;
+        const currentRigTarget = target?.rigTarget;
+        if (this.rigLensActive
+            && this.rigAuthoringKind === 'part'
+            && assetId
+            && partId
+            && currentRigTarget?.eligible === true
+            && currentRigTarget.assetId === assetId) {
+            const partTarget = table.getRigLensPartTarget?.(assetId);
+            const registeredPart = partTarget?.parts?.some(part => part?.partId === partId);
+            const supportedRaster = partTarget?.layers?.some(layer => layer?.id === partId);
+            if (partTarget?.ok === true
+                && partTarget.support?.editable === true
+                && registeredPart
+                && supportedRaster) {
+                projection = { assetId, partId };
+            }
+        }
+
+        const changed = table.setRigLensActivePartProjection(projection, { render: false });
+        if (changed && table.isVisible) table.render?.();
+        return changed;
+    }
+
     _hasRigPosePreview(table = this._getRigLensTable()) {
         return table?.hasRigLensBonePosePreview?.() === true
             || table?.hasRigLensPartPosePreview?.() === true;
@@ -4318,6 +4348,7 @@ export class RightWorkspaceFrame {
         this.rigEntryMessageNode.textContent = rigEntryMessage;
         this.rigEntryMessageNode.hidden = !rigEntryMessage;
         this._renderRigLens(target);
+        this._syncRigLensActivePartProjection(target);
         if (!rigLensVisible) {
             this.rigPlacementMode = null;
             this.rigPointerGesture = null;
@@ -4343,6 +4374,7 @@ export class RightWorkspaceFrame {
     }
 
     destroy() {
+        this._syncRigLensActivePartProjection(null);
         this._getRigLensTable()?.cancelRigLensBonePosePreview?.();
         this._getRigLensTable()?.cancelRigLensPartPosePreview?.();
         if (this.rigStructureConnectorFrame != null) {

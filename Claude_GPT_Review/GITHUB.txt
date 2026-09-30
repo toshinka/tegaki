@@ -1,6 +1,6 @@
 # TEGAKI — 外部WEB AI向け GitHub読解リンク集
 
-更新日: 2026-09-30（R-69F: checkpoint routeを更新）
+更新日: 2026-09-30（R-70: PART active-target projectionを記録）
 対象: 現行コード・製品思想・技術契約・現在の計画。Archive / 過去Reviewは収録しない。
 このリンク集は外部AI向けの案内であり、仕様の第二正本ではない。
 
@@ -14,16 +14,16 @@
 
 ---
 
-## CURRENT ROUTE（2026-09-30 / R-69C cleanup・R-69F文書調整時点）
+## CURRENT ROUTE（2026-09-30 / R-70受入時点）
 
-- 現在のcheckpoint: branch `main`、HEAD `7a18a75d4eca5e1bcd2c94bdfc12f170992bf1b0`。origin/mainも同じSHA。R-69C cleanup（`.gitignore`の狭いignore ruleと生成物9件の削除）は未commitで、この文書更新も未commit。
-- 現在の主軸: 機能・製品作業。DEFORM数値Weight研究は停止、Animation Dock基盤（R-62〜R-64）は当面完了、production routeは新RIG PART基盤（R-66 PART NOTE参照）。R-69 Reset Status fixは完了。R-70は未着手。
+- 現在のcheckpoint: branch `main`、HEAD `7c6371d761890deaaf582d9eb32b1d0411e17b02`。origin/mainも同じSHA（R-70開始時点でahead/behind 0/0）。R-69C cleanupとR-69F SSOT更新はR-69CPの通常forward commitに含まれ、history rewriteなし。R-70の実装・検証・本書更新は現在のworktreeで未commit。
+- 現在の主軸: 機能・製品作業。DEFORM数値Weight研究は停止、Animation Dock基盤（R-62〜R-64）は当面完了、production routeは新RIG PART基盤（R-66 PART NOTE参照）。R-69 Reset Status fixは完了。R-70 PART active-target projectionは実装・verifier・Browser acceptance A〜G PASS。
 - DEFORM Weight研究: R-61で一旦停止。R-47 topology/supportが研究baseline。AVW/APW/MSW/JBWは診断用witnessであり、production Weight生成器ではない（production未統合）。JBWはJunction過膨張を減らしたが中央の細い接続は残存。support/topology再検討は明示的に再開されるまで保留。
 - R-60/R-61の診断ファイル（tegaki_work/build/ の r60-*/r61-* 比較HTML、junction/weight-direction系 verifier・generator等）はローカル未commitのまま保持。R-62以降のCardで整理・削除しない。
 - R-62 Animation Dock timeline board alignment: 完了（下記「4. INTERACTION / TIMELINE」のDock board routeとR-62 NOTE参照）。
 - R-64 bottom Dock dynamic height: 完了（R-64 NOTE参照）。
 - NEXT ROUTE:
-  - R-70 — evaluate/implement RIG PART active-target projection to Animation Dock without creating a second persistent or UI selection authority. これは次のCommander判断候補であり、R-70の実装Cardや詳細設計はまだ確定していない。
+  - 次の実装CardはCommander判断待ち。本書では次Cardを提案・設計しない。
 
 ---
 
@@ -266,9 +266,17 @@ R-69 RESET STATUS NOTE（Result A）:
 R-69R POST-REBOOT INTEGRITY NOTE（Result A）:
 - R-69の機能修正とverifierは有効と確認。commit `7a18a75`に`.r69-build-check`のVite生成物9件が含まれていることを発見。履歴rewriteは行わない方針。
 
-R-69C GENERATED ARTIFACT CLEANUP NOTE（Result PASS / uncommitted）:
+R-69C GENERATED ARTIFACT CLEANUP NOTE（Result PASS; R-69CPより前の履歴）:
 - `.r69-build-check`の追跡生成物9件をforward cleanupとしてworktreeから削除し、root `.gitignore`へ`/tegaki_work/.r69-build-check/`を追加。ignore check / `git diff --check` / diff-scope validation PASS。
-- cleanupは未commitで、history rewriteなし。上記HEAD `7a18a75d4eca5e1bcd2c94bdfc12f170992bf1b0`を維持。
+- R-69C実施時点では未commitだった。その後R-69CPでR-69C cleanupとR-69F文書更新を通常forward checkpointとしてcommitし、history rewriteなし。
+
+R-69CP CHECKPOINT NOTE（Result PASS）:
+- R-69C cleanupとR-69F SSOT更新を通常forward commitし、`main` / `origin/main`を`7c6371d761890deaaf582d9eb32b1d0411e17b02`へ揃えた。
+
+R-70 RIG PART ACTIVE-TARGET PROJECTION NOTE（Result A）:
+- Right Workspaceの`rigSelectedPartId`からAnimation Dockへread-only / one-wayでactive PARTを投影。`selectedInternalLayerId` / `selectedRigBoneId`はprojectionで変更せず、Project schema・History・逆同期なし。
+- runtime descriptorは登録済み・supportedなtop-level Raster PARTだけを対象とし、DEFORM切替、RIG退出、Reset、無効targetでclear。Dock PART context優先解決と既存status styleの`ACTIVE`表示を追加。
+- 専用verifier、RIG PART / Reset / Animation Dock targeted verifiers、syntax、isolated-output Vite production build PASS。Chrome disposable CAFでBrowser acceptance A〜G PASS。
 
 
 ### 7. HISTORY / SAVE / EXPORT
