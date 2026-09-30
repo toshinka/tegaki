@@ -1,6 +1,6 @@
 # TEGAKI — 外部WEB AI向け GitHub読解リンク集
 
-更新日: 2026-09-29（R-62: CURRENT ROUTE / Animation Dock導線を追加）
+更新日: 2026-09-30（R-69F: checkpoint routeを更新）
 対象: 現行コード・製品思想・技術契約・現在の計画。Archive / 過去Reviewは収録しない。
 このリンク集は外部AI向けの案内であり、仕様の第二正本ではない。
 
@@ -14,18 +14,16 @@
 
 ---
 
-## CURRENT ROUTE（2026-09-29 / R-68時点）
+## CURRENT ROUTE（2026-09-30 / R-69C cleanup・R-69F文書調整時点）
 
-- 現在の主軸: 機能・製品作業。DEFORM数値Weight研究は停止、Animation Dock基盤（R-62〜R-64）は当面完了、現在のproduction route = 新RIG PART基盤（R-66 PART NOTE参照）。
+- 現在のcheckpoint: branch `main`、HEAD `7a18a75d4eca5e1bcd2c94bdfc12f170992bf1b0`。origin/mainも同じSHA。R-69C cleanup（`.gitignore`の狭いignore ruleと生成物9件の削除）は未commitで、この文書更新も未commit。
+- 現在の主軸: 機能・製品作業。DEFORM数値Weight研究は停止、Animation Dock基盤（R-62〜R-64）は当面完了、production routeは新RIG PART基盤（R-66 PART NOTE参照）。R-69 Reset Status fixは完了。R-70は未着手。
 - DEFORM Weight研究: R-61で一旦停止。R-47 topology/supportが研究baseline。AVW/APW/MSW/JBWは診断用witnessであり、production Weight生成器ではない（production未統合）。JBWはJunction過膨張を減らしたが中央の細い接続は残存。support/topology再検討は明示的に再開されるまで保留。
 - R-60/R-61の診断ファイル（tegaki_work/build/ の r60-*/r61-* 比較HTML、junction/weight-direction系 verifier・generator等）はローカル未commitのまま保持。R-62以降のCardで整理・削除しない。
 - R-62 Animation Dock timeline board alignment: 完了（下記「4. INTERACTION / TIMELINE」のDock board routeとR-62 NOTE参照）。
 - R-64 bottom Dock dynamic height: 完了（R-64 NOTE参照）。
 - NEXT ROUTE:
-  - Animation Dockの細部polish（ruler秒バッジ、current列表示等）は後でLuna/Geminiへ小Cardとして委譲可。
-  - Transformの美観監査は後回し。
-  - PART表示の統一は後回し。
-  - WARP × RIGのownership / scale問題は保留のまま。
+  - R-70 — evaluate/implement RIG PART active-target projection to Animation Dock without creating a second persistent or UI selection authority. これは次のCommander判断候補であり、R-70の実装Cardや詳細設計はまだ確定していない。
 
 ---
 
@@ -260,7 +258,17 @@ R-66 PART NOTE:
 R-68 PART ACCEPTANCE NOTE（Result A / production変更なし）:
 - CAF直下Raster A→B→Cで既存実装を実ブラウザ受入: 登録・親変更・pivotドラッグ（1操作=History+1、Undo/Redo可、Esc=0件）、親追従（B/Cが幾何期待値と一致）、move/rotate直接操作、非0 FrameのMotion KEY（KEY設定済み表示）、多世代合成、2-link IK（手先到達・長さ保存）は全てPASS。再発見・再実装しない。
 - Nested Raster PART は R-67 以降も保留（新Lensは閲覧のみ、nested-part判定を維持）。
-- 既知の周辺事項: Undo/Redo直後にRIG設定リセット欄が「Timeline Historyへ記録できない状態です。」で無効のまま残る（getRigLensResetPlan が historyManager.isApplying を見た状態が再描画されない疑い）。未修正。
+- 既知の周辺事項（R-68時点では未修正）: Undo/Redo直後にRIG設定リセット欄が「Timeline Historyへ記録できない状態です。」で無効のまま残る（getRigLensResetPlan が historyManager.isApplying を見た状態が再描画されない疑い）。この問題はR-69で解消。
+
+R-69 RESET STATUS NOTE（Result A）:
+- R-68のPART Undo/Redo後の一時無効化を再現。`history:changed`のUndo/Redo通知後、History適用完了後にReset sectionだけを再評価する経路を追加。Reset eligibility / History semanticsは不変。repeated Undo/Redo verifier PASS。R-68時点で未解決だったReset Status stale-stateはR-69で解消。
+
+R-69R POST-REBOOT INTEGRITY NOTE（Result A）:
+- R-69の機能修正とverifierは有効と確認。commit `7a18a75`に`.r69-build-check`のVite生成物9件が含まれていることを発見。履歴rewriteは行わない方針。
+
+R-69C GENERATED ARTIFACT CLEANUP NOTE（Result PASS / uncommitted）:
+- `.r69-build-check`の追跡生成物9件をforward cleanupとしてworktreeから削除し、root `.gitignore`へ`/tegaki_work/.r69-build-check/`を追加。ignore check / `git diff --check` / diff-scope validation PASS。
+- cleanupは未commitで、history rewriteなし。上記HEAD `7a18a75d4eca5e1bcd2c94bdfc12f170992bf1b0`を維持。
 
 
 ### 7. HISTORY / SAVE / EXPORT

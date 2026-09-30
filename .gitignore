@@ -6,6 +6,7 @@
 # storage regardless of which product area owns it.
 **/node_modules/
 **/dist/
+/tegaki_work/.r69-build-check/
 **/*.log
 **/*.tmp
 **/.cache/
