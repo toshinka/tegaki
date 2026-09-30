@@ -4142,9 +4142,19 @@ export class RightWorkspaceFrame {
             this._syncStatusMount();
             this.sync();
         };
+        this._historyChangedHandler = (payload = {}) => {
+            if (payload.action !== 'undo' && payload.action !== 'redo') return;
+            // History announces synchronously before its applying guard is cleared.
+            // Refresh after the current stack so the reset plan sees completed state.
+            queueMicrotask(() => {
+                if (!this.rigLensActive || !this.rigResetRegion) return;
+                this._renderRigResetSection();
+            });
+        };
         this.eventBus.on('popup:shown', this._popupShownHandler);
         this.eventBus.on('popup:hidden', this._popupHiddenHandler);
         this.eventBus.on('animation-table:dock-state-changed', this._dockStateHandler);
+        this.eventBus.on('history:changed', this._historyChangedHandler);
     }
 
     _syncTransformActions(layerEditing) {

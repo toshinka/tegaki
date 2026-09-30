@@ -11,6 +11,8 @@ const { RASTER_MESH_SCHEMA_VERSION } = await import('../system/animation/raster-
 const { ALPHA_FIT_GRID_GENERATOR } = await import('../system/animation/raster-bone-auto-setup.js');
 const { AnimationTablePopup } = await import('../ui/animation-table-popup.js');
 const { historyManager } = await import('../system/history.js');
+const { TegakiEventBus } = await import('../system/event-bus.js');
+const { RightWorkspaceFrame } = await import('../ui/right-workspace-frame.js');
 
 const buildRoot = path.dirname(fileURLToPath(import.meta.url));
 const workRoot = path.dirname(buildRoot);
@@ -416,6 +418,93 @@ assert.equal(atomicModel.getClipById('atomic-clip-a').rigMotion, atomicFirstMoti
     'model mutation failure restores already-updated Clip Motion');
 assert.equal(atomicModel.getClipById('atomic-clip-b').rigMotion, atomicSecondMotion,
     'failed Clip Motion write remains unchanged');
+
+// Undo/Redo emits history:changed while applying is still true. The Right Workspace
+// defers only the Reset section refresh to a microtask, preserving the live guard.
+resetHistory();
+const makeUiNode = () => ({ hidden: false, disabled: false, title: '', textContent: '' });
+const rigRefreshValue = { value: 0 };
+const rigRefreshRenderApplyingStates = [];
+let rigRefreshRenderCount = 0;
+const rigRefreshFrame = Object.create(RightWorkspaceFrame.prototype);
+Object.assign(rigRefreshFrame, {
+    eventBus: TegakiEventBus,
+    rigLensActive: true,
+    rigLensTarget: { assetId: 'history-refresh-asset' },
+    _getRigResetFrameBlockReason: () => historyManager.isApplying
+        ? 'Timeline Historyへ記録できない状態です。'
+        : '',
+    _getRigLensTable: () => ({
+        getRigLensResetPlan: () => ({
+            ok: true,
+            mode: 'part',
+            affectedClipCount: 1,
+            affectedRigKeyCount: 0
+        })
+    }),
+    rigResetRegion: makeUiNode(),
+    rigResetActionButton: makeUiNode(),
+    rigResetStatus: makeUiNode(),
+    rigResetConfirmation: makeUiNode(),
+    rigResetSummary: makeUiNode(),
+    rigResetConfirmationStatus: makeUiNode(),
+    rigResetCommitButton: makeUiNode(),
+    rigResetConfirmationOpen: false,
+    rigResetNotice: ''
+});
+const renderRigResetSection = RightWorkspaceFrame.prototype._renderRigResetSection;
+rigRefreshFrame._renderRigResetSection = function () {
+    rigRefreshRenderCount++;
+    const status = renderRigResetSection.call(this);
+    rigRefreshRenderApplyingStates.push(historyManager.isApplying);
+    return status;
+};
+rigRefreshFrame._subscribeLayoutEvents();
+assert.equal(rigRefreshFrame._renderRigResetSection().ok, true,
+    'Reset is available before Undo/Redo');
+assert.equal(rigRefreshFrame.rigResetActionButton.disabled, false);
+historyManager.isApplying = true;
+const applyingResetStatus = rigRefreshFrame._getRigResetStatus();
+assert.equal(applyingResetStatus.ok, false,
+    'Reset remains unavailable while History is applying');
+assert.equal(applyingResetStatus.reason, 'Timeline Historyへ記録できない状態です。');
+historyManager.isApplying = false;
+historyManager.push({
+    name: 'test PART edit',
+    do: () => { rigRefreshValue.value++; },
+    undo: () => { rigRefreshValue.value--; },
+    meta: { type: 'caf-rig-part-pivot' }
+});
+assert.equal(historyManager.stack.length, 1);
+assert.equal(rigRefreshRenderCount, 1, 'push does not create a Reset refresh');
+
+async function assertCompletedHistoryRefresh(action, expectedIndex, expectedValue) {
+    const rendersBefore = rigRefreshRenderCount;
+    historyManager[action]();
+    assert.equal(historyManager.isApplying, false, `${action} returned after History application`);
+    await new Promise(resolve => queueMicrotask(resolve));
+    assert.equal(rigRefreshRenderCount, rendersBefore + 1,
+        `${action} schedules exactly one Reset refresh`);
+    assert.equal(rigRefreshRenderApplyingStates.at(-1), false,
+        `${action} refresh observes completed History state`);
+    assert.equal(rigRefreshFrame._getRigResetStatus().ok, true,
+        `${action} recalculates the current Reset plan`);
+    assert.equal(rigRefreshFrame.rigResetActionButton.disabled, false,
+        `${action} restores the rendered Reset availability`);
+    assert.equal(rigRefreshFrame.rigResetStatus.hidden, true,
+        `${action} clears the transient History block message`);
+    assert.equal(historyManager.stack.length, 1, 'view refresh does not add History entries');
+    assert.equal(historyManager.index, expectedIndex, `${action} keeps History bookkeeping correct`);
+    assert.equal(rigRefreshValue.value, expectedValue, `${action} only applies its History command`);
+}
+
+await assertCompletedHistoryRefresh('undo', -1, 0);
+await assertCompletedHistoryRefresh('redo', 0, 1);
+await assertCompletedHistoryRefresh('undo', -1, 0);
+await assertCompletedHistoryRefresh('redo', 0, 1);
+await assertCompletedHistoryRefresh('undo', -1, 0);
+await assertCompletedHistoryRefresh('redo', 0, 1);
+TegakiEventBus.off?.('history:changed', rigRefreshFrame._historyChangedHandler);
 
 const armHandler = frameSource.match(/_armRigResetConfirmation\(\) \{[\s\S]*?\n    _cancelRigResetConfirmation\(\)/u)?.[0] || '';
 assert.ok(armHandler, 'inline reset confirmation has an explicit arm handler');
