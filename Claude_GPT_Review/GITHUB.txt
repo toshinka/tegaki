@@ -1,6 +1,6 @@
 # TEGAKI — 外部WEB AI向け GitHub読解リンク集
 
-更新日: 2026-09-30（R-70: PART active-target projectionを記録）
+更新日: 2026-09-30（R-71: Project保存・再読込受入の制限を記録）
 対象: 現行コード・製品思想・技術契約・現在の計画。Archive / 過去Reviewは収録しない。
 このリンク集は外部AI向けの案内であり、仕様の第二正本ではない。
 
@@ -14,16 +14,17 @@
 
 ---
 
-## CURRENT ROUTE（2026-09-30 / R-70受入時点）
+## CURRENT ROUTE（2026-09-30 / R-71受入時点）
 
-- 現在のcheckpoint: branch `main`、HEAD `7c6371d761890deaaf582d9eb32b1d0411e17b02`。origin/mainも同じSHA（R-70開始時点でahead/behind 0/0）。R-69C cleanupとR-69F SSOT更新はR-69CPの通常forward commitに含まれ、history rewriteなし。R-70の実装・検証・本書更新は現在のworktreeで未commit。
-- 現在の主軸: 機能・製品作業。DEFORM数値Weight研究は停止、Animation Dock基盤（R-62〜R-64）は当面完了、production routeは新RIG PART基盤（R-66 PART NOTE参照）。R-69 Reset Status fixは完了。R-70 PART active-target projectionは実装・verifier・Browser acceptance A〜G PASS。
+- 現在のcheckpoint: branch `main`、HEAD `773f2c0428252c1bcea9365e9d12525116e6eade`。ローカルのorigin/main tracking refも同じSHAでahead/behind 0/0。R-69C cleanup / R-69F SSOT updateとR-70 implementationはそれぞれR-69CP / R-70CPで通常forward commit済み。R-71開始時にfetchを試みたが、`.git/FETCH_HEAD`のpermission deniedとGitHub接続不可でremoteをrefreshできず、commit/pushは行っていない。
+- 現在の主軸: 機能・製品作業。DEFORM数値Weight研究は停止、Animation Dock基盤（R-62〜R-64）は当面完了、production routeは新RIG PART基盤（R-66 PART NOTE参照）。R-69 Reset Status fixは完了。R-70 PART active-target projectionはR-70CPに含まれ、実装・verifier・Browser acceptance A〜G PASS。
+- R-71 Project save/reopen acceptance: `ClipAsset.rigDefinition.parts` / `ClipInstance.rigMotion.partTracks`をProject serializerから`TimelineModel`へ復元する既存production model verifierとRIG targeted verifiersはPASS。Browser上のProject保存は未完了。Album経由の通常保存がProjectManagerのnative save pickerへ進み、現在の自動化ではpickerを操作できなかったため、ProjectManager.loadProjectによる真の再読込、再入場、再編集、R-70 projection受入は未確認。production code変更なし。Result B（受入制限。コア永続化の欠陥は確認されていない）。
 - DEFORM Weight研究: R-61で一旦停止。R-47 topology/supportが研究baseline。AVW/APW/MSW/JBWは診断用witnessであり、production Weight生成器ではない（production未統合）。JBWはJunction過膨張を減らしたが中央の細い接続は残存。support/topology再検討は明示的に再開されるまで保留。
 - R-60/R-61の診断ファイル（tegaki_work/build/ の r60-*/r61-* 比較HTML、junction/weight-direction系 verifier・generator等）はローカル未commitのまま保持。R-62以降のCardで整理・削除しない。
 - R-62 Animation Dock timeline board alignment: 完了（下記「4. INTERACTION / TIMELINE」のDock board routeとR-62 NOTE参照）。
 - R-64 bottom Dock dynamic height: 完了（R-64 NOTE参照）。
 - NEXT ROUTE:
-  - 次の実装CardはCommander判断待ち。本書では次Cardを提案・設計しない。
+  - 次の作業はCommander判断待ち。本書では次Cardを提案・設計しない。
 
 ---
 
