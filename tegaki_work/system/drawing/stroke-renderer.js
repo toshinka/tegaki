@@ -169,8 +169,8 @@ export class StrokeRenderer {
      * Phase 3a: エアブラシのリアルタイム焼き込み用コンテナを生成する。
      * state は BrushCore 側でストローク中だけ保持し、スタンプ間隔の端数を持ち越す。
      */
-    renderAirbrushSegment(points, settings, state = {}) {
-        return this.airbrushDabRenderer.renderSegment(points, settings, state);
+    renderAirbrushSegment(points, settings, state = {}, target = null) {
+        return this.airbrushDabRenderer.renderSegment(points, settings, state, target);
     }
 
     /** renderAirbrushSegmentの戻り値を描画後に返却する(pooling時は再利用)。 */

@@ -26,10 +26,13 @@ export class AirbrushDabRenderer {
         this.pooledDabCount = 0;
     }
 
-    renderSegment(points, settings, state = {}) {
-        if (!points || points.length < 1) return null;
+    /**
+     * @param {Container|null} [target] - 同一event内の複数区間を1回のrenderへまとめる時、前回の戻り値を渡すとdabを追記する。
+     */
+    renderSegment(points, settings, state = {}, target = null) {
+        if (!points || points.length < 1) return target;
 
-        const container = this._acquireContainer();
+        const container = target || this._acquireContainer();
         const isPenDab = settings.dabMode === 'pen';
         const texture = this._getTexture(isPenDab ? settings.penDabSoftness : settings.airbrushSoftness);
         const addDab = isPenDab ? this._addPenDab : this._addDab;

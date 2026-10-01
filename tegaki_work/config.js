@@ -67,6 +67,8 @@ export const TEGAKI_CONFIG = {
         airbrushDabPooling: true,
         // pen / eraser / airbrushのrealtime区間をcentripetal Catmull-Romで補間する(1sample先読み)。falseで直線補間。
         realtimeCurveInterpolation: true,
+        // airbrush / pen dabのmask描画をpointer event(coalesced batch)単位で1回のrenderへまとめる。
+        airbrushEventBatching: true,
         // penをGraphics線分ではなくairbrushと共通のdab engine(float mask + max合成)で描く試験設定。
         penDabRendering: false,
         // pen dabの硬さ(0=硬い円)と、dab径に対する間隔比。

@@ -487,6 +487,7 @@ export class BrushCore {
         if (isBatchableMode) {
             this._beginRealtimeBatch(currentMode);
         }
+        const ownsAirbrushBatch = this._beginAirbrushBatch();
 
         try {
             if (Array.isArray(this.curveControlPoints)) {
@@ -527,6 +528,9 @@ export class BrushCore {
         } finally {
             if (isBatchableMode) {
                 this._flushRealtimeBatch();
+            }
+            if (ownsAirbrushBatch) {
+                this._flushAirbrushBatch();
             }
         }
 
@@ -647,11 +651,15 @@ export class BrushCore {
         if (isBatchableMode) {
             this._beginRealtimeBatch(mode);
         }
+        const ownsAirbrushBatch = this._beginAirbrushBatch();
         try {
             this._emitStrokeChord(mode, prev, from, to, to, pressureEnabled);
         } finally {
             if (isBatchableMode) {
                 this._flushRealtimeBatch();
+            }
+            if (ownsAirbrushBatch) {
+                this._flushAirbrushBatch();
             }
         }
     }
@@ -701,6 +709,7 @@ export class BrushCore {
         if (isBatchableMode) {
             this._beginRealtimeBatch(mode);
         }
+        const ownsAirbrushBatch = this._beginAirbrushBatch();
         try {
             infos.forEach((info, index) => {
                 if (!info) return;
@@ -716,6 +725,9 @@ export class BrushCore {
         } finally {
             if (isBatchableMode) {
                 this._flushRealtimeBatch();
+            }
+            if (ownsAirbrushBatch) {
+                this._flushAirbrushBatch();
             }
         }
         if (this.strokeInputProfile) {
@@ -1306,11 +1318,48 @@ export class BrushCore {
             maskSettings.penDabSoftness = engine.penDabSoftness ?? 0;
             maskSettings.penDabSpacingRatio = engine.penDabSpacingRatio ?? 0.05;
         }
+        const batch = this.airbrushBatch;
         const renderContainer = this.strokeRenderer.renderAirbrushSegment(
             points,
             maskSettings,
-            this.airbrushState.spacingState
+            this.airbrushState.spacingState,
+            batch?.container || null
         );
+        if (batch) {
+            // pointer event内の区間はdabを溜め、_flushAirbrushBatchで1回だけmaskへ描く。
+            if (renderContainer) batch.container = renderContainer;
+            this._warnPerf('brush.renderRealtimeAirbrushSegment', perfStart, {
+                points: points?.length || 0,
+                batched: true
+            });
+            return;
+        }
+        this._drawAirbrushDabContainer(renderContainer);
+        this._warnPerf('brush.renderRealtimeAirbrushSegment', perfStart, {
+            points: points?.length || 0
+        });
+    }
+
+    /** airbrush / pen dabの区間描画をpointer event単位でまとめる。開始した呼び出し側だけがtrueを受け取る。 */
+    _beginAirbrushBatch() {
+        if (!this.airbrushState || this.airbrushBatch) return false;
+        if (window.TEGAKI_CONFIG?.brushEngine?.airbrushEventBatching === false) return false;
+        this.airbrushBatch = { container: null };
+        return true;
+    }
+
+    _flushAirbrushBatch() {
+        const batch = this.airbrushBatch;
+        this.airbrushBatch = null;
+        if (!batch?.container) return;
+        if (!this.airbrushState) {
+            this.strokeRenderer.releaseAirbrushSegment(batch.container);
+            return;
+        }
+        this._drawAirbrushDabContainer(batch.container);
+    }
+
+    _drawAirbrushDabContainer(renderContainer) {
         const dabCount = renderContainer?.children?.length || 0;
         const realtime = this.strokeInputProfile?.realtime;
         if (realtime) {
@@ -1332,10 +1381,9 @@ export class BrushCore {
 
             this.strokeRenderer.releaseAirbrushSegment(renderContainer);
             this._requestLiveCanvasRender('realtime-airbrush');
+        } else if (renderContainer) {
+            this.strokeRenderer.releaseAirbrushSegment(renderContainer);
         }
-        this._warnPerf('brush.renderRealtimeAirbrushSegment', perfStart, {
-            points: points?.length || 0
-        });
     }
 
     _beginAirbrushStroke(activeLayer, settings) {
@@ -1457,6 +1505,10 @@ export class BrushCore {
     }
 
     _cleanupAirbrushStroke() {
+        if (this.airbrushBatch?.container) {
+            this.strokeRenderer.releaseAirbrushSegment(this.airbrushBatch.container);
+        }
+        this.airbrushBatch = null;
         const state = this.airbrushState;
         if (state?.previewSprite) {
             state.previewSprite.mask = null;
