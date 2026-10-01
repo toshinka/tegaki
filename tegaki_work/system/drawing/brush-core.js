@@ -17,7 +17,7 @@
  * ============================================================================
  */
 
-import { Graphics, Container, Sprite, RenderTexture, Rectangle } from 'pixi.js';
+import { Graphics, Container, Sprite, RenderTexture, Rectangle, Texture } from 'pixi.js';
 import { rasterBoundsEqual } from '../raster-bounds.js';
 import {
     calculateStrokeDirtyRect,
@@ -36,6 +36,105 @@ import {
     summarizePathCollectionMemory
 } from '../raster-snapshot-memory.js';
 import { generateAdaptiveInterpolationPoints } from './realtime-stroke-sampling.js';
+import { CurveInterpolator } from './curve-interpolator.js';
+import { AirbrushDabRenderer } from './airbrush-dab-renderer.js';
+
+const AIRBRUSH_BUILDUP_POLL_MS = 8;
+
+function unionRect(a, b) {
+    if (!a) return b || null;
+    if (!b) return a;
+    const x = Math.min(a.x, b.x);
+    const y = Math.min(a.y, b.y);
+    return {
+        x,
+        y,
+        width: Math.max(a.x + a.width, b.x + b.width) - x,
+        height: Math.max(a.y + a.height, b.y + b.height) - y
+    };
+}
+// 入り抜き端の最小径倍率(0だと線端が消えて見えるため少し残す)。
+const PEN_TAPER_MIN_SCALE = 0.08;
+// ヒゲ判定: 線端の短い区間が、その手前の進行方向からこの角度以上折れていればヒゲとみなす。
+const PEN_HOOK_MIN_ANGLE_DEG = 70;
+
+/** 点列を先頭からの累積距離で引けるようにする。 */
+function cumulativeLengths(points) {
+    const lengths = [0];
+    for (let i = 1; i < points.length; i++) {
+        lengths[i] = lengths[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    }
+    return lengths;
+}
+
+function angleBetweenDeg(ax, ay, bx, by) {
+    const la = Math.hypot(ax, ay);
+    const lb = Math.hypot(bx, by);
+    if (!(la > 1e-6) || !(lb > 1e-6)) return 0;
+    const cos = Math.max(-1, Math.min(1, (ax * bx + ay * by) / (la * lb)));
+    return (Math.acos(cos) * 180) / Math.PI;
+}
+
+/**
+ * 線端のヒゲ除去。終端(または始端)からhookLength以内の短い区間が、その手前2×hookLengthの
+ * 進行方向から PEN_HOOK_MIN_ANGLE_DEG 以上折れていれば、その区間を切り落とす。
+ * 線全体がヒゲ判定に必要な長さ(4×hookLength)に満たない短い線は変更しない。
+ * @returns {{points: Array, trimmed: boolean, trimmedStart: number, trimmedEnd: number}}
+ */
+export function trimStrokeHooks(points, hookLength) {
+    const result = { points, trimmed: false, trimmedStart: 0, trimmedEnd: 0 };
+    if (!Array.isArray(points) || points.length < 4 || !(hookLength > 0)) return result;
+    const lengths = cumulativeLengths(points);
+    const total = lengths[lengths.length - 1];
+    if (total < hookLength * 4) return result;
+
+    const indexAtLength = (target) => {
+        let i = 0;
+        while (i < lengths.length - 1 && lengths[i] < target) i++;
+        return i;
+    };
+
+    // 終端: tail = [tailStart .. last], 参照方向 = [refStart .. tailStart]
+    let endIndex = points.length - 1;
+    const tailStart = indexAtLength(total - hookLength);
+    const refStartEnd = indexAtLength(total - hookLength * 3);
+    if (tailStart > refStartEnd && tailStart < endIndex) {
+        const ref = points[tailStart];
+        const angle = angleBetweenDeg(
+            ref.x - points[refStartEnd].x, ref.y - points[refStartEnd].y,
+            points[endIndex].x - ref.x, points[endIndex].y - ref.y
+        );
+        if (angle >= PEN_HOOK_MIN_ANGLE_DEG) {
+            result.trimmedEnd = lengths[endIndex] - lengths[tailStart];
+            endIndex = tailStart;
+        }
+    }
+
+    // 始端: head = [0 .. headEnd], 参照方向 = [headEnd .. refEnd]
+    let startIndex = 0;
+    const headEnd = indexAtLength(hookLength);
+    const refEndStart = indexAtLength(hookLength * 3);
+    if (headEnd > 0 && refEndStart > headEnd && refEndStart <= endIndex) {
+        const ref = points[headEnd];
+        const angle = angleBetweenDeg(
+            ref.x - points[0].x, ref.y - points[0].y,
+            points[refEndStart].x - ref.x, points[refEndStart].y - ref.y
+        );
+        if (angle >= PEN_HOOK_MIN_ANGLE_DEG) {
+            result.trimmedStart = lengths[headEnd];
+            startIndex = headEnd;
+        }
+    }
+
+    if (startIndex > 0 || endIndex < points.length - 1) {
+        result.points = points.slice(startIndex, endIndex + 1);
+        result.trimmed = true;
+    }
+    return result;
+}
+// 筆圧安定化(One-Euro)の微分cutoff(Hz)と、変化速度に応じたcutoff上昇量(Hz per pressure/s)。
+const PEN_PRESSURE_FILTER_DERIVATIVE_CUTOFF = 1.0;
+const PEN_PRESSURE_FILTER_BETA = 6.0;
 
 export class BrushCore {
     constructor() {
@@ -258,7 +357,8 @@ export class BrushCore {
         const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
 
-        if (currentMode === 'airbrush' || currentMode === 'airbrush-erase') {
+        const usePenDab = this._isPenDabEnabled(currentMode);
+        if (currentMode === 'airbrush' || currentMode === 'airbrush-erase' || usePenDab) {
             const airbrushBeginStart = window.TEGAKI_CONFIG?.debug ? this._perfNow() : null;
             this._beginAirbrushStroke(activeLayer, settings);
             if (Number.isFinite(airbrushBeginStart)) {
@@ -271,7 +371,7 @@ export class BrushCore {
             this._cleanupAirbrushStroke();
         }
 
-        if (this._shouldUsePenOpacityIsolation(currentMode, settings)) {
+        if (!usePenDab && this._shouldUsePenOpacityIsolation(currentMode, settings)) {
             this._beginPenOpacityStroke(activeLayer, settings);
         } else {
             this._cleanupPenOpacityStroke();
@@ -363,6 +463,10 @@ export class BrushCore {
             : null;
 
         this.isDrawing = true;
+        this.penVelocityState = { x: clientX, y: clientY, time: null, speed: 0 };
+        this.penPressureFilter = null;
+        this.penRenderTrace = [{ x: localX, y: localY, pressure: processedPressure }];
+        this.currentTilt = null;
         this.realtimeBatchQueue = null;
         this.realtimeBatchDepth = 0;
         this.realtimeBatchMode = null;
@@ -374,6 +478,11 @@ export class BrushCore {
         this.lastRenderedLocalX = localX;
         this.lastRenderedLocalY = localY;
         this.lastRenderedPressure = processedPressure;
+        this.penTaperTravel = 0;
+        this.lastRenderedTaperScale = this._getPenTaperScale(0, Infinity);
+        this.curveControlPoints = this._isRealtimeCurveEnabled(currentMode)
+            ? [{ x: localX, y: localY, pressure: processedPressure, clientX, clientY }]
+            : null;
 
         const strokeStartedPayload = {
             component: 'drawing',
@@ -461,51 +570,84 @@ export class BrushCore {
         // 描き始めの 0.0 と合わせるため、最小値を 0.1 -> 0.0 に変更。
         // これにより点描時の突然の肥大化を防ぐ。
         const pressureEnabled = this._isPressureEnabledForMode(currentMode, settings, pointerType);
-        const processedPressure = pressureEnabled
+        const stabilizedPressure = pressureEnabled
             ? this._stabilizeMovePressure(pressure, currentMode, pointerType)
             : 1.0;
+        const sampleTime = Number.isFinite(this.currentSampleTime) ? this.currentSampleTime : this._perfNow();
+        if (this.currentSampleTilt) {
+            this.currentTilt = this._computeLocalTilt(clientX, clientY, localX, localY, this.currentSampleTilt, activeLayer);
+        }
+        const smoothedPressure = (pressureEnabled && (currentMode === 'pen' || currentMode === 'eraser'))
+            ? this._filterStrokePressure(stabilizedPressure, sampleTime)
+            : stabilizedPressure;
+        const processedPressure = (currentMode === 'pen' && pressureEnabled)
+            ? this._applyPenVelocityResponse(clientX, clientY, sampleTime, smoothedPressure)
+            : smoothedPressure;
 
-        // Stage C: 画面ピクセル基準の適応的サンプリング
-        const { steps, stepSize, points: interpPoints } = generateAdaptiveInterpolationPoints({
-            lastLocal: { x: this.lastLocalX, y: this.lastLocalY },
-            currentLocal: { x: localX, y: localY },
-            lastPressure: this.lastPressure,
-            currentPressure: processedPressure,
-            lastClient: (Number.isFinite(this.lastClientX) && Number.isFinite(this.lastClientY))
-                ? { x: this.lastClientX, y: this.lastClientY }
-                : null,
-            currentClient: (Number.isFinite(clientX) && Number.isFinite(clientY))
-                ? { x: clientX, y: clientY }
-                : null,
-            pressureEnabled,
-            currentMode,
-            minStep: currentMode === 'lasso-fill' ? 5 : 1,
-            maxStep: 16
-        });
         const pointsBeforeEvent = this.strokeRecorder.getCurrentPoints().length;
+        const currentControlPoint = {
+            x: localX,
+            y: localY,
+            pressure: processedPressure,
+            clientX,
+            clientY,
+            pressureEnabled
+        };
+        let steps = 0;
+        let stepSize = 0;
         let generatedPoints = 0;
 
         const isBatchableMode = currentMode === 'pen' || currentMode === 'eraser';
         if (isBatchableMode) {
             this._beginRealtimeBatch(currentMode);
         }
+        const ownsAirbrushBatch = this._beginAirbrushBatch();
 
         try {
-            for (let i = 0; i < interpPoints.length; i++) {
-                const pt = interpPoints[i];
-                this._renderRealtimeStrokePoint(currentMode, pt.x, pt.y, pt.pressure);
-                this.strokeRecorder.addPoint(pt.x, pt.y, pt.pressure);
-                generatedPoints++;
+            if (Array.isArray(this.curveControlPoints)) {
+                // Catmull-Romは1sample先読みが必要なため、1つ前の区間をここで確定描画する。
+                const controlPoints = this.curveControlPoints;
+                controlPoints.push(currentControlPoint);
+                if (controlPoints.length > 4) controlPoints.shift();
+                const count = controlPoints.length;
+                if (count >= 3) {
+                    const result = this._emitStrokeChord(
+                        currentMode,
+                        controlPoints[count - 4] || controlPoints[count - 3],
+                        controlPoints[count - 3],
+                        controlPoints[count - 2],
+                        controlPoints[count - 1],
+                        pressureEnabled
+                    );
+                    ({ steps, stepSize, generatedPoints } = result);
+                }
+            } else {
+                const lastControlPoint = {
+                    x: this.lastLocalX,
+                    y: this.lastLocalY,
+                    pressure: this.lastPressure,
+                    clientX: this.lastClientX,
+                    clientY: this.lastClientY
+                };
+                const result = this._emitStrokeChord(
+                    currentMode,
+                    null,
+                    lastControlPoint,
+                    currentControlPoint,
+                    null,
+                    pressureEnabled
+                );
+                ({ steps, stepSize, generatedPoints } = result);
             }
-
-            this._renderRealtimeStrokePoint(currentMode, localX, localY, processedPressure);
-            this.strokeRecorder.addPoint(localX, localY, processedPressure);
-            generatedPoints++;
         } finally {
             if (isBatchableMode) {
                 this._flushRealtimeBatch();
             }
+            if (ownsAirbrushBatch) {
+                this._flushAirbrushBatch();
+            }
         }
+        this._updatePenLiveTip(currentMode, currentControlPoint);
 
         // [指示書] ライブ焼き込み中は previewGraphics を使用しない（二重描画防止）
         if (this.previewGraphics && currentMode !== 'eraser' && currentMode !== 'pen' && currentMode !== 'airbrush' && currentMode !== 'airbrush-erase' && currentMode !== 'blur') {
@@ -564,6 +706,588 @@ export class BrushCore {
         });
     }
 
+    /**
+     * 無移動tap / 極短strokeはrealtime区間が描かれないため、pen dab時もここでdab engineへ流す。
+     * 旧Graphics final bakeと同じく、径はcalculateWidth、濃さはpressure opacity。
+     */
+    _renderPenDabTapIfNeeded(mode, strokeData) {
+        if (this.airbrushState?.dabMode !== 'pen') return;
+        if (mode === 'pen' ? this.realtimePenApplied : (mode !== 'eraser' || this.realtimeEraserApplied)) return;
+        const points = strokeData?.points || [];
+        if (points.length === 0) return;
+        if (strokeData.isSingleDot === true || points.length === 1) {
+            this._renderRealtimeAirbrushSegment([points[0]]);
+        } else {
+            for (let i = 1; i < points.length; i++) {
+                this._renderRealtimeAirbrushSegment([points[i - 1], points[i]]);
+            }
+        }
+        if (mode === 'pen') {
+            this.realtimePenApplied = true;
+        } else {
+            this.realtimeEraserApplied = true;
+        }
+    }
+
+    /**
+     * PointerEventのtiltX/tiltY(度)を、Layerローカル空間での傾き方向(angle)と傾き量(0=垂直, 1=水平)へ変換する。
+     * canvas回転・反転を反映するため、画面上の方向ベクトルをLayer座標へ写して角度を求める。
+     */
+    _computeLocalTilt(clientX, clientY, localX, localY, sampleTilt, layer) {
+        const tx = Math.tan((Math.max(-89, Math.min(89, sampleTilt.tiltX)) * Math.PI) / 180);
+        const ty = Math.tan((Math.max(-89, Math.min(89, sampleTilt.tiltY)) * Math.PI) / 180);
+        const horizontal = Math.hypot(tx, ty);
+        if (!(horizontal > 1e-3) || !Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+            return { angle: 0, magnitude: 0 };
+        }
+        const altitude = Math.atan(1 / horizontal);
+        const magnitude = Math.max(0, Math.min(1, 1 - altitude / (Math.PI / 2)));
+        // ペン上端が倒れている向きの反対(ペン先が向く側)を噴射方向とする。
+        const probe = 16;
+        const px = clientX - (tx / horizontal) * probe;
+        const py = clientY - (ty / horizontal) * probe;
+        const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(px, py);
+        const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
+        const local = this.coordinateSystem.worldToLocal(worldX, worldY, layer);
+        const angle = Math.atan2(local.localY - localY, local.localX - localX);
+        return { angle: Number.isFinite(angle) ? angle : 0, magnitude };
+    }
+
+    /** 現在の傾きをdab描画用に返す。強さ0や傾き情報なしではnull。 */
+    _getDabTilt(settingKey, fallbackStrength) {
+        const userStrength = window.TegakiSettingsManager?.get?.(settingKey);
+        const strength = Math.max(0, Math.min(1, Number(userStrength ?? fallbackStrength ?? 0)));
+        const tilt = this.currentTilt;
+        if (!(strength > 0) || !tilt || !(tilt.magnitude > 0)) return null;
+        return { angle: tilt.angle, amount: strength * tilt.magnitude };
+    }
+
+    /**
+     * 筆圧の安定化(One-Euro filter)。液タブ筆圧の細かな揺れで線幅が波打つのを抑えつつ、
+     * 筆圧の速い変化(入り・抜き・強弱)は遅らせない。penPressureSmoothing 0でOFF、1で最も安定。
+     * 時間は各sampleの入力時刻(ms)。同時刻sampleは前回値を返す。
+     */
+    _filterStrokePressure(pressure, sampleTime) {
+        const engine = window.TEGAKI_CONFIG?.brushEngine || {};
+        const userStrength = window.TegakiSettingsManager?.get?.('penPressureSmoothing');
+        const strength = Math.max(0, Math.min(1, Number(userStrength ?? engine.penPressureSmoothing ?? 0)));
+        if (!(strength > 0) || !Number.isFinite(pressure) || !Number.isFinite(sampleTime)) return pressure;
+
+        const state = this.penPressureFilter;
+        if (!state) {
+            this.penPressureFilter = { value: pressure, derivative: 0, time: sampleTime };
+            return pressure;
+        }
+        const dt = (sampleTime - state.time) / 1000;
+        if (!(dt > 0)) return state.value;
+
+        const smoothingFactor = (cutoff) => {
+            const tau = 1 / (2 * Math.PI * cutoff);
+            return 1 / (1 + tau / dt);
+        };
+        const rawDerivative = (pressure - state.value) / dt;
+        state.derivative += smoothingFactor(PEN_PRESSURE_FILTER_DERIVATIVE_CUTOFF) * (rawDerivative - state.derivative);
+        // 強さ0→ほぼ素通し(30Hz)、1→強い平滑(1.5Hz)。速い変化ほどcutoffを上げて遅れを消す。
+        const minCutoff = 30 * Math.pow(1.5 / 30, strength);
+        const cutoff = minCutoff + PEN_PRESSURE_FILTER_BETA * Math.abs(state.derivative);
+        state.value += smoothingFactor(cutoff) * (pressure - state.value);
+        state.time = sampleTime;
+        return Math.max(0, Math.min(1, state.value));
+    }
+
+    /**
+     * 速く引いた線ほど細く・薄くする。画面px/msの平滑化速度で実効筆圧を最大penVelocityThinning割まで下げる。
+     * 画面座標で測るため表示倍率に依存しない。
+     */
+    _applyPenVelocityResponse(clientX, clientY, sampleTime, pressure) {
+        const engine = window.TEGAKI_CONFIG?.brushEngine || {};
+        const userStrength = window.TegakiSettingsManager?.get?.('penVelocityThinning');
+        const strength = Math.max(0, Math.min(0.9, Number(userStrength ?? engine.penVelocityThinning ?? 0)));
+        const state = this.penVelocityState;
+        if (!(strength > 0) || !state || !Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+            return pressure;
+        }
+
+        if (Number.isFinite(state.time) && Number.isFinite(sampleTime)) {
+            const dt = sampleTime - state.time;
+            if (dt > 0.5) {
+                const instant = Math.hypot(clientX - state.x, clientY - state.y) / dt;
+                // 1sampleの揺れで太さが跳ねないよう指数平滑する。
+                state.speed += (Math.min(instant, 20) - state.speed) * 0.35;
+                state.x = clientX;
+                state.y = clientY;
+                state.time = sampleTime;
+            }
+        } else {
+            state.x = clientX;
+            state.y = clientY;
+            state.time = sampleTime;
+        }
+
+        const slow = Number(engine.penVelocitySlow ?? 0.6);
+        const fast = Math.max(slow + 0.1, Number(engine.penVelocityFast ?? 4.0));
+        const t = Math.max(0, Math.min(1, (state.speed - slow) / (fast - slow)));
+        const eased = t * t * (3 - 2 * t);
+        return pressure * (1 - strength * eased);
+    }
+
+    /**
+     * Airbrush: ペンを止めていても時間経過でdabを吹き重ねる(クリスタ式の溜まり)。
+     * 最後にdabを置いてからairbrushBuildupRateの間隔が空いたら現在位置へ1dab置く。
+     */
+    _startAirbrushBuildup() {
+        const engine = window.TEGAKI_CONFIG?.brushEngine || {};
+        const state = this.airbrushState;
+        if (!state || state.dabMode !== 'airbrush' || engine.airbrushBuildup === false) return;
+        if (typeof setTimeout !== 'function') return;
+
+        // 表示frameに依存せず一定間隔で判定する(rAFは非表示時に止まるため使わない)。
+        state.lastDabTime = this._perfNow();
+        const tick = () => {
+            const current = this.airbrushState;
+            if (current !== state) return;
+            state.buildupTimer = setTimeout(tick, AIRBRUSH_BUILDUP_POLL_MS);
+            if (!this.isDrawing) return;
+
+            const userRate = window.TegakiSettingsManager?.get?.('airbrushBuildupRate');
+            const rate = Math.min(120, Number(userRate ?? window.TEGAKI_CONFIG?.brushEngine?.airbrushBuildupRate ?? 20));
+            // 設定0はOFF。
+            if (!(rate > 0)) return;
+            const now = this._perfNow();
+            if (now - state.lastDabTime < 1000 / rate) return;
+            if (!Number.isFinite(this.lastLocalX) || !Number.isFinite(this.lastLocalY)) return;
+
+            this._renderRealtimeAirbrushSegment([{
+                x: this.lastLocalX,
+                y: this.lastLocalY,
+                pressure: this.lastPressure
+            }]);
+            // 筆圧0等でdabが置かれなくても、次の判定まで間隔を空ける。
+            state.lastDabTime = now;
+            this.realtimeAirbrushApplied = true;
+        };
+        state.buildupTimer = setTimeout(tick, AIRBRUSH_BUILDUP_POLL_MS);
+    }
+
+    /**
+     * ライブ先端: 曲線補間は1sample先読みのため、確定描画は最新入力の1つ手前で止まる。
+     * その間(最後に描いた点→現在の入力点)を、stroke maskの複製(tip composite)へ同じmax合成で描き、
+     * previewはその複製を表示する。確定mask自体には描かないので、pen-up後の線は従来と同一。
+     * 複製の更新は先端の前回範囲∪今回範囲だけ(maskからの部分コピー + 先端dab)。
+     */
+    _updatePenLiveTip(mode, currentControlPoint) {
+        const state = this.airbrushState;
+        const enabled = window.TEGAKI_CONFIG?.brushEngine?.penLiveTip !== false;
+        if (!enabled || mode !== 'pen' || state?.dabMode !== 'pen' || !state.maskTexture || !state.previewSprite
+            || !currentControlPoint || !Array.isArray(this.curveControlPoints)) {
+            this._clearPenLiveTip();
+            return;
+        }
+        const renderer = this.layerManager.app?.renderer;
+        if (!renderer) return;
+
+        const from = {
+            x: this.lastRenderedLocalX,
+            y: this.lastRenderedLocalY,
+            pressure: this.lastRenderedPressure,
+            widthScale: this.lastRenderedTaperScale ?? 1
+        };
+        const gap = Math.hypot(currentControlPoint.x - from.x, currentControlPoint.y - from.y);
+        const to = {
+            x: currentControlPoint.x,
+            y: currentControlPoint.y,
+            pressure: currentControlPoint.pressure,
+            widthScale: this._getPenTaperScale((this.penTaperTravel || 0) + gap, Infinity)
+        };
+
+        if (!this.penLiveTipRenderer) {
+            this.penLiveTipRenderer = new AirbrushDabRenderer({
+                calculateWidth: (pressure, size) => this.strokeRenderer.calculateWidth(pressure, size),
+                calculateOpacity: (pressure, opacity, settings) => this.strokeRenderer.calculateOpacity(pressure, opacity, settings)
+            });
+        }
+        const container = gap > 0.5
+            ? this.penLiveTipRenderer.renderSegment([from, to], this._buildDabMaskSettings(), {})
+            : null;
+        let tipRect = null;
+        if (container) {
+            this._applyLayerRasterRenderOffset(state.targetLayer, container);
+            tipRect = this._getDabContainerMaskRect(container);
+        }
+
+        if (!state.tipComposite) {
+            if (!container) return;
+            state.tipComposite = this._acquireStrokeTexture(
+                'tip',
+                state.maskTexture.width,
+                state.maskTexture.height,
+                state.maskTexture.source.format
+            );
+            this._copyMaskRegionToTipComposite({ x: 0, y: 0, width: state.maskTexture.width, height: state.maskTexture.height });
+            state.previewSprite.texture = state.tipComposite;
+        }
+
+        // 前回の先端を消す(maskの内容で上書き)してから今回の先端を重ねる。
+        const region = unionRect(state.tipRect, tipRect);
+        if (region) this._copyMaskRegionToTipComposite(region);
+        if (container) {
+            renderer.render({ container, target: state.tipComposite, clear: false });
+            this.penLiveTipRenderer.releaseSegment(container);
+        }
+        state.tipRect = tipRect;
+        this._requestLiveCanvasRender('pen-live-tip');
+    }
+
+    /** stroke maskの矩形をtip compositeへそのまま写す('none'合成)。 */
+    _copyMaskRegionToTipComposite(rect) {
+        const state = this.airbrushState;
+        const renderer = this.layerManager.app?.renderer;
+        if (!state?.tipComposite || !renderer || !rect) return;
+        const x = Math.max(0, Math.floor(rect.x));
+        const y = Math.max(0, Math.floor(rect.y));
+        const right = Math.min(state.maskTexture.width, Math.ceil(rect.x + rect.width));
+        const bottom = Math.min(state.maskTexture.height, Math.ceil(rect.y + rect.height));
+        if (right <= x || bottom <= y) return;
+        const frame = new Rectangle(x, y, right - x, bottom - y);
+        const part = new Texture({ source: state.maskTexture.source, frame });
+        const sprite = new Sprite(part);
+        sprite.position.set(x, y);
+        sprite.blendMode = 'none';
+        const container = new Container();
+        container.addChild(sprite);
+        renderer.render({ container, target: state.tipComposite, clear: false });
+        container.destroy({ children: true });
+        part.destroy(false);
+    }
+
+    _clearPenLiveTip() {
+        const state = this.airbrushState;
+        if (!state?.tipComposite) return;
+        if (state.previewSprite && !state.previewSprite.destroyed) {
+            state.previewSprite.texture = state.maskTexture;
+        }
+        this._releaseStrokeTexture('tip', state.tipComposite);
+        state.tipComposite = null;
+        state.tipRect = null;
+    }
+
+    /**
+     * ヒゲ判定に使う線端の長さ(Layer px)。ペンの揺れは画面上の大きさで起きるため、
+     * 画面上penHookTrimScreenPx相当を現在の表示倍率でLayer pxへ換算する。0でヒゲ除去OFF。
+     */
+    _getHookTrimLength() {
+        const engine = window.TEGAKI_CONFIG?.brushEngine || {};
+        const screenPx = Math.max(0, Number(engine.penHookTrimScreenPx ?? 10));
+        if (!(screenPx > 0) || !this.coordinateSystem || !this.strokeTargetLayer) return 0;
+        try {
+            const toLocal = (x, y) => {
+                const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(x, y);
+                const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
+                return this.coordinateSystem.worldToLocal(worldX, worldY, this.strokeTargetLayer);
+            };
+            const a = toLocal(0, 0);
+            const b = toLocal(100, 0);
+            const localPerScreen = Math.hypot(b.localX - a.localX, b.localY - a.localY) / 100;
+            return Number.isFinite(localPerScreen) && localPerScreen > 0 ? screenPx * localPerScreen : screenPx;
+        } catch (_error) {
+            return screenPx;
+        }
+    }
+
+    /**
+     * dirty rect patch Historyの遅延読み出し版。
+     * before(GPU baseline scratch)とafter(Layer RT)の矩形を矩形サイズのRenderTextureへGPU上で複製し、
+     * 画素(straight RGBA)への読み出しはidle時に行う。undo/redo時に未読み出しならその場で読む。
+     * GPU baselineが無い(CPU snapshot経路)場合やflag OFFでは従来の即時読み出しに任せる(false)。
+     */
+    _recordDeferredPatchHistory({ mode, layerId, layerIndex, renderer, renderTexture, gpuBaseline, localDirtyRect }) {
+        if (window.TEGAKI_CONFIG?.brushEngine?.deferredPatchReadback === false) return false;
+        if (!gpuBaseline || !this.historyBaselineScratchTexture || !renderer || !renderTexture) return false;
+
+        const rect = { ...localDirtyRect };
+        const copyRect = (sourceTexture) => {
+            const target = RenderTexture.create({ width: rect.width, height: rect.height, resolution: 1 });
+            const frame = new Rectangle(rect.x, rect.y, rect.width, rect.height);
+            const part = new Texture({ source: sourceTexture.source, frame });
+            const sprite = new Sprite(part);
+            sprite.blendMode = 'none';
+            const container = new Container();
+            container.addChild(sprite);
+            renderer.render({ container, target, clear: true, clearColor: [0, 0, 0, 0] });
+            container.destroy({ children: true });
+            part.destroy(false);
+            return target;
+        };
+
+        let beforeRT = null;
+        let afterRT = null;
+        try {
+            beforeRT = copyRect(this.historyBaselineScratchTexture);
+            afterRT = copyRect(renderTexture);
+        } catch (error) {
+            beforeRT?.destroy(true);
+            afterRT?.destroy(true);
+            return false;
+        }
+
+        const beforePatch = { rect, pixels: null, pendingTexture: beforeRT };
+        const afterPatch = { rect: { ...rect }, pixels: null, pendingTexture: afterRT };
+        const resolvePatch = (patch) => {
+            if (patch.pixels || !patch.pendingTexture) return patch.pixels;
+            const texture = patch.pendingTexture;
+            patch.pendingTexture = null;
+            try {
+                const result = renderer.extract.pixels({ target: texture });
+                const source = result?.pixels
+                    || (result instanceof Uint8ClampedArray ? result : (result?.buffer ? new Uint8ClampedArray(result.buffer) : null));
+                const length = rect.width * rect.height * 4;
+                if (source && source.byteLength >= length) {
+                    patch.pixels = new Uint8ClampedArray(source.subarray(0, length));
+                    unpremultiplyPixels(patch.pixels);
+                }
+            } finally {
+                texture.destroy(true);
+            }
+            return patch.pixels;
+        };
+        const resolveBoth = () => {
+            resolvePatch(beforePatch);
+            resolvePatch(afterPatch);
+        };
+
+        const restorePatch = (targetPatch) => {
+            resolveBoth();
+            if (!targetPatch.pixels || !layerId || !this.layerManager) return;
+            const targetLayer = typeof this.layerManager.getLayerById === 'function'
+                ? this.layerManager.getLayerById(layerId)
+                : this.layerManager.getLayers?.().find(l => l.layerData?.id === layerId || l.id === layerId);
+            if (!targetLayer) return;
+            const currentSnap = this.layerManager.createLayerRasterSnapshot(targetLayer, { includePathCollections: false });
+            if (!currentSnap) return;
+            applyPixelPatch(currentSnap.pixels, currentSnap.width, currentSnap.height, targetPatch.pixels, targetPatch.rect);
+            this.layerManager.restoreLayerRasterSnapshot(currentSnap, { restorePathCollections: false });
+        };
+
+        const byteSize = rect.width * rect.height * 4 * 2;
+        historyManager.record({
+            name: `draw-${mode}`,
+            do: () => restorePatch(afterPatch),
+            undo: () => restorePatch(beforePatch),
+            meta: {
+                type: 'draw-patch',
+                mode,
+                layerId,
+                layerIndex,
+                dirtyRect: rect,
+                byteSize,
+                deferredReadback: true
+            },
+            byteSize
+        });
+
+        // 描画が落ち着いた時に読み出す(連続描画中のframeを邪魔しない)。
+        const schedule = typeof requestIdleCallback === 'function'
+            ? (fn) => requestIdleCallback(fn, { timeout: 1000 })
+            : (fn) => setTimeout(fn, 50);
+        schedule(() => {
+            try {
+                resolveBoth();
+            } catch (error) {
+                console.warn('[BrushCore] deferred history readback failed', error);
+            }
+        });
+        return true;
+    }
+
+    /**
+     * stroke毎の全面texture(airbrush / pen dabのfloat mask、ライブ先端の複製)を再利用する。
+     * 大キャンバスでは1枚数十MBのため、毎stroke生成・破棄するとGPUメモリの確保が繰り返される。
+     * 用途ごとに1枚だけ保持し、同じ寸法・形式なら使い回す(中身は取得側でclearする)。
+     */
+    _acquireStrokeTexture(kind, width, height, format = null) {
+        this.strokeTexturePool = this.strokeTexturePool || {};
+        const pooled = this.strokeTexturePool[kind];
+        const wantFormat = format || 'bgra8unorm';
+        if (pooled && !pooled.destroyed && pooled.width === width && pooled.height === height
+            && (pooled.source.format || 'bgra8unorm') === wantFormat
+            && window.TEGAKI_CONFIG?.brushEngine?.strokeTexturePooling !== false) {
+            this.strokeTexturePool[kind] = null;
+            return pooled;
+        }
+        if (pooled && !pooled.destroyed) pooled.destroy(true);
+        this.strokeTexturePool[kind] = null;
+        return RenderTexture.create({ width, height, resolution: 1, ...(format ? { format } : {}) });
+    }
+
+    _releaseStrokeTexture(kind, texture) {
+        if (!texture || texture.destroyed) return;
+        this.strokeTexturePool = this.strokeTexturePool || {};
+        if (window.TEGAKI_CONFIG?.brushEngine?.strokeTexturePooling === false) {
+            texture.destroy(true);
+            return;
+        }
+        const previous = this.strokeTexturePool[kind];
+        if (previous && previous !== texture && !previous.destroyed) previous.destroy(true);
+        this.strokeTexturePool[kind] = texture;
+    }
+
+    _getPenTaperLengths() {
+        const engine = window.TEGAKI_CONFIG?.brushEngine || {};
+        const get = (key, fallback) => {
+            const value = Number(window.TegakiSettingsManager?.get?.(key) ?? engine[key] ?? fallback);
+            return Number.isFinite(value) ? Math.max(0, value) : 0;
+        };
+        return { taperIn: get('penTaperIn', 0), taperOut: get('penTaperOut', 0) };
+    }
+
+    /**
+     * 入り抜きの径倍率。travel=描き始めからの距離、remaining=終点までの距離(不明ならInfinity)。
+     * 端で最小PEN_TAPER_MIN_SCALE、各taper長さでsmoothstepに1へ戻る。
+     */
+    _getPenTaperScale(travel, remaining) {
+        const { taperIn, taperOut } = this._getPenTaperLengths();
+        const ramp = (distance, length) => {
+            if (!(length > 0)) return 1;
+            const t = Math.max(0, Math.min(1, distance / length));
+            return t * t * (3 - 2 * t);
+        };
+        const factor = Math.min(ramp(travel, taperIn), ramp(remaining, taperOut));
+        return PEN_TAPER_MIN_SCALE + (1 - PEN_TAPER_MIN_SCALE) * factor;
+    }
+
+    /**
+     * 抜き(taper-out)は終点が分かるpen-up時にしか決まらないため、記録点列から入り抜き込みで
+     * stroke maskを描き直す(クリスタ式)。入りもここで同じ距離計算に揃える。点・単発tapは対象外。
+     */
+    _applyPenTaperToMask(strokeData) {
+        const state = this.airbrushState;
+        // recorderの点は筆圧の較正・平滑化が別にかかるため、realtimeで実際に描いた点列で描き直す。
+        const trace = Array.isArray(this.penRenderTrace) ? this.penRenderTrace : [];
+        const sourcePoints = trace.length >= 2 ? trace : (strokeData?.points || []);
+        // 線端のヒゲ(ペンを置く/離す瞬間の急な折れ返し)を除いた点列で描き直す。
+        const hookTrim = strokeData?.isSingleDot === true
+            ? { points: sourcePoints, trimmed: false }
+            : trimStrokeHooks(sourcePoints, this._getHookTrimLength());
+        const points = hookTrim.points;
+        const { taperIn, taperOut } = this._getPenTaperLengths();
+        if (this.strokeInputProfile) {
+            this.strokeInputProfile.hookTrim = { start: hookTrim.trimmedStart || 0, end: hookTrim.trimmedEnd || 0 };
+        }
+        if (!state?.maskTexture || state.dabMode !== 'pen' || !(taperIn > 0 || taperOut > 0 || hookTrim.trimmed)) return false;
+        if (strokeData?.isSingleDot === true || points.length < 2) return false;
+        const renderer = this.layerManager.app?.renderer;
+        if (!renderer) return false;
+
+        const travel = [0];
+        for (let i = 1; i < points.length; i++) {
+            travel[i] = travel[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+        }
+        const total = travel[travel.length - 1];
+        const tapered = points.map((point, i) => ({
+            x: point.x,
+            y: point.y,
+            pressure: point.pressure,
+            widthScale: this._getPenTaperScale(travel[i], total - travel[i])
+        }));
+
+        const empty = new Container();
+        renderer.render({ container: empty, target: state.maskTexture, clear: true, clearColor: [0, 0, 0, 0] });
+        empty.destroy();
+
+        state.spacingState = {};
+        const ownsBatch = this._beginAirbrushBatch();
+        try {
+            for (let i = 1; i < tapered.length; i++) {
+                this._renderRealtimeAirbrushSegment([tapered[i - 1], tapered[i]]);
+            }
+        } finally {
+            if (ownsBatch) this._flushAirbrushBatch();
+        }
+        return true;
+    }
+
+    _isPenDabEnabled(mode) {
+        const engine = window.TEGAKI_CONFIG?.brushEngine;
+        if (mode === 'pen') return engine?.penDabRendering === true;
+        if (mode === 'eraser') return engine?.eraserDabRendering === true;
+        return false;
+    }
+
+    _isEraseDabMode(mode) {
+        return mode === 'airbrush-erase' || mode === 'eraser';
+    }
+
+    _isRealtimeCurveEnabled(mode) {
+        if (window.TEGAKI_CONFIG?.brushEngine?.realtimeCurveInterpolation === false) return false;
+        return mode === 'pen' || mode === 'eraser' || mode === 'airbrush' || mode === 'airbrush-erase';
+    }
+
+    /**
+     * from→to区間をStage Cの適応step数で分割し、realtime描画とrecorderへ流す。
+     * prev / nextがあればcentripetal Catmull-Romで位置を補間し、無ければ直線で補間する。
+     * 終点toは必ず描画・記録する。
+     */
+    _emitStrokeChord(mode, prev, from, to, next, pressureEnabled) {
+        const hasClient = point => Number.isFinite(point?.clientX) && Number.isFinite(point?.clientY);
+        const { steps, stepSize, points } = generateAdaptiveInterpolationPoints({
+            lastLocal: from,
+            currentLocal: to,
+            lastPressure: from.pressure,
+            currentPressure: to.pressure,
+            lastClient: hasClient(from) ? { x: from.clientX, y: from.clientY } : null,
+            currentClient: hasClient(to) ? { x: to.clientX, y: to.clientY } : null,
+            pressureEnabled,
+            currentMode: mode,
+            minStep: mode === 'lasso-fill' ? 5 : 1,
+            maxStep: 16
+        });
+        const useCurve = !!(prev && next);
+
+        for (let i = 0; i < points.length; i++) {
+            const pt = points[i];
+            const position = useCurve
+                ? CurveInterpolator.centripetalPoint(prev, from, to, next, pt.t)
+                : pt;
+            this._renderRealtimeStrokePoint(mode, position.x, position.y, pt.pressure);
+            this.strokeRecorder.addPoint(position.x, position.y, pt.pressure);
+            this.penRenderTrace?.push({ x: position.x, y: position.y, pressure: pt.pressure });
+        }
+
+        this._renderRealtimeStrokePoint(mode, to.x, to.y, to.pressure);
+        this.strokeRecorder.addPoint(to.x, to.y, to.pressure);
+        this.penRenderTrace?.push({ x: to.x, y: to.y, pressure: to.pressure });
+        return { steps, stepSize, generatedPoints: points.length + 1 };
+    }
+
+    /** 先読み待ちで未描画の最終Catmull-Rom区間を、終点を複製して確定する。 */
+    _flushPendingCurveChord() {
+        const controlPoints = this.curveControlPoints;
+        this.curveControlPoints = null;
+        if (!Array.isArray(controlPoints) || controlPoints.length < 2 || !this.isDrawing) return;
+
+        const mode = this.getMode();
+        const count = controlPoints.length;
+        const from = controlPoints[count - 2];
+        const to = controlPoints[count - 1];
+        const prev = controlPoints[count - 3] || from;
+        const pressureEnabled = to.pressureEnabled === true;
+        const isBatchableMode = mode === 'pen' || mode === 'eraser';
+        if (isBatchableMode) {
+            this._beginRealtimeBatch(mode);
+        }
+        const ownsAirbrushBatch = this._beginAirbrushBatch();
+        try {
+            this._emitStrokeChord(mode, prev, from, to, to, pressureEnabled);
+        } finally {
+            if (isBatchableMode) {
+                this._flushRealtimeBatch();
+            }
+            if (ownsAirbrushBatch) {
+                this._flushAirbrushBatch();
+            }
+        }
+    }
+
     /** Shift+drag直線のdisplay-only guide。Raster確定はpointerup時のupdateStrokeへ任せる。 */
     previewStraightStroke(clientX, clientY, pressure, pointerType = 'unknown') {
         if (!this.isDrawing || !this.previewGraphics || !this.strokeTargetLayer) return false;
@@ -609,10 +1333,14 @@ export class BrushCore {
         if (isBatchableMode) {
             this._beginRealtimeBatch(mode);
         }
+        const ownsAirbrushBatch = this._beginAirbrushBatch();
         try {
             infos.forEach((info, index) => {
                 if (!info) return;
                 const isLast = index === infos.length - 1;
+                // coalesced sampleは同じ処理時刻にまとまるため、速度計算には各sampleの入力時刻を使う。
+                this.currentSampleTime = Number(info.timeStamp);
+                this.currentSampleTilt = { tiltX: Number(info.tiltX) || 0, tiltY: Number(info.tiltY) || 0 };
                 this.updateStroke(
                     info.clientX,
                     info.clientY,
@@ -622,8 +1350,13 @@ export class BrushCore {
                 );
             });
         } finally {
+            this.currentSampleTime = null;
+            this.currentSampleTilt = null;
             if (isBatchableMode) {
                 this._flushRealtimeBatch();
+            }
+            if (ownsAirbrushBatch) {
+                this._flushAirbrushBatch();
             }
         }
         if (this.strokeInputProfile) {
@@ -703,20 +1436,37 @@ export class BrushCore {
         if (distanceSkipped) return;
 
         const renderPressure = this._stabilizeInitialPenRealtimePressure(mode, pressure, distance);
+        // 入り(taper-in)は描き始めからの移動距離で径を絞る。抜きはpen-up時のmask再構築で付ける。
+        const usesTaper = mode === 'pen' && this.airbrushState?.dabMode === 'pen';
+        const taperTravel = (this.penTaperTravel || 0) + distance;
+        const taperScale = usesTaper ? this._getPenTaperScale(taperTravel, Infinity) : 1;
         const segmentPoints = distance <= 0
             ? [{ x: localX, y: localY, pressure }]
             : [
-                { x: this.lastRenderedLocalX, y: this.lastRenderedLocalY, pressure: this.lastRenderedPressure },
-                { x: localX, y: localY, pressure: renderPressure }
+                {
+                    x: this.lastRenderedLocalX,
+                    y: this.lastRenderedLocalY,
+                    pressure: this.lastRenderedPressure,
+                    widthScale: usesTaper ? (this.lastRenderedTaperScale ?? 1) : 1
+                },
+                { x: localX, y: localY, pressure: renderPressure, widthScale: taperScale }
               ];
 
         if (mode === 'eraser') {
             if (distance <= 0) return;
-            this._renderRealtimeEraserSegment(segmentPoints);
+            if (this.airbrushState?.dabMode === 'pen') {
+                this._renderRealtimeAirbrushSegment(segmentPoints);
+            } else {
+                this._renderRealtimeEraserSegment(segmentPoints);
+            }
             this.realtimeEraserApplied = true;
         } else if (mode === 'pen') {
             if (distance <= 0) return;
-            this._renderRealtimePenSegment(segmentPoints);
+            if (this.airbrushState?.dabMode === 'pen') {
+                this._renderRealtimeAirbrushSegment(segmentPoints);
+            } else {
+                this._renderRealtimePenSegment(segmentPoints);
+            }
             this.realtimePenApplied = true;
         } else if (mode === 'airbrush' || mode === 'airbrush-erase') {
             this._renderRealtimeAirbrushSegment(segmentPoints);
@@ -734,6 +1484,8 @@ export class BrushCore {
         this.lastRenderedLocalX = localX;
         this.lastRenderedLocalY = localY;
         this.lastRenderedPressure = renderPressure;
+        this.penTaperTravel = taperTravel;
+        this.lastRenderedTaperScale = taperScale;
         if (this.strokeInputProfile) {
             this.strokeInputProfile.realtimeSegments++;
         }
@@ -764,8 +1516,15 @@ export class BrushCore {
         return this.historyBaselineScratchTexture;
     }
 
+    _isPatchHistoryMode(mode) {
+        if (mode === 'pen' || mode === 'eraser') return true;
+        // airbrushもdab到達範囲(半径0.5×size + scatter 0.2×size)がdirty rect padding(size+4)内に収まる。
+        return (mode === 'airbrush' || mode === 'airbrush-erase')
+            && window.TEGAKI_CONFIG?.brushEngine?.airbrushPatchHistory !== false;
+    }
+
     _isEligibleForGpuBaseline(mode, activeLayer, settings) {
-        if (mode !== 'pen' && mode !== 'eraser') return false;
+        if (!this._isPatchHistoryMode(mode)) return false;
         if (activeLayer?.layerData?.isAnimationWorkingLayer === true) return false;
         if (this._needsSelectionSnapshotForLayer(activeLayer)) return false;
         if (!activeLayer?.layerData?.renderTexture) return false;
@@ -1124,7 +1883,8 @@ export class BrushCore {
         const previewSprite = new Sprite(texture);
         previewSprite.label = 'penOpacityStrokePreview';
         previewSprite.alpha = Math.max(0, Math.min(1, Number(settings.opacity ?? 1)));
-        previewSprite.blendMode = 'normal';
+        // 'normal'を明示するとLayer containerのblend mode(乗算等)を上書きするため、親から継承する。
+        previewSprite.blendMode = 'inherit';
         this._syncLayerRasterSpritePosition(activeLayer, previewSprite);
 
         if (activeLayer.layerData?.clipping) {
@@ -1197,18 +1957,99 @@ export class BrushCore {
         if (!this.airbrushState?.targetLayer || !this.airbrushState?.maskTexture) return;
 
         const perfStart = this._perfNow();
+        const maskSettings = this._buildDabMaskSettings();
+        this._renderRealtimeAirbrushSegmentWithSettings(points, maskSettings, perfStart);
+    }
+
+    /** airbrush / pen dabのstroke mask用設定(色は白、tilt・柔らかさ・AA・消しゴム筆圧を反映)。 */
+    _buildDabMaskSettings() {
         const settings = this._getCurrentSettings();
         const maskSettings = {
             ...settings,
             color: 0xffffff,
             mode: 'airbrush'
         };
+        if (this.airbrushState.dabMode === 'airbrush') {
+            maskSettings.dabTilt = this._getDabTilt(
+                'airbrushTiltStrength',
+                window.TEGAKI_CONFIG?.brushEngine?.airbrushTiltStrength ?? 0.5
+            );
+        }
+        if (this.airbrushState.dabMode === 'pen') {
+            const engine = window.TEGAKI_CONFIG?.brushEngine || {};
+            maskSettings.mode = 'pen';
+            maskSettings.dabMode = 'pen';
+            const userSetting = (key, fallback) => {
+                const value = window.TegakiSettingsManager?.get?.(key);
+                return value ?? fallback;
+            };
+            const isEraserDab = this.airbrushState.mode === 'eraser';
+            maskSettings.penDabSoftness = isEraserDab
+                ? userSetting('eraserDabSoftness', engine.eraserDabSoftness ?? 0)
+                : userSetting('penDabSoftness', engine.penDabSoftness ?? 0);
+            maskSettings.penEdgeAA = isEraserDab ? 0 : userSetting('penEdgeAA', engine.penEdgeAA ?? 0);
+            maskSettings.penDabSpacingRatio = engine.penDabSpacingRatio ?? 0.05;
+            if (this.airbrushState.mode === 'pen') {
+                maskSettings.dabTilt = this._getDabTilt('penTiltStrength', engine.penTiltStrength ?? 0);
+            }
+            if (isEraserDab) {
+                // 消しゴムの筆圧は径に効かせ、eraserPressureStrength>0なら弱い筆圧で薄く消す。
+                const eraserStrength = Math.max(0, Math.min(1, Number(userSetting('eraserPressureStrength', 0)) || 0));
+                maskSettings.pressureEnabled = settings.eraserPressureEnabled === true;
+                maskSettings.pressureOpacityEnabled = eraserStrength > 0;
+                maskSettings.pressureOpacityStrength = eraserStrength;
+            }
+        }
+        return maskSettings;
+    }
+
+    _renderRealtimeAirbrushSegmentWithSettings(points, maskSettings, perfStart) {
+        const batch = this.airbrushBatch;
         const renderContainer = this.strokeRenderer.renderAirbrushSegment(
             points,
             maskSettings,
-            this.airbrushState.spacingState
+            this.airbrushState.spacingState,
+            batch?.container || null
         );
+        if (batch) {
+            // pointer event内の区間はdabを溜め、_flushAirbrushBatchで1回だけmaskへ描く。
+            if (renderContainer) batch.container = renderContainer;
+            this._warnPerf('brush.renderRealtimeAirbrushSegment', perfStart, {
+                points: points?.length || 0,
+                batched: true
+            });
+            return;
+        }
+        this._drawAirbrushDabContainer(renderContainer);
+        this._warnPerf('brush.renderRealtimeAirbrushSegment', perfStart, {
+            points: points?.length || 0
+        });
+    }
+
+    /** airbrush / pen dabの区間描画をpointer event単位でまとめる。開始した呼び出し側だけがtrueを受け取る。 */
+    _beginAirbrushBatch() {
+        if (!this.airbrushState || this.airbrushBatch) return false;
+        if (window.TEGAKI_CONFIG?.brushEngine?.airbrushEventBatching === false) return false;
+        this.airbrushBatch = { container: null };
+        return true;
+    }
+
+    _flushAirbrushBatch() {
+        const batch = this.airbrushBatch;
+        this.airbrushBatch = null;
+        if (!batch?.container) return;
+        if (!this.airbrushState) {
+            this.strokeRenderer.releaseAirbrushSegment(batch.container);
+            return;
+        }
+        this._drawAirbrushDabContainer(batch.container);
+    }
+
+    _drawAirbrushDabContainer(renderContainer) {
         const dabCount = renderContainer?.children?.length || 0;
+        if (dabCount > 0 && this.airbrushState) {
+            this.airbrushState.lastDabTime = this._perfNow();
+        }
         const realtime = this.strokeInputProfile?.realtime;
         if (realtime) {
             realtime.airbrushRenderCalls++;
@@ -1221,19 +2062,25 @@ export class BrushCore {
 
         if (renderContainer && this.layerManager.app?.renderer) {
             this._applyLayerRasterRenderOffset(this.airbrushState.targetLayer, renderContainer);
+            // 消し用previewは今回dabが触れた範囲だけ再合成するため、release前にmask座標での範囲を取る。
+            const dirtyRect = (this.airbrushState.erasePreview || this.airbrushState.tipComposite)
+                ? this._getDabContainerMaskRect(renderContainer)
+                : null;
             this.layerManager.app.renderer.render({
                 container: renderContainer,
                 target: this.airbrushState.maskTexture,
                 clear: false
             });
 
-            // cached texture を破棄しないため texture/baseTexture は指定しない。
-            renderContainer.destroy({ children: true });
+            this.strokeRenderer.releaseAirbrushSegment(renderContainer);
+            this._refreshAirbrushErasePreview(this.airbrushState.erasePreview ? dirtyRect : null);
+            if (this.airbrushState.tipComposite && dirtyRect) {
+                this._copyMaskRegionToTipComposite(dirtyRect);
+            }
             this._requestLiveCanvasRender('realtime-airbrush');
+        } else if (renderContainer) {
+            this.strokeRenderer.releaseAirbrushSegment(renderContainer);
         }
-        this._warnPerf('brush.renderRealtimeAirbrushSegment', perfStart, {
-            points: points?.length || 0
-        });
     }
 
     _beginAirbrushStroke(activeLayer, settings) {
@@ -1252,11 +2099,8 @@ export class BrushCore {
             || activeLayer.layerData?.height
             || this.layerManager.canvasHeight
             || 1;
-        const maskTexture = RenderTexture.create({
-            width,
-            height,
-            resolution: 1
-        });
+        const maskFormat = this._getAirbrushMaskFormat();
+        const maskTexture = this._acquireStrokeTexture('mask', width, height, maskFormat);
         const empty = new Container();
         this.layerManager.app.renderer.render({
             container: empty,
@@ -1265,12 +2109,20 @@ export class BrushCore {
             clearColor: [0, 0, 0, 0]
         });
         empty.destroy();
+        const dabMode = (settings.mode === 'pen' || settings.mode === 'eraser') ? 'pen' : 'airbrush';
+        const isErase = this._isEraseDabMode(settings.mode);
+        // pen dabはmaskへ濃度1で置き、線の不透明度はpreview / commit spriteで一括適用する。
+        const strokeOpacity = settings.mode === 'pen'
+            ? Math.max(0, Math.min(1, Number(settings.opacity ?? 1)))
+            : 1;
         const previewSprite = new Sprite(maskTexture);
         previewSprite.label = 'airbrushStrokePreview';
-        previewSprite.tint = settings.mode === 'airbrush-erase'
+        previewSprite.alpha = strokeOpacity;
+        previewSprite.tint = isErase
             ? 0xffffff
             : (settings.color ?? 0x800000);
-        previewSprite.blendMode = settings.mode === 'airbrush-erase' ? 'erase' : 'normal';
+        // 描画中previewはLayerのblend mode(乗算等)を継承し、pen-up後の見た目と揃える。
+        previewSprite.blendMode = isErase ? 'erase' : 'inherit';
         this._syncLayerRasterSpritePosition(activeLayer, previewSprite);
 
         if (activeLayer.layerData?.clipping) {
@@ -1285,16 +2137,46 @@ export class BrushCore {
             }
         }
 
-        activeLayer.addChild(previewSprite);
+        // 消しエアブラシのpreviewをscene上でerase合成すると下のLayerまで抜けて見えるため、
+        // Layer自身のraster spriteを「Layer複製 - mask」の合成textureへ一時的に差し替える。
+        const erasePreview = isErase
+            ? this._beginAirbrushErasePreview(activeLayer, width, height)
+            : null;
+        if (!erasePreview) {
+            activeLayer.addChild(previewSprite);
+        }
         this.airbrushState = {
             targetLayer: activeLayer,
             maskTexture,
             previewSprite,
+            erasePreview,
             spacingState: {},
+            dabMode,
+            opacity: strokeOpacity,
             mode: settings.mode,
             color: settings.color ?? 0x800000
         };
+        this._startAirbrushBuildup();
         this._requestLiveCanvasRender('airbrush-preview-start');
+    }
+
+    /**
+     * 低flow dab(既定0.08≒11/255)の累積を8bitで丸めないため、対応環境ではfloat16 maskを使う。
+     * 非対応(WebGL1 / EXT_color_buffer_float無し)ではnullを返し従来の8bit maskへ戻る。
+     */
+    _getAirbrushMaskFormat() {
+        if (window.TEGAKI_CONFIG?.brushEngine?.airbrushHighPrecisionMask === false) return null;
+        if (this._airbrushMaskFormatCache !== undefined) return this._airbrushMaskFormatCache;
+
+        const renderer = this.layerManager.app?.renderer;
+        let format = null;
+        if (renderer?.name === 'webgpu') {
+            format = 'rgba16float';
+        } else if (renderer?.context?.webGLVersion === 2 && renderer.context.extensions?.colorBufferFloat) {
+            format = 'rgba16float';
+        }
+        this._airbrushMaskFormatCache = format;
+        return format;
     }
 
     _commitAirbrushStroke(activeLayer) {
@@ -1309,23 +2191,130 @@ export class BrushCore {
         state.previewSprite.mask = null;
         state.previewSprite.setMask({ mask: null, inverse: false });
         const commitSprite = new Sprite(state.maskTexture);
-        commitSprite.tint = state.mode === 'airbrush-erase'
-            ? 0xffffff
-            : state.color;
-        commitSprite.blendMode = state.mode === 'airbrush-erase' ? 'erase' : 'normal';
+        const isErase = this._isEraseDabMode(state.mode);
+        commitSprite.tint = isErase ? 0xffffff : state.color;
+        commitSprite.blendMode = isErase ? 'erase' : 'normal';
+        commitSprite.alpha = state.opacity ?? 1;
+        // render rootに直接置いたspriteのblendModeは適用されず、eraseが白の通常合成になる。
+        // 親Containerを挟み、子spriteのblendModeとして確実に効かせる。
+        const commitContainer = new Container();
+        commitContainer.addChild(commitSprite);
 
         renderer.render({
-            container: commitSprite,
+            container: commitContainer,
             target,
             clear: false
         });
-        commitSprite.destroy({ texture: false, baseTexture: false });
+        commitContainer.destroy({ children: true, texture: false, baseTexture: false });
         this._requestLiveCanvasRender('airbrush-commit');
         return true;
     }
 
-    _cleanupAirbrushStroke() {
+    _beginAirbrushErasePreview(activeLayer, width, height) {
+        if (window.TEGAKI_CONFIG?.brushEngine?.airbrushErasePreviewComposite === false) return null;
+        const layerSprite = activeLayer?.layerData?.layerSprite;
+        const sourceTexture = activeLayer?.layerData?.renderTexture;
+        const renderer = this.layerManager.app?.renderer;
+        if (!layerSprite || !sourceTexture || !renderer || layerSprite.texture !== sourceTexture) return null;
+
+        const texture = RenderTexture.create({ width, height, resolution: 1 });
+        const preview = { layerSprite, sourceTexture, texture };
+        this._renderAirbrushErasePreview(preview, null);
+        layerSprite.texture = texture;
+        return preview;
+    }
+
+    _renderAirbrushErasePreview(preview, maskTexture) {
+        const renderer = this.layerManager.app?.renderer;
+        if (!preview || !renderer) return;
+        const container = new Container();
+        container.addChild(new Sprite(preview.sourceTexture));
+        if (maskTexture) {
+            const eraseSprite = new Sprite(maskTexture);
+            eraseSprite.blendMode = 'erase';
+            container.addChild(eraseSprite);
+        }
+        renderer.render({
+            container,
+            target: preview.texture,
+            clear: true,
+            clearColor: [0, 0, 0, 0]
+        });
+        container.destroy({ children: true, texture: false, baseTexture: false });
+    }
+
+    _refreshAirbrushErasePreview(dirtyRect = null) {
         const state = this.airbrushState;
+        if (!state?.erasePreview) return;
+        if (dirtyRect && window.TEGAKI_CONFIG?.brushEngine?.airbrushErasePreviewDirtyRect !== false) {
+            this._renderAirbrushErasePreviewRect(state.erasePreview, state.maskTexture, dirtyRect);
+            return;
+        }
+        this._renderAirbrushErasePreview(state.erasePreview, state.maskTexture);
+    }
+
+    /** dab container(位置offset適用済み)のmask texture上の整数矩形。AA分を少し広げ、texture内へclampする。 */
+    _getDabContainerMaskRect(container) {
+        const mask = this.airbrushState?.maskTexture;
+        if (!container || !mask || container.children.length === 0) return null;
+        const local = container.getLocalBounds();
+        if (!Number.isFinite(local.x) || local.width <= 0 || local.height <= 0) return null;
+        const pad = 2;
+        const x0 = Math.max(0, Math.floor(local.x + container.position.x - pad));
+        const y0 = Math.max(0, Math.floor(local.y + container.position.y - pad));
+        const x1 = Math.min(mask.width, Math.ceil(local.x + local.width + container.position.x + pad));
+        const y1 = Math.min(mask.height, Math.ceil(local.y + local.height + container.position.y + pad));
+        if (x1 <= x0 || y1 <= y0) return null;
+        return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+    }
+
+    /**
+     * previewの指定矩形だけ「Layer複製 - mask」を再合成する。
+     * 'none'合成で元Layerの画素を矩形へそのまま写し、その上からmask(累積)をeraseする。
+     */
+    _renderAirbrushErasePreviewRect(preview, maskTexture, rect) {
+        const renderer = this.layerManager.app?.renderer;
+        if (!preview || !renderer || !maskTexture) return;
+        const frame = new Rectangle(rect.x, rect.y, rect.width, rect.height);
+        const sourcePart = new Texture({ source: preview.sourceTexture.source, frame });
+        const maskPart = new Texture({ source: maskTexture.source, frame: frame.clone() });
+        const container = new Container();
+        const copySprite = new Sprite(sourcePart);
+        copySprite.position.set(rect.x, rect.y);
+        copySprite.blendMode = 'none';
+        const eraseSprite = new Sprite(maskPart);
+        eraseSprite.position.set(rect.x, rect.y);
+        eraseSprite.blendMode = 'erase';
+        container.addChild(copySprite, eraseSprite);
+        renderer.render({
+            container,
+            target: preview.texture,
+            clear: false
+        });
+        container.destroy({ children: true });
+        sourcePart.destroy(false);
+        maskPart.destroy(false);
+    }
+
+    _cleanupAirbrushErasePreview(preview) {
+        if (!preview) return;
+        if (preview.layerSprite && !preview.layerSprite.destroyed && preview.layerSprite.texture === preview.texture) {
+            preview.layerSprite.texture = preview.sourceTexture;
+        }
+        preview.texture?.destroy(true);
+    }
+
+    _cleanupAirbrushStroke() {
+        this._clearPenLiveTip();
+        if (this.airbrushState?.buildupTimer) {
+            clearTimeout(this.airbrushState.buildupTimer);
+        }
+        if (this.airbrushBatch?.container) {
+            this.strokeRenderer.releaseAirbrushSegment(this.airbrushBatch.container);
+        }
+        this.airbrushBatch = null;
+        const state = this.airbrushState;
+        this._cleanupAirbrushErasePreview(state?.erasePreview);
         if (state?.previewSprite) {
             state.previewSprite.mask = null;
             state.previewSprite.setMask({ mask: null, inverse: false });
@@ -1334,7 +2323,7 @@ export class BrushCore {
             }
             state.previewSprite.destroy({ texture: false, baseTexture: false });
         }
-        state?.maskTexture?.destroy(true);
+        this._releaseStrokeTexture('mask', state?.maskTexture);
         this.airbrushState = null;
     }
 
@@ -1473,6 +2462,8 @@ export class BrushCore {
         if (!activeLayer) return;
 
         this._appendFinalPointerSample(finalPointer, inputProfile);
+        this._clearPenLiveTip();
+        this._flushPendingCurveChord();
         this._flushRealtimeBatch(true);
 
         let strokeData = this.strokeRecorder.endStroke();
@@ -1536,6 +2527,7 @@ export class BrushCore {
         }
 
         strokeData = this._stabilizeShortPenStroke(strokeData, settings, mode);
+        this._renderPenDabTapIfNeeded(mode, strokeData);
 
         const finalPoint = strokeData?.points?.[strokeData.points.length - 1];
         if (
@@ -1558,6 +2550,12 @@ export class BrushCore {
         }
 
         if ((mode === 'airbrush' || mode === 'airbrush-erase') && hasRealtimeApplied) {
+            this._commitAirbrushStroke(activeLayer);
+        }
+        if ((mode === 'pen' || mode === 'eraser') && this.airbrushState?.dabMode === 'pen' && hasRealtimeApplied) {
+            if (mode === 'pen') {
+                this._applyPenTaperToMask(strokeData);
+            }
             this._commitAirbrushStroke(activeLayer);
         }
         if (mode === 'pen' && this.penOpacityState && hasRealtimeApplied) {
@@ -1779,8 +2777,8 @@ export class BrushCore {
         const renderer = this.layerManager?.app?.renderer || window.app?.renderer;
         const renderTexture = layer.layerData?.renderTexture;
 
-        // Stage B: Pen / Eraser 限定 dirty rect patch History の試行
-        const isPatchEligible = (mode === 'pen' || mode === 'eraser')
+        // Stage B: Pen / Eraser / Airbrush の dirty rect patch History の試行
+        const isPatchEligible = this._isPatchHistoryMode(mode)
             && Array.isArray(strokePoints)
             && strokePoints.length > 0
             && renderer?.extract?.pixels
@@ -1792,11 +2790,25 @@ export class BrushCore {
 
             // 1. bounds が一致しているか確認（一致しない場合は full fallback）
             if (rasterBoundsEqual(beforeBounds, currentBounds)) {
-                const settings = strokeSettings || this._getCurrentSettings();
+                const baseSettings = strokeSettings || this._getCurrentSettings();
+                // airbrushの傾き楕円(最大1.6倍幅+0.25×size偏位)とscatterまで含めるため余白を広げる。
+                const settings = (mode === 'airbrush' || mode === 'airbrush-erase')
+                    ? { ...baseSettings, size: Math.ceil(Number(baseSettings?.size || 1) * 1.3) }
+                    : baseSettings;
                 const projectDirtyRect = calculateStrokeDirtyRect(strokePoints, settings);
                 const localDirtyRect = projectRectToRasterLocal(projectDirtyRect, currentBounds);
 
                 if (localDirtyRect && localDirtyRect.width > 0 && localDirtyRect.height > 0) {
+                    // 2'. pen-up時のGPU→CPU読み出し(大キャンバスで数十ms)を避け、矩形をGPU上で複製して
+                    //     History登録し、画素の読み出しはidle時に行う。undo/redoは未読み出しなら即時に読む。
+                    if (this._recordDeferredPatchHistory({
+                        mode, layer, layerId, layerIndex, renderer, renderTexture, gpuBaseline, localDirtyRect
+                    })) {
+                        beforeSnapshot = null;
+                        this.strokeHistoryBefore = null;
+                        this.strokeHistoryGpuBaseline = null;
+                        return;
+                    }
                     // 2. beforePatch の取得（GPU baseline scratch からの抽出、または CPU snapshot からの crop）
                     let beforePatchPixels = null;
                     if (gpuBaseline && this.historyBaselineScratchTexture) {
@@ -2526,6 +3538,7 @@ export class BrushCore {
         this.realtimeBatchQueue = null;
         this.realtimeBatchDepth = 0;
         this.realtimeBatchMode = null;
+        this.curveControlPoints = null;
         this.lastClientX = null;
         this.lastClientY = null;
         

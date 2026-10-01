@@ -88,6 +88,35 @@ const QA_DEFAULT_COLOR_SLOTS = [
 ];
 
 export class QuickAccessPopup {
+    /**
+     * 起動時に、保存済みのアクティブスロット(サイズ・不透明度)をBrushSettingsへ反映する。
+     * パネルは初回表示まで生成されないため、これが無いと起動直後はconfig既定サイズのままになり、
+     * 表示上のアクティブスロットと実際の太さがずれていた。
+     */
+    static applyStoredActiveSlots(brushSettings) {
+        if (!brushSettings?.sizes) return false;
+        const reader = Object.create(QuickAccessPopup.prototype);
+        reader.MIN_SIZE = 0.5;
+        reader.MIN_OPACITY = 0;
+        reader.MAX_OPACITY = 100;
+        const presets = reader._loadPresets();
+        const activeSlots = reader._loadActivePresetSlots();
+        const currentMode = brushSettings.getMode?.() || 'pen';
+        QA_PRESET_TOOLS.forEach((tool) => {
+            const preset = presets?.[tool]?.[activeSlots?.[tool] ?? 0];
+            if (!preset) return;
+            const sizeKey = brushSettings._getSizeKey ? brushSettings._getSizeKey(tool) : tool;
+            const max = brushSettings.getMaxSizeForMode ? brushSettings.getMaxSizeForMode(tool) : preset.size;
+            brushSettings.sizes[sizeKey] = Math.max(brushSettings.minWidth || 0.5, Math.min(max, preset.size));
+            if (reader._getPresetToolKey(currentMode) === tool && brushSettings.setOpacity) {
+                brushSettings.setOpacity(preset.opacity / 100);
+            }
+        });
+        // 現在モードのサイズ変更をUIへ通知する。
+        brushSettings.setSize?.(brushSettings.sizes[brushSettings._getSizeKey?.(currentMode) ?? currentMode]);
+        return true;
+    }
+
     constructor(dependencies = {}) {
         this.config = dependencies.config || {};
         this.eventBus = TegakiEventBus;

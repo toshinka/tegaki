@@ -7,26 +7,48 @@ import { Container, Sprite, Texture } from 'pixi.js';
 
 const AIRBRUSH_FLOW_REFERENCE_SPACING_RATIO = 0.18;
 const MIN_PRESSURE_DAB = 0.02;
+const DAB_TEXTURE_SIZE = 256;
+const MAX_POOLED_DAB_SPRITES = 4096;
+const MAX_CACHED_DAB_TEXTURES = 40;
+const MIN_PEN_DAB_SPACING = 0.35;
+const AIRBRUSH_TILT_STRETCH = 0.6;
+const AIRBRUSH_TILT_SHIFT = 0.25;
+const PEN_TILT_WIDEN = 1.0;
+// falloff(σ=0.3)で被覆50%になる位置は減衰帯の外端から約0.65帯幅。AA時の径補正に使う。
+const PEN_AA_HALF_COVERAGE_OFFSET = 0.65;
+const DAB_FALLOFF_SIGMA = 0.3;
 
 export class AirbrushDabRenderer {
     constructor(options = {}) {
         this.calculateWidth = options.calculateWidth || ((pressure, size) => size * pressure);
+        this.calculateOpacity = options.calculateOpacity || ((pressure, opacity) => opacity);
         this.random = options.random || Math.random;
-        this.texture = null;
-        this.textureSoftness = null;
+        // softness / 生成方式ごとのdab texture。airbrushとpen dabが交互に使っても再生成しない。
+        this.textures = new Map();
+        // segmentごとのContainer / Sprite生成を避けるため、描画後に再利用する。
+        this.segmentContainer = null;
+        this.spritePool = [];
+        this.pooledDabCount = 0;
     }
 
-    renderSegment(points, settings, state = {}) {
-        if (!points || points.length < 1) return null;
+    /**
+     * @param {Container|null} [target] - 同一event内の複数区間を1回のrenderへまとめる時、前回の戻り値を渡すとdabを追記する。
+     */
+    renderSegment(points, settings, state = {}, target = null) {
+        if (!points || points.length < 1) return target;
 
-        const container = new Container();
-        const texture = this._getTexture(settings.airbrushSoftness);
+        const container = target || this._acquireContainer();
+        const isPenDab = settings.dabMode === 'pen';
+        const texture = this._getTexture(isPenDab
+            ? this._getPenDabEffectiveSoftness(points, settings)
+            : settings.airbrushSoftness);
+        const addDab = isPenDab ? this._addPenDab : this._addDab;
 
         if (points.length === 1) {
             const point = points[0];
-            this._addDab(container, texture, point.x, point.y, point.pressure ?? 1, settings);
+            addDab.call(this, container, texture, point.x, point.y, point.pressure ?? 1, settings, point.widthScale ?? 1);
             state.initialized = true;
-            state.nextDistance = this.getSpacing(settings);
+            state.nextDistance = this.getSpacing(settings, point, point);
             return container.children.length > 0 ? container : null;
         }
 
@@ -37,11 +59,11 @@ export class AirbrushDabRenderer {
         const distance = Math.hypot(dx, dy);
 
         if (distance <= 0) {
-            this._addDab(container, texture, end.x, end.y, end.pressure ?? 1, settings);
-            return container;
+            addDab.call(this, container, texture, end.x, end.y, end.pressure ?? 1, settings, end.widthScale ?? 1);
+            return container.children.length > 0 ? container : null;
         }
 
-        const spacing = this.getSpacing(settings);
+        const spacing = this.getSpacing(settings, start, end);
         let nextDistance;
 
         if (!state.initialized) {
@@ -57,8 +79,10 @@ export class AirbrushDabRenderer {
             const y = start.y + dy * t;
             const pressure = (start.pressure ?? 1)
                 + (((end.pressure ?? 1) - (start.pressure ?? 1)) * t);
+            // 入り抜き(taper)の径倍率も区間内で補間する。
+            const widthScale = (start.widthScale ?? 1) + (((end.widthScale ?? 1) - (start.widthScale ?? 1)) * t);
 
-            this._addDab(container, texture, x, y, pressure, settings);
+            addDab.call(this, container, texture, x, y, pressure, settings, widthScale);
             nextDistance += spacing;
         }
 
@@ -66,7 +90,15 @@ export class AirbrushDabRenderer {
         return container.children.length > 0 ? container : null;
     }
 
-    getSpacing(settings) {
+    getSpacing(settings, start = null, end = null) {
+        if (settings.dabMode === 'pen') {
+            // 筆圧で細くなった区間でも隙間が出ないよう、区間内の細い側の径でspacingを決める。
+            const pressure = Math.min(start?.pressure ?? 1, end?.pressure ?? 1);
+            const widthScale = Math.min(start?.widthScale ?? 1, end?.widthScale ?? 1);
+            const width = this._getPenDabWidth(pressure, settings) * widthScale;
+            const ratio = settings.penDabSpacingRatio ?? 0.05;
+            return Math.max(MIN_PEN_DAB_SPACING, width * ratio);
+        }
         const size = Math.max(1, settings.size || 1);
         const ratio = settings.airbrushSpacingRatio ?? 0.1;
         return Math.max(0.5, size * ratio);
@@ -88,8 +120,7 @@ export class AirbrushDabRenderer {
 
         const scatter = settings.airbrushScatter ?? 0;
         const isErase = settings.mode === 'airbrush-erase' || settings.mode === 'eraser';
-        const sprite = new Sprite(texture);
-        sprite.anchor.set(0.5);
+        const sprite = this._acquireSprite(container, texture);
 
         let dabX = x;
         let dabY = y;
@@ -100,13 +131,123 @@ export class AirbrushDabRenderer {
             dabY = y + Math.sin(angle) * distance;
         }
 
+        // ペンの傾き: dabを傾き方向へ伸ばした楕円にし、ペン先側へずらす(エアブラシの噴射円錐)。
+        const tilt = settings.dabTilt;
+        if (tilt && tilt.amount > 0) {
+            const shift = baseSize * AIRBRUSH_TILT_SHIFT * tilt.amount;
+            dabX += Math.cos(tilt.angle) * shift;
+            dabY += Math.sin(tilt.angle) * shift;
+            sprite.rotation = tilt.angle;
+        } else {
+            sprite.rotation = 0;
+        }
         sprite.position.set(dabX, dabY);
-        sprite.width = baseSize;
+        sprite.width = baseSize * (1 + AIRBRUSH_TILT_STRETCH * (tilt?.amount || 0));
         sprite.height = baseSize;
         sprite.tint = isErase ? 0xffffff : (settings.color ?? 0x800000);
         // 筆圧を濃度(アルファ)に直接反映
         sprite.alpha = Math.max(0.001, (settings.opacity ?? 1) * baseFlow * pressureFactor);
         sprite.blendMode = isErase ? 'erase' : 'normal';
+        container.addChild(sprite);
+    }
+
+    _isPoolingEnabled() {
+        return window.TEGAKI_CONFIG?.brushEngine?.airbrushDabPooling !== false;
+    }
+
+    _acquireContainer() {
+        if (!this._isPoolingEnabled()) return new Container();
+        if (!this.segmentContainer || this.segmentContainer.destroyed) {
+            this.segmentContainer = new Container();
+        }
+        const container = this.segmentContainer;
+        // 前回の呼び出し側がreleaseしなかった場合でもspriteを確実に回収する。
+        if (container.children.length > 0) container.removeChildren();
+        container.position.set(0, 0);
+        this.pooledDabCount = 0;
+        return container;
+    }
+
+    _acquireSprite(container, texture) {
+        if (container !== this.segmentContainer) {
+            const sprite = new Sprite(texture);
+            sprite.anchor.set(0.5);
+            return sprite;
+        }
+        let sprite = this.spritePool[this.pooledDabCount];
+        if (!sprite || sprite.destroyed) {
+            sprite = new Sprite(texture);
+            sprite.anchor.set(0.5);
+            this.spritePool[this.pooledDabCount] = sprite;
+        } else if (sprite.texture !== texture) {
+            sprite.texture = texture;
+        }
+        this.pooledDabCount++;
+        return sprite;
+    }
+
+    /**
+     * renderSegmentが返したcontainerを描画後に返却する。
+     * pooling時はspriteを外して再利用し、無効時は従来どおり破棄する。
+     */
+    releaseSegment(container) {
+        if (!container) return;
+        if (container !== this.segmentContainer) {
+            // cached texture を破棄しないため texture/baseTexture は指定しない。
+            container.destroy({ children: true });
+            return;
+        }
+        container.removeChildren();
+        this.pooledDabCount = 0;
+        this._trimTextureCache();
+        if (this.spritePool.length > MAX_POOLED_DAB_SPRITES) {
+            const excess = this.spritePool.splice(MAX_POOLED_DAB_SPRITES);
+            excess.forEach(sprite => sprite.destroy());
+        }
+    }
+
+    /**
+     * pen dabの縁の柔らかさ。設定の柔らかさ(径に比例)と、AA幅(画素数で一定)から求めた柔らかさの大きい方。
+     * AA幅は区間の細い側の径で換算し、texture数を抑えるため1/32刻みへ丸める。
+     */
+    _getPenDabEffectiveSoftness(points, settings) {
+        const softness = Math.max(0, Math.min(1, Number(settings.penDabSoftness) || 0));
+        const aaPx = Math.max(0, Number(settings.penEdgeAA) || 0);
+        if (!(aaPx > 0) || !points?.length) return softness;
+        const pressure = Math.min(...points.map(point => point.pressure ?? 1));
+        const widthScale = Math.min(...points.map(point => point.widthScale ?? 1));
+        const radius = Math.max(0.5, (this._getPenDabWidth(pressure, settings) * widthScale) / 2)
+            + aaPx * PEN_AA_HALF_COVERAGE_OFFSET;
+        const aaSoftness = computeSoftnessForEdgeWidth(aaPx, radius);
+        const quantized = Math.round(Math.max(softness, aaSoftness) * 32) / 32;
+        return Math.max(softness, Math.min(1, quantized));
+    }
+
+    _getPenDabWidth(pressure, settings) {
+        const width = settings.pressureEnabled === true
+            ? this.calculateWidth(pressure, settings.size)
+            : Math.max(1, settings.size || 1);
+        // ペンの傾き: 寝かせるほど太く(鉛筆の側面)。最大PEN_TILT_WIDEN倍。
+        return width * (1 + PEN_TILT_WIDEN * (settings.dabTilt?.amount || 0));
+    }
+
+    /**
+     * pen dab: stroke maskへmax合成で置くため、重なってもstroke内で濃度が積み上がらない。
+     * 線の不透明度はmask確定時に一括で掛ける。
+     */
+    _addPenDab(container, texture, x, y, pressure, settings, widthScale = 1) {
+        // AA帯は径の内側に作られるため、その分dabを広げて50%被覆の縁を元の径に保つ(線が細らない)。
+        const aaPx = Math.max(0, Number(settings.penEdgeAA) || 0);
+        const width = Math.max(0.5, this._getPenDabWidth(pressure, settings) * widthScale)
+            + 2 * aaPx * PEN_AA_HALF_COVERAGE_OFFSET;
+        const sprite = this._acquireSprite(container, texture);
+        sprite.rotation = 0;
+        sprite.position.set(x, y);
+        sprite.width = width;
+        sprite.height = width;
+        sprite.tint = 0xffffff;
+        sprite.alpha = Math.max(0.001, this.calculateOpacity(pressure, 1.0, settings));
+        sprite.blendMode = 'max';
         container.addChild(sprite);
     }
 
@@ -119,43 +260,137 @@ export class AirbrushDabRenderer {
 
     _getTexture(providedSoftness = 0.8) {
         const softness = Math.max(0, Math.min(1, Number(providedSoftness) || 0));
-        if (this.texture && this.textureSoftness === softness) {
-            return this.texture;
+        const useFalloff = window.TEGAKI_CONFIG?.brushEngine?.airbrushHardnessFalloff !== false;
+        const textureKey = `${useFalloff ? 'falloff' : 'legacy'}:${softness}`;
+        const cached = this.textures.get(textureKey);
+        if (cached && !cached.destroyed) {
+            return cached;
         }
-        this.textureSoftness = softness;
 
-        const size = 256;
-        const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
+        const canvas = useFalloff
+            ? createFalloffDabCanvas(softness)
+            : createLegacyGradientDabCanvas(softness);
 
-        const context = canvas.getContext('2d');
-        const center = size / 2;
-        context.clearRect(0, 0, size, size);
+        // 小径dabで256px textureを縮小sampleしても粗くならないようmipmapを生成する。
+        const texture = Texture.from({ resource: canvas, autoGenerateMipmaps: true }, true);
+        this.textures.set(textureKey, texture);
+        this._trimTextureCache();
+        return texture;
+    }
 
-        const hardEdge = 1 - softness;
-        const innerStop = hardEdge * 0.3;
-        const midStop = innerStop + ((1 - innerStop) * 0.4);
-        const gradient = context.createRadialGradient(center, center, 0, center, center, center);
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
-        if (innerStop > 0.01) {
-            gradient.addColorStop(innerStop, 'rgba(255, 255, 255, 1.0)');
+    /**
+     * slider操作やAA幅でsoftnessが変化してもtextureを無制限に溜めない。
+     * ただし描画待ちのsegment containerのdabが使っているtextureは破棄しない(破棄するとそのdabが消える)。
+     * その場合は一時的に上限を超え、releaseSegment時に改めて整理する。
+     */
+    _trimTextureCache() {
+        if (this.textures.size <= MAX_CACHED_DAB_TEXTURES) return;
+        const inUse = new Set();
+        (this.segmentContainer?.children || []).forEach(sprite => inUse.add(sprite.texture));
+        for (const [key, texture] of [...this.textures.entries()]) {
+            if (this.textures.size <= MAX_CACHED_DAB_TEXTURES) break;
+            if (inUse.has(texture)) continue;
+            this.textures.delete(key);
+            this._releasePooledSpriteTexture(texture);
+            texture.destroy(true);
         }
-        gradient.addColorStop(midStop, `rgba(255, 255, 255, ${(0.4 * softness).toFixed(3)})`);
-        gradient.addColorStop(0.85, 'rgba(255, 255, 255, 0.02)');
-        gradient.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
+    }
 
-        context.fillStyle = gradient;
-        context.fillRect(0, 0, size, size);
-
-        this.texture?.destroy();
-        this.texture = Texture.from(canvas);
-        return this.texture;
+    _releasePooledSpriteTexture(texture) {
+        // 破棄するtextureをpool中のspriteが握ったままにしない。
+        this.spritePool.forEach(sprite => {
+            if (sprite.texture === texture) sprite.texture = Texture.EMPTY;
+        });
     }
 
     destroy() {
-        this.texture?.destroy();
-        this.texture = null;
-        this.textureSoftness = null;
+        this.spritePool.forEach(sprite => sprite.destroy());
+        this.spritePool = [];
+        this.segmentContainer?.destroy();
+        this.segmentContainer = null;
+        this.textures.forEach(texture => texture.destroy(true));
+        this.textures.clear();
     }
+}
+
+/**
+ * 縁の減衰帯をedgePx画素にするsoftness。falloffの不透明な芯は半径×(1-softness)^2なので、
+ * 減衰帯 = 半径×(1-(1-s)^2) = edgePx を解く。
+ */
+export function computeSoftnessForEdgeWidth(edgePx, radiusPx) {
+    if (!(edgePx > 0) || !(radiusPx > 0)) return 0;
+    const fraction = Math.min(1, edgePx / radiusPx);
+    return 1 - Math.sqrt(1 - fraction);
+}
+
+/**
+ * hardness(=1-softness)でパラメータ化した円形falloff。
+ * softness 0 は1texel幅AAだけの硬い円、既定0.8は旧radial gradientに近いGaussian寄りの裾になる。
+ */
+export function computeDabFalloff(radius, softness) {
+    if (radius >= 1) return 0;
+    const core = (1 - softness) * (1 - softness);
+    if (radius <= core) return 1;
+    const t = (radius - core) / (1 - core);
+    const tail = Math.exp(-1 / (2 * DAB_FALLOFF_SIGMA * DAB_FALLOFF_SIGMA));
+    const gaussian = Math.exp(-(t * t) / (2 * DAB_FALLOFF_SIGMA * DAB_FALLOFF_SIGMA));
+    return Math.max(0, (gaussian - tail) / (1 - tail));
+}
+
+function createFalloffDabCanvas(softness) {
+    const size = DAB_TEXTURE_SIZE;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext('2d');
+    const image = context.createImageData(size, size);
+    const data = image.data;
+    const radiusPx = size / 2;
+    // 外周1texel手前で0へ落とし、clamp sampleでtexture端が滲まないようにする。
+    const edgeRadiusPx = radiusPx - 1;
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            const dx = x + 0.5 - radiusPx;
+            const dy = y + 0.5 - radiusPx;
+            const distancePx = Math.hypot(dx, dy);
+            const radius = distancePx / edgeRadiusPx;
+            // 硬い縁はtexel単位のcoverageでAAする。
+            const edgeCoverage = Math.max(0, Math.min(1, edgeRadiusPx - distancePx + 0.5));
+            const alpha = computeDabFalloff(Math.min(radius, 0.999999), softness) * edgeCoverage;
+            const index = (y * size + x) * 4;
+            data[index] = 255;
+            data[index + 1] = 255;
+            data[index + 2] = 255;
+            data[index + 3] = Math.round(alpha * 255);
+        }
+    }
+    context.putImageData(image, 0, 0);
+    return canvas;
+}
+
+function createLegacyGradientDabCanvas(softness) {
+    const size = DAB_TEXTURE_SIZE;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+
+    const context = canvas.getContext('2d');
+    const center = size / 2;
+    context.clearRect(0, 0, size, size);
+
+    const hardEdge = 1 - softness;
+    const innerStop = hardEdge * 0.3;
+    const midStop = innerStop + ((1 - innerStop) * 0.4);
+    const gradient = context.createRadialGradient(center, center, 0, center, center, center);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    if (innerStop > 0.01) {
+        gradient.addColorStop(innerStop, 'rgba(255, 255, 255, 1.0)');
+    }
+    gradient.addColorStop(midStop, `rgba(255, 255, 255, ${(0.4 * softness).toFixed(3)})`);
+    gradient.addColorStop(0.85, 'rgba(255, 255, 255, 0.02)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
+
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, size, size);
+    return canvas;
 }

@@ -15,6 +15,20 @@
 import { TEGAKI_KEYMAP } from '../config.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
+import {
+    PRESSURE_CURVE_PRESETS,
+    MAX_PRESSURE_CURVE_POINTS,
+    normalizePressureCurvePoints,
+    evaluatePressureCurve
+} from '../system/drawing/pressure-curve.js';
+import { computeDabFalloff } from '../system/drawing/airbrush-dab-renderer.js';
+import {
+    BRUSH_PRESET_KEYS,
+    BUILTIN_BRUSH_PRESETS,
+    MAX_USER_BRUSH_PRESETS,
+    brushPresetMatches,
+    captureBrushPresetValues
+} from '../system/drawing/brush-presets.js';
 
 export class SettingsPopup {
     constructor(dependencies = {}) {
@@ -209,7 +223,21 @@ export class SettingsPopup {
 
             <div id="tab-pen" class="ui-tab-content">
                 <div class="setting-group">
+                    <div class="setting-label">ブラシプリセット</div>
+                    <div class="pressure-curve-selection brush-preset-list" data-preset-tool="pen"></div>
+                    <div class="pressure-curve-selection brush-preset-actions">
+                        <button class="pressure-curve-btn" type="button" data-preset-action="save" data-preset-tool="pen">＋ 今の設定を保存</button>
+                        <button class="pressure-curve-btn" type="button" data-preset-action="delete" data-preset-tool="pen">選択中を削除</button>
+                    </div>
+                    <div class="setting-description">筆圧カーブや速度・傾きなど「描き味」を名前付きで保存します。サイズ・不透明度はクイックパレットのスロットで管理します。</div>
+                </div>
+
+                <div class="setting-group">
                     <div class="setting-label">線補正（スムーズ度）</div>
+                    <div class="pressure-curve-selection stabilizer-mode-selection">
+                        <button class="pressure-curve-btn active" type="button" data-stabilizer-mode="follow">追従</button>
+                        <button class="pressure-curve-btn" type="button" data-stabilizer-mode="string">ひも</button>
+                    </div>
                     <div class="slider-container">
                         <div class="slider" id="smoothing-slider">
                             <div class="slider-track" id="smoothing-track"></div>
@@ -217,6 +245,7 @@ export class SettingsPopup {
                         </div>
                         <div class="slider-value" id="smoothing-value">0.5</div>
                     </div>
+                    <div class="setting-description">追従: 線がペンを少し遅れて追いかけます。ひも: ペンが一定距離（0.5で画面16px）動くまで線が動かず、手ぶれを無視して長い線を滑らかにします。離した位置まで線はつながります。</div>
                 </div>
 
                 <div class="setting-group">
@@ -236,7 +265,10 @@ export class SettingsPopup {
                         <button class="pressure-curve-btn active" data-curve="linear">リニア</button>
                         <button class="pressure-curve-btn" data-curve="ease-in">軽め</button>
                         <button class="pressure-curve-btn" data-curve="ease-out">重め</button>
+                        <button class="pressure-curve-btn" data-curve="custom">カスタム</button>
                     </div>
+                    <canvas id="pressure-curve-editor" class="pressure-curve-editor" width="240" height="160"></canvas>
+                    <div class="setting-description">横が入力筆圧、縦が実効筆圧。点をドラッグで調整、空いた所をクリックで点を追加、点をダブルクリックで削除。編集するとカスタムになります。</div>
                 </div>
 
                 <div class="setting-group">
@@ -254,9 +286,136 @@ export class SettingsPopup {
                     </div>
                     <div class="setting-description">弱い筆圧では線を薄くします。上限はOPACITYに従い、高いほど0から上限まで濃淡が強く出ます。</div>
                 </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">筆圧の安定化 (Pressure smoothing)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-pressure-smoothing-slider">
+                            <div class="slider-track" id="pen-pressure-smoothing-track"></div>
+                            <div class="slider-handle" id="pen-pressure-smoothing-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-pressure-smoothing-value">0.50</div>
+                    </div>
+                    <div class="setting-description">筆圧の細かな揺れで線幅が波打つのを抑えます。強弱の素早い変化は遅らせません。0でOFF。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">速度で細く (Velocity)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-velocity-thinning-slider">
+                            <div class="slider-track" id="pen-velocity-thinning-track"></div>
+                            <div class="slider-handle" id="pen-velocity-thinning-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-velocity-thinning-value">0.30</div>
+                    </div>
+                    <div class="setting-description">速く引いた線ほど細く・薄くします（筆圧使用時）。0で無効。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">傾きで太く (Tilt)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-tilt-strength-slider">
+                            <div class="slider-track" id="pen-tilt-strength-track"></div>
+                            <div class="slider-handle" id="pen-tilt-strength-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-tilt-strength-value">0.00</div>
+                    </div>
+                    <div class="setting-description">ペンを寝かせるほど線を太くします（傾き対応ペンのみ、dab描画時）。0で無効。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">入り (Taper in)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-taper-in-slider">
+                            <div class="slider-track" id="pen-taper-in-track"></div>
+                            <div class="slider-handle" id="pen-taper-in-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-taper-in-value">OFF</div>
+                    </div>
+                    <div class="setting-description">描き始めを指定の長さ（画素）で細くします。筆圧なし・マウスでも効きます。0でOFF。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">抜き (Taper out)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-taper-out-slider">
+                            <div class="slider-track" id="pen-taper-out-track"></div>
+                            <div class="slider-handle" id="pen-taper-out-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-taper-out-value">OFF</div>
+                    </div>
+                    <div class="setting-description">描き終わりを指定の長さ（画素）で細くします。ペンを離した時に付きます。0でOFF。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">縁の柔らかさ (Softness)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-dab-softness-slider">
+                            <div class="slider-track" id="pen-dab-softness-track"></div>
+                            <div class="slider-handle" id="pen-dab-softness-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-dab-softness-value">0.00</div>
+                    </div>
+                    <div class="setting-description">線の縁をぼかします。0でくっきり、上げるほど柔らかい線になります。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">縁のアンチエイリアス (AA)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-edge-aa-slider">
+                            <div class="slider-track" id="pen-edge-aa-track"></div>
+                            <div class="slider-handle" id="pen-edge-aa-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-edge-aa-value">0.0px</div>
+                    </div>
+                    <div class="setting-description">線の太さに関係なく縁を指定画素ぶん滑らかにし、入り抜きや筆圧変化の段差(ジャギー)を抑えます（書き出しにも反映）。既定1px。0で従来の硬い縁。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label setting-section-label">消しゴム</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">消しゴムの柔らかさ</div>
+                    <div class="slider-container">
+                        <div class="slider" id="eraser-dab-softness-slider">
+                            <div class="slider-track" id="eraser-dab-softness-track"></div>
+                            <div class="slider-handle" id="eraser-dab-softness-handle"></div>
+                        </div>
+                        <div class="slider-value" id="eraser-dab-softness-value">0.00</div>
+                    </div>
+                    <div class="setting-description">消しゴムの縁をぼかします。0でくっきり消します。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">筆圧で消す強さ</div>
+                    <div class="slider-container">
+                        <div class="slider" id="eraser-pressure-strength-slider">
+                            <div class="slider-track" id="eraser-pressure-strength-track"></div>
+                            <div class="slider-handle" id="eraser-pressure-strength-handle"></div>
+                        </div>
+                        <div class="slider-value" id="eraser-pressure-strength-value">0.00</div>
+                    </div>
+                    <div class="setting-description">弱い筆圧ほど薄く消します（消しゴムの筆圧が有効な時）。0で常に完全に消します。</div>
+                </div>
             </div>
 
             <div id="tab-spray" class="ui-tab-content">
+                <div class="setting-group">
+                    <div class="setting-label">ブラシプリセット</div>
+                    <div class="pressure-curve-selection brush-preset-list" data-preset-tool="airbrush"></div>
+                    <div class="pressure-curve-selection brush-preset-actions">
+                        <button class="pressure-curve-btn" type="button" data-preset-action="save" data-preset-tool="airbrush">＋ 今の設定を保存</button>
+                        <button class="pressure-curve-btn" type="button" data-preset-action="delete" data-preset-tool="airbrush">選択中を削除</button>
+                    </div>
+                    <div class="setting-description">筆圧カーブや速度・傾きなど「描き味」を名前付きで保存します。サイズ・不透明度はクイックパレットのスロットで管理します。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">先端プレビュー</div>
+                    <canvas id="airbrush-dab-preview" class="brush-tip-preview" width="240" height="64"></canvas>
+                    <div class="setting-description">左が1回の吹き付け、右が1本のストローク。流量・柔らかさ・揺らぎの変更がすぐ反映されます。</div>
+                </div>
                 <div class="setting-group">
                     <div class="setting-label">流量 (Flow)</div>
                     <div class="slider-container">
@@ -291,6 +450,30 @@ export class SettingsPopup {
                         <div class="slider-value" id="airbrush-scatter-value">0.00</div>
                     </div>
                     <div class="setting-description">各スタンプ位置にわずかなランダムオフセットを加えます。0でも十分滑らか。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">溜まり (Build-up)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="airbrush-buildup-rate-slider">
+                            <div class="slider-track" id="airbrush-buildup-rate-track"></div>
+                            <div class="slider-handle" id="airbrush-buildup-rate-handle"></div>
+                        </div>
+                        <div class="slider-value" id="airbrush-buildup-rate-value">20/秒</div>
+                    </div>
+                    <div class="setting-description">ペンを止めていても時間で吹き重ねます。値は1秒あたりの吹き付け回数。0でOFF。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">傾き (Tilt)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="airbrush-tilt-strength-slider">
+                            <div class="slider-track" id="airbrush-tilt-strength-track"></div>
+                            <div class="slider-handle" id="airbrush-tilt-strength-handle"></div>
+                        </div>
+                        <div class="slider-value" id="airbrush-tilt-strength-value">0.50</div>
+                    </div>
+                    <div class="setting-description">ペンを傾けると吹き付けが楕円になり、ペン先の向く側へ広がります（傾き対応ペンのみ）。0で無効。</div>
                 </div>
             </div>
 
@@ -409,6 +592,9 @@ export class SettingsPopup {
                     const isActive = c.id === `tab-${targetTab}`;
                     c.classList.toggle('active', isActive);
                 });
+                // 非表示タブのcanvasは寸法0のため、表示時に描き直す。
+                if (targetTab === 'pen') this._drawPressureCurveEditor();
+                if (targetTab === 'spray') this._drawAirbrushDabPreview();
             };
         });
     }
@@ -444,6 +630,50 @@ export class SettingsPopup {
             airbrushScatterTrack: document.getElementById('airbrush-scatter-track'),
             airbrushScatterHandle: document.getElementById('airbrush-scatter-handle'),
             airbrushScatterValue: document.getElementById('airbrush-scatter-value'),
+            airbrushBuildupRateSlider: document.getElementById('airbrush-buildup-rate-slider'),
+            airbrushBuildupRateTrack: document.getElementById('airbrush-buildup-rate-track'),
+            airbrushBuildupRateHandle: document.getElementById('airbrush-buildup-rate-handle'),
+            airbrushBuildupRateValue: document.getElementById('airbrush-buildup-rate-value'),
+            penVelocityThinningSlider: document.getElementById('pen-velocity-thinning-slider'),
+            penVelocityThinningTrack: document.getElementById('pen-velocity-thinning-track'),
+            penVelocityThinningHandle: document.getElementById('pen-velocity-thinning-handle'),
+            penVelocityThinningValue: document.getElementById('pen-velocity-thinning-value'),
+            penPressureSmoothingSlider: document.getElementById('pen-pressure-smoothing-slider'),
+            penPressureSmoothingTrack: document.getElementById('pen-pressure-smoothing-track'),
+            penPressureSmoothingHandle: document.getElementById('pen-pressure-smoothing-handle'),
+            penPressureSmoothingValue: document.getElementById('pen-pressure-smoothing-value'),
+            penTiltStrengthSlider: document.getElementById('pen-tilt-strength-slider'),
+            penTiltStrengthTrack: document.getElementById('pen-tilt-strength-track'),
+            penTiltStrengthHandle: document.getElementById('pen-tilt-strength-handle'),
+            penTiltStrengthValue: document.getElementById('pen-tilt-strength-value'),
+            penTaperInSlider: document.getElementById('pen-taper-in-slider'),
+            penTaperInTrack: document.getElementById('pen-taper-in-track'),
+            penTaperInHandle: document.getElementById('pen-taper-in-handle'),
+            penTaperInValue: document.getElementById('pen-taper-in-value'),
+            penTaperOutSlider: document.getElementById('pen-taper-out-slider'),
+            penTaperOutTrack: document.getElementById('pen-taper-out-track'),
+            penTaperOutHandle: document.getElementById('pen-taper-out-handle'),
+            penTaperOutValue: document.getElementById('pen-taper-out-value'),
+            penDabSoftnessSlider: document.getElementById('pen-dab-softness-slider'),
+            penDabSoftnessTrack: document.getElementById('pen-dab-softness-track'),
+            penDabSoftnessHandle: document.getElementById('pen-dab-softness-handle'),
+            penDabSoftnessValue: document.getElementById('pen-dab-softness-value'),
+            penEdgeAASlider: document.getElementById('pen-edge-aa-slider'),
+            penEdgeAATrack: document.getElementById('pen-edge-aa-track'),
+            penEdgeAAHandle: document.getElementById('pen-edge-aa-handle'),
+            penEdgeAAValue: document.getElementById('pen-edge-aa-value'),
+            eraserDabSoftnessSlider: document.getElementById('eraser-dab-softness-slider'),
+            eraserDabSoftnessTrack: document.getElementById('eraser-dab-softness-track'),
+            eraserDabSoftnessHandle: document.getElementById('eraser-dab-softness-handle'),
+            eraserDabSoftnessValue: document.getElementById('eraser-dab-softness-value'),
+            eraserPressureStrengthSlider: document.getElementById('eraser-pressure-strength-slider'),
+            eraserPressureStrengthTrack: document.getElementById('eraser-pressure-strength-track'),
+            eraserPressureStrengthHandle: document.getElementById('eraser-pressure-strength-handle'),
+            eraserPressureStrengthValue: document.getElementById('eraser-pressure-strength-value'),
+            airbrushTiltStrengthSlider: document.getElementById('airbrush-tilt-strength-slider'),
+            airbrushTiltStrengthTrack: document.getElementById('airbrush-tilt-strength-track'),
+            airbrushTiltStrengthHandle: document.getElementById('airbrush-tilt-strength-handle'),
+            airbrushTiltStrengthValue: document.getElementById('airbrush-tilt-strength-value'),
 
             bucketGapButtons: Array.from(document.querySelectorAll('[data-bucket-setting="gap"]')),
             bucketGapValue: document.getElementById('bucket-gap-value'),
@@ -502,13 +732,7 @@ export class SettingsPopup {
             const rect = sliderElement.getBoundingClientRect();
             const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
             
-            let min = 0, max = 1.0;
-            if (sliderType === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
-            else if (sliderType === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
-            else if (sliderType === 'pressureOpacity') { min = 0.0; max = 1.0; }
-            else if (sliderType === 'airbrushFlow') { min = 0.01; max = 1.0; }
-            else if (sliderType === 'airbrushSoftness') { min = 0.0; max = 1.0; }
-            else if (sliderType === 'airbrushScatter') { min = 0.0; max = 1.0; }
+            const { min, max } = this._getSliderSpec(sliderType);
 
             const value = min + ((max - min) * percent / 100);
             this._updateGenericSlider(sliderType, value);
@@ -524,9 +748,7 @@ export class SettingsPopup {
                     try { handle.releasePointerCapture(e.pointerId); } catch (err) {}
                 }
                 
-                let settingKey = type;
-                if (type === 'pressure') settingKey = 'pressureCorrection';
-                if (type === 'pressureOpacity') settingKey = 'pressureOpacityStrength';
+                const settingKey = this._getSliderSpec(type).settingKey;
                 if (this.settingsManager) {
                     const val = this[`current${type.charAt(0).toUpperCase() + type.slice(1)}`];
                     this.settingsManager.set(settingKey, val);
@@ -563,37 +785,29 @@ export class SettingsPopup {
                 const rect = slider.getBoundingClientRect();
                 const percent = ((e.clientX - rect.left) / rect.width) * 100;
                 
-                let min = 0, max = 1.0;
-                if (type === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
-                else if (type === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
-                else if (type === 'pressureOpacity') { min = 0.0; max = 1.0; }
-                else if (type === 'airbrushFlow') { min = 0.01; max = 1.0; }
-                else if (type === 'airbrushSoftness') { min = 0.0; max = 1.0; }
-                else if (type === 'airbrushScatter') { min = 0.0; max = 1.0; }
+                const { min, max } = this._getSliderSpec(type);
 
                 const value = min + ((max - min) * percent / 100);
                 this._updateGenericSlider(type, value);
                 
-                let settingKey = type;
-                if (type === 'pressure') settingKey = 'pressureCorrection';
-                if (type === 'pressureOpacity') settingKey = 'pressureOpacityStrength';
-                this.settingsManager?.set(settingKey, value);
+                this.settingsManager?.set(this._getSliderSpec(type).settingKey, value);
             });
         };
 
-        ['pressure', 'smoothing', 'pressureOpacity', 'airbrushFlow', 'airbrushSoftness', 'airbrushScatter'].forEach(setupSliderEvents);
+        [
+            'pressure', 'smoothing', 'pressureOpacity', 'penVelocityThinning', 'penTiltStrength',
+            'penTaperIn', 'penTaperOut', 'penPressureSmoothing',
+            'penDabSoftness', 'penEdgeAA', 'eraserDabSoftness', 'eraserPressureStrength',
+            'airbrushFlow', 'airbrushSoftness', 'airbrushScatter', 'airbrushBuildupRate', 'airbrushTiltStrength'
+        ].forEach(setupSliderEvents);
     }
 
     _updateGenericSlider(type, value) {
-        let min = 0, max = 1.0;
-        if (type === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
-        else if (type === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
-        else if (type === 'pressureOpacity') { min = 0.0; max = 1.0; }
-        else if (type === 'airbrushFlow') { min = 0.01; max = 1.0; }
-        else if (type === 'airbrushSoftness') { min = 0.0; max = 1.0; }
-        else if (type === 'airbrushScatter') { min = 0.0; max = 1.0; }
+        const spec = this._getSliderSpec(type);
+        const { min, max } = spec;
 
-        const val = Math.max(min, Math.min(max, value));
+        let val = Math.max(min, Math.min(max, value));
+        if (spec.integer) val = Math.round(val);
         this[`current${type.charAt(0).toUpperCase() + type.slice(1)}`] = val;
 
         const percent = ((val - min) / (max - min)) * 100;
@@ -603,14 +817,49 @@ export class SettingsPopup {
 
         if (track) track.style.width = percent + '%';
         if (handle) handle.style.left = percent + '%';
-        if (display) display.textContent = val.toFixed(2);
+        if (display) display.textContent = spec.format ? spec.format(val) : val.toFixed(2);
+        if (type === 'airbrushFlow' || type === 'airbrushSoftness' || type === 'airbrushScatter') {
+            this._scheduleAirbrushDabPreview();
+        }
+        this._scheduleBrushPresetRender();
 
         if (this.eventBus) {
-            let eventName = `settings:${type.replace(/[A-Z]/g, m => "-" + m.toLowerCase())}`;
-            if (type === 'pressure') eventName = 'settings:pressure-correction';
-            if (type === 'pressureOpacity') eventName = 'settings:pressure-opacity-strength';
+            const eventName = `settings:${spec.settingKey.replace(/[A-Z]/g, m => "-" + m.toLowerCase())}`;
             this.eventBus.emit(eventName, { value: val });
         }
+    }
+
+    /**
+     * 汎用sliderの値域・保存key・表示形式の一覧。sliderを足す時はここへ1行足す。
+     * パネル標準化の際はこの表をそのまま共通slider部品へ移せる形にしておく。
+     */
+    _getSliderSpec(type) {
+        const specs = {
+            pressure: { min: this.MIN_PRESSURE, max: this.MAX_PRESSURE, settingKey: 'pressureCorrection' },
+            smoothing: { min: this.MIN_SMOOTHING, max: this.MAX_SMOOTHING, settingKey: 'smoothing' },
+            pressureOpacity: { min: 0.0, max: 1.0, settingKey: 'pressureOpacityStrength' },
+            penVelocityThinning: { min: 0.0, max: 0.9, settingKey: 'penVelocityThinning' },
+            penPressureSmoothing: { min: 0.0, max: 1.0, settingKey: 'penPressureSmoothing' },
+            penTiltStrength: { min: 0.0, max: 1.0, settingKey: 'penTiltStrength' },
+            penDabSoftness: { min: 0.0, max: 1.0, settingKey: 'penDabSoftness' },
+            penTaperIn: { min: 0, max: 300, integer: true, settingKey: 'penTaperIn', format: (v) => (v <= 0 ? 'OFF' : `${v}px`) },
+            penTaperOut: { min: 0, max: 300, integer: true, settingKey: 'penTaperOut', format: (v) => (v <= 0 ? 'OFF' : `${v}px`) },
+            penEdgeAA: { min: 0.0, max: 4.0, settingKey: 'penEdgeAA', format: (v) => `${v.toFixed(1)}px` },
+            eraserDabSoftness: { min: 0.0, max: 1.0, settingKey: 'eraserDabSoftness' },
+            eraserPressureStrength: { min: 0.0, max: 1.0, settingKey: 'eraserPressureStrength' },
+            airbrushTiltStrength: { min: 0.0, max: 1.0, settingKey: 'airbrushTiltStrength' },
+            airbrushFlow: { min: 0.01, max: 1.0, settingKey: 'airbrushFlow' },
+            airbrushSoftness: { min: 0.0, max: 1.0, settingKey: 'airbrushSoftness' },
+            airbrushScatter: { min: 0.0, max: 1.0, settingKey: 'airbrushScatter' },
+            airbrushBuildupRate: {
+                min: 0,
+                max: 60,
+                integer: true,
+                settingKey: 'airbrushBuildupRate',
+                format: (v) => (v <= 0 ? 'OFF' : `${v}/秒`)
+            }
+        };
+        return specs[type] || { min: 0, max: 1, settingKey: type };
     }
 
     _updateBucketGapSlider(value) {
@@ -724,8 +973,21 @@ export class SettingsPopup {
                 this.settingsManager?.set('pressureCurve', curve);
             });
         });
+        this._setupPressureCurveEditor();
+        this.popup?.querySelectorAll('[data-stabilizer-mode]').forEach(btn => {
+            btn.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const mode = btn.dataset.stabilizerMode;
+                this.settingsManager?.set('stabilizerMode', mode);
+                this._applyStabilizerModeUI(mode);
+                this._scheduleBrushPresetRender();
+            });
+        });
+        this._setupBrushPresets();
         this.elements.pressureOpacityToggle?.addEventListener('change', () => {
             this.settingsManager?.set('pressureOpacityEnabled', this.elements.pressureOpacityToggle.checked);
+            this._scheduleBrushPresetRender();
         });
     }
 
@@ -768,10 +1030,22 @@ export class SettingsPopup {
         this._updateGenericSlider('airbrushFlow', settings.airbrushFlow ?? defaults.airbrushFlow);
         this._updateGenericSlider('airbrushSoftness', settings.airbrushSoftness ?? defaults.airbrushSoftness);
         this._updateGenericSlider('airbrushScatter', settings.airbrushScatter ?? defaults.airbrushScatter);
+        this._updateGenericSlider('airbrushBuildupRate', settings.airbrushBuildupRate ?? defaults.airbrushBuildupRate);
+        this._updateGenericSlider('penVelocityThinning', settings.penVelocityThinning ?? defaults.penVelocityThinning);
+        this._updateGenericSlider('penTiltStrength', settings.penTiltStrength ?? defaults.penTiltStrength);
+        this._updateGenericSlider('penPressureSmoothing', settings.penPressureSmoothing ?? defaults.penPressureSmoothing);
+        this._updateGenericSlider('penTaperIn', settings.penTaperIn ?? defaults.penTaperIn);
+        this._updateGenericSlider('penTaperOut', settings.penTaperOut ?? defaults.penTaperOut);
+        this._updateGenericSlider('penDabSoftness', settings.penDabSoftness ?? defaults.penDabSoftness);
+        this._updateGenericSlider('penEdgeAA', settings.penEdgeAA ?? defaults.penEdgeAA);
+        this._updateGenericSlider('eraserDabSoftness', settings.eraserDabSoftness ?? defaults.eraserDabSoftness);
+        this._updateGenericSlider('eraserPressureStrength', settings.eraserPressureStrength ?? defaults.eraserPressureStrength);
+        this._updateGenericSlider('airbrushTiltStrength', settings.airbrushTiltStrength ?? defaults.airbrushTiltStrength);
         this._updateBucketGapSlider(settings.bucketGapClose ?? defaults.bucketGapClose);
         this._updateBucketUnderpaintSlider(settings.bucketUnderpaint ?? defaults.bucketUnderpaint);
         this._setBucketRefVisibility(settings.bucketReferenceAllLayers ?? defaults.bucketReferenceAllLayers);
         this._applyPressureCurveUI(settings.pressureCurve ?? defaults.pressureCurve);
+        this._applyStabilizerModeUI(settings.stabilizerMode ?? 'follow');
         this._setPressureOpacityEnabled(settings.pressureOpacityEnabled ?? defaults.pressureOpacityEnabled);
         this._setStatusPanelVisibility(settings.statusPanelVisible ?? defaults.statusPanelVisible);
         if (this.elements.animationAutoCreateNext) {
@@ -880,11 +1154,466 @@ export class SettingsPopup {
             `履歴: ${usage.entries} / ${usage.maxEntries}　使用量: ${usedMB.toFixed(1)} MB / ${formatLimit(maxMB)}${suffix}`;
     }
 
+    _applyStabilizerModeUI(mode) {
+        this.popup?.querySelectorAll('[data-stabilizer-mode]').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.stabilizerMode === (mode === 'string' ? 'string' : 'follow'));
+        });
+    }
+
     _applyPressureCurveUI(curve) {
         const curveBtns = this.popup.querySelectorAll('.pressure-curve-btn[data-curve]');
         curveBtns.forEach(btn => {
             btn.classList.toggle('active', btn.getAttribute('data-curve') === curve);
         });
+        this._drawPressureCurveEditor();
+        this._scheduleBrushPresetRender();
+    }
+
+    _scheduleAirbrushDabPreview() {
+        if (this.dabPreviewFrame) return;
+        const schedule = typeof requestAnimationFrame === 'function'
+            ? requestAnimationFrame
+            : (fn) => setTimeout(fn, 16);
+        this.dabPreviewFrame = schedule(() => {
+            this.dabPreviewFrame = null;
+            this._drawAirbrushDabPreview();
+        });
+    }
+
+    /**
+     * エアブラシ先端のプレビュー。描画engineと同じfalloff・spacing補正flow・scatterを
+     * CPUで小さく再現する(左: 1dab、右: 直線strokeの累積)。
+     */
+    _drawAirbrushDabPreview() {
+        const canvas = this.popup?.querySelector('#airbrush-dab-preview');
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const cssW = Math.round(rect.width || canvas.width);
+        const cssH = Math.round(rect.height || canvas.height);
+        if (cssW <= 0 || cssH <= 0) return;
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const W = Math.round(cssW * dpr);
+        const H = Math.round(cssH * dpr);
+        if (canvas.width !== W || canvas.height !== H) {
+            canvas.width = W;
+            canvas.height = H;
+        }
+
+        const softness = Number(this.currentAirbrushSoftness ?? 0.8);
+        const flow = Math.max(0.001, Math.min(1, Number(this.currentAirbrushFlow ?? 0.08)));
+        const scatter = Number(this.currentAirbrushScatter ?? 0);
+        const spacingRatio = Number(window.TEGAKI_CONFIG?.BRUSH_DEFAULTS?.airbrushSpacingRatio ?? 0.1);
+        const dabAlpha = 1 - Math.pow(1 - flow, spacingRatio / 0.18);
+
+        const style = getComputedStyle(document.documentElement);
+        const hex = (style.getPropertyValue('--futaba-maroon').trim() || '#800000').replace('#', '');
+        const full = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex;
+        const color = [0, 2, 4].map(i => parseInt(full.slice(i, i + 2), 16) || 0);
+
+        const R = Math.max(4, Math.floor(H / 2) - 4 * dpr);
+        const remaining = new Float32Array(W * H).fill(1);
+        const stamp = (cx, cy, alpha) => {
+            const x0 = Math.max(0, Math.floor(cx - R));
+            const x1 = Math.min(W - 1, Math.ceil(cx + R));
+            const y0 = Math.max(0, Math.floor(cy - R));
+            const y1 = Math.min(H - 1, Math.ceil(cy + R));
+            for (let y = y0; y <= y1; y++) {
+                for (let x = x0; x <= x1; x++) {
+                    const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / R;
+                    if (d >= 1) continue;
+                    remaining[y * W + x] *= 1 - alpha * computeDabFalloff(d, softness);
+                }
+            }
+        };
+
+        // 左: 1回の吹き付け(形が見えるよう濃度1で表示)
+        const singleCx = R + 4 * dpr;
+        stamp(singleCx, H / 2, 1);
+
+        // 右: 直線strokeの累積(engineと同じ間隔・flow・scatter)
+        let seed = 7;
+        const random = () => {
+            seed = (seed * 16807) % 2147483647;
+            return seed / 2147483647;
+        };
+        const startX = singleCx + R * 2 + 10 * dpr;
+        const endX = W - R - 4 * dpr;
+        const spacing = Math.max(0.5, 2 * R * spacingRatio);
+        for (let x = startX; x <= endX; x += spacing) {
+            let cx = x;
+            let cy = H / 2;
+            if (scatter > 0) {
+                const angle = random() * Math.PI * 2;
+                const distance = random() * 2 * R * scatter * 0.2;
+                cx += Math.cos(angle) * distance;
+                cy += Math.sin(angle) * distance;
+            }
+            stamp(cx, cy, dabAlpha);
+        }
+
+        const ctx = canvas.getContext('2d');
+        const image = ctx.createImageData(W, H);
+        for (let i = 0; i < W * H; i++) {
+            const a = 1 - remaining[i];
+            image.data[i * 4] = color[0];
+            image.data[i * 4 + 1] = color[1];
+            image.data[i * 4 + 2] = color[2];
+            image.data[i * 4 + 3] = Math.round(a * 255);
+        }
+        ctx.putImageData(image, 0, 0);
+    }
+
+    _getBrushPresetList(tool) {
+        const user = this.settingsManager?.get?.('brushPresets')?.[tool] || [];
+        return [
+            ...(BUILTIN_BRUSH_PRESETS[tool] || []).map(preset => ({ ...preset, builtin: true })),
+            ...user.map(preset => ({ ...preset, builtin: false }))
+        ];
+    }
+
+    _getActiveBrushPreset(tool) {
+        const getSetting = (key) => this.settingsManager?.get?.(key);
+        const list = this._getBrushPresetList(tool);
+        // 同じ値のpresetが複数あれば、最後に選んだ / 保存したものを優先する。
+        const selectedId = this.selectedBrushPresetIds?.[tool];
+        const selected = list.find(preset => preset.id === selectedId);
+        if (selected && brushPresetMatches(selected, tool, getSetting)) return selected;
+        return list.find(preset => brushPresetMatches(preset, tool, getSetting)) || null;
+    }
+
+    _setSelectedBrushPreset(tool, id) {
+        this.selectedBrushPresetIds = { ...(this.selectedBrushPresetIds || {}), [tool]: id };
+    }
+
+    _scheduleBrushPresetRender() {
+        if (this.brushPresetFrame) return;
+        const schedule = typeof requestAnimationFrame === 'function'
+            ? requestAnimationFrame
+            : (fn) => setTimeout(fn, 16);
+        this.brushPresetFrame = schedule(() => {
+            this.brushPresetFrame = null;
+            this._renderBrushPresets();
+        });
+    }
+
+    /** presetボタン列を描き直す。現在値と一致するpresetをactive表示する。 */
+    _renderBrushPresets() {
+        this.popup?.querySelectorAll('.brush-preset-list[data-preset-tool]').forEach(list => {
+            const tool = list.dataset.presetTool;
+            const active = this._getActiveBrushPreset(tool);
+            list.innerHTML = '';
+            this._getBrushPresetList(tool).forEach(preset => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'pressure-curve-btn brush-preset-btn';
+                button.dataset.presetId = preset.id;
+                button.dataset.presetTool = tool;
+                button.textContent = preset.name;
+                button.title = preset.builtin ? `${preset.name}（組み込み）` : preset.name;
+                button.classList.toggle('active', preset.id === active?.id);
+                list.appendChild(button);
+            });
+            const deleteButton = this.popup.querySelector(`[data-preset-action="delete"][data-preset-tool="${tool}"]`);
+            if (deleteButton) deleteButton.disabled = !active || active.builtin;
+        });
+    }
+
+    _applyBrushPreset(tool, presetId) {
+        const preset = this._getBrushPresetList(tool).find(item => item.id === presetId);
+        if (!preset || !this.settingsManager) return;
+        const values = preset.values || {};
+        // customカーブは制御点を先に入れてから種類を切り替える。
+        const keys = [...BRUSH_PRESET_KEYS[tool]].sort((a, b) => (a === 'pressureCurvePoints' ? -1 : b === 'pressureCurvePoints' ? 1 : 0));
+        keys.forEach(key => {
+            if (key in values) this.settingsManager.set(key, values[key]);
+        });
+        this._setSelectedBrushPreset(tool, preset.id);
+        this._applySettingsToUI(this.settingsManager.get());
+        this._drawPressureCurveEditor();
+        this._drawAirbrushDabPreview();
+        this._renderBrushPresets();
+    }
+
+    _saveBrushPreset(tool) {
+        if (!this.settingsManager) return;
+        const all = this.settingsManager.get('brushPresets') || { pen: [], airbrush: [] };
+        const list = Array.isArray(all[tool]) ? [...all[tool]] : [];
+        if (list.length >= MAX_USER_BRUSH_PRESETS) {
+            window.alert?.(`保存できるプリセットは${MAX_USER_BRUSH_PRESETS}件までです。不要なものを削除してください。`);
+            return;
+        }
+        const defaultName = `${tool === 'pen' ? 'ペン' : 'エアブラシ'} ${list.length + 1}`;
+        const name = typeof window.prompt === 'function' ? window.prompt('プリセット名', defaultName) : defaultName;
+        if (name === null || !String(name).trim()) return;
+        const id = `user-${tool}-${Date.now().toString(36)}`;
+        this._setSelectedBrushPreset(tool, id);
+        list.push({
+            id,
+            name: String(name).trim().slice(0, 24),
+            values: captureBrushPresetValues(tool, key => this.settingsManager.get(key))
+        });
+        this.settingsManager.set('brushPresets', { ...all, [tool]: list });
+        this._renderBrushPresets();
+    }
+
+    _deleteActiveBrushPreset(tool) {
+        const active = this._getActiveBrushPreset(tool);
+        if (!active || active.builtin || !this.settingsManager) return;
+        if (typeof window.confirm === 'function' && !window.confirm(`プリセット「${active.name}」を削除しますか？`)) return;
+        const all = this.settingsManager.get('brushPresets') || { pen: [], airbrush: [] };
+        const list = (all[tool] || []).filter(preset => preset.id !== active.id);
+        this.settingsManager.set('brushPresets', { ...all, [tool]: list });
+        this._renderBrushPresets();
+    }
+
+    _setupBrushPresets() {
+        if (!this.popup || this.popup.dataset.brushPresetsReady === '1') return;
+        this.popup.dataset.brushPresetsReady = '1';
+        this.popup.addEventListener('pointerdown', (e) => {
+            const presetButton = e.target.closest?.('.brush-preset-btn[data-preset-id]');
+            const actionButton = e.target.closest?.('[data-preset-action]');
+            if (!presetButton && !actionButton) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (presetButton) {
+                this._applyBrushPreset(presetButton.dataset.presetTool, presetButton.dataset.presetId);
+            } else if (actionButton.dataset.presetAction === 'save') {
+                this._saveBrushPreset(actionButton.dataset.presetTool);
+            } else if (actionButton.dataset.presetAction === 'delete' && !actionButton.disabled) {
+                this._deleteActiveBrushPreset(actionButton.dataset.presetTool);
+            }
+        });
+        this._renderBrushPresets();
+    }
+
+    /** 現在のカーブ設定を制御点で返す(presetは近似点、customは保存点)。 */
+    _getEditorCurvePoints() {
+        const curve = this.settingsManager?.get?.('pressureCurve') ?? 'linear';
+        if (curve === 'custom') {
+            return normalizePressureCurvePoints(this.settingsManager?.get?.('pressureCurvePoints'))
+                || PRESSURE_CURVE_PRESETS.linear.map(p => [...p]);
+        }
+        return (PRESSURE_CURVE_PRESETS[curve] || PRESSURE_CURVE_PRESETS.linear).map(p => [...p]);
+    }
+
+    /**
+     * 筆圧カーブの2次元編集(入力筆圧→実効筆圧)。見た目は既存CSS tokenに合わせた最小実装で、
+     * パネル標準化時に部品化しやすいよう描画と操作をこのメソッド群に閉じている。
+     */
+    _setupPressureCurveEditor() {
+        const canvas = this.popup?.querySelector('#pressure-curve-editor');
+        if (!canvas || canvas.dataset.ready === '1') return;
+        canvas.dataset.ready = '1';
+        this.curveEditor = { canvas, points: null, dragIndex: -1, pointerId: null };
+
+        const PAD = 10;
+        const HIT_RADIUS = 9;
+        const toCurve = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const w = rect.width - PAD * 2;
+            const h = rect.height - PAD * 2;
+            return [
+                Math.max(0, Math.min(1, (e.clientX - rect.left - PAD) / w)),
+                Math.max(0, Math.min(1, 1 - (e.clientY - rect.top - PAD) / h))
+            ];
+        };
+        const findPoint = (e, points) => {
+            const rect = canvas.getBoundingClientRect();
+            const w = rect.width - PAD * 2;
+            const h = rect.height - PAD * 2;
+            const px = e.clientX - rect.left;
+            const py = e.clientY - rect.top;
+            let best = -1;
+            let bestDist = HIT_RADIUS;
+            points.forEach(([x, y], i) => {
+                const d = Math.hypot(PAD + x * w - px, PAD + (1 - y) * h - py);
+                if (d <= bestDist) { best = i; bestDist = d; }
+            });
+            return best;
+        };
+        const commit = () => {
+            const points = normalizePressureCurvePoints(this.curveEditor.points);
+            if (!points) return;
+            this.settingsManager?.set('pressureCurvePoints', points);
+            this.settingsManager?.set('pressureCurve', 'custom');
+            this._applyPressureCurveUI('custom');
+        };
+
+        canvas.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const points = this._getEditorCurvePoints();
+            let index = findPoint(e, points);
+            if (index < 0) {
+                if (points.length >= MAX_PRESSURE_CURVE_POINTS) return;
+                const [x, y] = toCurve(e);
+                if (x <= 0.01 || x >= 0.99) return;
+                points.push([x, y]);
+                points.sort((a, b) => a[0] - b[0]);
+                index = points.findIndex(p => p[0] === x && p[1] === y);
+            }
+            this.curveEditor.points = points;
+            this.curveEditor.dragIndex = index;
+            this.curveEditor.pointerId = e.pointerId;
+            try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+            this._drawPressureCurveEditor(points);
+        });
+        canvas.addEventListener('pointermove', (e) => {
+            const editor = this.curveEditor;
+            if (editor.dragIndex < 0 || e.pointerId !== editor.pointerId) return;
+            e.preventDefault();
+            const points = editor.points;
+            const i = editor.dragIndex;
+            const [x, y] = toCurve(e);
+            const isEnd = i === 0 || i === points.length - 1;
+            // 端点はx固定(0/1)、内部点は隣の点を越えない。
+            const minX = isEnd ? points[i][0] : points[i - 1][0] + 0.02;
+            const maxX = isEnd ? points[i][0] : points[i + 1][0] - 0.02;
+            points[i] = [Math.max(minX, Math.min(maxX, x)), y];
+            this._drawPressureCurveEditor(points);
+        });
+        const end = (e) => {
+            const editor = this.curveEditor;
+            if (editor.dragIndex < 0 || e.pointerId !== editor.pointerId) return;
+            editor.dragIndex = -1;
+            editor.pointerId = null;
+            try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+            commit();
+        };
+        canvas.addEventListener('pointerup', end);
+        canvas.addEventListener('pointercancel', end);
+        canvas.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const points = this._getEditorCurvePoints();
+            const index = findPoint(e, points);
+            if (index <= 0 || index >= points.length - 1) return;
+            points.splice(index, 1);
+            this.curveEditor.points = points;
+            commit();
+        });
+
+        this._setupPressureCurveLiveInput();
+        this._drawPressureCurveEditor();
+    }
+
+    /**
+     * ペンの現在筆圧をカーブ上の点として表示する(調整用)。
+     * 横軸は筆圧補正後の入力、縦軸はカーブ適用後で、pointer-handlerと同じ順で計算する。
+     */
+    _setupPressureCurveLiveInput() {
+        const LIVE_FADE_MS = 900;
+        const onPointer = (e) => {
+            const editor = this.curveEditor;
+            if (!editor || e.pointerType !== 'pen') return;
+            // 設定画面のペンタブが表示されている時だけ描く。
+            if (!editor.canvas.isConnected || editor.canvas.offsetParent === null) return;
+            const raw = Number(e.pressure);
+            if (!Number.isFinite(raw) || raw <= 0) return;
+            const correction = Number(this.settingsManager?.get?.('pressureCorrection') ?? 1) || 1;
+            editor.live = { x: Math.max(0, Math.min(1, raw * correction)), time: performance.now() };
+            if (!editor.liveFrame) {
+                editor.liveFrame = requestAnimationFrame(() => {
+                    editor.liveFrame = null;
+                    this._drawPressureCurveEditor(editor.dragIndex >= 0 ? editor.points : null);
+                });
+            }
+            clearTimeout(editor.liveFadeTimer);
+            editor.liveFadeTimer = setTimeout(() => this._drawPressureCurveEditor(), LIVE_FADE_MS + 20);
+        };
+        window.addEventListener('pointermove', onPointer, { capture: true, passive: true });
+        window.addEventListener('pointerdown', onPointer, { capture: true, passive: true });
+        this.curveEditor.liveFadeMs = LIVE_FADE_MS;
+    }
+
+    /** 表示中カーブでの実効筆圧。presetは実際の評価式、customは制御点。 */
+    _evaluateEditorCurve(points, x) {
+        const curve = this.settingsManager?.get?.('pressureCurve') ?? 'linear';
+        if (this.curveEditor?.dragIndex >= 0 || curve === 'custom') return evaluatePressureCurve(points, x);
+        if (curve === 'ease-in') return 1 - (1 - x) * (1 - x);
+        if (curve === 'ease-out') return x * x;
+        return x;
+    }
+
+    _drawPressureCurveEditor(points = null) {
+        const canvas = this.curveEditor?.canvas;
+        if (!canvas) return;
+        const pts = points || this._getEditorCurvePoints();
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const cssW = rect.width || canvas.width;
+        const cssH = rect.height || canvas.height;
+        if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+        }
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, cssW, cssH);
+
+        const style = getComputedStyle(document.documentElement);
+        const maroon = style.getPropertyValue('--futaba-maroon').trim() || '#800000';
+        const medium = style.getPropertyValue('--futaba-light-medium').trim() || '#d4a8a0';
+        const active = style.getPropertyValue('--active-border').trim() || '#ff8c42';
+        const PAD = 10;
+        const w = cssW - PAD * 2;
+        const h = cssH - PAD * 2;
+        const X = (x) => PAD + x * w;
+        const Y = (y) => PAD + (1 - y) * h;
+
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = medium;
+        ctx.globalAlpha = 0.6;
+        for (let i = 0; i <= 4; i++) {
+            ctx.beginPath(); ctx.moveTo(X(i / 4), Y(0)); ctx.lineTo(X(i / 4), Y(1)); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(X(0), Y(i / 4)); ctx.lineTo(X(1), Y(i / 4)); ctx.stroke();
+        }
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(1), Y(1)); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+
+        ctx.strokeStyle = maroon;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i <= 64; i++) {
+            const x = i / 64;
+            // presetは実際の評価式で描き、ペンの点と線を一致させる。
+            const y = this._evaluateEditorCurve(pts, x);
+            if (i === 0) ctx.moveTo(X(x), Y(y)); else ctx.lineTo(X(x), Y(y));
+        }
+        ctx.stroke();
+
+        pts.forEach(([x, y], i) => {
+            ctx.beginPath();
+            ctx.arc(X(x), Y(y), i === this.curveEditor?.dragIndex ? 5 : 4, 0, Math.PI * 2);
+            ctx.fillStyle = i === this.curveEditor?.dragIndex ? active : '#ffffee';
+            ctx.fill();
+            ctx.strokeStyle = maroon;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        });
+
+        const live = this.curveEditor?.live;
+        const liveAge = live ? performance.now() - live.time : Infinity;
+        if (live && liveAge < (this.curveEditor.liveFadeMs ?? 900)) {
+            const y = this._evaluateEditorCurve(pts, live.x);
+            ctx.globalAlpha = Math.max(0.25, 1 - liveAge / (this.curveEditor.liveFadeMs ?? 900));
+            ctx.strokeStyle = active;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 2]);
+            ctx.beginPath(); ctx.moveTo(X(live.x), Y(0)); ctx.lineTo(X(live.x), Y(y)); ctx.lineTo(X(0), Y(y)); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.arc(X(live.x), Y(y), 5, 0, Math.PI * 2);
+            ctx.fillStyle = active;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = maroon;
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${live.x.toFixed(2)} → ${y.toFixed(2)}`, X(1), Y(0) - 4);
+        }
     }
 
     _toggleStatusPanel() {

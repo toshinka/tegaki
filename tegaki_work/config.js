@@ -55,6 +55,62 @@ export const TEGAKI_CONFIG = {
         airbrushSoftness: 0.8,
         airbrushScatter: 0.0
     },
+    /**
+     * ブラシエンジン改良の切替flag。問題時はfalseで旧挙動へ戻せる。
+     */
+    brushEngine: {
+        // Airbrush per-stroke maskをrgba16floatで確保し、低flow dabの8bit量子化を防ぐ。
+        airbrushHighPrecisionMask: true,
+        // dab形状をhardness(1-softness)でパラメータ化したfalloffで生成する。falseで旧radial gradient。
+        airbrushHardnessFalloff: true,
+        // dab Sprite / segment Containerを再利用する。falseでsegmentごとに生成・破棄。
+        airbrushDabPooling: true,
+        // pen / eraser / airbrushのrealtime区間をcentripetal Catmull-Romで補間する(1sample先読み)。falseで直線補間。
+        realtimeCurveInterpolation: true,
+        // airbrush / pen dabのmask描画をpointer event(coalesced batch)単位で1回のrenderへまとめる。
+        airbrushEventBatching: true,
+        // 消しエアブラシのstroke中previewを対象Layerだけに効く合成表示にする(falseで旧scene上erase合成)。
+        airbrushErasePreviewComposite: true,
+        // 消しpreviewの再合成をdabが触れた矩形だけに限る(大キャンバスで軽量化)。falseで毎回全面。
+        airbrushErasePreviewDirtyRect: true,
+        // airbrushもGPU baseline + dirty rect patch Historyを使う(falseでstroke前後の全面snapshot)。
+        airbrushPatchHistory: true,
+        // 縮小表示(<90%)中だけLayer textureへmipmapを付け、細線の途切れ・ちらつきを抑える。等倍以上で自動停止。
+        zoomedOutDisplayMipmaps: true,
+        // penをGraphics線分ではなくairbrushと共通のdab engine(float mask + max合成)で描く。抜きが重なりで濃くならない。falseで旧Graphics線分。
+        penDabRendering: true,
+        // 消しゴムもpenと同じdab engineで消す(Layerだけに効くpreview、同じ縁AA)。falseで旧Graphics線分。
+        eraserDabRendering: true,
+        // Airbrush: ペンを止めていても時間で吹き重なる(クリスタ式)。rateは1秒あたりのdab数。
+        airbrushBuildup: true,
+        airbrushBuildupRate: 20,
+        // Pen: 速く引くほど細く・薄く(実効筆圧を最大この割合まで下げる。0で無効)。速度は画面px/ms。
+        penVelocityThinning: 0.3,
+        penVelocitySlow: 0.6,
+        penVelocityFast: 4.0,
+        // ペンの傾き(設定画面で調整、ここは既定値)。airbrushは楕円化+噴射方向へずらす、penは寝かせるほど太く。
+        airbrushTiltStrength: 0.5,
+        penTiltStrength: 0,
+        // pen dabの硬さ(0=硬い円)と、dab径に対する間隔比。
+        penDabSoftness: 0,
+        // pen線の縁のAA幅(画素)。硬いdabは縁の遷移が1px未満で段差(ジャギー)が出るため既定1px。0で従来の硬い縁。
+        penEdgeAA: 1,
+        // 入り抜き(画素)。入りは描画中、抜きはpen-up時に付く。0で無効。
+        // 筆圧の安定化(One-Euro)。液タブ筆圧の揺れによる線幅の波打ちを抑える。0でOFF。
+        penPressureSmoothing: 0.5,
+        // 曲線補間の1sample遅れを、最後に描いた点→現在の入力点をpreview側だけに描いて埋める(確定線は不変)。
+        penLiveTip: true,
+        // 範囲Historyの画素読み出しをpen-upから外し、idle時に行う(大キャンバスのpen-up時の引っかかり対策)。
+        deferredPatchReadback: true,
+        // stroke毎の全面texture(mask / ライブ先端複製)を使い回す。falseで毎回生成・破棄。
+        strokeTexturePooling: true,
+        // 線端のヒゲ除去: 画面上この長さ(px)以内の線端が急に折れていれば、pen-up時に切り落とす。0でOFF。
+        penHookTrimScreenPx: 10,
+        penTaperIn: 0,
+        penTaperOut: 0,
+        eraserDabSoftness: 0,
+        penDabSpacingRatio: 0.05
+    },
     webgpu: {
         enabled: false,
         fallbackToWebGL: true,

@@ -12,6 +12,9 @@
  * ============================================================================
  */
 
+import { normalizePressureCurvePoints } from './drawing/pressure-curve.js';
+import { normalizeUserBrushPresets } from './drawing/brush-presets.js';
+
 export class SettingsManager {
     constructor(eventBus, config) {
         this.eventBus = eventBus;
@@ -40,11 +43,26 @@ export class SettingsManager {
             pressureCorrection: this.config?.userSettings?.pressureCorrection || 1.0,
             smoothing: this.config?.userSettings?.smoothing || 0.5,
             pressureCurve: this.config?.userSettings?.pressureCurve || 'linear',
+            pressureCurvePoints: null,
+            stabilizerMode: 'follow',
+            stabilizerCatchUp: true,
+            brushPresets: { pen: [], airbrush: [] },
             pressureOpacityEnabled: this.config?.userSettings?.pressureOpacityEnabled !== false,
             pressureOpacityStrength: this.config?.userSettings?.pressureOpacityStrength ?? 0.65,
             airbrushFlow: this.config?.BRUSH_DEFAULTS?.airbrushFlow ?? 0.08,
             airbrushSoftness: this.config?.BRUSH_DEFAULTS?.airbrushSoftness ?? 0.8,
             airbrushScatter: this.config?.BRUSH_DEFAULTS?.airbrushScatter ?? 0.0,
+            airbrushBuildupRate: this.config?.brushEngine?.airbrushBuildupRate ?? 20,
+            penVelocityThinning: this.config?.brushEngine?.penVelocityThinning ?? 0.3,
+            airbrushTiltStrength: this.config?.brushEngine?.airbrushTiltStrength ?? 0.5,
+            penDabSoftness: this.config?.brushEngine?.penDabSoftness ?? 0,
+            penEdgeAA: this.config?.brushEngine?.penEdgeAA ?? 0,
+            penPressureSmoothing: this.config?.brushEngine?.penPressureSmoothing ?? 0.5,
+            penTaperIn: this.config?.brushEngine?.penTaperIn ?? 0,
+            penTaperOut: this.config?.brushEngine?.penTaperOut ?? 0,
+            eraserDabSoftness: this.config?.brushEngine?.eraserDabSoftness ?? 0,
+            eraserPressureStrength: 0,
+            penTiltStrength: this.config?.brushEngine?.penTiltStrength ?? 0,
             statusPanelVisible: this.config?.ui?.statusPanelVisible !== undefined 
                 ? this.config.ui.statusPanelVisible 
                 : true,
@@ -133,8 +151,15 @@ export class SettingsManager {
                 return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
             },
             pressureCurve: (v) => {
-                return ['linear', 'ease-in', 'ease-out'].includes(v) ? v : undefined;
+                return ['linear', 'ease-in', 'ease-out', 'custom'].includes(v) ? v : undefined;
             },
+            stabilizerMode: (v) => (['follow', 'string'].includes(v) ? v : undefined),
+            stabilizerCatchUp: (v) => (typeof v === 'boolean' ? v : undefined),
+            pressureCurvePoints: (v) => {
+                if (v === null) return null;
+                return normalizePressureCurvePoints(v) ?? undefined;
+            },
+            brushPresets: (v) => normalizeUserBrushPresets(v, (key, value) => this.validateValue(key, value)),
             pressureOpacityEnabled: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
             },
@@ -151,6 +176,50 @@ export class SettingsManager {
                 return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
             },
             airbrushScatter: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
+            airbrushBuildupRate: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.round(Math.max(0, Math.min(60, num)));
+            },
+            penVelocityThinning: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(0.9, num));
+            },
+            airbrushTiltStrength: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
+            penTiltStrength: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
+            penDabSoftness: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
+            penEdgeAA: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(4.0, num));
+            },
+            penPressureSmoothing: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
+            penTaperIn: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.round(Math.max(0, Math.min(300, num)));
+            },
+            penTaperOut: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.round(Math.max(0, Math.min(300, num)));
+            },
+            eraserDabSoftness: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
+            eraserPressureStrength: (v) => {
                 const num = parseFloat(v);
                 return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
             },
@@ -252,6 +321,17 @@ export class SettingsManager {
             'airbrushFlow',
             'airbrushSoftness',
             'airbrushScatter',
+            'airbrushBuildupRate',
+            'penVelocityThinning',
+            'airbrushTiltStrength',
+            'penTiltStrength',
+            'penDabSoftness',
+            'penEdgeAA',
+            'penPressureSmoothing',
+            'penTaperIn',
+            'penTaperOut',
+            'eraserDabSoftness',
+            'eraserPressureStrength',
             'statusPanelVisible',
             'exportResolution',
             'bucketGapClose',

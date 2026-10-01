@@ -4507,6 +4507,45 @@ canvas {
     color: var(--futaba-maroon) !important;
 }
 
+/* ブラシプリセット。既存curve buttonをそのまま使い、折り返しと間隔だけ足す。 */
+#settings-popup .brush-preset-list,
+#settings-popup .brush-preset-actions {
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+#settings-popup .brush-preset-actions {
+    margin-top: 6px;
+}
+
+#settings-popup .brush-preset-actions .pressure-curve-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+/* 先端プレビュー。筆圧カーブ編集と同じ枠・面の値を流用する。 */
+#settings-popup .brush-tip-preview {
+    display: block;
+    width: 100%;
+    height: 64px;
+    border: 1px solid rgba(207, 156, 151, 0.78);
+    border-radius: 5px;
+    background: rgba(255, 255, 238, 0.62);
+}
+
+/* 筆圧カーブ編集(2次元)。パネル標準化までは既存curve buttonと同じ枠・面の値を流用する。 */
+#settings-popup .pressure-curve-editor {
+    display: block;
+    width: 100%;
+    height: 140px;
+    margin-top: 8px;
+    border: 1px solid rgba(207, 156, 151, 0.78);
+    border-radius: 5px;
+    background: rgba(255, 255, 238, 0.62);
+    touch-action: none;
+    cursor: crosshair;
+}
+
 #export-popup {
     min-width: min(420px, calc(100vw - 24px)) !important;
     max-width: min(600px, calc(100vw - 24px)) !important;

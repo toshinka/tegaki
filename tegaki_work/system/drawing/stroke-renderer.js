@@ -31,7 +31,8 @@ export class StrokeRenderer {
         this.textureBridge = null;
         this.webgl2Enabled = false;
         this.airbrushDabRenderer = new AirbrushDabRenderer({
-            calculateWidth: (pressure, size) => this.calculateWidth(pressure, size)
+            calculateWidth: (pressure, size) => this.calculateWidth(pressure, size),
+            calculateOpacity: (pressure, opacity, settings) => this.calculateOpacity(pressure, opacity, settings)
         });
         
         this.config = window.TEGAKI_CONFIG?.webgpu || {};
@@ -168,8 +169,13 @@ export class StrokeRenderer {
      * Phase 3a: エアブラシのリアルタイム焼き込み用コンテナを生成する。
      * state は BrushCore 側でストローク中だけ保持し、スタンプ間隔の端数を持ち越す。
      */
-    renderAirbrushSegment(points, settings, state = {}) {
-        return this.airbrushDabRenderer.renderSegment(points, settings, state);
+    renderAirbrushSegment(points, settings, state = {}, target = null) {
+        return this.airbrushDabRenderer.renderSegment(points, settings, state, target);
+    }
+
+    /** renderAirbrushSegmentの戻り値を描画後に返却する(pooling時は再利用)。 */
+    releaseAirbrushSegment(container) {
+        this.airbrushDabRenderer.releaseSegment(container);
     }
 
     /**
@@ -252,7 +258,7 @@ export class StrokeRenderer {
                         target,
                         clear: false
                     });
-                    renderContainer.destroy({ children: true });
+                    this.releaseAirbrushSegment(renderContainer);
                 }
                 rendered++;
 

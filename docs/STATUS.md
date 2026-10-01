@@ -4,6 +4,40 @@
 更新日: 2026-09-18。CHECKPOINT BASELINE HEAD: `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`と一致した状態で修正・検証を実施。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
+### OWNER BACKLOG — 未着手の要望（2026-10-01記録、優先順はOwner判断）
+
+優先はメインペンの「レスポンスと美観」。鉛筆風など派生ブラシは遠回りなので避ける。以下は思い出し用の控え（設計・着手は別途カード化）:
+1. 集中線ツール（特に要望強）。
+2. 定規ツール（直線 / 縦横に傾けて斜めにも使えるグリッド）。
+3. 漫画用コマ割り＆編集ツール（クリスタ / メディバン / アルパカ相当）。
+4. トーン（スクリーントーン）系。
+5. QTPのペンスロット: 「PEN · S4 · …」行を拡張ボタン置き場にし、押すとブラシプリセット（6枠程度、SVGのペンアイコンに番号）の行を出す。設定でpreset入れ替え。上記の後。
+6. GPUパーティクル効果（興味あり、token消費と相談）。
+7. 線補正「ひも」: 実装済み（既定は追従）。使い道を研究してからブラッシュアップ（糸ガイド表示など）。
+
+### BRUSH UPGRADE — Pen / Airbrush engine modernization（2026-10-01, branch `claude/brush-upgrade`, local / 未push）
+
+状態: TECHNICAL COMPLETE / OWNER 試用で好感触（実機液タブ）/ 最終受入・push未。全変更は `TEGAKI_CONFIG.brushEngine` のflagで旧挙動へ戻せる。
+- Airbrush: stroke maskをrgba16float化（低flow dabの8bit量子化解消）、hardness(1-softness)パラメータ化falloff + mipmap、dab Sprite/Container pool、mask描画をpointer event単位で1 renderへbatch（size4/60event: 470→65 calls、出力同一）。
+- Pen / Eraser / Airbrush: realtime区間をcentripetal Catmull-Rom補間（1sample先読み、pointerupで最終区間flush）。`curve-interpolator.js`をES module化。
+- Pen: 既定でairbrushと共通dab engine（float mask + max合成、opacityはcommit時一括）。抜きが重なりで濃くならずpressure opacityが効く。tap（無移動）は旧Graphics final bakeのまま。
+- 消しエアブラシ不具合修正: commit spriteをrender root直置きしていたためerase blendが無視され白で塗っていた → 親Container経由でerase。stroke中previewは対象Layerのraster spriteを「Layer複製 − mask」合成textureへ一時差し替え（下Layerまで抜けて見えた問題を解消）。
+- flags: `airbrushHighPrecisionMask` / `airbrushHardnessFalloff` / `airbrushDabPooling` / `airbrushEventBatching` / `airbrushErasePreviewComposite` / `realtimeCurveInterpolation` / `penDabRendering`(+`penDabSoftness`, `penDabSpacingRatio`)。
+- 大キャンバス（2500px / 6 Layer / 25%表示で計測）: airbrushにもGPU baseline + dirty rect patch History（stroke開始56→1.6ms、確定50→24ms、History 64→12MB/stroke、undo/redo画素一致, flag `airbrushPatchHistory`）。縮小表示(<90%)中だけLayer textureへmipmapを付ける`system/drawing/layer-display-mipmaps.js`（renderer.renderを包み書込先をdirty化し読出前に再生成、等倍以上で停止。2px線の途切れ解消、描画中/undo後も表示同期、追加コスト計測誤差内, flag `zoomedOutDisplayMipmaps`）。Layer合成は6枚で約1.5ms/frameのため未対応。消し系preview（消しエアブラシ/消しゴム）の再合成をdabが触れた矩形だけに限定（`airbrushErasePreviewDirtyRect`、preview・確定結果とも全面再合成と画素一致、2500pxで1moveあたり消しゴム0.19→0.15ms・消しエアブラシ0.23→0.16ms）。
+- 追加（PR後続）: pen dabの無移動tapもdab engineで確定。描画中previewをLayerのblend mode（乗算等）へ継承。消しゴムもdab engineへ統合（`eraserDabRendering`、Layerだけに効くpreview、patch History、undo/redo画素一致）。
+- Owner選択A/D: airbrushを止めても時間で吹き重なる溜まり（`airbrushBuildup`, 既定20dab/s。保持0.3/1/2秒で端の濃度35→70/155/212）。penの速度応答（`penVelocityThinning`=0.3、画面px/ms 0.6〜4.0で実効筆圧を最大3割減。同筆圧で遅い20px/速い14pxかつ薄く）。設定画面へslider露出済み（ペン「速度で細く」、スプレー「溜まり」0=OFF。値は`TegakiSettingsManager`保存、configは既定値）。`settings-popup.js`のslider値域・保存keyを`_getSliderSpec`表へ集約（パネル標準化時の移植元）。筆圧2次元map: `system/drawing/pressure-curve.js`（制御点+単調3次Hermite、overshootなし）と設定画面ペンタブのカーブ編集canvas（ドラッグ/クリック追加/ダブルクリック削除、最大8点、`pressureCurve='custom'`+`pressureCurvePoints`保存）。既存preset（リニア/軽め/重め）の評価式は不変。編集欄にペンの現在筆圧（補正後入力→カーブ後）を点で表示（ペン入力のみ、約0.9秒でfade）。パネルdesign / 色 / slider部品の標準化は未着手。
+- Owner選択B/E/F: 傾き（tiltX/YをLayer座標の方向・量へ変換、canvas回転/反転反映。airbrushは楕円化+ペン先側へ偏位、pen dabは寝かせて太く。強さsliderはエアブラシ既定0.5・ペン既定0）。スプレー設定に先端プレビュー（engineと同じfalloff/flow/scatterをCPU再現）。ブラシプリセット（`system/drawing/brush-presets.js`、描き味のみ保存＝筆圧カーブ/速度/傾き/流量等、サイズ・不透明度はQuick Accessスロットの担当のまま。組み込み ペン:標準/つけペン風/鉛筆風、エアブラシ:標準/くっきり/ふんわり溜め、ユーザー保存最大12件/tool、`brushPresets`保存）。
+- 不具合確認（2026-10-01）: 選択範囲あり（pen/eraser/airbrush/消しエアブラシ、確定後に範囲外不変・undo復元、描画中は範囲外も表示され確定時に除去＝旧ペンと同じ既存挙動）、クリッピング通常/反転（描画中・確定後とも正しく抜け、旧ペンと同一）、アニメ作業Layer（4tool描画・消去、History非記録、preview後始末）、30°回転+1.5倍+左右反転で実PointerEventの着地位置を確認し不具合なし。回転時の約1.5px下ずれは旧ペンも同値の既存挙動。
+- 自動検証: `build/verify-pen-brush-engine.mjs`（drawing suite）。筆圧カーブ、dab falloff、プリセット正規化/一致、SettingsManager新規key、tilt座標変換（反転/回転）、速度応答、dab renderer（pen spacing・tilt楕円・pool再利用時の回転/伸長/偏位リセット・spacing持ち越し）。意図的な改変2件（pool回転リセット除去、カーブのovershoot防止除去）を検出できることを確認。
+- 描き味追加（2026-10-01）: ペン/消しゴムの縁の柔らかさ、消しゴムの筆圧で消す強さ（既定0）。ペン縁のAA幅`penEdgeAA`（画素一定、既定1px。硬いdabは縁の遷移が1px未満で入り抜き・筆圧変化が2px段差になっていた→最大段差1.25→0.62px、線幅は50%被覆位置補正で維持）。入り抜き`penTaperIn/Out`（画素、既定0。入りは描画中、抜きはpen-up時に記録点からstroke maskを再構築、筆圧なし/マウスでも有効、つけペン風presetに12/40）。dab texture cacheが描画待ちdabの使うtextureを破棄して線が消える不具合を修正（使用中は保持しrelease時に整理、上限40）。
+- メインペン（レスポンス・美観）: realtime筆圧が無平滑だった（既存の距離filterはrecorder側のみ）→ One-Euro安定化`penPressureSmoothing`（既定0.5、筆圧揺れ0.047→0.024、速い強弱は1sample以内に追従）。ライブ先端`penLiveTip`（曲線補間の1sample遅れを、stroke maskの複製へ同じmax合成で先端だけ描いて埋める。表示は確定後と同色、確定線は先端ON/OFFで画素一致、不透明度0.5でも同色）。
+- 線端のヒゲ除去`penHookTrimScreenPx`（既定10、画面px）: pen-up時、線端の画面10px以内が手前の進行方向から70°以上折れていれば切り落として描き直す（入り抜きと同じ再構築、短い線・緩い曲がりは対象外）。
+- PixiJS 8.21更新カードへの入力（brush改修が依存するPixi内部）: `RenderTexture.create({format:'rgba16float'})`と`renderer.context.extensions.colorBufferFloat`判定、blendMode `max` / `none` / `erase` / `inherit`、`TextureSource.autoGenerateMipmaps / mipLevelCount / updateMipmaps()`と`style.update()`（`layer-display-mipmaps.js`は`renderer.render`を包む）、`new Texture({source, frame})`の部分texture、`extract.*({resolution:1})`、dab Sprite poolでのtexture差し替え。TexturePool / RenderTarget cleanupの変更点はここを優先確認。
+- 線補正に「ひも」方式（`stabilizerMode`='string'）: 線補正の値0.5でひも長16画面px、半径内の手ぶれでは線が動かず超えた分だけ引かれる。離した位置まで線をつなぐ（`stabilizerCatchUp`既定ON）。±4pxの手ぶれで線の中心線揺れ 補正なし1.90 / 追従1.15 / ひも0.62px。設定画面ペンタブの線補正に「追従 / ひも」切替。ブラシプリセットに含む。
+- 起動時にQuickパネルのアクティブスロット（ペン/消しゴム/エアブラシのサイズ・不透明度）をBrushSettingsへ反映（Owner commit `0c348d6e`）。
+- 大キャンバス（2500px）: pen-up時の範囲History読み出しをidleへ移した（`deferredPatchReadback`、矩形をGPU上で複製してHistory登録、undo/redoは未読み出しなら即時読み出し）。pen-up 52〜54ms→16〜19ms（hidden paneのsync下限込み）、undo/redoは即時・idle後とも画素一致。stroke毎の全面float mask / ライブ先端複製を1枚ずつ再利用（`strokeTexturePooling`、2500pxで1枚約67MBの確保をstrokeごとに繰り返さない、結果は非poolと画素一致）。大ブラシ（100〜500px）の1move負荷は0.8〜1.3msで問題なし。raster余白が広がるstroke（大きいサイズの初回使用時など）は従来どおり全面snapshot（64〜129ms）。
+- 既知差分: 縮小表示中はmip分のGPU memoryが表示Layerごとに約+33%。未着手候補: 筆圧カーブ、tilt/速度、静止時buildup、dab texture/grain。
+
 ### CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17 Correction Pass & Off-Canvas Investigation)
 
 - 根本原因1: 外部画像読み込み時、`layerData.rasterBounds` はキャンバス全面（例: 1920×1080）となる。これを拡縮（例: 2.5倍〜3倍）した際、`bakeTransform` が実描画内容（`calculateOpaqueRasterBounds`）ではなく全面 `rasterBounds` を affine 変換して `targetBounds` を求めていたため、18.7メガピクセル等に膨張し、`_isRasterBakeSizeAllowed`（16 MP上限）に抵触して `false` を返していた。

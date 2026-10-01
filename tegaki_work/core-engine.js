@@ -50,6 +50,7 @@ import { SettingsManager } from './system/settings-manager.js';
 import { UIController } from './ui/ui-panels.js';
 import { KeyboardHandler } from './ui/keyboard-handler.js';
 import { ThumbnailSystem } from './system/drawing/thumbnail-system.js';
+import { LayerDisplayMipmaps } from './system/drawing/layer-display-mipmaps.js';
 import './system/checker-utils.js';
 import { LayerPanelRenderer } from './ui/layer-panel-renderer.js';
 import { emergencyRecoveryStore } from './system/emergency-recovery-store.js';
@@ -292,6 +293,15 @@ export class CoreEngine {
         // 11. ブラシコアの初期化
         this.brushCore.init();
 
+        // 11.1 縮小表示時のLayer表示mipmap(表示補助のみ。raster内容は変更しない)
+        this.layerDisplayMipmaps = new LayerDisplayMipmaps({
+            app: this.app,
+            layerSystem: this.layerSystem,
+            cameraSystem: this.cameraSystem,
+            brushCore: this.brushCore
+        });
+        this.layerDisplayMipmaps.install();
+
         // 11.5 pixel selectionは描画入力より先にcapture phaseで接続する
         this.pixelSelectionSystem.init({
             app: this.app,
@@ -345,6 +355,8 @@ export class CoreEngine {
             drawingEngine: this.drawingEngine,
             emergencyRecoveryStore: this.emergencyRecoveryStore
         });
+        // Quickパネルの保存済みアクティブスロットを起動時のペン/消しゴム/エアブラシ太さに反映する。
+        QuickAccessPopup.applyStoredActiveSlots(this.brushSettings);
         this.popupManager.register('quickAccess', QuickAccessPopup, {
             brushSettings: this.brushSettings,
             textRasterService: new TextRasterService({
