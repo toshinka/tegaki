@@ -1486,15 +1486,25 @@ export class BrushCore {
             const engine = window.TEGAKI_CONFIG?.brushEngine || {};
             maskSettings.mode = 'pen';
             maskSettings.dabMode = 'pen';
-            maskSettings.penDabSoftness = engine.penDabSoftness ?? 0;
+            const userSetting = (key, fallback) => {
+                const value = window.TegakiSettingsManager?.get?.(key);
+                return value ?? fallback;
+            };
+            const isEraserDab = this.airbrushState.mode === 'eraser';
+            maskSettings.penDabSoftness = isEraserDab
+                ? userSetting('eraserDabSoftness', engine.eraserDabSoftness ?? 0)
+                : userSetting('penDabSoftness', engine.penDabSoftness ?? 0);
+            maskSettings.penEdgeAA = isEraserDab ? 0 : userSetting('penEdgeAA', engine.penEdgeAA ?? 0);
             maskSettings.penDabSpacingRatio = engine.penDabSpacingRatio ?? 0.05;
             if (this.airbrushState.mode === 'pen') {
                 maskSettings.dabTilt = this._getDabTilt('penTiltStrength', engine.penTiltStrength ?? 0);
             }
-            if (this.airbrushState.mode === 'eraser') {
-                // 旧Graphics消しゴムと同じく、筆圧は径だけに効かせ濃さは常に1で消す。
+            if (isEraserDab) {
+                // 消しゴムの筆圧は径に効かせ、eraserPressureStrength>0なら弱い筆圧で薄く消す。
+                const eraserStrength = Math.max(0, Math.min(1, Number(userSetting('eraserPressureStrength', 0)) || 0));
                 maskSettings.pressureEnabled = settings.eraserPressureEnabled === true;
-                maskSettings.pressureOpacityEnabled = false;
+                maskSettings.pressureOpacityEnabled = eraserStrength > 0;
+                maskSettings.pressureOpacityStrength = eraserStrength;
             }
         }
         const batch = this.airbrushBatch;

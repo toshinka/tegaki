@@ -93,6 +93,9 @@ export const TEGAKI_CONFIG = {
         penTiltStrength: 0,
         // pen dabの硬さ(0=硬い円)と、dab径に対する間隔比。
         penDabSoftness: 0,
+        // pen線の縁のAA幅(画素)。0で従来どおり。消しゴムの柔らかさ・筆圧濃度は設定画面で調整する。
+        penEdgeAA: 0,
+        eraserDabSoftness: 0,
         penDabSpacingRatio: 0.05
     },
     webgpu: {

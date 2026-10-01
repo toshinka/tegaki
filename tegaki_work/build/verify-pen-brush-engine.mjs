@@ -28,7 +28,7 @@ const {
     normalizePressureCurvePoints,
     evaluatePressureCurve
 } = await import('../system/drawing/pressure-curve.js');
-const { AirbrushDabRenderer, computeDabFalloff } = await import('../system/drawing/airbrush-dab-renderer.js');
+const { AirbrushDabRenderer, computeDabFalloff, computeSoftnessForEdgeWidth } = await import('../system/drawing/airbrush-dab-renderer.js');
 const {
     BRUSH_PRESET_KEYS,
     BUILTIN_BRUSH_PRESETS,
@@ -108,6 +108,15 @@ const near = (actual, expected, epsilon, message) => {
         }
         assert.ok(computeDabFalloff(0.999, softness) < 0.01, `falloff reaches ~0 at the edge (softness ${softness})`);
     }
+
+    // AA幅(画素)→softness: 不透明な芯の外側の減衰帯がedgePxになる。
+    for (const [edge, radius] of [[1, 5], [1.5, 2], [0.5, 20], [2, 100]]) {
+        const s = computeSoftnessForEdgeWidth(edge, radius);
+        const core = (1 - s) * (1 - s);
+        near(radius * (1 - core), edge, 1e-9, `edge band equals ${edge}px at radius ${radius}`);
+    }
+    assert.equal(computeSoftnessForEdgeWidth(0, 10), 0, 'no AA keeps a hard edge');
+    assert.equal(computeSoftnessForEdgeWidth(5, 2), 1, 'AA wider than the radius saturates to fully soft');
 }
 
 // ============================================================================
@@ -135,7 +144,7 @@ const near = (actual, expected, epsilon, message) => {
     const store = {
         pressureCorrection: 1, pressureCurve: 'custom', pressureCurvePoints: [[0, 0], [0.5, 0.2], [1, 1]],
         pressureOpacityEnabled: true, pressureOpacityStrength: 0.65, penVelocityThinning: 0.3,
-        penTiltStrength: 0, smoothing: 0.5
+        penTiltStrength: 0, penDabSoftness: 0, penEdgeAA: 0, smoothing: 0.5
     };
     const get = key => store[key];
     const captured = captureBrushPresetValues('pen', get);
@@ -310,6 +319,15 @@ const near = (actual, expected, epsilon, message) => {
     near(upright.children[0].width, 40, 1e-6, 'a pooled sprite does not keep the previous dab stretch');
     near(upright.children[0].x, 100, 1e-6, 'a pooled sprite does not keep the previous dab offset');
     renderer.releaseSegment(upright);
+
+    // AA幅: 細い線ほど相対的に柔らかく、設定softnessより弱くはならない。
+    const aaThin = renderer._getPenDabEffectiveSoftness([{ pressure: 1 }], { ...penSettings, size: 4, penEdgeAA: 1 });
+    const aaThick = renderer._getPenDabEffectiveSoftness([{ pressure: 1 }], { ...penSettings, size: 40, penEdgeAA: 1 });
+    assert.ok(aaThin > aaThick, 'the same AA width is a larger softness on thin lines');
+    near(aaThin * 32, Math.round(aaThin * 32), 1e-9, 'AA softness is quantized to limit texture variants');
+    assert.equal(renderer._getPenDabEffectiveSoftness([{ pressure: 1 }], { ...penSettings, size: 40, penEdgeAA: 0.1, penDabSoftness: 0.5 }), 0.5,
+        'user softness wins when larger than the AA requirement');
+    assert.equal(renderer._getPenDabEffectiveSoftness([{ pressure: 1 }], { ...penSettings, size: 40, penEdgeAA: 0 }), 0, 'AA 0 keeps the previous output');
 
     const penTilt = renderer._getPenDabWidth(1, { ...penSettings, dabTilt: { angle: 0, amount: 0.5 } });
     near(penTilt, 30, 1e-9, 'pen tilt widens the line');

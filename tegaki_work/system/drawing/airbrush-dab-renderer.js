@@ -9,7 +9,7 @@ const AIRBRUSH_FLOW_REFERENCE_SPACING_RATIO = 0.18;
 const MIN_PRESSURE_DAB = 0.02;
 const DAB_TEXTURE_SIZE = 256;
 const MAX_POOLED_DAB_SPRITES = 4096;
-const MAX_CACHED_DAB_TEXTURES = 4;
+const MAX_CACHED_DAB_TEXTURES = 16;
 const MIN_PEN_DAB_SPACING = 0.35;
 const AIRBRUSH_TILT_STRETCH = 0.6;
 const AIRBRUSH_TILT_SHIFT = 0.25;
@@ -37,7 +37,9 @@ export class AirbrushDabRenderer {
 
         const container = target || this._acquireContainer();
         const isPenDab = settings.dabMode === 'pen';
-        const texture = this._getTexture(isPenDab ? settings.penDabSoftness : settings.airbrushSoftness);
+        const texture = this._getTexture(isPenDab
+            ? this._getPenDabEffectiveSoftness(points, settings)
+            : settings.airbrushSoftness);
         const addDab = isPenDab ? this._addPenDab : this._addDab;
 
         if (points.length === 1) {
@@ -198,6 +200,21 @@ export class AirbrushDabRenderer {
         }
     }
 
+    /**
+     * pen dabの縁の柔らかさ。設定の柔らかさ(径に比例)と、AA幅(画素数で一定)から求めた柔らかさの大きい方。
+     * AA幅は区間の細い側の径で換算し、texture数を抑えるため1/32刻みへ丸める。
+     */
+    _getPenDabEffectiveSoftness(points, settings) {
+        const softness = Math.max(0, Math.min(1, Number(settings.penDabSoftness) || 0));
+        const aaPx = Math.max(0, Number(settings.penEdgeAA) || 0);
+        if (!(aaPx > 0) || !points?.length) return softness;
+        const pressure = Math.min(...points.map(point => point.pressure ?? 1));
+        const radius = Math.max(0.5, this._getPenDabWidth(pressure, settings) / 2);
+        const aaSoftness = computeSoftnessForEdgeWidth(aaPx, radius);
+        const quantized = Math.round(Math.max(softness, aaSoftness) * 32) / 32;
+        return Math.max(softness, Math.min(1, quantized));
+    }
+
     _getPenDabWidth(pressure, settings) {
         const width = settings.pressureEnabled === true
             ? this.calculateWidth(pressure, settings.size)
@@ -271,6 +288,16 @@ export class AirbrushDabRenderer {
         this.textures.forEach(texture => texture.destroy(true));
         this.textures.clear();
     }
+}
+
+/**
+ * 縁の減衰帯をedgePx画素にするsoftness。falloffの不透明な芯は半径×(1-softness)^2なので、
+ * 減衰帯 = 半径×(1-(1-s)^2) = edgePx を解く。
+ */
+export function computeSoftnessForEdgeWidth(edgePx, radiusPx) {
+    if (!(edgePx > 0) || !(radiusPx > 0)) return 0;
+    const fraction = Math.min(1, edgePx / radiusPx);
+    return 1 - Math.sqrt(1 - fraction);
 }
 
 /**

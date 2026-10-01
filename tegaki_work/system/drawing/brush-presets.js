@@ -18,6 +18,8 @@ export const BRUSH_PRESET_KEYS = {
         'pressureOpacityStrength',
         'penVelocityThinning',
         'penTiltStrength',
+        'penDabSoftness',
+        'penEdgeAA',
         'smoothing'
     ],
     airbrush: [
@@ -45,6 +47,8 @@ export const BUILTIN_BRUSH_PRESETS = {
                 pressureOpacityStrength: 0.65,
                 penVelocityThinning: 0.3,
                 penTiltStrength: 0,
+                penDabSoftness: 0,
+                penEdgeAA: 0,
                 smoothing: 0.5
             }
         },
@@ -59,6 +63,8 @@ export const BUILTIN_BRUSH_PRESETS = {
                 pressureOpacityStrength: 0.65,
                 penVelocityThinning: 0.45,
                 penTiltStrength: 0,
+                penDabSoftness: 0,
+                penEdgeAA: 0,
                 smoothing: 0.5
             }
         },
@@ -73,6 +79,8 @@ export const BUILTIN_BRUSH_PRESETS = {
                 pressureOpacityStrength: 0.9,
                 penVelocityThinning: 0.1,
                 penTiltStrength: 0.6,
+                penDabSoftness: 0.15,
+                penEdgeAA: 0.8,
                 smoothing: 0.3
             }
         }
