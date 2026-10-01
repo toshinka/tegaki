@@ -144,7 +144,7 @@ const near = (actual, expected, epsilon, message) => {
     const store = {
         pressureCorrection: 1, pressureCurve: 'custom', pressureCurvePoints: [[0, 0], [0.5, 0.2], [1, 1]],
         pressureOpacityEnabled: true, pressureOpacityStrength: 0.65, penVelocityThinning: 0.3,
-        penTiltStrength: 0, penDabSoftness: 0, penEdgeAA: 0, penTaperIn: 0, penTaperOut: 0, smoothing: 0.5
+        penTiltStrength: 0, penDabSoftness: 0, penEdgeAA: 0, penTaperIn: 0, penTaperOut: 0, penPressureSmoothing: 0.5, smoothing: 0.5
     };
     const get = key => store[key];
     const captured = captureBrushPresetValues('pen', get);
@@ -276,6 +276,36 @@ const near = (actual, expected, epsilon, message) => {
     window.TEGAKI_CONFIG.brushEngine.penVelocityThinning = 0;
     near(run(10), 1, 1e-9, 'strength 0 disables velocity response');
     delete window.TEGAKI_CONFIG;
+}
+
+// ============================================================================
+// 6a. 筆圧の安定化(One-Euro)
+// ============================================================================
+{
+    const runFilter = (strength, samples) => {
+        window.TegakiSettingsManager = { get: key => (key === 'penPressureSmoothing' ? strength : undefined) };
+        const core = Object.create(BrushCore.prototype);
+        core.penPressureFilter = null;
+        return samples.map(([value, time]) => core._filterStrokePressure(value, time));
+    };
+    let seed = 1;
+    const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const noisy = Array.from({ length: 60 }, (_, i) => [0.6 + (random() - 0.5) * 0.1, (i + 1) * 8.33]);
+    const rms = values => Math.sqrt(values.slice(10).reduce((sum, v) => sum + (v - 0.6) ** 2, 0) / (values.length - 10));
+    const rawNoise = rms(runFilter(0, noisy));
+    const smoothNoise = rms(runFilter(0.5, noisy));
+    assert.ok(smoothNoise < rawNoise * 0.5, `pressure jitter is at least halved (${rawNoise.toFixed(4)} -> ${smoothNoise.toFixed(4)})`);
+
+    const ramp = Array.from({ length: 30 }, (_, i) => { const t = (i + 1) * 8.33; return [Math.min(0.9, 0.2 + 0.7 * (t / 50)), t]; });
+    const filteredRamp = runFilter(0.5, ramp);
+    const settledIndex = filteredRamp.findIndex((v, i) => ramp[i][1] > 50 && Math.abs(v - 0.9) < 0.05);
+    assert.ok(settledIndex >= 0 && ramp[settledIndex][1] - 50 <= 17, 'fast pressure changes settle within two samples');
+
+    const sameTime = runFilter(0.5, [[0.5, 10], [0.9, 10]]);
+    assert.equal(sameTime[1], 0.5, 'a coalesced sample with the same timestamp does not divide by zero');
+    const off = runFilter(0, noisy);
+    assert.deepEqual(off, noisy.map(([v]) => v), 'strength 0 passes pressure through unchanged');
+    window.TegakiSettingsManager = undefined;
 }
 
 // ============================================================================

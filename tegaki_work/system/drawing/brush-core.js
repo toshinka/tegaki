@@ -41,6 +41,9 @@ import { CurveInterpolator } from './curve-interpolator.js';
 const AIRBRUSH_BUILDUP_POLL_MS = 8;
 // 入り抜き端の最小径倍率(0だと線端が消えて見えるため少し残す)。
 const PEN_TAPER_MIN_SCALE = 0.08;
+// 筆圧安定化(One-Euro)の微分cutoff(Hz)と、変化速度に応じたcutoff上昇量(Hz per pressure/s)。
+const PEN_PRESSURE_FILTER_DERIVATIVE_CUTOFF = 1.0;
+const PEN_PRESSURE_FILTER_BETA = 6.0;
 
 export class BrushCore {
     constructor() {
@@ -370,6 +373,8 @@ export class BrushCore {
 
         this.isDrawing = true;
         this.penVelocityState = { x: clientX, y: clientY, time: null, speed: 0 };
+        this.penPressureFilter = null;
+        this.penRenderTrace = [{ x: localX, y: localY, pressure: processedPressure }];
         this.currentTilt = null;
         this.realtimeBatchQueue = null;
         this.realtimeBatchDepth = 0;
@@ -481,9 +486,12 @@ export class BrushCore {
         if (this.currentSampleTilt) {
             this.currentTilt = this._computeLocalTilt(clientX, clientY, localX, localY, this.currentSampleTilt, activeLayer);
         }
-        const processedPressure = (currentMode === 'pen' && pressureEnabled)
-            ? this._applyPenVelocityResponse(clientX, clientY, sampleTime, stabilizedPressure)
+        const smoothedPressure = (pressureEnabled && (currentMode === 'pen' || currentMode === 'eraser'))
+            ? this._filterStrokePressure(stabilizedPressure, sampleTime)
             : stabilizedPressure;
+        const processedPressure = (currentMode === 'pen' && pressureEnabled)
+            ? this._applyPenVelocityResponse(clientX, clientY, sampleTime, smoothedPressure)
+            : smoothedPressure;
 
         const pointsBeforeEvent = this.strokeRecorder.getCurrentPoints().length;
         const currentControlPoint = {
@@ -663,6 +671,39 @@ export class BrushCore {
     }
 
     /**
+     * 筆圧の安定化(One-Euro filter)。液タブ筆圧の細かな揺れで線幅が波打つのを抑えつつ、
+     * 筆圧の速い変化(入り・抜き・強弱)は遅らせない。penPressureSmoothing 0でOFF、1で最も安定。
+     * 時間は各sampleの入力時刻(ms)。同時刻sampleは前回値を返す。
+     */
+    _filterStrokePressure(pressure, sampleTime) {
+        const engine = window.TEGAKI_CONFIG?.brushEngine || {};
+        const userStrength = window.TegakiSettingsManager?.get?.('penPressureSmoothing');
+        const strength = Math.max(0, Math.min(1, Number(userStrength ?? engine.penPressureSmoothing ?? 0)));
+        if (!(strength > 0) || !Number.isFinite(pressure) || !Number.isFinite(sampleTime)) return pressure;
+
+        const state = this.penPressureFilter;
+        if (!state) {
+            this.penPressureFilter = { value: pressure, derivative: 0, time: sampleTime };
+            return pressure;
+        }
+        const dt = (sampleTime - state.time) / 1000;
+        if (!(dt > 0)) return state.value;
+
+        const smoothingFactor = (cutoff) => {
+            const tau = 1 / (2 * Math.PI * cutoff);
+            return 1 / (1 + tau / dt);
+        };
+        const rawDerivative = (pressure - state.value) / dt;
+        state.derivative += smoothingFactor(PEN_PRESSURE_FILTER_DERIVATIVE_CUTOFF) * (rawDerivative - state.derivative);
+        // 強さ0→ほぼ素通し(30Hz)、1→強い平滑(1.5Hz)。速い変化ほどcutoffを上げて遅れを消す。
+        const minCutoff = 30 * Math.pow(1.5 / 30, strength);
+        const cutoff = minCutoff + PEN_PRESSURE_FILTER_BETA * Math.abs(state.derivative);
+        state.value += smoothingFactor(cutoff) * (pressure - state.value);
+        state.time = sampleTime;
+        return Math.max(0, Math.min(1, state.value));
+    }
+
+    /**
      * 速く引いた線ほど細く・薄くする。画面px/msの平滑化速度で実効筆圧を最大penVelocityThinning割まで下げる。
      * 画面座標で測るため表示倍率に依存しない。
      */
@@ -766,7 +807,9 @@ export class BrushCore {
      */
     _applyPenTaperToMask(strokeData) {
         const state = this.airbrushState;
-        const points = strokeData?.points || [];
+        // recorderの点は筆圧の較正・平滑化が別にかかるため、realtimeで実際に描いた点列で描き直す。
+        const trace = Array.isArray(this.penRenderTrace) ? this.penRenderTrace : [];
+        const points = trace.length >= 2 ? trace : (strokeData?.points || []);
         const { taperIn, taperOut } = this._getPenTaperLengths();
         if (!state?.maskTexture || state.dabMode !== 'pen' || !(taperIn > 0 || taperOut > 0)) return false;
         if (strokeData?.isSingleDot === true || points.length < 2) return false;
@@ -845,10 +888,12 @@ export class BrushCore {
                 : pt;
             this._renderRealtimeStrokePoint(mode, position.x, position.y, pt.pressure);
             this.strokeRecorder.addPoint(position.x, position.y, pt.pressure);
+            this.penRenderTrace?.push({ x: position.x, y: position.y, pressure: pt.pressure });
         }
 
         this._renderRealtimeStrokePoint(mode, to.x, to.y, to.pressure);
         this.strokeRecorder.addPoint(to.x, to.y, to.pressure);
+        this.penRenderTrace?.push({ x: to.x, y: to.y, pressure: to.pressure });
         return { steps, stepSize, generatedPoints: points.length + 1 };
     }
 
