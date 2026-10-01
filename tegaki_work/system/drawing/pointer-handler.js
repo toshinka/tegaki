@@ -19,11 +19,21 @@ import { evaluatePressureCurve } from './pressure-curve.js';
  * スクリーン座標空間で動作するため、ズーム倍率に依存しない。
  * ポインターIDごとにインスタンスを生成して使う。
  */
-class LazyBrush {
+export class LazyBrush {
     constructor() {
         this.radius = 8;   // 補正半径（スクリーンpx）。0 = 補正なし
+        // 'follow': 指数減衰で追従(従来)。'string': ひも補正(半径内は動かず、超えた分だけ引っ張られる)。
+        this.mode = 'follow';
         this.penX = null;
         this.penY = null;
+    }
+
+    /** 設定(線補正の強さ・補正方式)を反映する。 */
+    configure(smoothing, mode) {
+        this.mode = mode === 'string' ? 'string' : 'follow';
+        const strength = Number.isFinite(Number(smoothing)) ? Number(smoothing) : 0.5;
+        // follow: 0.5→半径8px(旧デフォルト)。string: 0.5→ひもの長さ16px。
+        this.radius = strength * (this.mode === 'string' ? 32 : 16);
     }
 
     /** ストローク開始時に呼ぶ。初期座標をセットする */
@@ -48,6 +58,15 @@ class LazyBrush {
         const dist = Math.hypot(dx, dy);
 
         if (dist <= 0) return { x: this.penX, y: this.penY };
+
+        if (this.mode === 'string') {
+            // ひも補正: ペンが半径内で揺れても線は動かず、半径を超えた分だけ線をペン方向へ引く。
+            if (dist <= this.radius) return { x: this.penX, y: this.penY };
+            const pull = (dist - this.radius) / dist;
+            this.penX += dx * pull;
+            this.penY += dy * pull;
+            return { x: this.penX, y: this.penY };
+        }
 
         // radius=0 なら即時追従、大きいほど遅延する指数減衰
         const damping = this.radius <= 0
@@ -354,8 +373,7 @@ export class PointerHandler {
             // LazyBrush を初期化してポインターIDと紐づける
             const brush = new LazyBrush();
             const mgr = window.TegakiSettingsManager;
-            const smoothing = mgr?.get?.('smoothing') ?? 0.5;
-            brush.radius = smoothing * 16; // smoothing 0.5 → radius 8（旧デフォルト相当）
+            brush.configure(mgr?.get?.('smoothing') ?? 0.5, mgr?.get?.('stabilizerMode'));
             brush.reset(e.clientX, e.clientY);
             lazyBrushes.set(e.pointerId, brush);
 
@@ -393,8 +411,7 @@ export class PointerHandler {
             const brush = lazyBrushes.get(e.pointerId);
             if (brush) {
                 const mgr = window.TegakiSettingsManager;
-                const smoothing = mgr?.get?.('smoothing') ?? 0.5;
-                brush.radius = smoothing * 16;
+                brush.configure(mgr?.get?.('smoothing') ?? 0.5, mgr?.get?.('stabilizerMode'));
             }
 
             const moveEvents = getCoalescedMoveEvents(e);
@@ -457,9 +474,14 @@ export class PointerHandler {
             const brush = lazyBrushes.get(e.pointerId);
             const rawClientX = e.clientX;
             const rawClientY = e.clientY;
-            const filtered = brush
+            let filtered = brush
                 ? brush.update(rawClientX, rawClientY)
                 : { x: rawClientX, y: rawClientY };
+            // ひも補正では線がペンより最大ひもの長さ手前で止まるため、離した位置まで線をつなぐ(既定ON)。
+            if (brush?.mode === 'string'
+                && window.TegakiSettingsManager?.get?.('stabilizerCatchUp') !== false) {
+                filtered = { x: rawClientX, y: rawClientY };
+            }
 
             info.clientX = filtered.x;
             info.clientY = filtered.y;

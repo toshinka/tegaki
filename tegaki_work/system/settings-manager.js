@@ -44,6 +44,8 @@ export class SettingsManager {
             smoothing: this.config?.userSettings?.smoothing || 0.5,
             pressureCurve: this.config?.userSettings?.pressureCurve || 'linear',
             pressureCurvePoints: null,
+            stabilizerMode: 'follow',
+            stabilizerCatchUp: true,
             brushPresets: { pen: [], airbrush: [] },
             pressureOpacityEnabled: this.config?.userSettings?.pressureOpacityEnabled !== false,
             pressureOpacityStrength: this.config?.userSettings?.pressureOpacityStrength ?? 0.65,
@@ -151,6 +153,8 @@ export class SettingsManager {
             pressureCurve: (v) => {
                 return ['linear', 'ease-in', 'ease-out', 'custom'].includes(v) ? v : undefined;
             },
+            stabilizerMode: (v) => (['follow', 'string'].includes(v) ? v : undefined),
+            stabilizerCatchUp: (v) => (typeof v === 'boolean' ? v : undefined),
             pressureCurvePoints: (v) => {
                 if (v === null) return null;
                 return normalizePressureCurvePoints(v) ?? undefined;

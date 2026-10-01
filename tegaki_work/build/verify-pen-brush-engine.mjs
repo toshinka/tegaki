@@ -144,7 +144,7 @@ const near = (actual, expected, epsilon, message) => {
     const store = {
         pressureCorrection: 1, pressureCurve: 'custom', pressureCurvePoints: [[0, 0], [0.5, 0.2], [1, 1]],
         pressureOpacityEnabled: true, pressureOpacityStrength: 0.65, penVelocityThinning: 0.3,
-        penTiltStrength: 0, penDabSoftness: 0, penEdgeAA: 0, penTaperIn: 0, penTaperOut: 0, penPressureSmoothing: 0.5, smoothing: 0.5
+        penTiltStrength: 0, penDabSoftness: 0, penEdgeAA: 0, stabilizerMode: 'follow', penTaperIn: 0, penTaperOut: 0, penPressureSmoothing: 0.5, smoothing: 0.5
     };
     const get = key => store[key];
     const captured = captureBrushPresetValues('pen', get);
@@ -306,6 +306,38 @@ const near = (actual, expected, epsilon, message) => {
     const off = runFilter(0, noisy);
     assert.deepEqual(off, noisy.map(([v]) => v), 'strength 0 passes pressure through unchanged');
     window.TegakiSettingsManager = undefined;
+}
+
+// ============================================================================
+// 6d. 線補正(追従 / ひも)
+// ============================================================================
+{
+    const { LazyBrush } = await import('../system/drawing/pointer-handler.js');
+    const string = new LazyBrush();
+    string.configure(0.5, 'string');
+    near(string.radius, 16, 1e-9, 'string length is 16 screen px at 0.5');
+    string.reset(100, 100);
+    // 半径内の手ぶれでは線は動かない
+    for (const [x, y] of [[105, 103], [96, 108], [110, 95], [100, 114]]) {
+        const p = string.update(x, y);
+        assert.deepEqual([p.x, p.y], [100, 100], `jitter inside the string does not move the line (${x},${y})`);
+    }
+    // 半径を超えると、ひもの長さを保って引っ張られる
+    const pulled = string.update(140, 100);
+    near(pulled.x, 124, 1e-9, 'the line is pulled to string length behind the pen');
+    near(pulled.y, 100, 1e-9, 'the pull follows the pen direction');
+
+    const follow = new LazyBrush();
+    follow.configure(0.5, 'follow');
+    near(follow.radius, 8, 1e-9, 'follow mode keeps the previous radius (0.5 -> 8px)');
+    follow.reset(0, 0);
+    const moved = follow.update(4, 0);
+    assert.ok(moved.x > 0 && moved.x < 4, 'follow mode always moves partway toward the pen');
+
+    const off = new LazyBrush();
+    off.configure(0, 'string');
+    off.reset(0, 0);
+    near(off.update(3, 0).x, 3, 1e-9, 'strength 0 disables the string');
 }
 
 // ============================================================================
