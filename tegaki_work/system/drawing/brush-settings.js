@@ -45,7 +45,8 @@ export class BrushSettings {
         this.opacity = this.config.BRUSH_DEFAULTS?.opacity || 1.0;
         this.minWidth = this.config.BRUSH_DEFAULTS?.minWidth || 0.5;
         this.defaultMaxWidth = 100;
-        this.airbrushMaxWidth = 100;
+        this.penMaxWidth = 500;
+        this.airbrushMaxWidth = 500;
         
         this.mode = 'pen'; // 'pen' | 'eraser' | 'fill' | 'lasso-fill'
         this.pressureEnabled = true;
@@ -99,8 +100,13 @@ export class BrushSettings {
     }
 
     getMaxSize() {
-        const key = this._getSizeKey(this.mode);
+        return this.getMaxSizeForMode(this.mode);
+    }
+
+    getMaxSizeForMode(mode) {
+        const key = this._getSizeKey(mode);
         if (key === 'airbrush') return this.airbrushMaxWidth;
+        if (key === 'pen') return this.penMaxWidth;
         return this.defaultMaxWidth;
     }
 
