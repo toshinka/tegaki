@@ -98,6 +98,8 @@ export const TEGAKI_CONFIG = {
         // 入り抜き(画素)。入りは描画中、抜きはpen-up時に付く。0で無効。
         // 筆圧の安定化(One-Euro)。液タブ筆圧の揺れによる線幅の波打ちを抑える。0でOFF。
         penPressureSmoothing: 0.5,
+        // 曲線補間の1sample遅れを、最後に描いた点→現在の入力点をpreview側だけに描いて埋める(確定線は不変)。
+        penLiveTip: true,
         penTaperIn: 0,
         penTaperOut: 0,
         eraserDabSoftness: 0,
