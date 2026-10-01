@@ -624,6 +624,19 @@ export class ReferencePreviewViewer {
             this.handleKeyDown(e);
         });
 
+        // Canvas(WebGL canvas)はfocusを受け取らないため、Viewer外を押してもfocusがViewerに残り、
+        // 通常のショートカットがViewer用に吸われていた。Viewer外のpointerdownでViewerのfocusを外す。
+        if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+            document.addEventListener('pointerdown', (e) => {
+                if (!this.popup) return;
+                if (e.target && this.popup.contains?.(e.target)) return;
+                const activeEl = document.activeElement;
+                if (activeEl && (activeEl === this.popup || this.popup.contains?.(activeEl))) {
+                    activeEl.blur?.();
+                }
+            }, true);
+        }
+
         if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
             window.addEventListener('keydown', (e) => {
                 if (this.isVisible && this.popup) {
