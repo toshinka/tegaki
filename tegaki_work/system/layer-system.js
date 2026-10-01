@@ -63,6 +63,7 @@ import {
     TRANSFORM_EDIT_TRANSACTION_TARGET
 } from './animation/transform-edit-transaction.js';
 import { LayerTransformWarpController } from '../ui/layer-transform-warp-controller.js';
+import { FolderCompositor, collectCompositedFolderIds } from './folder-composite.js';
 
 export class LayerSystem {
     constructor() {
@@ -2347,6 +2348,8 @@ export class LayerSystem {
         if (layer.layerData) {
             layer.layerData.blendMode = nextMode;
         }
+        // フォルダの合成モードはグループ合成の対象/解除を切り替える
+        if (layer.layerData?.isFolder) this._refreshLayerEffectiveAlpha();
 
         if (this.eventBus) {
             this.eventBus.emit('layer:blend-mode-changed', {
@@ -3366,8 +3369,28 @@ export class LayerSystem {
         }
     }
 
+    /** フォルダのグループ合成(system/folder-composite.js)。rendererが無い環境ではnull。 */
+    _getFolderCompositor() {
+        if (!this._folderCompositor && this.app?.renderer) {
+            this._folderCompositor = new FolderCompositor(this);
+        }
+        return this._folderCompositor || null;
+    }
+
+    /** フォルダのサムネイル(PNG dataURL)。子孫に通常Layerが無ければ ''。 */
+    getFolderThumbnailUrl(folderLayer, width = 40, height = 32) {
+        return this._getFolderCompositor()?.getThumbnailUrl(folderLayer, width, height) || '';
+    }
+
+    /** 書き出し等の描画直前に、フォルダのグループ合成を最新にする。 */
+    flushFolderComposites() {
+        this._folderCompositor?.flush?.();
+    }
+
     _refreshLayerEffectiveAlpha() {
         const layers = this.getLayers();
+        // 合成フォルダ(自身の合成モード/不透明度がグループとして効くフォルダ)は、不透明度を子へ掛け算しない。
+        const compositedFolderIds = collectCompositedFolderIds(layers);
         const byId = new Map(
             layers
                 .filter(layer => layer?.layerData?.id)
@@ -3415,6 +3438,7 @@ export class LayerSystem {
                 const parent = byId.get(parentId);
                 const parentData = parent?.layerData;
                 if (!parentData?.isFolder) break;
+                if (compositedFolderIds.has(parentData.id)) break;
                 const parentOpacity = Number.isFinite(parentData.opacity)
                     ? parentData.opacity
                     : (Number.isFinite(parent.alpha) ? parent.alpha : 1);
@@ -3432,6 +3456,8 @@ export class LayerSystem {
             layer.alpha = resolveAlpha(layer);
             layer.visible = resolveVisibility(layer);
         }
+        // 合成フォルダが無い間は作らない(通常の編集に一切コストを足さない)。作った後は解除の後始末のために毎回syncする。
+        if (compositedFolderIds.size > 0 || this._folderCompositor) this._getFolderCompositor()?.sync(layers);
     }
 
     _setupVKeyEvents() {

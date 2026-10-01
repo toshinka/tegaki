@@ -1034,6 +1034,29 @@ canvas {
     cursor: pointer;
 }
 
+/* フォルダの中身のサムネイル。開閉アイコンは左下の小さなバッジに退く */
+.folder-thumbnail .folder-composite-preview {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+}
+
+.folder-thumbnail.has-folder-preview > svg {
+    position: absolute;
+    left: 1px;
+    bottom: 1px;
+    width: 11px;
+    height: 11px;
+    padding: 1px;
+    box-sizing: content-box;
+    border-radius: 3px;
+    background: var(--futaba-cream);
+    stroke: var(--futaba-maroon);
+}
+
 .clip-layer-mirror-row.depth-1 {
     margin-left: 14px;
 }

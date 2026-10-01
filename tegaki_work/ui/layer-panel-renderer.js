@@ -1152,6 +1152,7 @@ export class LayerPanelRenderer {
             }
             img.src = data.dataURL;
             this._syncLayerThumbnailOffFrameBadge(thumbnailContainer, data);
+            this._scheduleFolderThumbnailRefresh();
         });
 
         this.eventBus.on('ui:background-color-change-requested', ({ layerIndex, layerId }) => {
@@ -1912,7 +1913,50 @@ export class LayerPanelRenderer {
 
         thumbnailContainer.title = folder.layerData?.folderExpanded ? 'フォルダを閉じる' : 'フォルダを開く';
 
+        // フォルダの中身のサムネイル(子孫を合成した縮小絵)。無ければ従来の開閉アイコンだけ。
+        const previewUrl = this.layerSystem?.getFolderThumbnailUrl?.(folder, maxWidth, maxHeight) || '';
+        if (previewUrl) {
+            const img = document.createElement('img');
+            img.className = 'folder-composite-preview';
+            img.alt = '';
+            img.draggable = false;
+            img.src = previewUrl;
+            thumbnailContainer.prepend(img);
+            thumbnailContainer.classList.add('has-folder-preview');
+        }
+
         return thumbnailContainer;
+    }
+
+    /** 子Layerの内容が変わった時、画面上のフォルダのサムネイルだけを差し替える(行は再生成しない)。 */
+    _scheduleFolderThumbnailRefresh() {
+        if (this._folderThumbTimer) return;
+        this._folderThumbTimer = setTimeout(() => {
+            this._folderThumbTimer = null;
+            if (!this.container || !this.layerSystem?.getFolderThumbnailUrl) return;
+            const { width, height } = this._getLayerPanelCardThumbnailBounds();
+            this.container.querySelectorAll('.folder-thumbnail').forEach((thumb) => {
+                const row = thumb.closest('[data-layer-id]');
+                const folder = row ? this.layerSystem.getLayerById?.(row.dataset.layerId) : null;
+                if (!folder?.layerData?.isFolder) return;
+                const url = this.layerSystem.getFolderThumbnailUrl(folder, width, height);
+                let img = thumb.querySelector('.folder-composite-preview');
+                if (!url) {
+                    img?.remove();
+                    thumb.classList.remove('has-folder-preview');
+                    return;
+                }
+                if (!img) {
+                    img = document.createElement('img');
+                    img.className = 'folder-composite-preview';
+                    img.alt = '';
+                    img.draggable = false;
+                    thumb.prepend(img);
+                    thumb.classList.add('has-folder-preview');
+                }
+                if (img.src !== url) img.src = url;
+            });
+        }, 250);
     }
 
     _calculateIndentLevel(layer, allLayers) {
