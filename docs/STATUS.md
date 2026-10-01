@@ -43,6 +43,7 @@
 - PixiJS 8.21更新カードへの入力（brush改修が依存するPixi内部）: `RenderTexture.create({format:'rgba16float'})`と`renderer.context.extensions.colorBufferFloat`判定、blendMode `max` / `none` / `erase` / `inherit`、`TextureSource.autoGenerateMipmaps / mipLevelCount / updateMipmaps()`と`style.update()`（`layer-display-mipmaps.js`は`renderer.render`を包む）、`new Texture({source, frame})`の部分texture、`extract.*({resolution:1})`、dab Sprite poolでのtexture差し替え。TexturePool / RenderTarget cleanupの変更点はここを優先確認。
 - 線補正に「ひも」方式（`stabilizerMode`='string'）: 線補正の値0.5でひも長16画面px、半径内の手ぶれでは線が動かず超えた分だけ引かれる。離した位置まで線をつなぐ（`stabilizerCatchUp`既定ON）。±4pxの手ぶれで線の中心線揺れ 補正なし1.90 / 追従1.15 / ひも0.62px。設定画面ペンタブの線補正に「追従 / ひも」切替。ブラシプリセットに含む。
 - 起動時にQuickパネルのアクティブスロット（ペン/消しゴム/エアブラシのサイズ・不透明度）をBrushSettingsへ反映（Owner commit `0c348d6e`）。
+- 大キャンバス（2500px）: pen-up時の範囲History読み出しをidleへ移した（`deferredPatchReadback`、矩形をGPU上で複製してHistory登録、undo/redoは未読み出しなら即時読み出し）。pen-up 52〜54ms→16〜19ms（hidden paneのsync下限込み）、undo/redoは即時・idle後とも画素一致。stroke毎の全面float mask / ライブ先端複製を1枚ずつ再利用（`strokeTexturePooling`、2500pxで1枚約67MBの確保をstrokeごとに繰り返さない、結果は非poolと画素一致）。大ブラシ（100〜500px）の1move負荷は0.8〜1.3msで問題なし。raster余白が広がるstroke（大きいサイズの初回使用時など）は従来どおり全面snapshot（64〜129ms）。
 - 既知差分: 縮小表示中はmip分のGPU memoryが表示Layerごとに約+33%。未着手候補: 筆圧カーブ、tilt/速度、静止時buildup、dab texture/grain。
 
 ### CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17 Correction Pass & Off-Canvas Investigation)
