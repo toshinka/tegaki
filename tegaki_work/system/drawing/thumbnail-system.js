@@ -199,6 +199,8 @@ export const ThumbnailSystem = {
                 const _tempSprite = new Sprite(sourceRT);
                 const result = this.app.renderer.extract.pixels({
                     target: _tempSprite,
+                    // 画面DPRに依存させず、Layer実画素(1x)で読み出す。
+                    resolution: 1,
                     clearColor: '#00000000'
                 });
                 _tempSprite.destroy({ texture: false });

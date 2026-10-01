@@ -80,7 +80,9 @@ export class LayerDisplayMipmaps {
         const scale = this.cameraSystem?.worldContainer?.scale;
         const x = Math.abs(Number(scale?.x ?? 1));
         const y = Math.abs(Number(scale?.y ?? 1));
-        const value = Math.min(x, y);
+        // 実際の縮小率は画面rendererの解像度(DPR)も掛けた「Layer 1pxあたりの画面画素数」。
+        const resolution = Number(this.app?.renderer?.resolution) || 1;
+        const value = Math.min(x, y) * resolution;
         return Number.isFinite(value) && value > 0 ? value : 1;
     }
 

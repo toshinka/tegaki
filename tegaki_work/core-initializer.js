@@ -24,6 +24,19 @@ import { HistoryManager } from './system/history.js';
 import { CoreEngine } from './core-engine.js';
 import { CoreRuntime } from './core-runtime.js';
 
+/**
+ * 画面rendererの解像度。displayDevicePixelRatioが有効なら端末DPR(上限付き)、無効なら従来の固定値。
+ * Layer RenderTexture・History・保存・書き出しは個別に1xを指定しており、この値に依存しない。
+ */
+function getDisplayResolution() {
+    const rendererConfig = TEGAKI_CONFIG.renderer || {};
+    const fixed = Number(rendererConfig.resolution) || 1;
+    if (rendererConfig.displayDevicePixelRatio !== true) return fixed;
+    const dpr = Number(window.devicePixelRatio) || 1;
+    const max = Number(rendererConfig.maxDisplayDevicePixelRatio) || 2;
+    return Math.max(1, Math.min(max, dpr));
+}
+
 export const CoreInitializer = {
     async initialize() {
         console.log('🚀 Tegaki Initializing...');
@@ -37,7 +50,7 @@ export const CoreInitializer = {
                 backgroundColor: TEGAKI_CONFIG.renderer.backgroundColor,
                 backgroundAlpha: TEGAKI_CONFIG.renderer.backgroundAlpha,
                 antialias: TEGAKI_CONFIG.renderer.antialias,
-                resolution: TEGAKI_CONFIG.renderer.resolution,
+                resolution: getDisplayResolution(),
                 autoDensity: true,
                 resizeTo: window
             });

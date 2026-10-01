@@ -2894,6 +2894,8 @@ export class LayerSystem {
         try {
             result = this.app.renderer.extract.pixels({
                 target: tempSprite,
+                // 画面DPRに依存させず、Layer実画素(1x)で読み出す(History / 保存 / 選択の基礎)。
+                resolution: 1,
                 clearColor: '#00000000'
             });
         } finally {
