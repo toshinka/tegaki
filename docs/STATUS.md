@@ -21,6 +21,17 @@
 - Phase 4: コマ別フォルダ（コマ1フォルダ…）、縦/横の間隔二系統（縦細め横太め）、フリーコマ（コマ内コマ / フリー化）。
 - 検証: `verify-panel-layout.mjs`、`vite build`、Chromium実操作（上記全項目とproject save→load往復）。Owner実機（液タブ）は未確認。
 
+### RULER — 定規（平行線 / 放射線）基本実装（2026-10-02, branch `claude/ruler-tool`、main（コマ割り込み）へ追従）
+
+状態: Owner実機確認済み「完成形と言って良いレベル」（Shift方式）。main（コマ割りWP-010）取り込み後に規約整備を実施、液タブでの再確認は未。Shift方式を正式採用し、モード方式（R=編集⇄描画 / Esc=OFF）は試作後に取り下げ。QTPスロット化・定規popup/ウィンドウは必要性が低く後段。
+- 構成（コマ割りと同じ流儀）: 純幾何`system/ruler-geometry.js`（吸着の射影、つかみ判定、角度スナップ、保存値sanitize、ガイド線分）、表示・入力`system/drawing/ruler-system.js`、検証`build/verify-ruler.mjs`（harness domain `ruler`）。
+- 操作: R=ON/OFF（起動時は常にOFF）、Shift+R=種類切替（平行線→放射線）、定規ON中のShift+ドラッグ=中心付近で移動・それ以外で回転（Ctrl併用で15°刻み、放射線は移動のみ）。Shift中は中心アイコンと回転リングを表示。定規ON中はShift直線を無効化（定規が直線を担う）。コマ割り(Shift+K)と衝突なし。
+- 吸着: brush-coreが画面→文書座標へ変換する箇所で、描き始めの点を通り定規方向（平行線=角度、放射線=中心→始点）の直線へ射影。pen / 消しゴム / エアブラシ / ぼかしが対象（投げ縄塗りは対象外）。線補正・入り抜き・AA等はそのまま効く。
+- ガイドはworldContainer上のGraphicsで書き出し対象外、線幅は画面px一定。色はふたば配色（線#800000・補助線#b8706b・中心#f0e0d6・回転#ff8c42、verifierが他色を検出）。定規の種類・角度・中心はlocalStorage（UI設定、Project schemaは不変）に保存し、読込時にsanitize。
+- 修正: Shiftのkeyupが`shiftKey:true`で届く/取り逃した場合に編集ハンドルが出たままになる問題（keyで判定＋pointermoveで再同期）。設定のショートカット一覧にコマ割り(PANEL_LAYOUT_TOGGLE)が無くverify-shortcut-learning-boundaryが失敗していた問題（main由来）。
+- 検証: `verify-ruler.mjs`、drawing / panel-layout suite、vite build。Browser実操作で平行0°/90°/135°・放射線の吸着、Shiftドラッグの回転（90°、Ctrlスナップ）・移動、コマ割りpopup＋重ね表示を開いたままの吸着描画とShiftドラッグ。定規操作はHistoryに積まれない。Owner実機（液タブ）での操作感は今回の変更後は未確認。
+- 次段候補: 傾けられるグリッド、ドラフター型の直線定規、集中線生成ツール、QTP2行化。
+
 ### OWNER BACKLOG — 未着手の要望（2026-10-01記録、優先順はOwner判断）
 
 優先はメインペンの「レスポンスと美観」。鉛筆風など派生ブラシは遠回りなので避ける。以下は思い出し用の控え（設計・着手は別途カード化）:

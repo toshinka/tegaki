@@ -166,6 +166,17 @@ export class DrawingEngine {
             return;
         }
 
+        // 定規ON中のShift+押下は定規の移動・回転(描画しない)。
+        if (window.rulerSystem?.handlePointerDown?.(info, e)) {
+            this.activePointers.set(info.pointerId, {
+                type: info.pointerType || 'unknown',
+                isDrawing: false,
+                rulerDrag: true,
+                lastInfo: info
+            });
+            return;
+        }
+
         const currentMode = this._getCurrentMode();
 
         if (currentMode === 'eyedropper') {
@@ -216,7 +227,9 @@ export class DrawingEngine {
         this.activePointers.set(info.pointerId, {
             type: info.pointerType || 'unknown',
             isDrawing: true,
-            straightLine: e.shiftKey === true && this._supportsStraightStroke(currentMode),
+            // 定規ON中は定規が直線を担うため、Shift直線は定規OFF時だけ。
+            straightLine: e.shiftKey === true && this._supportsStraightStroke(currentMode)
+                && window.rulerSystem?.isEnabled?.() !== true,
             lastInfo: info
         });
 
@@ -264,6 +277,10 @@ export class DrawingEngine {
         */
 
         const pointerInfo = this.activePointers.get(info.pointerId);
+        if (pointerInfo?.rulerDrag) {
+            window.rulerSystem?.handlePointerMove?.(info, e);
+            return;
+        }
         if (!pointerInfo || !pointerInfo.isDrawing) {
             return;
         }
@@ -302,6 +319,10 @@ export class DrawingEngine {
 
         const lastInfo = infos[infos.length - 1];
         const pointerInfo = this.activePointers.get(lastInfo.pointerId);
+        if (pointerInfo?.rulerDrag) {
+            window.rulerSystem?.handlePointerMove?.(lastInfo, e);
+            return;
+        }
         if (!pointerInfo || !pointerInfo.isDrawing) {
             return;
         }
@@ -332,6 +353,11 @@ export class DrawingEngine {
     _handlePointerUp(info, e) {
         const pointerInfo = this.activePointers.get(info.pointerId);
         if (!pointerInfo) {
+            return;
+        }
+        if (pointerInfo.rulerDrag) {
+            window.rulerSystem?.handlePointerUp?.(info, e);
+            this.activePointers.delete(info.pointerId);
             return;
         }
 

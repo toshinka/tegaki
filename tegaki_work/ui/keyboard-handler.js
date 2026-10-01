@@ -792,6 +792,20 @@ export const KeyboardHandler = (function() {
                 break;
             }
             
+            case 'RULER_TOGGLE':
+                if (window.rulerSystem?.toggle) {
+                    window.rulerSystem.toggle();
+                    event.preventDefault();
+                }
+                break;
+
+            case 'RULER_TYPE_CYCLE':
+                if (window.rulerSystem?.cycleType) {
+                    window.rulerSystem.cycleType();
+                    event.preventDefault();
+                }
+                break;
+
             case 'QUICK_ACCESS_TOGGLE':
                 if (window.coreEngine?.popupManager?.get) {
                     const quickAccess = window.coreEngine.popupManager.get('quickAccess');

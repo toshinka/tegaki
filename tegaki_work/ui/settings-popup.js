@@ -528,7 +528,10 @@ export class SettingsPopup {
 
     _buildShortcutHelpHtml() {
         const sections = [
-            { title: 'ツール・色', matches: action => action.startsWith('TOOL_') || action.startsWith('COLOR_') },
+            {
+                title: 'ツール・色',
+                matches: action => action.startsWith('TOOL_') || action.startsWith('COLOR_') || action.startsWith('RULER_')
+            },
             {
                 title: '編集・履歴・レイヤー',
                 matches: action => action === 'UNDO'
@@ -552,6 +555,7 @@ export class SettingsPopup {
                     || action.startsWith('ALBUM_')
                     || action.startsWith('QUICK_ACCESS_')
                     || action.startsWith('REFERENCE_PREVIEW_')
+                    || action.startsWith('PANEL_LAYOUT_')
             }
         ];
         const shortcuts = TEGAKI_KEYMAP.getShortcutList();

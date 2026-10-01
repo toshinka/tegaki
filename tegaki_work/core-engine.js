@@ -51,6 +51,7 @@ import { UIController } from './ui/ui-panels.js';
 import { KeyboardHandler } from './ui/keyboard-handler.js';
 import { ThumbnailSystem } from './system/drawing/thumbnail-system.js';
 import { LayerDisplayMipmaps } from './system/drawing/layer-display-mipmaps.js';
+import { RulerSystem } from './system/drawing/ruler-system.js';
 import './system/checker-utils.js';
 import { LayerPanelRenderer } from './ui/layer-panel-renderer.js';
 import { emergencyRecoveryStore } from './system/emergency-recovery-store.js';
@@ -293,6 +294,17 @@ export class CoreEngine {
 
         // 11. ブラシコアの初期化
         this.brushCore.init();
+
+        // 11.2 定規(平行線 / 放射線)。R: ON/OFF、Shift+R: 種類、Shift+ドラッグ: 移動・回転。
+        this.rulerSystem = new RulerSystem({
+            cameraSystem: this.cameraSystem,
+            coordinateSystem: this.coordinateSystem,
+            eventBus: this.eventBus,
+            config: this.config
+        });
+        this.rulerSystem.init();
+        this.brushCore.rulerSystem = this.rulerSystem;
+        window.rulerSystem = this.rulerSystem;
 
         // 11.1 縮小表示時のLayer表示mipmap(表示補助のみ。raster内容は変更しない)
         this.layerDisplayMipmaps = new LayerDisplayMipmaps({

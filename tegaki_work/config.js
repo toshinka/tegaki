@@ -496,6 +496,18 @@ export const TEGAKI_KEYMAP = {
             shift: false,
             description: '現在の状態を保存'
         },
+        RULER_TOGGLE: {
+            key: 'KeyR',
+            ctrl: false,
+            shift: false,
+            description: '定規 ON/OFF'
+        },
+        RULER_TYPE_CYCLE: {
+            key: 'KeyR',
+            ctrl: false,
+            shift: true,
+            description: '定規の種類切替（平行線 / 放射線）'
+        },
         QUICK_ACCESS_TOGGLE: {
             key: 'KeyQ',
             ctrl: false,
