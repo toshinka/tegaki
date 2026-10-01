@@ -9,11 +9,13 @@ const AIRBRUSH_FLOW_REFERENCE_SPACING_RATIO = 0.18;
 const MIN_PRESSURE_DAB = 0.02;
 const DAB_TEXTURE_SIZE = 256;
 const MAX_POOLED_DAB_SPRITES = 4096;
-const MAX_CACHED_DAB_TEXTURES = 16;
+const MAX_CACHED_DAB_TEXTURES = 40;
 const MIN_PEN_DAB_SPACING = 0.35;
 const AIRBRUSH_TILT_STRETCH = 0.6;
 const AIRBRUSH_TILT_SHIFT = 0.25;
 const PEN_TILT_WIDEN = 1.0;
+// falloff(σ=0.3)で被覆50%になる位置は減衰帯の外端から約0.65帯幅。AA時の径補正に使う。
+const PEN_AA_HALF_COVERAGE_OFFSET = 0.65;
 const DAB_FALLOFF_SIGMA = 0.3;
 
 export class AirbrushDabRenderer {
@@ -44,7 +46,7 @@ export class AirbrushDabRenderer {
 
         if (points.length === 1) {
             const point = points[0];
-            addDab.call(this, container, texture, point.x, point.y, point.pressure ?? 1, settings);
+            addDab.call(this, container, texture, point.x, point.y, point.pressure ?? 1, settings, point.widthScale ?? 1);
             state.initialized = true;
             state.nextDistance = this.getSpacing(settings, point, point);
             return container.children.length > 0 ? container : null;
@@ -57,7 +59,7 @@ export class AirbrushDabRenderer {
         const distance = Math.hypot(dx, dy);
 
         if (distance <= 0) {
-            addDab.call(this, container, texture, end.x, end.y, end.pressure ?? 1, settings);
+            addDab.call(this, container, texture, end.x, end.y, end.pressure ?? 1, settings, end.widthScale ?? 1);
             return container.children.length > 0 ? container : null;
         }
 
@@ -77,8 +79,10 @@ export class AirbrushDabRenderer {
             const y = start.y + dy * t;
             const pressure = (start.pressure ?? 1)
                 + (((end.pressure ?? 1) - (start.pressure ?? 1)) * t);
+            // 入り抜き(taper)の径倍率も区間内で補間する。
+            const widthScale = (start.widthScale ?? 1) + (((end.widthScale ?? 1) - (start.widthScale ?? 1)) * t);
 
-            addDab.call(this, container, texture, x, y, pressure, settings);
+            addDab.call(this, container, texture, x, y, pressure, settings, widthScale);
             nextDistance += spacing;
         }
 
@@ -90,7 +94,8 @@ export class AirbrushDabRenderer {
         if (settings.dabMode === 'pen') {
             // 筆圧で細くなった区間でも隙間が出ないよう、区間内の細い側の径でspacingを決める。
             const pressure = Math.min(start?.pressure ?? 1, end?.pressure ?? 1);
-            const width = this._getPenDabWidth(pressure, settings);
+            const widthScale = Math.min(start?.widthScale ?? 1, end?.widthScale ?? 1);
+            const width = this._getPenDabWidth(pressure, settings) * widthScale;
             const ratio = settings.penDabSpacingRatio ?? 0.05;
             return Math.max(MIN_PEN_DAB_SPACING, width * ratio);
         }
@@ -194,6 +199,7 @@ export class AirbrushDabRenderer {
         }
         container.removeChildren();
         this.pooledDabCount = 0;
+        this._trimTextureCache();
         if (this.spritePool.length > MAX_POOLED_DAB_SPRITES) {
             const excess = this.spritePool.splice(MAX_POOLED_DAB_SPRITES);
             excess.forEach(sprite => sprite.destroy());
@@ -209,7 +215,9 @@ export class AirbrushDabRenderer {
         const aaPx = Math.max(0, Number(settings.penEdgeAA) || 0);
         if (!(aaPx > 0) || !points?.length) return softness;
         const pressure = Math.min(...points.map(point => point.pressure ?? 1));
-        const radius = Math.max(0.5, this._getPenDabWidth(pressure, settings) / 2);
+        const widthScale = Math.min(...points.map(point => point.widthScale ?? 1));
+        const radius = Math.max(0.5, (this._getPenDabWidth(pressure, settings) * widthScale) / 2)
+            + aaPx * PEN_AA_HALF_COVERAGE_OFFSET;
         const aaSoftness = computeSoftnessForEdgeWidth(aaPx, radius);
         const quantized = Math.round(Math.max(softness, aaSoftness) * 32) / 32;
         return Math.max(softness, Math.min(1, quantized));
@@ -227,8 +235,11 @@ export class AirbrushDabRenderer {
      * pen dab: stroke maskへmax合成で置くため、重なってもstroke内で濃度が積み上がらない。
      * 線の不透明度はmask確定時に一括で掛ける。
      */
-    _addPenDab(container, texture, x, y, pressure, settings) {
-        const width = this._getPenDabWidth(pressure, settings);
+    _addPenDab(container, texture, x, y, pressure, settings, widthScale = 1) {
+        // AA帯は径の内側に作られるため、その分dabを広げて50%被覆の縁を元の径に保つ(線が細らない)。
+        const aaPx = Math.max(0, Number(settings.penEdgeAA) || 0);
+        const width = Math.max(0.5, this._getPenDabWidth(pressure, settings) * widthScale)
+            + 2 * aaPx * PEN_AA_HALF_COVERAGE_OFFSET;
         const sprite = this._acquireSprite(container, texture);
         sprite.rotation = 0;
         sprite.position.set(x, y);
@@ -263,14 +274,26 @@ export class AirbrushDabRenderer {
         // 小径dabで256px textureを縮小sampleしても粗くならないようmipmapを生成する。
         const texture = Texture.from({ resource: canvas, autoGenerateMipmaps: true }, true);
         this.textures.set(textureKey, texture);
-        // slider操作でsoftnessが連続変化しても無制限に溜めない。
-        while (this.textures.size > MAX_CACHED_DAB_TEXTURES) {
-            const [oldestKey, oldest] = this.textures.entries().next().value;
-            this.textures.delete(oldestKey);
-            this._releasePooledSpriteTexture(oldest);
-            oldest.destroy(true);
-        }
+        this._trimTextureCache();
         return texture;
+    }
+
+    /**
+     * slider操作やAA幅でsoftnessが変化してもtextureを無制限に溜めない。
+     * ただし描画待ちのsegment containerのdabが使っているtextureは破棄しない(破棄するとそのdabが消える)。
+     * その場合は一時的に上限を超え、releaseSegment時に改めて整理する。
+     */
+    _trimTextureCache() {
+        if (this.textures.size <= MAX_CACHED_DAB_TEXTURES) return;
+        const inUse = new Set();
+        (this.segmentContainer?.children || []).forEach(sprite => inUse.add(sprite.texture));
+        for (const [key, texture] of [...this.textures.entries()]) {
+            if (this.textures.size <= MAX_CACHED_DAB_TEXTURES) break;
+            if (inUse.has(texture)) continue;
+            this.textures.delete(key);
+            this._releasePooledSpriteTexture(texture);
+            texture.destroy(true);
+        }
     }
 
     _releasePooledSpriteTexture(texture) {

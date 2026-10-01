@@ -144,7 +144,7 @@ const near = (actual, expected, epsilon, message) => {
     const store = {
         pressureCorrection: 1, pressureCurve: 'custom', pressureCurvePoints: [[0, 0], [0.5, 0.2], [1, 1]],
         pressureOpacityEnabled: true, pressureOpacityStrength: 0.65, penVelocityThinning: 0.3,
-        penTiltStrength: 0, penDabSoftness: 0, penEdgeAA: 0, smoothing: 0.5
+        penTiltStrength: 0, penDabSoftness: 0, penEdgeAA: 0, penTaperIn: 0, penTaperOut: 0, smoothing: 0.5
     };
     const get = key => store[key];
     const captured = captureBrushPresetValues('pen', get);
@@ -279,6 +279,26 @@ const near = (actual, expected, epsilon, message) => {
 }
 
 // ============================================================================
+// 6b. 入り抜き(taper)
+// ============================================================================
+{
+    const core = Object.create(BrushCore.prototype);
+    window.TegakiSettingsManager = { get: key => ({ penTaperIn: 20, penTaperOut: 40 })[key] };
+    near(core._getPenTaperScale(0, Infinity), 0.08, 1e-9, 'taper starts at the minimum width');
+    near(core._getPenTaperScale(20, Infinity), 1, 1e-9, 'taper-in reaches full width at its length');
+    near(core._getPenTaperScale(500, Infinity), 1, 1e-9, 'unknown end keeps full width during drawing');
+    near(core._getPenTaperScale(500, 0), 0.08, 1e-9, 'taper-out ends at the minimum width');
+    near(core._getPenTaperScale(500, 40), 1, 1e-9, 'taper-out starts at its length from the end');
+    const mid = core._getPenTaperScale(10, Infinity);
+    assert.ok(mid > 0.08 && mid < 1, 'taper ramps smoothly');
+    const shortStroke = core._getPenTaperScale(15, 15);
+    assert.ok(shortStroke < 1, 'a stroke shorter than both tapers never reaches full width');
+    window.TegakiSettingsManager = { get: () => 0 };
+    near(core._getPenTaperScale(0, 0), 1, 1e-9, 'taper 0 keeps full width everywhere');
+    window.TegakiSettingsManager = undefined;
+}
+
+// ============================================================================
 // 7. dab renderer
 // ============================================================================
 {
@@ -328,6 +348,19 @@ const near = (actual, expected, epsilon, message) => {
     assert.equal(renderer._getPenDabEffectiveSoftness([{ pressure: 1 }], { ...penSettings, size: 40, penEdgeAA: 0.1, penDabSoftness: 0.5 }), 0.5,
         'user softness wins when larger than the AA requirement');
     assert.equal(renderer._getPenDabEffectiveSoftness([{ pressure: 1 }], { ...penSettings, size: 40, penEdgeAA: 0 }), 0, 'AA 0 keeps the previous output');
+
+    // taperの径倍率は区間内で補間され、spacingも細い側に合わせて詰まる。
+    near(renderer.getSpacing({ ...penSettings, size: 40 }, { pressure: 1, widthScale: 1 }, { pressure: 1, widthScale: 0.1 }),
+        0.35, 1e-9, 'tapered tips get tighter spacing (floored)');
+    const taperContainer = renderer.renderSegment(
+        [{ x: 0, y: 0, pressure: 1, widthScale: 0.5 }, { x: 4, y: 0, pressure: 1, widthScale: 1 }],
+        { ...penSettings, size: 20, penDabSpacingRatio: 0.2 },
+        {}
+    );
+    const widths = taperContainer.children.map(sprite => sprite.width);
+    near(widths[0], 10, 1e-6, 'first dab uses the start width scale');
+    assert.ok(widths.every((w, i) => i === 0 || w >= widths[i - 1]), 'dab widths follow the taper ramp');
+    renderer.releaseSegment(taperContainer);
 
     const penTilt = renderer._getPenDabWidth(1, { ...penSettings, dabTilt: { angle: 0, amount: 0.5 } });
     near(penTilt, 30, 1e-9, 'pen tilt widens the line');

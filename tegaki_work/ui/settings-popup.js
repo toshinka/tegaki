@@ -307,6 +307,30 @@ export class SettingsPopup {
                 </div>
 
                 <div class="setting-group">
+                    <div class="setting-label">入り (Taper in)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-taper-in-slider">
+                            <div class="slider-track" id="pen-taper-in-track"></div>
+                            <div class="slider-handle" id="pen-taper-in-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-taper-in-value">OFF</div>
+                    </div>
+                    <div class="setting-description">描き始めを指定の長さ（画素）で細くします。筆圧なし・マウスでも効きます。0でOFF。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">抜き (Taper out)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-taper-out-slider">
+                            <div class="slider-track" id="pen-taper-out-track"></div>
+                            <div class="slider-handle" id="pen-taper-out-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-taper-out-value">OFF</div>
+                    </div>
+                    <div class="setting-description">描き終わりを指定の長さ（画素）で細くします。ペンを離した時に付きます。0でOFF。</div>
+                </div>
+
+                <div class="setting-group">
                     <div class="setting-label">縁の柔らかさ (Softness)</div>
                     <div class="slider-container">
                         <div class="slider" id="pen-dab-softness-slider">
@@ -327,7 +351,7 @@ export class SettingsPopup {
                         </div>
                         <div class="slider-value" id="pen-edge-aa-value">0.0px</div>
                     </div>
-                    <div class="setting-description">線の太さに関係なく縁を指定画素ぶん滑らかにします（書き出しにも反映）。標準でも約1.5〜2pxの滑らかさがあり、それより大きい値で効きます。0で従来どおり。</div>
+                    <div class="setting-description">線の太さに関係なく縁を指定画素ぶん滑らかにし、入り抜きや筆圧変化の段差(ジャギー)を抑えます（書き出しにも反映）。既定1px。0で従来の硬い縁。</div>
                 </div>
 
                 <div class="setting-group">
@@ -601,6 +625,14 @@ export class SettingsPopup {
             penTiltStrengthTrack: document.getElementById('pen-tilt-strength-track'),
             penTiltStrengthHandle: document.getElementById('pen-tilt-strength-handle'),
             penTiltStrengthValue: document.getElementById('pen-tilt-strength-value'),
+            penTaperInSlider: document.getElementById('pen-taper-in-slider'),
+            penTaperInTrack: document.getElementById('pen-taper-in-track'),
+            penTaperInHandle: document.getElementById('pen-taper-in-handle'),
+            penTaperInValue: document.getElementById('pen-taper-in-value'),
+            penTaperOutSlider: document.getElementById('pen-taper-out-slider'),
+            penTaperOutTrack: document.getElementById('pen-taper-out-track'),
+            penTaperOutHandle: document.getElementById('pen-taper-out-handle'),
+            penTaperOutValue: document.getElementById('pen-taper-out-value'),
             penDabSoftnessSlider: document.getElementById('pen-dab-softness-slider'),
             penDabSoftnessTrack: document.getElementById('pen-dab-softness-track'),
             penDabSoftnessHandle: document.getElementById('pen-dab-softness-handle'),
@@ -743,6 +775,7 @@ export class SettingsPopup {
 
         [
             'pressure', 'smoothing', 'pressureOpacity', 'penVelocityThinning', 'penTiltStrength',
+            'penTaperIn', 'penTaperOut',
             'penDabSoftness', 'penEdgeAA', 'eraserDabSoftness', 'eraserPressureStrength',
             'airbrushFlow', 'airbrushSoftness', 'airbrushScatter', 'airbrushBuildupRate', 'airbrushTiltStrength'
         ].forEach(setupSliderEvents);
@@ -787,6 +820,8 @@ export class SettingsPopup {
             penVelocityThinning: { min: 0.0, max: 0.9, settingKey: 'penVelocityThinning' },
             penTiltStrength: { min: 0.0, max: 1.0, settingKey: 'penTiltStrength' },
             penDabSoftness: { min: 0.0, max: 1.0, settingKey: 'penDabSoftness' },
+            penTaperIn: { min: 0, max: 300, integer: true, settingKey: 'penTaperIn', format: (v) => (v <= 0 ? 'OFF' : `${v}px`) },
+            penTaperOut: { min: 0, max: 300, integer: true, settingKey: 'penTaperOut', format: (v) => (v <= 0 ? 'OFF' : `${v}px`) },
             penEdgeAA: { min: 0.0, max: 4.0, settingKey: 'penEdgeAA', format: (v) => `${v.toFixed(1)}px` },
             eraserDabSoftness: { min: 0.0, max: 1.0, settingKey: 'eraserDabSoftness' },
             eraserPressureStrength: { min: 0.0, max: 1.0, settingKey: 'eraserPressureStrength' },
@@ -966,6 +1001,8 @@ export class SettingsPopup {
         this._updateGenericSlider('airbrushBuildupRate', settings.airbrushBuildupRate ?? defaults.airbrushBuildupRate);
         this._updateGenericSlider('penVelocityThinning', settings.penVelocityThinning ?? defaults.penVelocityThinning);
         this._updateGenericSlider('penTiltStrength', settings.penTiltStrength ?? defaults.penTiltStrength);
+        this._updateGenericSlider('penTaperIn', settings.penTaperIn ?? defaults.penTaperIn);
+        this._updateGenericSlider('penTaperOut', settings.penTaperOut ?? defaults.penTaperOut);
         this._updateGenericSlider('penDabSoftness', settings.penDabSoftness ?? defaults.penDabSoftness);
         this._updateGenericSlider('penEdgeAA', settings.penEdgeAA ?? defaults.penEdgeAA);
         this._updateGenericSlider('eraserDabSoftness', settings.eraserDabSoftness ?? defaults.eraserDabSoftness);

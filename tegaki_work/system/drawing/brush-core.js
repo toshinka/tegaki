@@ -39,6 +39,8 @@ import { generateAdaptiveInterpolationPoints } from './realtime-stroke-sampling.
 import { CurveInterpolator } from './curve-interpolator.js';
 
 const AIRBRUSH_BUILDUP_POLL_MS = 8;
+// 入り抜き端の最小径倍率(0だと線端が消えて見えるため少し残す)。
+const PEN_TAPER_MIN_SCALE = 0.08;
 
 export class BrushCore {
     constructor() {
@@ -380,6 +382,8 @@ export class BrushCore {
         this.lastRenderedLocalX = localX;
         this.lastRenderedLocalY = localY;
         this.lastRenderedPressure = processedPressure;
+        this.penTaperTravel = 0;
+        this.lastRenderedTaperScale = this._getPenTaperScale(0, Infinity);
         this.curveControlPoints = this._isRealtimeCurveEnabled(currentMode)
             ? [{ x: localX, y: localY, pressure: processedPressure, clientX, clientY }]
             : null;
@@ -732,6 +736,71 @@ export class BrushCore {
         state.buildupTimer = setTimeout(tick, AIRBRUSH_BUILDUP_POLL_MS);
     }
 
+    _getPenTaperLengths() {
+        const engine = window.TEGAKI_CONFIG?.brushEngine || {};
+        const get = (key, fallback) => {
+            const value = Number(window.TegakiSettingsManager?.get?.(key) ?? engine[key] ?? fallback);
+            return Number.isFinite(value) ? Math.max(0, value) : 0;
+        };
+        return { taperIn: get('penTaperIn', 0), taperOut: get('penTaperOut', 0) };
+    }
+
+    /**
+     * 入り抜きの径倍率。travel=描き始めからの距離、remaining=終点までの距離(不明ならInfinity)。
+     * 端で最小PEN_TAPER_MIN_SCALE、各taper長さでsmoothstepに1へ戻る。
+     */
+    _getPenTaperScale(travel, remaining) {
+        const { taperIn, taperOut } = this._getPenTaperLengths();
+        const ramp = (distance, length) => {
+            if (!(length > 0)) return 1;
+            const t = Math.max(0, Math.min(1, distance / length));
+            return t * t * (3 - 2 * t);
+        };
+        const factor = Math.min(ramp(travel, taperIn), ramp(remaining, taperOut));
+        return PEN_TAPER_MIN_SCALE + (1 - PEN_TAPER_MIN_SCALE) * factor;
+    }
+
+    /**
+     * 抜き(taper-out)は終点が分かるpen-up時にしか決まらないため、記録点列から入り抜き込みで
+     * stroke maskを描き直す(クリスタ式)。入りもここで同じ距離計算に揃える。点・単発tapは対象外。
+     */
+    _applyPenTaperToMask(strokeData) {
+        const state = this.airbrushState;
+        const points = strokeData?.points || [];
+        const { taperIn, taperOut } = this._getPenTaperLengths();
+        if (!state?.maskTexture || state.dabMode !== 'pen' || !(taperIn > 0 || taperOut > 0)) return false;
+        if (strokeData?.isSingleDot === true || points.length < 2) return false;
+        const renderer = this.layerManager.app?.renderer;
+        if (!renderer) return false;
+
+        const travel = [0];
+        for (let i = 1; i < points.length; i++) {
+            travel[i] = travel[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+        }
+        const total = travel[travel.length - 1];
+        const tapered = points.map((point, i) => ({
+            x: point.x,
+            y: point.y,
+            pressure: point.pressure,
+            widthScale: this._getPenTaperScale(travel[i], total - travel[i])
+        }));
+
+        const empty = new Container();
+        renderer.render({ container: empty, target: state.maskTexture, clear: true, clearColor: [0, 0, 0, 0] });
+        empty.destroy();
+
+        state.spacingState = {};
+        const ownsBatch = this._beginAirbrushBatch();
+        try {
+            for (let i = 1; i < tapered.length; i++) {
+                this._renderRealtimeAirbrushSegment([tapered[i - 1], tapered[i]]);
+            }
+        } finally {
+            if (ownsBatch) this._flushAirbrushBatch();
+        }
+        return true;
+    }
+
     _isPenDabEnabled(mode) {
         const engine = window.TEGAKI_CONFIG?.brushEngine;
         if (mode === 'pen') return engine?.penDabRendering === true;
@@ -960,11 +1029,20 @@ export class BrushCore {
         if (distanceSkipped) return;
 
         const renderPressure = this._stabilizeInitialPenRealtimePressure(mode, pressure, distance);
+        // 入り(taper-in)は描き始めからの移動距離で径を絞る。抜きはpen-up時のmask再構築で付ける。
+        const usesTaper = mode === 'pen' && this.airbrushState?.dabMode === 'pen';
+        const taperTravel = (this.penTaperTravel || 0) + distance;
+        const taperScale = usesTaper ? this._getPenTaperScale(taperTravel, Infinity) : 1;
         const segmentPoints = distance <= 0
             ? [{ x: localX, y: localY, pressure }]
             : [
-                { x: this.lastRenderedLocalX, y: this.lastRenderedLocalY, pressure: this.lastRenderedPressure },
-                { x: localX, y: localY, pressure: renderPressure }
+                {
+                    x: this.lastRenderedLocalX,
+                    y: this.lastRenderedLocalY,
+                    pressure: this.lastRenderedPressure,
+                    widthScale: usesTaper ? (this.lastRenderedTaperScale ?? 1) : 1
+                },
+                { x: localX, y: localY, pressure: renderPressure, widthScale: taperScale }
               ];
 
         if (mode === 'eraser') {
@@ -999,6 +1077,8 @@ export class BrushCore {
         this.lastRenderedLocalX = localX;
         this.lastRenderedLocalY = localY;
         this.lastRenderedPressure = renderPressure;
+        this.penTaperTravel = taperTravel;
+        this.lastRenderedTaperScale = taperScale;
         if (this.strokeInputProfile) {
             this.strokeInputProfile.realtimeSegments++;
         }
@@ -2056,6 +2136,9 @@ export class BrushCore {
             this._commitAirbrushStroke(activeLayer);
         }
         if ((mode === 'pen' || mode === 'eraser') && this.airbrushState?.dabMode === 'pen' && hasRealtimeApplied) {
+            if (mode === 'pen') {
+                this._applyPenTaperToMask(strokeData);
+            }
             this._commitAirbrushStroke(activeLayer);
         }
         if (mode === 'pen' && this.penOpacityState && hasRealtimeApplied) {
