@@ -268,6 +268,10 @@ export class PopupManager {
             if (exceptNames.has('settings') && popupId === 'settings-popup') {
                 return;
             }
+
+            if (exceptNames.has('panelLayout') && popupId === 'panel-layout-popup') {
+                return;
+            }
             
             if (exceptNames.has(popupId.replace(/-popup$/, ''))) {
                 return;

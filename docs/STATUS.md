@@ -12,12 +12,12 @@
 - 検証: 同一操作をrenderer解像度1 / 2で実行し、Layer画素・snapshot・undo2段・redo・History（patch、4.5MB）・PNG（renderToCanvas）が完全一致。2500px/6Layerで1frame 0.15ms→0.25〜0.41ms。静的verifier `build/verify-history-display-dpr-resolution.mjs`（history suite）がSprite / Container対象extractのresolution指定漏れを検出（修正前コードで失敗を確認）。
 - `displayDevicePixelRatio: true`で有効（起動時に反映、上限2x）。
 
-### PANEL LAYOUT — コマ割りツール（2026-10-01, WP-010）
+### PANEL LAYOUT — コマ割りツール（2026-10-01, WP-010 phase 1-2）
 
-状態: ROUGH PRODUCT PASS / TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。設計・範囲・未実装は[WP-010](work/WP-010-panel-layout.md)。
-- sidebarの「コマ割り」(Shift+K)でpopup。プリセット、上下/左右分割、結合、分割線ドラッグ、傾き、線ごとの間隔、裁ち落とし、余白/間隔/線幅/色。
-- 確定は通常Raster Layer「コマ枠」を1件のHistoryで追加（Undo 1回）。Project schema・保存正本は変更なし。コマ割り木はlocalStorage(UI設定)のみ。
-- 検証: `verify-panel-layout.mjs`、`vite build`、Chromiumで実操作（launcher / Shift+K / 分割 / ドラッグ / 傾き / 適用 / Undo）。Owner実機は未確認。
+状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING（Ownerは最終受入・pushの権限をClaudeにも付与済み）。設計・範囲・制約は[WP-010](work/WP-010-panel-layout.md)。
+- sidebarの「コマ割り」(Shift+K)でpopup。プリセット、分割/結合、分割線・頂点ドラッグ（popup内とキャンバス上の重ね表示の両方）、傾き、線ごとの間隔、コマごとの線幅、裁ち落とし、余白/間隔/線幅/色。
+- 出力は「枠線のみ」または「白コマ＋コマ内クリッピング＋枠線」の3Layer。いずれも1回のUndoで戻る。確定Layerは`layerData.panelLayout`(optional)を持ち、Projectへ保存・復元、「レイヤーから再編集→更新」で置換できる。Raster/History/renderer/既存保存の正本は変更なし。
+- 検証: `verify-panel-layout.mjs`、`vite build`、Chromium実操作（上記全項目とproject save→load往復）。Owner実機（液タブ）は未確認。
 
 ### OWNER BACKLOG — 未着手の要望（2026-10-01記録、優先順はOwner判断）
 

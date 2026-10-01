@@ -131,3 +131,55 @@ assert.deepEqual(
 }
 
 console.log('panel-layout verifier: split / gap / slant / presets / remove / bleed / hit-test / collapse ok');
+
+// ---- WP-010 phase 2: 個別線幅 / 頂点オフセット / 保存境界
+import {
+    hitTestCorner,
+    resetPanelCorners,
+    sanitizePanelLayoutData,
+    setPanelCorner,
+    setPanelLineWidth
+} from '../system/panel-layout.js';
+{
+    let tree = createPanelTree();
+    tree = splitPanel(tree, tree.id, 'v', 0.5);
+    const [left] = listPanels(tree);
+    tree = setPanelLineWidth(tree, left.id, 9);
+    tree = setPanelCorner(tree, left.id, 2, 30, -20);
+    const r = resolvePanelLayout(tree, canvas, { margin: 0, gap: 0 });
+    const p = r.panels[0];
+    assert.equal(p.lineWidth, 9);
+    near(p.quad[2].x, p.baseQuad[2].x + 30);
+    near(p.quad[2].y, p.baseQuad[2].y - 20);
+    assert.equal(r.panels[1].lineWidth, null);
+    assert.equal(hitTestCorner(r, left.id, { x: p.quad[2].x + 3, y: p.quad[2].y }, 8), 2);
+    assert.equal(hitTestCorner(r, left.id, { x: 5, y: 5 }, 8), 0);
+    assert.equal(hitTestCorner(r, left.id, { x: 300, y: 700 }, 8), -1);
+    tree = resetPanelCorners(tree, left.id);
+    assert.equal(findNodeLocal(tree, left.id).corners, undefined);
+    tree = setPanelCorner(tree, left.id, 0, 4, 4);
+    tree = setPanelCorner(tree, left.id, 0, 0, 0);
+    assert.equal(findNodeLocal(tree, left.id).corners, undefined);
+
+    const clean = sanitizePanelLayoutData({
+        v: 1, groupId: 'g1', role: 'paper', tree, params: { margin: 9999, gap: -4, lineWidth: 5 },
+        color: 'red', paperColor: '#aabbcc', extra: 'x'
+    });
+    assert.equal(clean.role, 'paper');
+    assert.equal(clean.params.margin, 400);
+    assert.equal(clean.params.gap, 0);
+    assert.equal(clean.color, '#000000');
+    assert.equal(clean.paperColor, '#aabbcc');
+    assert.equal(clean.extra, undefined);
+    assert.equal(sanitizePanelLayoutData({ tree: { kind: 'split' } }), null);
+    assert.equal(sanitizePanelLayoutData(null), null);
+    // JSON往復で同じ解決結果
+    const again = sanitizePanelLayoutData(JSON.parse(JSON.stringify(clean)));
+    assert.deepEqual(resolvePanelLayout(again.tree, canvas, again.params).panels.map(q => q.quad),
+        resolvePanelLayout(clean.tree, canvas, clean.params).panels.map(q => q.quad));
+}
+function findNodeLocal(node, id) {
+    if (node.id === id) return node;
+    return node.kind === 'split' ? findNodeLocal(node.a, id) || findNodeLocal(node.b, id) : null;
+}
+console.log('panel-layout verifier (phase 2): per-panel width / corner offsets / persistence boundary ok');

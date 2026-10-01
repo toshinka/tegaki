@@ -187,3 +187,78 @@
     #panel-layout-popup .pl-preset { width: 40px; height: 46px; }
     #panel-layout-popup .pl-label { flex-basis: 88px; }
 }
+
+/* ===== キャンバス重ね表示（ui/panel-layout-overlay.js）===== */
+.panel-layout-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    visibility: hidden;
+    overflow: visible;
+}
+
+.panel-layout-overlay.is-visible {
+    visibility: visible;
+}
+
+.panel-layout-overlay .pl-ov-panel {
+    fill: rgba(255, 140, 66, 0.04);
+    stroke: var(--futaba-maroon);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+    vector-effect: non-scaling-stroke;
+}
+
+.panel-layout-overlay .pl-ov-panel.is-selected {
+    fill: rgba(255, 140, 66, 0.12);
+    stroke: var(--active-border);
+    stroke-dasharray: none;
+    stroke-width: 2;
+}
+
+.panel-layout-overlay .pl-ov-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 12;
+    pointer-events: stroke;
+    cursor: pointer;
+}
+
+.panel-layout-overlay .pl-ov-cut {
+    stroke: var(--futaba-light-maroon);
+    stroke-width: 1.5;
+    stroke-dasharray: 2 4;
+    pointer-events: none;
+}
+
+.panel-layout-overlay .pl-ov-cut.is-active {
+    stroke: var(--active-border);
+    stroke-width: 2.5;
+}
+
+.panel-layout-overlay .pl-ov-cut-hit {
+    stroke: transparent;
+    stroke-width: 14;
+    pointer-events: stroke;
+    cursor: grab;
+}
+
+.panel-layout-overlay .pl-ov-handle {
+    fill: var(--futaba-background);
+    stroke: var(--active-border);
+    stroke-width: 2;
+    pointer-events: all;
+    cursor: move;
+}
+
+#panel-layout-popup .pl-edit-status { font-weight: 400; color: var(--active-border); }
+#panel-layout-popup .pl-check { font-size: 10px; margin: 2px 0 6px; }
+#panel-layout-popup .pl-chip--wide { min-width: 0; padding: 0 8px; }
+#panel-layout-popup .pl-label--inline { flex: 0 0 auto; }
+#panel-layout-popup .pl-btn:disabled { opacity: 0.45; cursor: default; }
+#panel-layout-popup .pl-panel-group { margin-bottom: 4px; }
+#panel-layout-popup [hidden] { display: none !important; }
+#panel-layout-popup { max-height: calc(100vh - 80px); overflow-y: auto; }

@@ -4,19 +4,22 @@
  * 責務: 漫画コマ割りのpure幾何。分割木(BSP)から各コマの四角形を導出する
  * 依存: なし（DOM / Pixi / Canvasを使わない）
  * 被依存: ui/panel-layout-popup.js, build/verify-panel-layout.mjs
- * 公開API: createPanelTree, resolvePanelLayout, splitPanel, removePanel,
+ * 公開API: sanitizePanelLayoutData, isValidPanelTree, setPanelLineWidth, setPanelCorner,
+ *   resetPanelCorners, hitTestCorner, createPanelTree, resolvePanelLayout, splitPanel, removePanel,
  *   updateSplit, setPanelBleed, hitTestPanel, hitTestSplit, dragSplitRatio, buildPresetTree,
  *   PANEL_PRESETS, normalizePanelLayoutParams
- * 保存: Projectへ保存しない。popupのUI設定（localStorage）だけが保持する。
+ * 保存: 木そのものはここでは保存しない。popupが(a)UI設定をlocalStorageへ、(b)確定した枠Layerの
+ *   layerData.panelLayout(任意field)へ保持し、Project JSONへ旧版互換のoptional fieldとして入る。
  * 実装状態: ✅実装（WP-010 Rough Product Pass）
  *
  * データ契約
- *   node = { id, kind: 'panel', bleed?: {top,right,bottom,left} }
+ *   node = { id, kind: 'panel', bleed?: {top,right,bottom,left}, lineWidth?: number, corners?: [[dx,dy]x4] }
  *        | { id, kind: 'split', dir: 'h'|'v', ratio, slant, gap: number|null, a, b }
  *   dir 'h' = 水平に切って a=上 / b=下、'v' = 垂直に切って a=左 / b=右。
  *   ratio = a側が占める割合(0..1)。slant = 切断線の傾き(割合単位。0で直線)。
  *   gap = この分割線だけの間隔(px)。nullなら全体paramsのgapを使う。
  *   bleed = 辺ごとに外周余白を無視してキャンバス端まで伸ばす(裁ち落とし)。
+ *   lineWidth = このコマだけの線幅(px)。corners = 解決後の頂点を動かすオフセット(自由変形)。
  *   コマは常に凸四角形 [TL, TR, BR, BL]。
  * ============================================================================
  */
@@ -147,6 +150,92 @@ export function setPanelBleed(root, panelId, bleed) {
     });
 }
 
+export function setPanelLineWidth(root, panelId, lineWidth) {
+    return mapNode(root, panelId, (node) => {
+        if (node.kind !== 'panel') return node;
+        const next = { ...node };
+        if (lineWidth === null || lineWidth === undefined) delete next.lineWidth;
+        else next.lineWidth = clamp(lineWidth, PANEL_LAYOUT_LIMITS.lineWidth.min, PANEL_LAYOUT_LIMITS.lineWidth.max);
+        return next;
+    });
+}
+
+/** 解決後の頂点 index(0..3=TL,TR,BR,BL) を (dx,dy) だけ動かす。 */
+export function setPanelCorner(root, panelId, index, dx, dy) {
+    return mapNode(root, panelId, (node) => {
+        if (node.kind !== 'panel' || !(index >= 0 && index < 4)) return node;
+        const corners = (node.corners || [[0, 0], [0, 0], [0, 0], [0, 0]]).map(c => [...c]);
+        corners[index] = [Number(dx) || 0, Number(dy) || 0];
+        const next = { ...node };
+        if (corners.every(([x, y]) => Math.abs(x) < 1e-6 && Math.abs(y) < 1e-6)) delete next.corners;
+        else next.corners = corners;
+        return next;
+    });
+}
+
+export function resetPanelCorners(root, panelId) {
+    return mapNode(root, panelId, (node) => {
+        if (node.kind !== 'panel' || !node.corners) return node;
+        const next = { ...node };
+        delete next.corners;
+        return next;
+    });
+}
+
+export function isValidPanelTree(node, depth = 0) {
+    if (!node || depth > 12 || typeof node.id !== 'string') return false;
+    if (node.kind === 'panel') return true;
+    return node.kind === 'split'
+        && (node.dir === 'h' || node.dir === 'v')
+        && Number.isFinite(node.ratio)
+        && isValidPanelTree(node.a, depth + 1)
+        && isValidPanelTree(node.b, depth + 1);
+}
+
+/** 保存/復元境界。壊れたdataはnull。数値はclampし、未知fieldは落とす。 */
+export function sanitizePanelLayoutData(data) {
+    if (!data || typeof data !== 'object' || !isValidPanelTree(data.tree)) return null;
+    const clean = (node) => {
+        if (node.kind === 'panel') {
+            const out = { id: String(node.id), kind: 'panel' };
+            if (node.bleed && typeof node.bleed === 'object') {
+                const bleed = {};
+                for (const side of ['top', 'right', 'bottom', 'left']) if (node.bleed[side]) bleed[side] = true;
+                if (Object.keys(bleed).length) out.bleed = bleed;
+            }
+            if (Number.isFinite(node.lineWidth)) {
+                out.lineWidth = clamp(node.lineWidth, PANEL_LAYOUT_LIMITS.lineWidth.min, PANEL_LAYOUT_LIMITS.lineWidth.max);
+            }
+            if (Array.isArray(node.corners) && node.corners.length === 4
+                && node.corners.every(c => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]))) {
+                out.corners = node.corners.map(c => [c[0], c[1]]);
+            }
+            return out;
+        }
+        return {
+            id: String(node.id),
+            kind: 'split',
+            dir: node.dir,
+            ratio: clamp(node.ratio, PANEL_LAYOUT_LIMITS.ratio.min, PANEL_LAYOUT_LIMITS.ratio.max),
+            slant: clamp(node.slant ?? 0, PANEL_LAYOUT_LIMITS.slant.min, PANEL_LAYOUT_LIMITS.slant.max),
+            gap: Number.isFinite(node.gap) ? clamp(node.gap, PANEL_LAYOUT_LIMITS.gap.min, PANEL_LAYOUT_LIMITS.gap.max) : null,
+            a: clean(node.a),
+            b: clean(node.b)
+        };
+    };
+    const color = /^#[0-9a-f]{6}$/i.test(data.color || '') ? data.color : '#000000';
+    const paperColor = /^#[0-9a-f]{6}$/i.test(data.paperColor || '') ? data.paperColor : '#ffffff';
+    return {
+        v: 1,
+        groupId: typeof data.groupId === 'string' ? data.groupId : null,
+        role: data.role === 'paper' || data.role === 'inner' ? data.role : 'lines',
+        tree: clean(data.tree),
+        params: normalizePanelLayoutParams(data.params),
+        color,
+        paperColor
+    };
+}
+
 // ---------------------------------------------------------------- 幾何
 
 function lerp(p, q, t) {
@@ -265,7 +354,18 @@ export function resolvePanelLayout(root, canvas, rawParams = {}) {
     const walk = (node, quad) => {
         if (node.kind === 'panel') {
             if (quadMinEdge(quad) < MIN_PANEL_EDGE) valid = false;
-            panels.push({ id: node.id, quad: applyBleed(quad, node.bleed, { width, height }), bleed: node.bleed || null });
+            const baseQuad = applyBleed(quad, node.bleed, { width, height });
+            const finalQuad = node.corners
+                ? baseQuad.map((p, i) => ({ x: p.x + node.corners[i][0], y: p.y + node.corners[i][1] }))
+                : baseQuad;
+            panels.push({
+                id: node.id,
+                quad: finalQuad,
+                baseQuad,
+                bleed: node.bleed || null,
+                lineWidth: Number.isFinite(node.lineWidth) ? node.lineWidth : null,
+                hasCorners: !!node.corners
+            });
             return;
         }
         const gapPx = node.gap ?? params.gap;
@@ -297,6 +397,22 @@ export function hitTestPanel(resolved, pt) {
         if (pointInQuad(pt, resolved.panels[i].quad)) return resolved.panels[i].id;
     }
     return null;
+}
+
+/** 指定コマの頂点を tolerance 以内で拾う。返り値は index(0..3) または -1。 */
+export function hitTestCorner(resolved, panelId, pt, tolerance = 8) {
+    const panel = resolved.panels.find(p => p.id === panelId);
+    if (!panel) return -1;
+    let best = -1;
+    let bestDist = tolerance;
+    panel.quad.forEach((q, i) => {
+        const dist = Math.hypot(pt.x - q.x, pt.y - q.y);
+        if (dist <= bestDist) {
+            bestDist = dist;
+            best = i;
+        }
+    });
+    return best;
 }
 
 /** 切断線(間隔の中心線)から tolerance 以内の分割を返す。 */
