@@ -528,7 +528,10 @@ export class SettingsPopup {
 
     _buildShortcutHelpHtml() {
         const sections = [
-            { title: 'ツール・色', matches: action => action.startsWith('TOOL_') || action.startsWith('COLOR_') },
+            {
+                title: 'ツール・色',
+                matches: action => action.startsWith('TOOL_') || action.startsWith('COLOR_') || action.startsWith('RULER_')
+            },
             {
                 title: '編集・履歴・レイヤー',
                 matches: action => action === 'UNDO'

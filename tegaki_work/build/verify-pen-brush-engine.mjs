@@ -341,6 +341,27 @@ const near = (actual, expected, epsilon, message) => {
 }
 
 // ============================================================================
+// 6e. 定規への吸着
+// ============================================================================
+{
+    const { snapPointToRuler } = await import('../system/drawing/ruler-system.js');
+    const parallel = { enabled: true, type: 'parallel', center: { x: 0, y: 0 }, angle: Math.PI / 4 };
+    const snapped = snapPointToRuler(parallel, { x: 10, y: 10 }, { x: 30, y: 14 });
+    near(snapped.x - 10, snapped.y - 10, 1e-9, 'parallel ruler keeps strokes on the ruler direction through the start point');
+    near(Math.hypot(snapped.x - 10, snapped.y - 10), (20 + 4) / Math.SQRT2, 1e-9, 'parallel snap is an orthogonal projection');
+
+    const radial = { enabled: true, type: 'radial', center: { x: 100, y: 100 }, angle: 0 };
+    const start = { x: 160, y: 100 };
+    const rad = snapPointToRuler(radial, start, { x: 200, y: 130 });
+    near(rad.y, 100, 1e-9, 'radial ruler keeps strokes on the line through the center and start point');
+    near(rad.x, 200, 1e-9, 'radial snap keeps the distance along the spoke');
+    const fromCenter = snapPointToRuler(radial, { x: 100, y: 100 }, { x: 140, y: 130 });
+    assert.deepEqual(fromCenter, { x: 140, y: 130 }, 'starting exactly at the center leaves the stroke free');
+    const off = snapPointToRuler({ ...parallel, enabled: false }, { x: 0, y: 0 }, { x: 5, y: 9 });
+    assert.deepEqual(off, { x: 5, y: 9 }, 'a disabled ruler does not snap');
+}
+
+// ============================================================================
 // 6c. 線端のヒゲ除去
 // ============================================================================
 {

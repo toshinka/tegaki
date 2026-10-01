@@ -12,6 +12,15 @@
 - 検証: 同一操作をrenderer解像度1 / 2で実行し、Layer画素・snapshot・undo2段・redo・History（patch、4.5MB）・PNG（renderToCanvas）が完全一致。2500px/6Layerで1frame 0.15ms→0.25〜0.41ms。静的verifier `build/verify-history-display-dpr-resolution.mjs`（history suite）がSprite / Container対象extractのresolution指定漏れを検出（修正前コードで失敗を確認）。
 - `displayDevicePixelRatio: true`で有効（起動時に反映、上限2x）。
 
+### RULER — 定規（平行線 / 放射線）基本実装（2026-10-02, branch `claude/ruler-tool`、`claude/display-dpr`へ積層）
+
+状態: TECHNICAL COMPLETE / Owner実機確認待ち。`system/drawing/ruler-system.js`。
+- 操作: R=ON/OFF（起動時は常にOFF）、Shift+R=種類切替（平行線→放射線）、定規ON中のShift+ドラッグ=中心付近で移動・それ以外で回転（Ctrl併用で15°刻み、放射線は移動のみ）。Shift中は中心アイコンと回転リングを表示。定規ON中はShift直線を無効化（定規が直線を担う）。
+- 吸着: brush-coreが画面→文書座標へ変換する箇所で、描き始めの点を通り定規方向（平行線=角度、放射線=中心→始点）の直線へ射影。pen / 消しゴム / エアブラシ / ぼかしが対象（投げ縄塗りは対象外）。線補正・入り抜き・AA等はそのまま効く。
+- ガイドはworldContainer上のGraphicsで書き出し対象外、線幅は画面px一定。定規の種類・角度・中心はlocalStorageに保存。
+- 検証: 純粋関数の単体テスト（verify-pen-brush-engine）、実PointerEventで平行0°/90°・放射線の吸着、Shiftドラッグの回転（90°、Ctrlスナップ）・移動（生のペン位置で追従）、定規操作はHistoryに積まれない。ショートカット一覧に「定規」を追加。
+- 次段候補: 傾けられるグリッド、ドラフター型の直線定規、集中線生成ツール、QTP2行化。
+
 ### OWNER BACKLOG — 未着手の要望（2026-10-01記録、優先順はOwner判断）
 
 優先はメインペンの「レスポンスと美観」。鉛筆風など派生ブラシは遠回りなので避ける。以下は思い出し用の控え（設計・着手は別途カード化）:

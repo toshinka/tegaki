@@ -354,7 +354,9 @@ export class BrushCore {
             });
         }
         const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
-        const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
+        const rawWorld = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
+        // 定規ON時は文書座標で定規へ吸着する(描き始めの点を通り定規の方向に沿う直線へ射影)。
+        const { worldX, worldY } = this._snapToRuler(rawWorld.worldX, rawWorld.worldY, 'start');
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
 
         const usePenDab = this._isPenDabEnabled(currentMode);
@@ -557,7 +559,9 @@ export class BrushCore {
         if (!activeLayer) return;
 
         const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
-        const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
+        const rawWorld = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
+        // 定規ON時は文書座標で定規へ吸着する(描き始めの点を通り定規の方向に沿う直線へ射影)。
+        const { worldX, worldY } = this._snapToRuler(rawWorld.worldX, rawWorld.worldY, 'move');
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
 
         const settings = this._getCurrentSettings();
@@ -1129,6 +1133,16 @@ export class BrushCore {
         const previous = this.strokeTexturePool[kind];
         if (previous && previous !== texture && !previous.destroyed) previous.destroy(true);
         this.strokeTexturePool[kind] = texture;
+    }
+
+    /** 定規への吸着。定規OFF・吸着対象外のtool(投げ縄塗り等)ではそのまま返す。 */
+    _snapToRuler(worldX, worldY, phase) {
+        const ruler = this.rulerSystem || window.rulerSystem;
+        const mode = this.getMode?.();
+        const snappable = mode === 'pen' || mode === 'eraser' || mode === 'airbrush'
+            || mode === 'airbrush-erase' || mode === 'blur';
+        if (!ruler || !snappable) return { worldX, worldY };
+        return ruler.snapWorld(worldX, worldY, phase);
     }
 
     _getPenTaperLengths() {
@@ -2418,7 +2432,9 @@ export class BrushCore {
         }
 
         const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
-        const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
+        const rawWorld = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
+        // 定規ON時は文書座標で定規へ吸着する(描き始めの点を通り定規の方向に沿う直線へ射影)。
+        const { worldX, worldY } = this._snapToRuler(rawWorld.worldX, rawWorld.worldY, 'move');
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
         const distance = Math.hypot(localX - this.lastLocalX, localY - this.lastLocalY);
         const rawPressure = Number(finalPointer.pressure ?? this.lastPressure);
