@@ -1380,6 +1380,7 @@ export class BrushCore {
             });
 
             this.strokeRenderer.releaseAirbrushSegment(renderContainer);
+            this._refreshAirbrushErasePreview();
             this._requestLiveCanvasRender('realtime-airbrush');
         } else if (renderContainer) {
             this.strokeRenderer.releaseAirbrushSegment(renderContainer);
@@ -1443,11 +1444,19 @@ export class BrushCore {
             }
         }
 
-        activeLayer.addChild(previewSprite);
+        // 消しエアブラシのpreviewをscene上でerase合成すると下のLayerまで抜けて見えるため、
+        // Layer自身のraster spriteを「Layer複製 - mask」の合成textureへ一時的に差し替える。
+        const erasePreview = settings.mode === 'airbrush-erase'
+            ? this._beginAirbrushErasePreview(activeLayer, width, height)
+            : null;
+        if (!erasePreview) {
+            activeLayer.addChild(previewSprite);
+        }
         this.airbrushState = {
             targetLayer: activeLayer,
             maskTexture,
             previewSprite,
+            erasePreview,
             spacingState: {},
             dabMode,
             opacity: strokeOpacity,
@@ -1493,15 +1502,66 @@ export class BrushCore {
             : state.color;
         commitSprite.blendMode = state.mode === 'airbrush-erase' ? 'erase' : 'normal';
         commitSprite.alpha = state.opacity ?? 1;
+        // render rootに直接置いたspriteのblendModeは適用されず、eraseが白の通常合成になる。
+        // 親Containerを挟み、子spriteのblendModeとして確実に効かせる。
+        const commitContainer = new Container();
+        commitContainer.addChild(commitSprite);
 
         renderer.render({
-            container: commitSprite,
+            container: commitContainer,
             target,
             clear: false
         });
-        commitSprite.destroy({ texture: false, baseTexture: false });
+        commitContainer.destroy({ children: true, texture: false, baseTexture: false });
         this._requestLiveCanvasRender('airbrush-commit');
         return true;
+    }
+
+    _beginAirbrushErasePreview(activeLayer, width, height) {
+        if (window.TEGAKI_CONFIG?.brushEngine?.airbrushErasePreviewComposite === false) return null;
+        const layerSprite = activeLayer?.layerData?.layerSprite;
+        const sourceTexture = activeLayer?.layerData?.renderTexture;
+        const renderer = this.layerManager.app?.renderer;
+        if (!layerSprite || !sourceTexture || !renderer || layerSprite.texture !== sourceTexture) return null;
+
+        const texture = RenderTexture.create({ width, height, resolution: 1 });
+        const preview = { layerSprite, sourceTexture, texture };
+        this._renderAirbrushErasePreview(preview, null);
+        layerSprite.texture = texture;
+        return preview;
+    }
+
+    _renderAirbrushErasePreview(preview, maskTexture) {
+        const renderer = this.layerManager.app?.renderer;
+        if (!preview || !renderer) return;
+        const container = new Container();
+        container.addChild(new Sprite(preview.sourceTexture));
+        if (maskTexture) {
+            const eraseSprite = new Sprite(maskTexture);
+            eraseSprite.blendMode = 'erase';
+            container.addChild(eraseSprite);
+        }
+        renderer.render({
+            container,
+            target: preview.texture,
+            clear: true,
+            clearColor: [0, 0, 0, 0]
+        });
+        container.destroy({ children: true, texture: false, baseTexture: false });
+    }
+
+    _refreshAirbrushErasePreview() {
+        const state = this.airbrushState;
+        if (!state?.erasePreview) return;
+        this._renderAirbrushErasePreview(state.erasePreview, state.maskTexture);
+    }
+
+    _cleanupAirbrushErasePreview(preview) {
+        if (!preview) return;
+        if (preview.layerSprite && !preview.layerSprite.destroyed && preview.layerSprite.texture === preview.texture) {
+            preview.layerSprite.texture = preview.sourceTexture;
+        }
+        preview.texture?.destroy(true);
     }
 
     _cleanupAirbrushStroke() {
@@ -1510,6 +1570,7 @@ export class BrushCore {
         }
         this.airbrushBatch = null;
         const state = this.airbrushState;
+        this._cleanupAirbrushErasePreview(state?.erasePreview);
         if (state?.previewSprite) {
             state.previewSprite.mask = null;
             state.previewSprite.setMask({ mask: null, inverse: false });

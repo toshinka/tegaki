@@ -69,6 +69,8 @@ export const TEGAKI_CONFIG = {
         realtimeCurveInterpolation: true,
         // airbrush / pen dabのmask描画をpointer event(coalesced batch)単位で1回のrenderへまとめる。
         airbrushEventBatching: true,
+        // 消しエアブラシのstroke中previewを対象Layerだけに効く合成表示にする(falseで旧scene上erase合成)。
+        airbrushErasePreviewComposite: true,
         // penをGraphics線分ではなくairbrushと共通のdab engine(float mask + max合成)で描く試験設定。
         penDabRendering: false,
         // pen dabの硬さ(0=硬い円)と、dab径に対する間隔比。
