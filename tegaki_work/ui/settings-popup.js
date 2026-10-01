@@ -1043,7 +1043,46 @@ export class SettingsPopup {
             commit();
         });
 
+        this._setupPressureCurveLiveInput();
         this._drawPressureCurveEditor();
+    }
+
+    /**
+     * ペンの現在筆圧をカーブ上の点として表示する(調整用)。
+     * 横軸は筆圧補正後の入力、縦軸はカーブ適用後で、pointer-handlerと同じ順で計算する。
+     */
+    _setupPressureCurveLiveInput() {
+        const LIVE_FADE_MS = 900;
+        const onPointer = (e) => {
+            const editor = this.curveEditor;
+            if (!editor || e.pointerType !== 'pen') return;
+            // 設定画面のペンタブが表示されている時だけ描く。
+            if (!editor.canvas.isConnected || editor.canvas.offsetParent === null) return;
+            const raw = Number(e.pressure);
+            if (!Number.isFinite(raw) || raw <= 0) return;
+            const correction = Number(this.settingsManager?.get?.('pressureCorrection') ?? 1) || 1;
+            editor.live = { x: Math.max(0, Math.min(1, raw * correction)), time: performance.now() };
+            if (!editor.liveFrame) {
+                editor.liveFrame = requestAnimationFrame(() => {
+                    editor.liveFrame = null;
+                    this._drawPressureCurveEditor(editor.dragIndex >= 0 ? editor.points : null);
+                });
+            }
+            clearTimeout(editor.liveFadeTimer);
+            editor.liveFadeTimer = setTimeout(() => this._drawPressureCurveEditor(), LIVE_FADE_MS + 20);
+        };
+        window.addEventListener('pointermove', onPointer, { capture: true, passive: true });
+        window.addEventListener('pointerdown', onPointer, { capture: true, passive: true });
+        this.curveEditor.liveFadeMs = LIVE_FADE_MS;
+    }
+
+    /** 表示中カーブでの実効筆圧。presetは実際の評価式、customは制御点。 */
+    _evaluateEditorCurve(points, x) {
+        const curve = this.settingsManager?.get?.('pressureCurve') ?? 'linear';
+        if (this.curveEditor?.dragIndex >= 0 || curve === 'custom') return evaluatePressureCurve(points, x);
+        if (curve === 'ease-in') return 1 - (1 - x) * (1 - x);
+        if (curve === 'ease-out') return x * x;
+        return x;
     }
 
     _drawPressureCurveEditor(points = null) {
@@ -1089,7 +1128,8 @@ export class SettingsPopup {
         ctx.beginPath();
         for (let i = 0; i <= 64; i++) {
             const x = i / 64;
-            const y = evaluatePressureCurve(pts, x);
+            // presetは実際の評価式で描き、ペンの点と線を一致させる。
+            const y = this._evaluateEditorCurve(pts, x);
             if (i === 0) ctx.moveTo(X(x), Y(y)); else ctx.lineTo(X(x), Y(y));
         }
         ctx.stroke();
@@ -1103,6 +1143,27 @@ export class SettingsPopup {
             ctx.lineWidth = 1.5;
             ctx.stroke();
         });
+
+        const live = this.curveEditor?.live;
+        const liveAge = live ? performance.now() - live.time : Infinity;
+        if (live && liveAge < (this.curveEditor.liveFadeMs ?? 900)) {
+            const y = this._evaluateEditorCurve(pts, live.x);
+            ctx.globalAlpha = Math.max(0.25, 1 - liveAge / (this.curveEditor.liveFadeMs ?? 900));
+            ctx.strokeStyle = active;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 2]);
+            ctx.beginPath(); ctx.moveTo(X(live.x), Y(0)); ctx.lineTo(X(live.x), Y(y)); ctx.lineTo(X(0), Y(y)); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.arc(X(live.x), Y(y), 5, 0, Math.PI * 2);
+            ctx.fillStyle = active;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = maroon;
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${live.x.toFixed(2)} → ${y.toFixed(2)}`, X(1), Y(0) - 4);
+        }
     }
 
     _toggleStatusPanel() {
