@@ -4,6 +4,16 @@
 更新日: 2026-09-18。CHECKPOINT BASELINE HEAD: `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`と一致した状態で修正・検証を実施。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
+### OWNER BACKLOG — 未着手の要望（2026-10-01記録、優先順はOwner判断）
+
+優先はメインペンの「レスポンスと美観」。鉛筆風など派生ブラシは遠回りなので避ける。以下は思い出し用の控え（設計・着手は別途カード化）:
+1. 集中線ツール（特に要望強）。
+2. 定規ツール（直線 / 縦横に傾けて斜めにも使えるグリッド）。
+3. 漫画用コマ割り＆編集ツール（クリスタ / メディバン / アルパカ相当）。
+4. トーン（スクリーントーン）系。
+5. QTPのペンスロット: 「PEN · S4 · …」行を拡張ボタン置き場にし、押すとブラシプリセット（6枠程度、SVGのペンアイコンに番号）の行を出す。設定でpreset入れ替え。上記の後。
+6. GPUパーティクル効果（興味あり、token消費と相談）。
+
 ### BRUSH UPGRADE — Pen / Airbrush engine modernization（2026-10-01, branch `claude/brush-upgrade`, local / 未push）
 
 状態: TECHNICAL COMPLETE / OWNER 試用で好感触（実機液タブ）/ 最終受入・push未。全変更は `TEGAKI_CONFIG.brushEngine` のflagで旧挙動へ戻せる。
