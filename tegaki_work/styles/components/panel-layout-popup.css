@@ -262,3 +262,22 @@
 #panel-layout-popup .pl-panel-group { margin-bottom: 4px; }
 #panel-layout-popup [hidden] { display: none !important; }
 #panel-layout-popup { max-height: calc(100vh - 80px); overflow-y: auto; }
+
+.panel-layout-overlay .pl-ov-panel.is-deleted {
+    fill: none;
+    stroke: var(--futaba-medium);
+    stroke-dasharray: 2 5;
+}
+
+.panel-layout-overlay .pl-ov-number {
+    fill: var(--futaba-maroon);
+    font-size: 28px;
+    font-weight: 700;
+    text-anchor: middle;
+    dominant-baseline: central;
+    opacity: 0.45;
+    paint-order: stroke;
+    stroke: var(--futaba-background);
+    stroke-width: 4px;
+    pointer-events: none;
+}
