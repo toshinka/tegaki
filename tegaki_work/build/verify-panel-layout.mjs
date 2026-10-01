@@ -273,7 +273,8 @@ function gutter(topQuad, botQuad) {
     });
     assert.equal(clean.role, 'paper');
     assert.equal(clean.params.margin, 400);
-    assert.equal(clean.params.gap, 0);
+    assert.equal(clean.params.gapV, 0);
+    assert.equal(clean.params.gapH, 0);
     assert.equal(clean.color, '#800000', '既定色はふたば配色');
     assert.equal(clean.paperColor, '#aabbcc');
     assert.equal(clean.extra, undefined);
@@ -287,3 +288,99 @@ function gutter(topQuad, botQuad) {
         resolvePanelLayout(clean.tree, canvas, clean.params).panels.map(q => q.quad));
 }
 console.log('panel-layout verifier (phase 3): neighbour-follow corner drag / outer / delete / japanese numbering / align / snap / persistence ok');
+
+// ---- WP-010 phase 4: 縦横二系統の間隔 / フリーコマ(コマ内コマ)
+import {
+    addFreePanel,
+    moveFreePanel,
+    panelBounds,
+    toggleFreePanel
+} from '../system/panel-layout.js';
+{
+    // 縦(左右の間)と横(上下の間)で別の間隔。単一gap指定は両方へ
+    let tree = createPanelTree();
+    tree = splitPanel(tree, tree.id, 'v', 0.5);
+    const [left] = listPanels(tree);
+    tree = splitPanel(tree, left.id, 'h', 0.5);
+    const r = resolvePanelLayout(tree, canvas, { margin: 0, gapV: 10, gapH: 30 });
+    const vSplit = r.splits.find(s => s.dir === 'v');
+    const hSplit = r.splits.find(s => s.dir === 'h');
+    near(vSplit.gap, 10);
+    near(hSplit.gap, 30);
+    const legacy = resolvePanelLayout(tree, canvas, { margin: 0, gap: 22 });
+    assert.deepEqual([legacy.params.gapV, legacy.params.gapH], [22, 22]);
+    const defaults = resolvePanelLayout(tree, canvas, {}).params;
+    assert.ok(defaults.gapV < defaults.gapH, '縦細め・横太めが既定');
+}
+
+{
+    // フリーコマ: 追加しても元のコマと他コマは1pxも動かない。結合で元に戻る
+    const tree0 = buildPresetById('grid4');
+    const r0 = resolvePanelLayout(tree0, canvas, { margin: 20, gap: 12 });
+    const target = r0.panels[0];
+    const { tree: tree1, newId } = addFreePanel(tree0, r0, target.id);
+    const r1 = resolvePanelLayout(tree1, canvas, { margin: 20, gap: 12 });
+    assert.equal(r1.panels.length, r0.panels.length + 1);
+    r0.panels.forEach((p) => {
+        assert.deepEqual(r1.panels.find(q => q.id === p.id).quad, p.quad, 'base unchanged');
+    });
+    const free = r1.panels.find(p => p.id === newId);
+    assert.equal(free.free, true);
+    assert.ok(hitTestPanel(r1, { x: (free.quad[0].x + free.quad[2].x) / 2, y: (free.quad[0].y + free.quad[2].y) / 2 }) === newId, 'free is on top');
+
+    // フリーコマの頂点は単独で動き、他コマは追従しない
+    const t2 = dragPanelCorner(tree1, r1, newId, 2, { x: free.quad[2].x + 40, y: free.quad[2].y + 25 });
+    const r2 = resolvePanelLayout(t2, canvas, { margin: 20, gap: 12 });
+    near(r2.panels.find(p => p.id === newId).quad[2].x, free.quad[2].x + 40);
+    r0.panels.forEach((p) => assert.deepEqual(r2.panels.find(q => q.id === p.id).quad, p.quad));
+
+    // 平行移動
+    const t3 = moveFreePanel(t2, newId, r2.panels.find(p => p.id === newId).quad, -30, 10);
+    near(resolvePanelLayout(t3, canvas, { margin: 20, gap: 12 }).panels.find(p => p.id === newId).quad[0].x, free.quad[0].x - 30);
+
+    // 隣の分割線を動かしてもフリーコマは動かない
+    const splitId = r0.splits[0].id;
+    const t4 = updateSplit(t3, splitId, { ratio: 0.3 });
+    const moved = resolvePanelLayout(t4, canvas, { margin: 20, gap: 12 });
+    assert.deepEqual(moved.panels.find(p => p.id === newId).quad, resolvePanelLayout(t3, canvas, { margin: 20, gap: 12 }).panels.find(p => p.id === newId).quad);
+
+    // 結合(削除)で元の1コマ構成へ戻る。番号は末尾
+    const back = removePanel(t3, newId);
+    assert.equal(resolvePanelLayout(back, canvas, { margin: 20, gap: 12 }).panels.length, 4);
+    assert.equal(r1.panels.find(p => p.id === newId).number, r1.panels.find(p => p.id === target.id).number + 1, 'free panel is numbered right after its base');
+
+    // 保存境界: free/quadが往復する。idの再採番で衝突しない
+    const clean = sanitizePanelLayoutData({ tree: t3 });
+    const rr = resolvePanelLayout(clean.tree, canvas, { margin: 20, gap: 12 });
+    assert.equal(rr.panels.find(p => p.id === newId).free, true);
+    const ids = new Set();
+    const more = splitPanel(clean.tree, listPanels(clean.tree)[0].id, 'h', 0.5);
+    const collect = (n) => { ids.add(n.id); if (n.kind === 'split') { collect(n.a); collect(n.b); } };
+    collect(more);
+    assert.equal(ids.size, listPanels(more).length * 2 - 1 + listPanels(more).filter(() => false).length + (ids.size - (listPanels(more).length * 2 - 1)), 'unique ids');
+    const idList = [];
+    const collectList = (n) => { idList.push(n.id); if (n.kind === 'split') { collectList(n.a); collectList(n.b); } };
+    collectList(more);
+    assert.equal(new Set(idList).size, idList.length, 'no id collision after restore');
+}
+
+{
+    // 既存コマのフリー化: 見た目を固定し、以後は領域や他の線に追従しない。再トグルで領域へ戻る
+    const tree0 = buildPresetById('grid4');
+    const r0 = resolvePanelLayout(tree0, canvas, { margin: 20, gap: 12 });
+    const target = r0.panels[1];
+    const t1 = toggleFreePanel(tree0, r0, target.id);
+    const r1 = resolvePanelLayout(t1, canvas, { margin: 20, gap: 12 });
+    assert.deepEqual(r1.panels[1].quad, target.quad);
+    assert.equal(r1.panels[1].free, true);
+    const t2 = updateSplit(t1, r0.splits[0].id, { ratio: 0.3 });
+    const r2 = resolvePanelLayout(t2, canvas, { margin: 20, gap: 12 });
+    assert.deepEqual(r2.panels[1].quad, target.quad, 'free panel stays');
+    assert.notDeepEqual(r2.panels[0].quad, r0.panels[0].quad, 'other panels still follow');
+    const t3 = toggleFreePanel(t2, r2, target.id);
+    assert.equal(resolvePanelLayout(t3, canvas, { margin: 20, gap: 12 }).panels[1].free, false);
+    assert.equal(splitPanel(t1, target.id, 'h', 0.5), t1, 'free panel cannot be split');
+    const b = panelBounds([{ x: 10.4, y: 20 }, { x: 90, y: 20 }, { x: 90, y: 70.2 }, { x: 10, y: 70 }], { width: 100, height: 100 }, 4);
+    assert.deepEqual(b, { x: 6, y: 16, width: 88, height: 59 });
+}
+console.log('panel-layout verifier (phase 4): gapV/gapH / free panels / id reservation ok');
