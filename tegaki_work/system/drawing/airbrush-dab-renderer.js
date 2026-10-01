@@ -8,6 +8,7 @@ import { Container, Sprite, Texture } from 'pixi.js';
 const AIRBRUSH_FLOW_REFERENCE_SPACING_RATIO = 0.18;
 const MIN_PRESSURE_DAB = 0.02;
 const DAB_TEXTURE_SIZE = 256;
+const MAX_POOLED_DAB_SPRITES = 4096;
 const DAB_FALLOFF_SIGMA = 0.3;
 
 export class AirbrushDabRenderer {
@@ -16,12 +17,16 @@ export class AirbrushDabRenderer {
         this.random = options.random || Math.random;
         this.texture = null;
         this.textureSoftness = null;
+        // segmentごとのContainer / Sprite生成を避けるため、描画後に再利用する。
+        this.segmentContainer = null;
+        this.spritePool = [];
+        this.pooledDabCount = 0;
     }
 
     renderSegment(points, settings, state = {}) {
         if (!points || points.length < 1) return null;
 
-        const container = new Container();
+        const container = this._acquireContainer();
         const texture = this._getTexture(settings.airbrushSoftness);
 
         if (points.length === 1) {
@@ -90,8 +95,7 @@ export class AirbrushDabRenderer {
 
         const scatter = settings.airbrushScatter ?? 0;
         const isErase = settings.mode === 'airbrush-erase' || settings.mode === 'eraser';
-        const sprite = new Sprite(texture);
-        sprite.anchor.set(0.5);
+        const sprite = this._acquireSprite(container, texture);
 
         let dabX = x;
         let dabY = y;
@@ -110,6 +114,60 @@ export class AirbrushDabRenderer {
         sprite.alpha = Math.max(0.001, (settings.opacity ?? 1) * baseFlow * pressureFactor);
         sprite.blendMode = isErase ? 'erase' : 'normal';
         container.addChild(sprite);
+    }
+
+    _isPoolingEnabled() {
+        return window.TEGAKI_CONFIG?.brushEngine?.airbrushDabPooling !== false;
+    }
+
+    _acquireContainer() {
+        if (!this._isPoolingEnabled()) return new Container();
+        if (!this.segmentContainer || this.segmentContainer.destroyed) {
+            this.segmentContainer = new Container();
+        }
+        const container = this.segmentContainer;
+        // 前回の呼び出し側がreleaseしなかった場合でもspriteを確実に回収する。
+        if (container.children.length > 0) container.removeChildren();
+        container.position.set(0, 0);
+        this.pooledDabCount = 0;
+        return container;
+    }
+
+    _acquireSprite(container, texture) {
+        if (container !== this.segmentContainer) {
+            const sprite = new Sprite(texture);
+            sprite.anchor.set(0.5);
+            return sprite;
+        }
+        let sprite = this.spritePool[this.pooledDabCount];
+        if (!sprite || sprite.destroyed) {
+            sprite = new Sprite(texture);
+            sprite.anchor.set(0.5);
+            this.spritePool[this.pooledDabCount] = sprite;
+        } else if (sprite.texture !== texture) {
+            sprite.texture = texture;
+        }
+        this.pooledDabCount++;
+        return sprite;
+    }
+
+    /**
+     * renderSegmentが返したcontainerを描画後に返却する。
+     * pooling時はspriteを外して再利用し、無効時は従来どおり破棄する。
+     */
+    releaseSegment(container) {
+        if (!container) return;
+        if (container !== this.segmentContainer) {
+            // cached texture を破棄しないため texture/baseTexture は指定しない。
+            container.destroy({ children: true });
+            return;
+        }
+        container.removeChildren();
+        this.pooledDabCount = 0;
+        if (this.spritePool.length > MAX_POOLED_DAB_SPRITES) {
+            const excess = this.spritePool.splice(MAX_POOLED_DAB_SPRITES);
+            excess.forEach(sprite => sprite.destroy());
+        }
     }
 
     _getSpacingAdjustedFlow(settings) {
@@ -139,6 +197,10 @@ export class AirbrushDabRenderer {
     }
 
     destroy() {
+        this.spritePool.forEach(sprite => sprite.destroy());
+        this.spritePool = [];
+        this.segmentContainer?.destroy();
+        this.segmentContainer = null;
         this.texture?.destroy(true);
         this.texture = null;
         this.textureSoftness = null;

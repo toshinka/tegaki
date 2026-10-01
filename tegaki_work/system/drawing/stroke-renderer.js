@@ -172,6 +172,11 @@ export class StrokeRenderer {
         return this.airbrushDabRenderer.renderSegment(points, settings, state);
     }
 
+    /** renderAirbrushSegmentの戻り値を描画後に返却する(pooling時は再利用)。 */
+    releaseAirbrushSegment(container) {
+        this.airbrushDabRenderer.releaseSegment(container);
+    }
+
     /**
      * Phase 5g Slice 1: 現行airbrush経路を一時RenderTextureへ反復描画し、
      * pixel値と簡易profileを返す。通常実行では使用せずdebug時だけ許可する。
@@ -252,7 +257,7 @@ export class StrokeRenderer {
                         target,
                         clear: false
                     });
-                    renderContainer.destroy({ children: true });
+                    this.releaseAirbrushSegment(renderContainer);
                 }
                 rendered++;
 

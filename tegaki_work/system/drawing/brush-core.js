@@ -1227,8 +1227,7 @@ export class BrushCore {
                 clear: false
             });
 
-            // cached texture を破棄しないため texture/baseTexture は指定しない。
-            renderContainer.destroy({ children: true });
+            this.strokeRenderer.releaseAirbrushSegment(renderContainer);
             this._requestLiveCanvasRender('realtime-airbrush');
         }
         this._warnPerf('brush.renderRealtimeAirbrushSegment', perfStart, {
