@@ -254,6 +254,18 @@ export class SettingsPopup {
                     </div>
                     <div class="setting-description">弱い筆圧では線を薄くします。上限はOPACITYに従い、高いほど0から上限まで濃淡が強く出ます。</div>
                 </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">速度で細く (Velocity)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-velocity-thinning-slider">
+                            <div class="slider-track" id="pen-velocity-thinning-track"></div>
+                            <div class="slider-handle" id="pen-velocity-thinning-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-velocity-thinning-value">0.30</div>
+                    </div>
+                    <div class="setting-description">速く引いた線ほど細く・薄くします（筆圧使用時）。0で無効。</div>
+                </div>
             </div>
 
             <div id="tab-spray" class="ui-tab-content">
@@ -291,6 +303,18 @@ export class SettingsPopup {
                         <div class="slider-value" id="airbrush-scatter-value">0.00</div>
                     </div>
                     <div class="setting-description">各スタンプ位置にわずかなランダムオフセットを加えます。0でも十分滑らか。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">溜まり (Build-up)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="airbrush-buildup-rate-slider">
+                            <div class="slider-track" id="airbrush-buildup-rate-track"></div>
+                            <div class="slider-handle" id="airbrush-buildup-rate-handle"></div>
+                        </div>
+                        <div class="slider-value" id="airbrush-buildup-rate-value">20/秒</div>
+                    </div>
+                    <div class="setting-description">ペンを止めていても時間で吹き重ねます。値は1秒あたりの吹き付け回数。0でOFF。</div>
                 </div>
             </div>
 
@@ -444,6 +468,14 @@ export class SettingsPopup {
             airbrushScatterTrack: document.getElementById('airbrush-scatter-track'),
             airbrushScatterHandle: document.getElementById('airbrush-scatter-handle'),
             airbrushScatterValue: document.getElementById('airbrush-scatter-value'),
+            airbrushBuildupRateSlider: document.getElementById('airbrush-buildup-rate-slider'),
+            airbrushBuildupRateTrack: document.getElementById('airbrush-buildup-rate-track'),
+            airbrushBuildupRateHandle: document.getElementById('airbrush-buildup-rate-handle'),
+            airbrushBuildupRateValue: document.getElementById('airbrush-buildup-rate-value'),
+            penVelocityThinningSlider: document.getElementById('pen-velocity-thinning-slider'),
+            penVelocityThinningTrack: document.getElementById('pen-velocity-thinning-track'),
+            penVelocityThinningHandle: document.getElementById('pen-velocity-thinning-handle'),
+            penVelocityThinningValue: document.getElementById('pen-velocity-thinning-value'),
 
             bucketGapButtons: Array.from(document.querySelectorAll('[data-bucket-setting="gap"]')),
             bucketGapValue: document.getElementById('bucket-gap-value'),
@@ -502,13 +534,7 @@ export class SettingsPopup {
             const rect = sliderElement.getBoundingClientRect();
             const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
             
-            let min = 0, max = 1.0;
-            if (sliderType === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
-            else if (sliderType === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
-            else if (sliderType === 'pressureOpacity') { min = 0.0; max = 1.0; }
-            else if (sliderType === 'airbrushFlow') { min = 0.01; max = 1.0; }
-            else if (sliderType === 'airbrushSoftness') { min = 0.0; max = 1.0; }
-            else if (sliderType === 'airbrushScatter') { min = 0.0; max = 1.0; }
+            const { min, max } = this._getSliderSpec(sliderType);
 
             const value = min + ((max - min) * percent / 100);
             this._updateGenericSlider(sliderType, value);
@@ -524,9 +550,7 @@ export class SettingsPopup {
                     try { handle.releasePointerCapture(e.pointerId); } catch (err) {}
                 }
                 
-                let settingKey = type;
-                if (type === 'pressure') settingKey = 'pressureCorrection';
-                if (type === 'pressureOpacity') settingKey = 'pressureOpacityStrength';
+                const settingKey = this._getSliderSpec(type).settingKey;
                 if (this.settingsManager) {
                     const val = this[`current${type.charAt(0).toUpperCase() + type.slice(1)}`];
                     this.settingsManager.set(settingKey, val);
@@ -563,37 +587,27 @@ export class SettingsPopup {
                 const rect = slider.getBoundingClientRect();
                 const percent = ((e.clientX - rect.left) / rect.width) * 100;
                 
-                let min = 0, max = 1.0;
-                if (type === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
-                else if (type === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
-                else if (type === 'pressureOpacity') { min = 0.0; max = 1.0; }
-                else if (type === 'airbrushFlow') { min = 0.01; max = 1.0; }
-                else if (type === 'airbrushSoftness') { min = 0.0; max = 1.0; }
-                else if (type === 'airbrushScatter') { min = 0.0; max = 1.0; }
+                const { min, max } = this._getSliderSpec(type);
 
                 const value = min + ((max - min) * percent / 100);
                 this._updateGenericSlider(type, value);
                 
-                let settingKey = type;
-                if (type === 'pressure') settingKey = 'pressureCorrection';
-                if (type === 'pressureOpacity') settingKey = 'pressureOpacityStrength';
-                this.settingsManager?.set(settingKey, value);
+                this.settingsManager?.set(this._getSliderSpec(type).settingKey, value);
             });
         };
 
-        ['pressure', 'smoothing', 'pressureOpacity', 'airbrushFlow', 'airbrushSoftness', 'airbrushScatter'].forEach(setupSliderEvents);
+        [
+            'pressure', 'smoothing', 'pressureOpacity', 'penVelocityThinning',
+            'airbrushFlow', 'airbrushSoftness', 'airbrushScatter', 'airbrushBuildupRate'
+        ].forEach(setupSliderEvents);
     }
 
     _updateGenericSlider(type, value) {
-        let min = 0, max = 1.0;
-        if (type === 'pressure') { min = this.MIN_PRESSURE; max = this.MAX_PRESSURE; }
-        else if (type === 'smoothing') { min = this.MIN_SMOOTHING; max = this.MAX_SMOOTHING; }
-        else if (type === 'pressureOpacity') { min = 0.0; max = 1.0; }
-        else if (type === 'airbrushFlow') { min = 0.01; max = 1.0; }
-        else if (type === 'airbrushSoftness') { min = 0.0; max = 1.0; }
-        else if (type === 'airbrushScatter') { min = 0.0; max = 1.0; }
+        const spec = this._getSliderSpec(type);
+        const { min, max } = spec;
 
-        const val = Math.max(min, Math.min(max, value));
+        let val = Math.max(min, Math.min(max, value));
+        if (spec.integer) val = Math.round(val);
         this[`current${type.charAt(0).toUpperCase() + type.slice(1)}`] = val;
 
         const percent = ((val - min) / (max - min)) * 100;
@@ -603,14 +617,36 @@ export class SettingsPopup {
 
         if (track) track.style.width = percent + '%';
         if (handle) handle.style.left = percent + '%';
-        if (display) display.textContent = val.toFixed(2);
+        if (display) display.textContent = spec.format ? spec.format(val) : val.toFixed(2);
 
         if (this.eventBus) {
-            let eventName = `settings:${type.replace(/[A-Z]/g, m => "-" + m.toLowerCase())}`;
-            if (type === 'pressure') eventName = 'settings:pressure-correction';
-            if (type === 'pressureOpacity') eventName = 'settings:pressure-opacity-strength';
+            const eventName = `settings:${spec.settingKey.replace(/[A-Z]/g, m => "-" + m.toLowerCase())}`;
             this.eventBus.emit(eventName, { value: val });
         }
+    }
+
+    /**
+     * 汎用sliderの値域・保存key・表示形式の一覧。sliderを足す時はここへ1行足す。
+     * パネル標準化の際はこの表をそのまま共通slider部品へ移せる形にしておく。
+     */
+    _getSliderSpec(type) {
+        const specs = {
+            pressure: { min: this.MIN_PRESSURE, max: this.MAX_PRESSURE, settingKey: 'pressureCorrection' },
+            smoothing: { min: this.MIN_SMOOTHING, max: this.MAX_SMOOTHING, settingKey: 'smoothing' },
+            pressureOpacity: { min: 0.0, max: 1.0, settingKey: 'pressureOpacityStrength' },
+            penVelocityThinning: { min: 0.0, max: 0.9, settingKey: 'penVelocityThinning' },
+            airbrushFlow: { min: 0.01, max: 1.0, settingKey: 'airbrushFlow' },
+            airbrushSoftness: { min: 0.0, max: 1.0, settingKey: 'airbrushSoftness' },
+            airbrushScatter: { min: 0.0, max: 1.0, settingKey: 'airbrushScatter' },
+            airbrushBuildupRate: {
+                min: 0,
+                max: 60,
+                integer: true,
+                settingKey: 'airbrushBuildupRate',
+                format: (v) => (v <= 0 ? 'OFF' : `${v}/秒`)
+            }
+        };
+        return specs[type] || { min: 0, max: 1, settingKey: type };
     }
 
     _updateBucketGapSlider(value) {
@@ -768,6 +804,8 @@ export class SettingsPopup {
         this._updateGenericSlider('airbrushFlow', settings.airbrushFlow ?? defaults.airbrushFlow);
         this._updateGenericSlider('airbrushSoftness', settings.airbrushSoftness ?? defaults.airbrushSoftness);
         this._updateGenericSlider('airbrushScatter', settings.airbrushScatter ?? defaults.airbrushScatter);
+        this._updateGenericSlider('airbrushBuildupRate', settings.airbrushBuildupRate ?? defaults.airbrushBuildupRate);
+        this._updateGenericSlider('penVelocityThinning', settings.penVelocityThinning ?? defaults.penVelocityThinning);
         this._updateBucketGapSlider(settings.bucketGapClose ?? defaults.bucketGapClose);
         this._updateBucketUnderpaintSlider(settings.bucketUnderpaint ?? defaults.bucketUnderpaint);
         this._setBucketRefVisibility(settings.bucketReferenceAllLayers ?? defaults.bucketReferenceAllLayers);

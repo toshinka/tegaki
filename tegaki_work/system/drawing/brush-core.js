@@ -627,7 +627,8 @@ export class BrushCore {
      */
     _applyPenVelocityResponse(clientX, clientY, sampleTime, pressure) {
         const engine = window.TEGAKI_CONFIG?.brushEngine || {};
-        const strength = Math.max(0, Math.min(0.9, Number(engine.penVelocityThinning ?? 0)));
+        const userStrength = window.TegakiSettingsManager?.get?.('penVelocityThinning');
+        const strength = Math.max(0, Math.min(0.9, Number(userStrength ?? engine.penVelocityThinning ?? 0)));
         const state = this.penVelocityState;
         if (!(strength > 0) || !state || !Number.isFinite(clientX) || !Number.isFinite(clientY)) {
             return pressure;
@@ -674,7 +675,10 @@ export class BrushCore {
             state.buildupTimer = setTimeout(tick, AIRBRUSH_BUILDUP_POLL_MS);
             if (!this.isDrawing) return;
 
-            const rate = Math.max(1, Math.min(120, Number(window.TEGAKI_CONFIG?.brushEngine?.airbrushBuildupRate ?? 20)));
+            const userRate = window.TegakiSettingsManager?.get?.('airbrushBuildupRate');
+            const rate = Math.min(120, Number(userRate ?? window.TEGAKI_CONFIG?.brushEngine?.airbrushBuildupRate ?? 20));
+            // 設定0はOFF。
+            if (!(rate > 0)) return;
             const now = this._perfNow();
             if (now - state.lastDabTime < 1000 / rate) return;
             if (!Number.isFinite(this.lastLocalX) || !Number.isFinite(this.lastLocalY)) return;
