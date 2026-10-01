@@ -71,8 +71,8 @@ export const TEGAKI_CONFIG = {
         airbrushEventBatching: true,
         // 消しエアブラシのstroke中previewを対象Layerだけに効く合成表示にする(falseで旧scene上erase合成)。
         airbrushErasePreviewComposite: true,
-        // penをGraphics線分ではなくairbrushと共通のdab engine(float mask + max合成)で描く試験設定。
-        penDabRendering: false,
+        // penをGraphics線分ではなくairbrushと共通のdab engine(float mask + max合成)で描く。抜きが重なりで濃くならない。falseで旧Graphics線分。
+        penDabRendering: true,
         // pen dabの硬さ(0=硬い円)と、dab径に対する間隔比。
         penDabSoftness: 0,
         penDabSpacingRatio: 0.05
