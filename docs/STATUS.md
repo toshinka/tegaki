@@ -13,6 +13,7 @@
 4. トーン（スクリーントーン）系。
 5. QTPのペンスロット: 「PEN · S4 · …」行を拡張ボタン置き場にし、押すとブラシプリセット（6枠程度、SVGのペンアイコンに番号）の行を出す。設定でpreset入れ替え。上記の後。
 6. GPUパーティクル効果（興味あり、token消費と相談）。
+7. 線補正「ひも」: 実装済み（既定は追従）。使い道を研究してからブラッシュアップ（糸ガイド表示など）。
 
 ### BRUSH UPGRADE — Pen / Airbrush engine modernization（2026-10-01, branch `claude/brush-upgrade`, local / 未push）
 
