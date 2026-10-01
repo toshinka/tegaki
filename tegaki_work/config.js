@@ -64,7 +64,9 @@ export const TEGAKI_CONFIG = {
         // dab形状をhardness(1-softness)でパラメータ化したfalloffで生成する。falseで旧radial gradient。
         airbrushHardnessFalloff: true,
         // dab Sprite / segment Containerを再利用する。falseでsegmentごとに生成・破棄。
-        airbrushDabPooling: true
+        airbrushDabPooling: true,
+        // pen / eraser / airbrushのrealtime区間をcentripetal Catmull-Romで補間する(1sample先読み)。falseで直線補間。
+        realtimeCurveInterpolation: true
     },
     webgpu: {
         enabled: false,

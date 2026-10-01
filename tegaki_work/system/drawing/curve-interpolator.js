@@ -52,6 +52,46 @@ class CurveInterpolator {
     }
 
     /**
+     * centripetal Catmull-Rom(alpha=0.5)でp1→p2区間のt位置を返す。
+     * 入力sample間隔が不均一でも尖りやloopが出にくい。p0/p3がp1/p2と重なる端点は鏡映で補う。
+     * @param {{x:number,y:number}} p0
+     * @param {{x:number,y:number}} p1
+     * @param {{x:number,y:number}} p2
+     * @param {{x:number,y:number}} p3
+     * @param {number} t - 0..1
+     * @returns {{x:number,y:number}}
+     */
+    static centripetalPoint(p0, p1, p2, p3, t) {
+        const epsilon = 1e-6;
+        const d12 = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        if (d12 < epsilon) return { x: p1.x, y: p1.y };
+
+        if (Math.hypot(p1.x - p0.x, p1.y - p0.y) < epsilon) {
+            p0 = { x: 2 * p1.x - p2.x, y: 2 * p1.y - p2.y };
+        }
+        if (Math.hypot(p3.x - p2.x, p3.y - p2.y) < epsilon) {
+            p3 = { x: 2 * p2.x - p1.x, y: 2 * p2.y - p1.y };
+        }
+
+        const t0 = 0;
+        const t1 = t0 + Math.sqrt(Math.hypot(p1.x - p0.x, p1.y - p0.y));
+        const t2 = t1 + Math.sqrt(d12);
+        const t3 = t2 + Math.sqrt(Math.hypot(p3.x - p2.x, p3.y - p2.y));
+        const tt = t1 + (t2 - t1) * t;
+
+        const lerp = (a, b, ta, tb) => {
+            const w = (tt - ta) / (tb - ta);
+            return { x: a.x + (b.x - a.x) * w, y: a.y + (b.y - a.y) * w };
+        };
+        const a1 = lerp(p0, p1, t0, t1);
+        const a2 = lerp(p1, p2, t1, t2);
+        const a3 = lerp(p2, p3, t2, t3);
+        const b1 = lerp(a1, a2, t0, t2);
+        const b2 = lerp(a2, a3, t1, t3);
+        return lerp(b1, b2, t1, t2);
+    }
+
+    /**
      * 単一点の補間計算
      * @private
      */
@@ -200,9 +240,8 @@ class CurveInterpolator {
 }
 
 // グローバル登録
-window.CurveInterpolator = CurveInterpolator;
+if (typeof window !== 'undefined') {
+    window.CurveInterpolator = CurveInterpolator;
+}
 
-console.log('✅ curve-interpolator.js (Phase 3) loaded');
-console.log('   - Catmull-Rom スプライン補間');
-console.log('   - 適応的サンプリング対応');
-console.log('   - tiltX/Y/twist データ補間対応');
+export { CurveInterpolator };

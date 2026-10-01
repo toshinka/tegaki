@@ -36,6 +36,7 @@ import {
     summarizePathCollectionMemory
 } from '../raster-snapshot-memory.js';
 import { generateAdaptiveInterpolationPoints } from './realtime-stroke-sampling.js';
+import { CurveInterpolator } from './curve-interpolator.js';
 
 export class BrushCore {
     constructor() {
@@ -374,6 +375,9 @@ export class BrushCore {
         this.lastRenderedLocalX = localX;
         this.lastRenderedLocalY = localY;
         this.lastRenderedPressure = processedPressure;
+        this.curveControlPoints = this._isRealtimeCurveEnabled(currentMode)
+            ? [{ x: localX, y: localY, pressure: processedPressure, clientX, clientY }]
+            : null;
 
         const strokeStartedPayload = {
             component: 'drawing',
@@ -465,24 +469,17 @@ export class BrushCore {
             ? this._stabilizeMovePressure(pressure, currentMode, pointerType)
             : 1.0;
 
-        // Stage C: 画面ピクセル基準の適応的サンプリング
-        const { steps, stepSize, points: interpPoints } = generateAdaptiveInterpolationPoints({
-            lastLocal: { x: this.lastLocalX, y: this.lastLocalY },
-            currentLocal: { x: localX, y: localY },
-            lastPressure: this.lastPressure,
-            currentPressure: processedPressure,
-            lastClient: (Number.isFinite(this.lastClientX) && Number.isFinite(this.lastClientY))
-                ? { x: this.lastClientX, y: this.lastClientY }
-                : null,
-            currentClient: (Number.isFinite(clientX) && Number.isFinite(clientY))
-                ? { x: clientX, y: clientY }
-                : null,
-            pressureEnabled,
-            currentMode,
-            minStep: currentMode === 'lasso-fill' ? 5 : 1,
-            maxStep: 16
-        });
         const pointsBeforeEvent = this.strokeRecorder.getCurrentPoints().length;
+        const currentControlPoint = {
+            x: localX,
+            y: localY,
+            pressure: processedPressure,
+            clientX,
+            clientY,
+            pressureEnabled
+        };
+        let steps = 0;
+        let stepSize = 0;
         let generatedPoints = 0;
 
         const isBatchableMode = currentMode === 'pen' || currentMode === 'eraser';
@@ -491,16 +488,41 @@ export class BrushCore {
         }
 
         try {
-            for (let i = 0; i < interpPoints.length; i++) {
-                const pt = interpPoints[i];
-                this._renderRealtimeStrokePoint(currentMode, pt.x, pt.y, pt.pressure);
-                this.strokeRecorder.addPoint(pt.x, pt.y, pt.pressure);
-                generatedPoints++;
+            if (Array.isArray(this.curveControlPoints)) {
+                // Catmull-Romは1sample先読みが必要なため、1つ前の区間をここで確定描画する。
+                const controlPoints = this.curveControlPoints;
+                controlPoints.push(currentControlPoint);
+                if (controlPoints.length > 4) controlPoints.shift();
+                const count = controlPoints.length;
+                if (count >= 3) {
+                    const result = this._emitStrokeChord(
+                        currentMode,
+                        controlPoints[count - 4] || controlPoints[count - 3],
+                        controlPoints[count - 3],
+                        controlPoints[count - 2],
+                        controlPoints[count - 1],
+                        pressureEnabled
+                    );
+                    ({ steps, stepSize, generatedPoints } = result);
+                }
+            } else {
+                const lastControlPoint = {
+                    x: this.lastLocalX,
+                    y: this.lastLocalY,
+                    pressure: this.lastPressure,
+                    clientX: this.lastClientX,
+                    clientY: this.lastClientY
+                };
+                const result = this._emitStrokeChord(
+                    currentMode,
+                    null,
+                    lastControlPoint,
+                    currentControlPoint,
+                    null,
+                    pressureEnabled
+                );
+                ({ steps, stepSize, generatedPoints } = result);
             }
-
-            this._renderRealtimeStrokePoint(currentMode, localX, localY, processedPressure);
-            this.strokeRecorder.addPoint(localX, localY, processedPressure);
-            generatedPoints++;
         } finally {
             if (isBatchableMode) {
                 this._flushRealtimeBatch();
@@ -562,6 +584,71 @@ export class BrushCore {
                 previewActive: !!this.previewGraphics
             }
         });
+    }
+
+    _isRealtimeCurveEnabled(mode) {
+        if (window.TEGAKI_CONFIG?.brushEngine?.realtimeCurveInterpolation === false) return false;
+        return mode === 'pen' || mode === 'eraser' || mode === 'airbrush' || mode === 'airbrush-erase';
+    }
+
+    /**
+     * from→to区間をStage Cの適応step数で分割し、realtime描画とrecorderへ流す。
+     * prev / nextがあればcentripetal Catmull-Romで位置を補間し、無ければ直線で補間する。
+     * 終点toは必ず描画・記録する。
+     */
+    _emitStrokeChord(mode, prev, from, to, next, pressureEnabled) {
+        const hasClient = point => Number.isFinite(point?.clientX) && Number.isFinite(point?.clientY);
+        const { steps, stepSize, points } = generateAdaptiveInterpolationPoints({
+            lastLocal: from,
+            currentLocal: to,
+            lastPressure: from.pressure,
+            currentPressure: to.pressure,
+            lastClient: hasClient(from) ? { x: from.clientX, y: from.clientY } : null,
+            currentClient: hasClient(to) ? { x: to.clientX, y: to.clientY } : null,
+            pressureEnabled,
+            currentMode: mode,
+            minStep: mode === 'lasso-fill' ? 5 : 1,
+            maxStep: 16
+        });
+        const useCurve = !!(prev && next);
+
+        for (let i = 0; i < points.length; i++) {
+            const pt = points[i];
+            const position = useCurve
+                ? CurveInterpolator.centripetalPoint(prev, from, to, next, pt.t)
+                : pt;
+            this._renderRealtimeStrokePoint(mode, position.x, position.y, pt.pressure);
+            this.strokeRecorder.addPoint(position.x, position.y, pt.pressure);
+        }
+
+        this._renderRealtimeStrokePoint(mode, to.x, to.y, to.pressure);
+        this.strokeRecorder.addPoint(to.x, to.y, to.pressure);
+        return { steps, stepSize, generatedPoints: points.length + 1 };
+    }
+
+    /** 先読み待ちで未描画の最終Catmull-Rom区間を、終点を複製して確定する。 */
+    _flushPendingCurveChord() {
+        const controlPoints = this.curveControlPoints;
+        this.curveControlPoints = null;
+        if (!Array.isArray(controlPoints) || controlPoints.length < 2 || !this.isDrawing) return;
+
+        const mode = this.getMode();
+        const count = controlPoints.length;
+        const from = controlPoints[count - 2];
+        const to = controlPoints[count - 1];
+        const prev = controlPoints[count - 3] || from;
+        const pressureEnabled = to.pressureEnabled === true;
+        const isBatchableMode = mode === 'pen' || mode === 'eraser';
+        if (isBatchableMode) {
+            this._beginRealtimeBatch(mode);
+        }
+        try {
+            this._emitStrokeChord(mode, prev, from, to, to, pressureEnabled);
+        } finally {
+            if (isBatchableMode) {
+                this._flushRealtimeBatch();
+            }
+        }
     }
 
     /** Shift+drag直線のdisplay-only guide。Raster確定はpointerup時のupdateStrokeへ任せる。 */
@@ -1493,6 +1580,7 @@ export class BrushCore {
         if (!activeLayer) return;
 
         this._appendFinalPointerSample(finalPointer, inputProfile);
+        this._flushPendingCurveChord();
         this._flushRealtimeBatch(true);
 
         let strokeData = this.strokeRecorder.endStroke();
@@ -2546,6 +2634,7 @@ export class BrushCore {
         this.realtimeBatchQueue = null;
         this.realtimeBatchDepth = 0;
         this.realtimeBatchMode = null;
+        this.curveControlPoints = null;
         this.lastClientX = null;
         this.lastClientY = null;
         
