@@ -355,6 +355,8 @@ export class CoreEngine {
             drawingEngine: this.drawingEngine,
             emergencyRecoveryStore: this.emergencyRecoveryStore
         });
+        // Quickパネルの保存済みアクティブスロットを起動時のペン/消しゴム/エアブラシ太さに反映する。
+        QuickAccessPopup.applyStoredActiveSlots(this.brushSettings);
         this.popupManager.register('quickAccess', QuickAccessPopup, {
             brushSettings: this.brushSettings,
             textRasterService: new TextRasterService({
