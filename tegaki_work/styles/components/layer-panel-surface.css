@@ -1909,3 +1909,24 @@
     --card-row-selected-bg: rgba(255, 255, 238, 0.74);
     --card-row-active-bg: rgba(255, 255, 238, 0.74);
 }
+
+/* 逆クリッピング: 通常(クリップ=線画のみ)と見分けがつくよう、maroonの塗りにクリームの抜き文字で反転表示する。 */
+.layer-clip-status.is-inverse-clipping,
+.layer-attribute-clip-toggle.is-inverse-clipping,
+.right-panel .layer-panel-card-row .layer-panel-card-action.is-inverse-clipping,
+.layer-panel-card-action.is-inverse-clipping {
+    background: var(--futaba-maroon);
+    border-color: var(--futaba-maroon);
+    color: var(--futaba-cream);
+    border-radius: 4px;
+    opacity: 1;
+}
+
+.layer-clip-status.is-inverse-clipping:hover,
+.layer-attribute-clip-toggle.is-inverse-clipping:hover,
+.right-panel .layer-panel-card-row .layer-panel-card-action.is-inverse-clipping:hover,
+.layer-panel-card-action.is-inverse-clipping:hover {
+    background: var(--futaba-light-maroon);
+    border-color: var(--futaba-light-maroon);
+    color: var(--futaba-cream);
+}
