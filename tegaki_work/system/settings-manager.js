@@ -13,6 +13,7 @@
  */
 
 import { normalizePressureCurvePoints } from './drawing/pressure-curve.js';
+import { normalizeUserBrushPresets } from './drawing/brush-presets.js';
 
 export class SettingsManager {
     constructor(eventBus, config) {
@@ -43,6 +44,7 @@ export class SettingsManager {
             smoothing: this.config?.userSettings?.smoothing || 0.5,
             pressureCurve: this.config?.userSettings?.pressureCurve || 'linear',
             pressureCurvePoints: null,
+            brushPresets: { pen: [], airbrush: [] },
             pressureOpacityEnabled: this.config?.userSettings?.pressureOpacityEnabled !== false,
             pressureOpacityStrength: this.config?.userSettings?.pressureOpacityStrength ?? 0.65,
             airbrushFlow: this.config?.BRUSH_DEFAULTS?.airbrushFlow ?? 0.08,
@@ -146,6 +148,7 @@ export class SettingsManager {
                 if (v === null) return null;
                 return normalizePressureCurvePoints(v) ?? undefined;
             },
+            brushPresets: (v) => normalizeUserBrushPresets(v, (key, value) => this.validateValue(key, value)),
             pressureOpacityEnabled: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
             },

@@ -4507,6 +4507,22 @@ canvas {
     color: var(--futaba-maroon) !important;
 }
 
+/* ブラシプリセット。既存curve buttonをそのまま使い、折り返しと間隔だけ足す。 */
+#settings-popup .brush-preset-list,
+#settings-popup .brush-preset-actions {
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+#settings-popup .brush-preset-actions {
+    margin-top: 6px;
+}
+
+#settings-popup .brush-preset-actions .pressure-curve-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
 /* 先端プレビュー。筆圧カーブ編集と同じ枠・面の値を流用する。 */
 #settings-popup .brush-tip-preview {
     display: block;

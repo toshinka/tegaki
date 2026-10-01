@@ -22,6 +22,13 @@ import {
     evaluatePressureCurve
 } from '../system/drawing/pressure-curve.js';
 import { computeDabFalloff } from '../system/drawing/airbrush-dab-renderer.js';
+import {
+    BRUSH_PRESET_KEYS,
+    BUILTIN_BRUSH_PRESETS,
+    MAX_USER_BRUSH_PRESETS,
+    brushPresetMatches,
+    captureBrushPresetValues
+} from '../system/drawing/brush-presets.js';
 
 export class SettingsPopup {
     constructor(dependencies = {}) {
@@ -216,6 +223,16 @@ export class SettingsPopup {
 
             <div id="tab-pen" class="ui-tab-content">
                 <div class="setting-group">
+                    <div class="setting-label">ブラシプリセット</div>
+                    <div class="pressure-curve-selection brush-preset-list" data-preset-tool="pen"></div>
+                    <div class="pressure-curve-selection brush-preset-actions">
+                        <button class="pressure-curve-btn" type="button" data-preset-action="save" data-preset-tool="pen">＋ 今の設定を保存</button>
+                        <button class="pressure-curve-btn" type="button" data-preset-action="delete" data-preset-tool="pen">選択中を削除</button>
+                    </div>
+                    <div class="setting-description">筆圧カーブや速度・傾きなど「描き味」を名前付きで保存します。サイズ・不透明度はクイックパレットのスロットで管理します。</div>
+                </div>
+
+                <div class="setting-group">
                     <div class="setting-label">線補正（スムーズ度）</div>
                     <div class="slider-container">
                         <div class="slider" id="smoothing-slider">
@@ -291,6 +308,16 @@ export class SettingsPopup {
             </div>
 
             <div id="tab-spray" class="ui-tab-content">
+                <div class="setting-group">
+                    <div class="setting-label">ブラシプリセット</div>
+                    <div class="pressure-curve-selection brush-preset-list" data-preset-tool="airbrush"></div>
+                    <div class="pressure-curve-selection brush-preset-actions">
+                        <button class="pressure-curve-btn" type="button" data-preset-action="save" data-preset-tool="airbrush">＋ 今の設定を保存</button>
+                        <button class="pressure-curve-btn" type="button" data-preset-action="delete" data-preset-tool="airbrush">選択中を削除</button>
+                    </div>
+                    <div class="setting-description">筆圧カーブや速度・傾きなど「描き味」を名前付きで保存します。サイズ・不透明度はクイックパレットのスロットで管理します。</div>
+                </div>
+
                 <div class="setting-group">
                     <div class="setting-label">先端プレビュー</div>
                     <canvas id="airbrush-dab-preview" class="brush-tip-preview" width="240" height="64"></canvas>
@@ -671,6 +698,7 @@ export class SettingsPopup {
         if (type === 'airbrushFlow' || type === 'airbrushSoftness' || type === 'airbrushScatter') {
             this._scheduleAirbrushDabPreview();
         }
+        this._scheduleBrushPresetRender();
 
         if (this.eventBus) {
             const eventName = `settings:${spec.settingKey.replace(/[A-Z]/g, m => "-" + m.toLowerCase())}`;
@@ -816,8 +844,10 @@ export class SettingsPopup {
             });
         });
         this._setupPressureCurveEditor();
+        this._setupBrushPresets();
         this.elements.pressureOpacityToggle?.addEventListener('change', () => {
             this.settingsManager?.set('pressureOpacityEnabled', this.elements.pressureOpacityToggle.checked);
+            this._scheduleBrushPresetRender();
         });
     }
 
@@ -982,6 +1012,7 @@ export class SettingsPopup {
             btn.classList.toggle('active', btn.getAttribute('data-curve') === curve);
         });
         this._drawPressureCurveEditor();
+        this._scheduleBrushPresetRender();
     }
 
     _scheduleAirbrushDabPreview() {
@@ -1076,6 +1107,129 @@ export class SettingsPopup {
             image.data[i * 4 + 3] = Math.round(a * 255);
         }
         ctx.putImageData(image, 0, 0);
+    }
+
+    _getBrushPresetList(tool) {
+        const user = this.settingsManager?.get?.('brushPresets')?.[tool] || [];
+        return [
+            ...(BUILTIN_BRUSH_PRESETS[tool] || []).map(preset => ({ ...preset, builtin: true })),
+            ...user.map(preset => ({ ...preset, builtin: false }))
+        ];
+    }
+
+    _getActiveBrushPreset(tool) {
+        const getSetting = (key) => this.settingsManager?.get?.(key);
+        const list = this._getBrushPresetList(tool);
+        // 同じ値のpresetが複数あれば、最後に選んだ / 保存したものを優先する。
+        const selectedId = this.selectedBrushPresetIds?.[tool];
+        const selected = list.find(preset => preset.id === selectedId);
+        if (selected && brushPresetMatches(selected, tool, getSetting)) return selected;
+        return list.find(preset => brushPresetMatches(preset, tool, getSetting)) || null;
+    }
+
+    _setSelectedBrushPreset(tool, id) {
+        this.selectedBrushPresetIds = { ...(this.selectedBrushPresetIds || {}), [tool]: id };
+    }
+
+    _scheduleBrushPresetRender() {
+        if (this.brushPresetFrame) return;
+        const schedule = typeof requestAnimationFrame === 'function'
+            ? requestAnimationFrame
+            : (fn) => setTimeout(fn, 16);
+        this.brushPresetFrame = schedule(() => {
+            this.brushPresetFrame = null;
+            this._renderBrushPresets();
+        });
+    }
+
+    /** presetボタン列を描き直す。現在値と一致するpresetをactive表示する。 */
+    _renderBrushPresets() {
+        this.popup?.querySelectorAll('.brush-preset-list[data-preset-tool]').forEach(list => {
+            const tool = list.dataset.presetTool;
+            const active = this._getActiveBrushPreset(tool);
+            list.innerHTML = '';
+            this._getBrushPresetList(tool).forEach(preset => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'pressure-curve-btn brush-preset-btn';
+                button.dataset.presetId = preset.id;
+                button.dataset.presetTool = tool;
+                button.textContent = preset.name;
+                button.title = preset.builtin ? `${preset.name}（組み込み）` : preset.name;
+                button.classList.toggle('active', preset.id === active?.id);
+                list.appendChild(button);
+            });
+            const deleteButton = this.popup.querySelector(`[data-preset-action="delete"][data-preset-tool="${tool}"]`);
+            if (deleteButton) deleteButton.disabled = !active || active.builtin;
+        });
+    }
+
+    _applyBrushPreset(tool, presetId) {
+        const preset = this._getBrushPresetList(tool).find(item => item.id === presetId);
+        if (!preset || !this.settingsManager) return;
+        const values = preset.values || {};
+        // customカーブは制御点を先に入れてから種類を切り替える。
+        const keys = [...BRUSH_PRESET_KEYS[tool]].sort((a, b) => (a === 'pressureCurvePoints' ? -1 : b === 'pressureCurvePoints' ? 1 : 0));
+        keys.forEach(key => {
+            if (key in values) this.settingsManager.set(key, values[key]);
+        });
+        this._setSelectedBrushPreset(tool, preset.id);
+        this._applySettingsToUI(this.settingsManager.get());
+        this._drawPressureCurveEditor();
+        this._drawAirbrushDabPreview();
+        this._renderBrushPresets();
+    }
+
+    _saveBrushPreset(tool) {
+        if (!this.settingsManager) return;
+        const all = this.settingsManager.get('brushPresets') || { pen: [], airbrush: [] };
+        const list = Array.isArray(all[tool]) ? [...all[tool]] : [];
+        if (list.length >= MAX_USER_BRUSH_PRESETS) {
+            window.alert?.(`保存できるプリセットは${MAX_USER_BRUSH_PRESETS}件までです。不要なものを削除してください。`);
+            return;
+        }
+        const defaultName = `${tool === 'pen' ? 'ペン' : 'エアブラシ'} ${list.length + 1}`;
+        const name = typeof window.prompt === 'function' ? window.prompt('プリセット名', defaultName) : defaultName;
+        if (name === null || !String(name).trim()) return;
+        const id = `user-${tool}-${Date.now().toString(36)}`;
+        this._setSelectedBrushPreset(tool, id);
+        list.push({
+            id,
+            name: String(name).trim().slice(0, 24),
+            values: captureBrushPresetValues(tool, key => this.settingsManager.get(key))
+        });
+        this.settingsManager.set('brushPresets', { ...all, [tool]: list });
+        this._renderBrushPresets();
+    }
+
+    _deleteActiveBrushPreset(tool) {
+        const active = this._getActiveBrushPreset(tool);
+        if (!active || active.builtin || !this.settingsManager) return;
+        if (typeof window.confirm === 'function' && !window.confirm(`プリセット「${active.name}」を削除しますか？`)) return;
+        const all = this.settingsManager.get('brushPresets') || { pen: [], airbrush: [] };
+        const list = (all[tool] || []).filter(preset => preset.id !== active.id);
+        this.settingsManager.set('brushPresets', { ...all, [tool]: list });
+        this._renderBrushPresets();
+    }
+
+    _setupBrushPresets() {
+        if (!this.popup || this.popup.dataset.brushPresetsReady === '1') return;
+        this.popup.dataset.brushPresetsReady = '1';
+        this.popup.addEventListener('pointerdown', (e) => {
+            const presetButton = e.target.closest?.('.brush-preset-btn[data-preset-id]');
+            const actionButton = e.target.closest?.('[data-preset-action]');
+            if (!presetButton && !actionButton) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (presetButton) {
+                this._applyBrushPreset(presetButton.dataset.presetTool, presetButton.dataset.presetId);
+            } else if (actionButton.dataset.presetAction === 'save') {
+                this._saveBrushPreset(actionButton.dataset.presetTool);
+            } else if (actionButton.dataset.presetAction === 'delete' && !actionButton.disabled) {
+                this._deleteActiveBrushPreset(actionButton.dataset.presetTool);
+            }
+        });
+        this._renderBrushPresets();
     }
 
     /** 現在のカーブ設定を制御点で返す(presetは近似点、customは保存点)。 */
