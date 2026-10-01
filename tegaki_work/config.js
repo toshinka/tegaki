@@ -500,7 +500,7 @@ export const TEGAKI_KEYMAP = {
             key: 'KeyR',
             ctrl: false,
             shift: false,
-            description: '定規 ON/OFF'
+            description: '定規を出す / 編集⇄描画（Escで消す）'
         },
         RULER_TYPE_CYCLE: {
             key: 'KeyR',

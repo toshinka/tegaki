@@ -177,6 +177,13 @@ export const KeyboardHandler = (function() {
             return;
         }
 
+        // 定規表示中のEscは定規を消す(変形などの取消が優先され、それらが無い時だけ)。
+        if (e.key === 'Escape' && window.rulerSystem?.isEnabled?.()) {
+            window.rulerSystem.turnOff();
+            e.preventDefault();
+            return;
+        }
+
         if (
             shortcutContext === 'canvas'
             && !vKeyPressed
