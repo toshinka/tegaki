@@ -20,6 +20,7 @@ import {
     PANEL_DEFAULT_PAPER_COLOR,
     PANEL_LAYOUT_LIMITS,
     PANEL_PRESETS,
+    addFreePanel,
     alignLayout,
     buildPresetById,
     dragPanelCorner,
@@ -40,9 +41,11 @@ import {
     setPanelLineWidth,
     snapSplitPoint,
     splitPanel,
+    toggleFreePanel,
+    moveFreePanel,
     updateSplit
 } from '../system/panel-layout.js';
-import { rasterizePanelFrames } from '../system/panel-layout-raster.js';
+import { emptyPanelRaster, rasterizePanelFrames } from '../system/panel-layout-raster.js';
 import { PanelLayoutOverlay } from './panel-layout-overlay.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { showFeedbackToast } from './feedback-toast.js';
@@ -53,7 +56,8 @@ const PREVIEW_MAX = { width: 280, height: 330 };
 
 const SLIDERS = Object.freeze([
     { key: 'margin', label: '余白', unit: 'px', step: 1, ...PANEL_LAYOUT_LIMITS.margin },
-    { key: 'gap', label: 'コマ間隔', unit: 'px', step: 1, ...PANEL_LAYOUT_LIMITS.gap },
+    { key: 'gapV', label: '縦の間隔', unit: 'px', step: 1, hint: '左右のコマの間（縦の線）。細め', ...PANEL_LAYOUT_LIMITS.gap },
+    { key: 'gapH', label: '横の間隔', unit: 'px', step: 1, hint: '上下のコマの間（横の線）。太め', ...PANEL_LAYOUT_LIMITS.gap },
     { key: 'lineWidth', label: '線の太さ', unit: 'px', step: 0.5, ...PANEL_LAYOUT_LIMITS.lineWidth }
 ]);
 
@@ -187,7 +191,7 @@ export class PanelLayoutPopup {
             `<button type="button" class="pl-preset" data-preset="${p.id}" title="${p.label}" aria-label="${p.label}">${this._presetThumb(p.id)}</button>`
         ).join('');
         const sliders = SLIDERS.map(s => `
-            <label class="pl-row">
+            <label class="pl-row"${s.hint ? ` title="${s.hint}"` : ''}>
                 <span class="pl-label">${s.label}</span>
                 <input type="range" class="pl-range" data-param="${s.key}" min="${s.min}" max="${s.max}" step="${s.step}">
                 <span class="pl-value" data-value-for="${s.key}"></span>
@@ -216,6 +220,8 @@ export class PanelLayoutPopup {
                 <button type="button" class="pl-btn" data-action="toggle-delete" data-role="delete-btn" title="選択コマを描かず空白にする（番号も飛ぶ）。もう一度押すと復活">削除</button>
             </div>
             <div class="pl-actions" role="group" aria-label="全体の操作">
+                <button type="button" class="pl-btn" data-action="add-free" title="選択コマの上に、他のコマへ影響しないフリーコマ（コマ内コマ）を重ねる">コマ内コマ</button>
+                <button type="button" class="pl-btn" data-action="toggle-free" data-role="free-btn" title="選択コマを他のコマの追従から切り離して自由に動かす（もう一度で元の領域へ戻す）">フリー化</button>
                 <button type="button" class="pl-btn" data-action="align" title="わずかなズレを整える（小さな傾き・素直な分割比・ほぼ同じ位置の線を揃える）">整列</button>
                 <button type="button" class="pl-btn" data-action="reset-outer" title="外周の頂点を元の矩形へ戻す">外周を戻す</button>
             </div>
@@ -281,7 +287,8 @@ export class PanelLayoutPopup {
             overlayToggle: q('[data-role="overlay-toggle"]'),
             paperLabel: q('[data-role="paper-label"]'),
             paperColor: q('[data-color="paper"]'),
-            deleteBtn: q('[data-role="delete-btn"]')
+            deleteBtn: q('[data-role="delete-btn"]'),
+            freeBtn: q('[data-role="free-btn"]')
         };
         this._bind();
         this._syncControls();
@@ -398,6 +405,18 @@ export class PanelLayoutPopup {
             const node = findNode(this.tree, id);
             this.tree = setPanelDeleted(this.tree, id, node.deleted !== true);
             this._changed();
+        } else if (action === 'add-free') {
+            const id = this._selectedPanelId();
+            if (!id) return showFeedbackToast('重ねる土台のコマを選択してください');
+            const result = addFreePanel(this.tree, this.resolved, id);
+            this.tree = result.tree;
+            if (result.newId) this.selectedId = result.newId;
+            this._changed();
+        } else if (action === 'toggle-free') {
+            const id = this._selectedPanelId();
+            if (!id) return showFeedbackToast('フリー化するコマを選択してください');
+            this.tree = toggleFreePanel(this.tree, this.resolved, id);
+            this._changed();
         } else if (action === 'align') {
             const result = alignLayout(this.tree, this._canvasSize(), this.params);
             this.tree = result.tree;
@@ -444,11 +463,11 @@ export class PanelLayoutPopup {
         }
         const panel = this._selectedPanelId() ? findNode(this.tree, this._selectedPanelId()) : null;
         const split = this._selectedParentSplit();
-        this.elements.splitGroup.hidden = !split;
+        this.elements.splitGroup.hidden = !split || split.dir === 'o';
         this.elements.panelGroup.hidden = !panel;
         if (split) {
             this.popup.querySelector('[data-split="slant"]').value = String(split.slant || 0);
-            this.popup.querySelector('[data-split="gap"]').value = String(split.gap ?? this.params.gap);
+            this.popup.querySelector('[data-split="gap"]').value = String(split.gap ?? (split.dir === 'v' ? this.params.gapV : this.params.gapH));
             this.popup.querySelector('[data-value-for="slant"]').textContent = `${Math.round((split.slant || 0) * 100)}%`;
             this.popup.querySelector('[data-value-for="splitGap"]').textContent = split.gap == null ? '全体' : `${split.gap}px`;
         }
@@ -473,6 +492,7 @@ export class PanelLayoutPopup {
         this.elements.paperColor.hidden = !paper;
         this.elements.overlayToggle.checked = this.showOverlay;
         this.elements.deleteBtn.textContent = panel?.deleted === true ? '復活' : '削除';
+        this.elements.freeBtn.textContent = panel?.free === true ? 'フリー解除' : 'フリー化';
         this.elements.editStatus.textContent = this.editing ? '— 再編集中' : '';
         this.elements.updateBtn.hidden = !this.editing;
         this.elements.loadBtn.disabled = !this._activePanelLayout();
@@ -485,6 +505,14 @@ export class PanelLayoutPopup {
     // ------------------------------------------------------------ 共通ドラッグ(プレビュー/キャンバス上)
 
     _beginDrag(target, event, toPoint) {
+        // 選択中のフリーコマの外周/内側をつかむと、コマごと移動する
+        if (target.type === 'panel' && target.id === this.selectedId) {
+            const selected = this.resolved?.panels.find(p => p.id === target.id);
+            const start = toPoint(event);
+            if (selected?.free && start) {
+                target = { type: 'move', id: target.id, startQuad: selected.quad.map(q => ({ ...q })), startPoint: start };
+            }
+        }
         if (target.type === 'panel') {
             this.selectedId = target.id;
             this._syncControls();
@@ -536,6 +564,8 @@ export class PanelLayoutPopup {
             if (ratio !== null) this.tree = updateSplit(this.tree, drag.id, { ratio });
         } else if (drag.type === 'corner') {
             this.tree = dragPanelCorner(this.tree, this.resolved, drag.id, drag.index, pt);
+        } else if (drag.type === 'move') {
+            this.tree = moveFreePanel(this.tree, drag.id, drag.startQuad, pt.x - drag.startPoint.x, pt.y - drag.startPoint.y);
         }
         this._persist();
         this._redraw();
@@ -679,10 +709,11 @@ export class PanelLayoutPopup {
 
     // ------------------------------------------------------------ 確定
 
-    _layoutMeta(role, groupId) {
+    _layoutMeta(role, groupId, panelId = null) {
         return sanitizePanelLayoutData({
             groupId,
             role,
+            panelId,
             tree: this.tree,
             params: this.params,
             color: this.color,
@@ -690,20 +721,21 @@ export class PanelLayoutPopup {
         });
     }
 
-    _rasterFor(role, resolved) {
+    /** コマ別Layer用のRaster(role: paper / inner / lines)。外接矩形だけの小さなRaster。 */
+    _panelRaster(role, panelId, resolved) {
         const size = this._canvasSize();
-        if (role === 'inner') {
-            return {
-                ok: true,
-                width: size.width,
-                height: size.height,
-                pixels: new Uint8ClampedArray(size.width * size.height * 4),
-                rasterBounds: { x: 0, y: 0, width: size.width, height: size.height }
-            };
-        }
+        const base = { ...size, only: panelId, lineWidth: this.params.lineWidth };
+        if (role === 'inner') return emptyPanelRaster(resolved, base);
         return role === 'paper'
-            ? rasterizePanelFrames(resolved, { ...size, mode: 'fill', color: this.paperColor })
-            : rasterizePanelFrames(resolved, { ...size, mode: 'lines', lineWidth: this.params.lineWidth, color: this.color });
+            ? rasterizePanelFrames(resolved, { ...base, mode: 'fill', color: this.paperColor })
+            : rasterizePanelFrames(resolved, { ...base, mode: 'lines', color: this.color });
+    }
+
+    /** 「枠線のみ」出力用: 全コマの枠線を1枚のキャンバス全体Rasterへ。 */
+    _wholeLinesRaster(resolved) {
+        return rasterizePanelFrames(resolved, {
+            ...this._canvasSize(), mode: 'lines', lineWidth: this.params.lineWidth, color: this.color
+        });
     }
 
     _guard() {
@@ -718,7 +750,7 @@ export class PanelLayoutPopup {
         return true;
     }
 
-    _createLayer(raster, name, role, groupId) {
+    _createLayer(raster, name, role, groupId, panelId = null) {
         const created = this.layerSystem.createRasterLayerFromSnapshot({
             width: raster.width,
             height: raster.height,
@@ -728,7 +760,7 @@ export class PanelLayoutPopup {
             pathsData: []
         }, { name, historyName: 'panel-layout-layer', source: 'panel-layout' });
         if (!created?.layer?.layerData) return null;
-        created.layer.layerData.panelLayout = this._layoutMeta(role, groupId);
+        created.layer.layerData.panelLayout = this._layoutMeta(role, groupId, panelId);
         this.eventBus?.emit('layer:content-changed', { layerId: created.layer.layerData.id, source: 'panel-layout' });
         return created;
     }
@@ -739,31 +771,36 @@ export class PanelLayoutPopup {
         return this.layerSystem.setLayerClippingMode(index, mode, { recordHistory: false });
     }
 
-    apply() {
-        if (!this._guard()) return { ok: false };
-        const size = this._canvasSize();
-        const resolved = resolvePanelLayout(this.tree, size, this.params);
-        const groupId = newGroupId();
-        const roles = this.outputMode === 'paper' ? ['paper', 'inner', 'lines'] : ['lines'];
-        const names = { paper: 'コマ白', inner: 'コマ内描画', lines: 'コマ枠' };
-        let recorded = 0;
-        let failure = null;
-        const memberIds = [];
+    /** 作成順: 番号の大きい順(コマ1が一番上)。フリーコマは最後=最前面。 */
+    _creationOrder(resolved) {
+        const live = resolved.panels.filter(p => !p.deleted);
+        const byNumberDesc = (a, b) => (b.number ?? 0) - (a.number ?? 0);
+        return [...live.filter(p => !p.free).sort(byNumberDesc), ...live.filter(p => p.free).sort(byNumberDesc)];
+    }
 
-        for (const role of roles) {
-            const raster = this._rasterFor(role, resolved);
-            if (!raster.ok) { failure = raster.reason; break; }
+    /**
+     * 1コマ分の `コマN` フォルダ(コマN枠 / コマN内描画[クリッピング] / コマN白)を作る。
+     * 記録したhistory commandの数を返す(呼び出し側でまとめて1回のUndoにする)。
+     */
+    _createPanelSet(panel, resolved, groupId) {
+        const label = `コマ${panel.number}`;
+        const roles = [['paper', `${label} 白`], ['inner', `${label} 内描画`], ['lines', `${label} 枠`]];
+        let count = 0;
+        const ids = [];
+        for (const [role, name] of roles) {
+            const raster = this._panelRaster(role, panel.id, resolved);
+            if (!raster.ok) return { count, error: raster.reason };
             let created = null;
             try {
-                created = this._createLayer(raster, names[role], role, groupId);
+                created = this._createLayer(raster, name, role, groupId, panel.id);
             } catch (error) {
                 created = null;
             }
-            if (!created) { failure = 'コマ枠レイヤーを作成できません'; break; }
-            recorded += 1;
-            memberIds.push(created.layer.layerData.id);
+            if (!created) return { count, error: 'コマ枠レイヤーを作成できません' };
+            count += 1;
+            const layerId = created.layer.layerData.id;
+            ids.push(layerId);
             if (role === 'inner') {
-                const layerId = created.layer.layerData.id;
                 this._setClipping(layerId, 'normal');
                 this.history.record({
                     name: 'panel-layout-clipping',
@@ -771,23 +808,45 @@ export class PanelLayoutPopup {
                     undo: () => this._setClipping(layerId, 'none'),
                     meta: { type: 'panel-layout-clipping', layerId }
                 });
-                recorded += 1;
+                count += 1;
             }
         }
+        const folder = this.layerSystem.createFolder?.(label);
+        if (folder?.layer?.layerData) {
+            count += 1;
+            folder.layer.layerData.panelLayout = this._layoutMeta('folder', groupId, panel.id);
+            const folderId = folder.layer.layerData.id;
+            for (const id of ids) {
+                if (this.layerSystem.moveLayerIntoFolder(id, folderId)) count += 1;
+            }
+            this.layerSystem.refreshClippingMasks?.();
+        }
+        return { count };
+    }
 
-        // 白コマ / コマ内描画 / 枠線 は1セットとして専用フォルダへ収納する(下から paper, inner, lines の順)
-        if (!failure && roles.length > 1) {
-            const folder = this.layerSystem.createFolder?.('コマ割り');
-            if (folder?.layer?.layerData) {
-                recorded += 1;
-                folder.layer.layerData.panelLayout = this._layoutMeta('folder', groupId);
-                const folderId = folder.layer.layerData.id;
-                for (const id of memberIds) {
-                    const alreadyInside = this.layerSystem.getLayers()
-                        .find(l => l.layerData?.id === id)?.layerData?.parentId === folderId;
-                    if (!alreadyInside && this.layerSystem.moveLayerIntoFolder(id, folderId)) recorded += 1;
-                }
-                this.layerSystem.refreshClippingMasks?.();
+    apply() {
+        if (!this._guard()) return { ok: false };
+        const size = this._canvasSize();
+        const resolved = resolvePanelLayout(this.tree, size, this.params);
+        const groupId = newGroupId();
+        let recorded = 0;
+        let failure = null;
+
+        if (this.outputMode === 'paper') {
+            // コマごとに1フォルダ(コマ1 / コマ2 …)。それぞれが 枠 / 内描画(クリッピング) / 白 を持つ。
+            for (const panel of this._creationOrder(resolved)) {
+                const result = this._createPanelSet(panel, resolved, groupId);
+                recorded += result.count;
+                if (result.error) { failure = result.error; break; }
+            }
+        } else {
+            const raster = this._wholeLinesRaster(resolved);
+            if (!raster.ok) {
+                failure = raster.reason;
+            } else {
+                const created = this._createLayer(raster, 'コマ枠', 'lines', groupId, null);
+                if (created) recorded += 1;
+                else failure = 'コマ枠レイヤーを作成できません';
             }
         }
 
@@ -799,39 +858,99 @@ export class PanelLayoutPopup {
         }
         this.editing = { groupId };
         this._syncControls();
-        showFeedbackToast(`コマ割りを追加しました（${resolved.panels.length}コマ）`);
-        return { ok: true, groupId, panelCount: resolved.panels.length };
+        showFeedbackToast(`コマ割りを追加しました（${this._creationOrder(resolved).length}コマ）`);
+        return { ok: true, groupId, panelCount: resolved.panels.filter(p => !p.deleted).length };
     }
 
-    /** 再編集中のgroupの枠Layer(role: lines / paper)の画素とvector dataを置き換える。 */
+    /**
+     * 再編集中のgroupを更新する。既存コマのLayerは画素・名前・dataを置換(内描画の絵は保持)、
+     * 新しく増えたコマは新規フォルダを追加、消えた/削除したコマのLayerは触らない。1回のUndoにまとめる。
+     */
     update() {
         if (!this.editing || !this._guard()) return { ok: false };
         const groupId = this.editing.groupId;
         const resolved = resolvePanelLayout(this.tree, this._canvasSize(), this.params);
-        const targets = this.layerSystem.getLayers().filter(l => {
-            const pl = l.layerData?.panelLayout;
-            return pl?.groupId === groupId && (pl.role === 'lines' || pl.role === 'paper' || pl.role === 'inner');
-        });
-        if (!targets.length) {
+        const members = this.layerSystem.getLayers().filter(l => l.layerData?.panelLayout?.groupId === groupId);
+        if (!members.length) {
             showFeedbackToast('再編集中のコマ枠Layerが見つかりません');
             this.editing = null;
             this._syncControls();
             return { ok: false };
         }
 
+        let recorded = 0;
         const entries = [];
-        for (const layer of targets) {
-            const role = layer.layerData.panelLayout.role;
-            const before = this.layerSystem.createLayerRasterSnapshot(layer);
-            const metaBefore = layer.layerData.panelLayout;
-            const metaAfter = this._layoutMeta(role, groupId);
-            if (role === 'inner') {
-                entries.push({ layer, before: null, after: null, metaBefore, metaAfter });
-                continue;
-            }
-            const raster = this._rasterFor(role, resolved);
+        const perPanel = members.some(l => l.layerData.panelLayout.panelId);
+
+        if (!perPanel) {
+            const raster = this._wholeLinesRaster(resolved);
             if (!raster.ok) { showFeedbackToast(raster.reason); return { ok: false }; }
-            const after = {
+            for (const layer of members.filter(l => l.layerData.panelLayout.role === 'lines')) {
+                entries.push(this._buildEntry(layer, 'lines', null, raster, layer.layerData.name));
+            }
+        } else {
+            const byPanel = new Map();
+            for (const layer of members) {
+                const { panelId, role } = layer.layerData.panelLayout;
+                if (!panelId) continue;
+                if (!byPanel.has(panelId)) byPanel.set(panelId, {});
+                byPanel.get(panelId)[role] = layer;
+            }
+            const live = this._creationOrder(resolved);
+            for (const panel of live) {
+                const set = byPanel.get(panel.id);
+                if (!set || !(set.paper || set.lines)) {
+                    const result = this._createPanelSet(panel, resolved, groupId);
+                    recorded += result.count;
+                    if (result.error) { showFeedbackToast(result.error); break; }
+                    continue;
+                }
+                const label = `コマ${panel.number}`;
+                const names = { paper: `${label} 白`, inner: `${label} 内描画`, lines: `${label} 枠`, folder: label };
+                for (const role of ['paper', 'inner', 'lines', 'folder']) {
+                    const layer = set[role];
+                    if (!layer) continue;
+                    const raster = role === 'paper' || role === 'lines' ? this._panelRaster(role, panel.id, resolved) : null;
+                    if (raster && !raster.ok) { showFeedbackToast(raster.reason); return { ok: false }; }
+                    entries.push(this._buildEntry(layer, role, panel.id, raster, names[role]));
+                }
+            }
+        }
+
+        if (entries.length) {
+            const applyEntries = (useAfter) => {
+                for (const entry of entries) {
+                    const snapshot = useAfter ? entry.after : entry.before;
+                    if (snapshot) this.layerSystem.restoreLayerRasterSnapshot(snapshot);
+                    entry.layer.layerData.panelLayout = useAfter ? entry.metaAfter : entry.metaBefore;
+                    entry.layer.layerData.name = useAfter ? entry.nameAfter : entry.nameBefore;
+                    this.eventBus?.emit('layer:content-changed', { layerId: entry.layer.layerData.id, source: 'panel-layout-update' });
+                }
+                this.layerSystem._emitPanelUpdateRequest?.();
+                this.eventBus?.emit('panel-layout:updated', { groupId });
+            };
+            applyEntries(true);
+            this.history.record({
+                name: 'panel-layout-update',
+                do: () => applyEntries(true),
+                undo: () => applyEntries(false),
+                byteSize: entries.reduce((sum, e) => sum + (e.before?.pixels?.byteLength || 0) + (e.after?.pixels?.byteLength || 0), 0),
+                meta: { type: 'panel-layout-update', groupId }
+            });
+            recorded += 1;
+        }
+        if (recorded > 1) this.history.mergeLastCommands(recorded, 'panel-layout-update', { type: 'panel-layout-update', groupId });
+        showFeedbackToast(`コマ枠を更新しました（${resolved.panels.filter(p => !p.deleted).length}コマ）`);
+        return { ok: true, groupId };
+    }
+
+    _buildEntry(layer, role, panelId, raster, nameAfter) {
+        const groupId = layer.layerData.panelLayout.groupId;
+        let before = null;
+        let after = null;
+        if (raster) {
+            before = this.layerSystem.createLayerRasterSnapshot(layer);
+            after = {
                 ...before,
                 width: raster.width,
                 height: raster.height,
@@ -840,28 +959,16 @@ export class PanelLayoutPopup {
                 paths: [],
                 pathsData: []
             };
-            entries.push({ layer, before, after, metaBefore, metaAfter });
         }
-
-        const applyEntries = (useAfter) => {
-            for (const entry of entries) {
-                const snapshot = useAfter ? entry.after : entry.before;
-                if (snapshot) this.layerSystem.restoreLayerRasterSnapshot(snapshot);
-                entry.layer.layerData.panelLayout = useAfter ? entry.metaAfter : entry.metaBefore;
-                this.eventBus?.emit('layer:content-changed', { layerId: entry.layer.layerData.id, source: 'panel-layout-update' });
-            }
-            this.eventBus?.emit('panel-layout:updated', { groupId });
+        return {
+            layer,
+            before,
+            after,
+            metaBefore: layer.layerData.panelLayout,
+            metaAfter: this._layoutMeta(role, groupId, panelId),
+            nameBefore: layer.layerData.name,
+            nameAfter
         };
-        applyEntries(true);
-        this.history.record({
-            name: 'panel-layout-update',
-            do: () => applyEntries(true),
-            undo: () => applyEntries(false),
-            byteSize: entries.reduce((sum, e) => sum + (e.before?.pixels?.byteLength || 0) + (e.after?.pixels?.byteLength || 0), 0),
-            meta: { type: 'panel-layout-update', groupId }
-        });
-        showFeedbackToast(`コマ枠を更新しました（${resolved.panels.length}コマ）`);
-        return { ok: true, groupId };
     }
 
     loadFromActiveLayer() {
@@ -874,7 +981,7 @@ export class PanelLayoutPopup {
         this.params = data.params;
         this.color = data.color;
         this.paperColor = data.paperColor;
-        if (data.role === 'paper' || data.role === 'inner' || data.role === 'folder') this.outputMode = 'paper';
+        this.outputMode = data.panelId || data.role === 'paper' || data.role === 'inner' || data.role === 'folder' ? 'paper' : 'lines';
         this.selectedId = null;
         this.editing = data.groupId ? { groupId: data.groupId } : null;
         this.popup.querySelector('[data-color="line"]').value = this.color;
