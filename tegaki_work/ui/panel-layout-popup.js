@@ -47,6 +47,7 @@ import {
 } from '../system/panel-layout.js';
 import { emptyPanelRaster, rasterizePanelFrames } from '../system/panel-layout-raster.js';
 import { PanelLayoutOverlay } from './panel-layout-overlay.js';
+import { mountMangaTabs, noteMangaTabShown } from './manga-tabs.js';
 import { attachNumericField } from './numeric-field.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { showFeedbackToast } from './feedback-toast.js';
@@ -206,6 +207,7 @@ export class PanelLayoutPopup {
 
         this.popup.innerHTML = `
             ${closeBtn}
+            <div class="manga-tabs-host" data-role="manga-tabs"></div>
             <div class="pl-title">コマ割り <span class="pl-edit-status" data-role="edit-status"></span></div>
             <div class="pl-presets" role="group" aria-label="プリセット">${presetButtons}</div>
             <canvas class="pl-preview" width="${PREVIEW_MAX.width}" height="${PREVIEW_MAX.height}" aria-label="コマ割りプレビュー"></canvas>
@@ -1025,6 +1027,8 @@ export class PanelLayoutPopup {
         if (!this.popup) return;
         this.popup.classList.add('show');
         this.isVisible = true;
+        mountMangaTabs(this.popup.querySelector('[data-role="manga-tabs"]'), 'panelLayout');
+        noteMangaTabShown('panelLayout');
         this._syncControls();
         this._redraw();
         this._syncOverlayVisibility();

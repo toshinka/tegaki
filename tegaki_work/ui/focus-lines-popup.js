@@ -27,6 +27,7 @@ import {
 } from '../system/focus-lines.js';
 import { rasterizeFocusLines } from '../system/focus-lines-raster.js';
 import { FocusLinesOverlay } from './focus-lines-overlay.js';
+import { mountMangaTabs, noteMangaTabShown } from './manga-tabs.js';
 import { attachNumericField } from './numeric-field.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { showFeedbackToast } from './feedback-toast.js';
@@ -139,6 +140,7 @@ export class FocusLinesPopup {
 
         this.popup.innerHTML = `
             ${closeBtn}
+            <div class="manga-tabs-host" data-role="manga-tabs"></div>
             <div class="pl-title">集中線 <span class="pl-edit-status" data-role="edit-status"></span></div>
             <div class="pl-presets" role="group" aria-label="種類">${styles}</div>
             <canvas class="pl-preview" width="${PREVIEW_MAX.width}" height="${PREVIEW_MAX.height}" aria-label="集中線プレビュー"></canvas>
@@ -524,6 +526,8 @@ export class FocusLinesPopup {
         if (!this.popup) return;
         this.popup.classList.add('show');
         this.isVisible = true;
+        mountMangaTabs(this.popup.querySelector('[data-role="manga-tabs"]'), 'focusLines');
+        noteMangaTabShown('focusLines');
         this._syncControls();
         this._redraw();
         this._syncOverlayVisibility();

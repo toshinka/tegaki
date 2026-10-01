@@ -18,13 +18,15 @@ import { DOMBuilder } from './dom-builder.js';
 import { SliderUtils } from './slider-utils.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { showFeedbackToast } from './feedback-toast.js';
+import { MANGA_TABS, getLastMangaTab } from './manga-tabs.js';
 
 const SIDEBAR_POPUP_BUTTONS = Object.freeze({
     album: 'library-tool',
     referencePreview: 'reference-preview-tool',
     export: 'export-tool',
     panelLayout: 'panel-layout-tool',
-    focusLines: 'focus-lines-tool',
+    focusLines: 'panel-layout-tool',
+    balloon: 'panel-layout-tool',
     resize: 'resize-tool',
     quickAccess: 'quick-access-tool',
     animationTable: 'gif-animation-tool',
@@ -689,11 +691,10 @@ export class UIController {
             'quick-access-tool': () => {
                 this.toggleQuickAccessPopup();
             },
-            'focus-lines-tool': () => {
-                this.togglePopup('focusLines');
-            },
             'panel-layout-tool': () => {
-                this.togglePopup('panelLayout');
+                // 漫画ツール: 表示中のタブがあれば閉じ、なければ最後に使ったタブを開く
+                const visible = MANGA_TABS.find(tab => this.popupManager?.isVisible?.(tab.id));
+                this.togglePopup(visible ? visible.id : getLastMangaTab());
             },
             'resize-tool': () => {
                 this.togglePopup('resize');

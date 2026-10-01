@@ -43,6 +43,11 @@
 - 数値はダブルクリックで直接入力・ホイール増減（`ui/numeric-field.js`、コマ割りpopupにも導入済み）。`Shift+F`がF1〜F12抑止に巻き込まれていた問題を修正。
 - 検証: `verify-focus-lines.mjs`、`vite build`、Chromium実操作。Owner実機（液タブ）は未確認。
 
+### MANGA TOOLS TABS — 漫画ツールのタブ化（2026-10-02）
+
+状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。サイドバーは「漫画ツール」1アイコン（旧: コマ割り/集中線の2アイコン）。窓の上端に長丸タブ（`コマ | 集中線`、今後`吹き出し`/`トーン`を追加）。
+- 部品: `ui/pill-tabs.js` + `styles/components/pill-tabs.css`（LAYER/TRANSFORM/RIGと同じtoken・寸法の長丸タブ。右ワークスペースのタブをこの部品へ寄せる統一は別カード）。切替は`ui/manga-tabs.js`（各ツールは従来どおり別popup。タブ切替で同じ位置に入れ替え、最後に使ったタブを記録）。ショートカット(Shift+K/Shift+F)は従来どおり直接開く。新しいツールは`MANGA_TABS`へ1行足してpopupを登録するだけ。
+
 ### OWNER BACKLOG — 未着手の要望（2026-10-01記録、優先順はOwner判断）
 
 優先はメインペンの「レスポンスと美観」。鉛筆風など派生ブラシは遠回りなので避ける。以下は思い出し用の控え（設計・着手は別途カード化）:
