@@ -55,6 +55,83 @@ function unionRect(a, b) {
 }
 // 入り抜き端の最小径倍率(0だと線端が消えて見えるため少し残す)。
 const PEN_TAPER_MIN_SCALE = 0.08;
+// ヒゲ判定: 線端の短い区間が、その手前の進行方向からこの角度以上折れていればヒゲとみなす。
+const PEN_HOOK_MIN_ANGLE_DEG = 70;
+
+/** 点列を先頭からの累積距離で引けるようにする。 */
+function cumulativeLengths(points) {
+    const lengths = [0];
+    for (let i = 1; i < points.length; i++) {
+        lengths[i] = lengths[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    }
+    return lengths;
+}
+
+function angleBetweenDeg(ax, ay, bx, by) {
+    const la = Math.hypot(ax, ay);
+    const lb = Math.hypot(bx, by);
+    if (!(la > 1e-6) || !(lb > 1e-6)) return 0;
+    const cos = Math.max(-1, Math.min(1, (ax * bx + ay * by) / (la * lb)));
+    return (Math.acos(cos) * 180) / Math.PI;
+}
+
+/**
+ * 線端のヒゲ除去。終端(または始端)からhookLength以内の短い区間が、その手前2×hookLengthの
+ * 進行方向から PEN_HOOK_MIN_ANGLE_DEG 以上折れていれば、その区間を切り落とす。
+ * 線全体がヒゲ判定に必要な長さ(4×hookLength)に満たない短い線は変更しない。
+ * @returns {{points: Array, trimmed: boolean, trimmedStart: number, trimmedEnd: number}}
+ */
+export function trimStrokeHooks(points, hookLength) {
+    const result = { points, trimmed: false, trimmedStart: 0, trimmedEnd: 0 };
+    if (!Array.isArray(points) || points.length < 4 || !(hookLength > 0)) return result;
+    const lengths = cumulativeLengths(points);
+    const total = lengths[lengths.length - 1];
+    if (total < hookLength * 4) return result;
+
+    const indexAtLength = (target) => {
+        let i = 0;
+        while (i < lengths.length - 1 && lengths[i] < target) i++;
+        return i;
+    };
+
+    // 終端: tail = [tailStart .. last], 参照方向 = [refStart .. tailStart]
+    let endIndex = points.length - 1;
+    const tailStart = indexAtLength(total - hookLength);
+    const refStartEnd = indexAtLength(total - hookLength * 3);
+    if (tailStart > refStartEnd && tailStart < endIndex) {
+        const ref = points[tailStart];
+        const angle = angleBetweenDeg(
+            ref.x - points[refStartEnd].x, ref.y - points[refStartEnd].y,
+            points[endIndex].x - ref.x, points[endIndex].y - ref.y
+        );
+        if (angle >= PEN_HOOK_MIN_ANGLE_DEG) {
+            result.trimmedEnd = lengths[endIndex] - lengths[tailStart];
+            endIndex = tailStart;
+        }
+    }
+
+    // 始端: head = [0 .. headEnd], 参照方向 = [headEnd .. refEnd]
+    let startIndex = 0;
+    const headEnd = indexAtLength(hookLength);
+    const refEndStart = indexAtLength(hookLength * 3);
+    if (headEnd > 0 && refEndStart > headEnd && refEndStart <= endIndex) {
+        const ref = points[headEnd];
+        const angle = angleBetweenDeg(
+            ref.x - points[0].x, ref.y - points[0].y,
+            points[refEndStart].x - ref.x, points[refEndStart].y - ref.y
+        );
+        if (angle >= PEN_HOOK_MIN_ANGLE_DEG) {
+            result.trimmedStart = lengths[headEnd];
+            startIndex = headEnd;
+        }
+    }
+
+    if (startIndex > 0 || endIndex < points.length - 1) {
+        result.points = points.slice(startIndex, endIndex + 1);
+        result.trimmed = true;
+    }
+    return result;
+}
 // 筆圧安定化(One-Euro)の微分cutoff(Hz)と、変化速度に応じたcutoff上昇量(Hz per pressure/s)。
 const PEN_PRESSURE_FILTER_DERIVATIVE_CUTOFF = 1.0;
 const PEN_PRESSURE_FILTER_BETA = 6.0;
@@ -894,6 +971,29 @@ export class BrushCore {
         state.tipRect = null;
     }
 
+    /**
+     * ヒゲ判定に使う線端の長さ(Layer px)。ペンの揺れは画面上の大きさで起きるため、
+     * 画面上penHookTrimScreenPx相当を現在の表示倍率でLayer pxへ換算する。0でヒゲ除去OFF。
+     */
+    _getHookTrimLength() {
+        const engine = window.TEGAKI_CONFIG?.brushEngine || {};
+        const screenPx = Math.max(0, Number(engine.penHookTrimScreenPx ?? 10));
+        if (!(screenPx > 0) || !this.coordinateSystem || !this.strokeTargetLayer) return 0;
+        try {
+            const toLocal = (x, y) => {
+                const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(x, y);
+                const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
+                return this.coordinateSystem.worldToLocal(worldX, worldY, this.strokeTargetLayer);
+            };
+            const a = toLocal(0, 0);
+            const b = toLocal(100, 0);
+            const localPerScreen = Math.hypot(b.localX - a.localX, b.localY - a.localY) / 100;
+            return Number.isFinite(localPerScreen) && localPerScreen > 0 ? screenPx * localPerScreen : screenPx;
+        } catch (_error) {
+            return screenPx;
+        }
+    }
+
     _getPenTaperLengths() {
         const engine = window.TEGAKI_CONFIG?.brushEngine || {};
         const get = (key, fallback) => {
@@ -926,9 +1026,17 @@ export class BrushCore {
         const state = this.airbrushState;
         // recorderの点は筆圧の較正・平滑化が別にかかるため、realtimeで実際に描いた点列で描き直す。
         const trace = Array.isArray(this.penRenderTrace) ? this.penRenderTrace : [];
-        const points = trace.length >= 2 ? trace : (strokeData?.points || []);
+        const sourcePoints = trace.length >= 2 ? trace : (strokeData?.points || []);
+        // 線端のヒゲ(ペンを置く/離す瞬間の急な折れ返し)を除いた点列で描き直す。
+        const hookTrim = strokeData?.isSingleDot === true
+            ? { points: sourcePoints, trimmed: false }
+            : trimStrokeHooks(sourcePoints, this._getHookTrimLength());
+        const points = hookTrim.points;
         const { taperIn, taperOut } = this._getPenTaperLengths();
-        if (!state?.maskTexture || state.dabMode !== 'pen' || !(taperIn > 0 || taperOut > 0)) return false;
+        if (this.strokeInputProfile) {
+            this.strokeInputProfile.hookTrim = { start: hookTrim.trimmedStart || 0, end: hookTrim.trimmedEnd || 0 };
+        }
+        if (!state?.maskTexture || state.dabMode !== 'pen' || !(taperIn > 0 || taperOut > 0 || hookTrim.trimmed)) return false;
         if (strokeData?.isSingleDot === true || points.length < 2) return false;
         const renderer = this.layerManager.app?.renderer;
         if (!renderer) return false;

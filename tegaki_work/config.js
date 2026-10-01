@@ -105,6 +105,8 @@ export const TEGAKI_CONFIG = {
         penPressureSmoothing: 0.5,
         // 曲線補間の1sample遅れを、最後に描いた点→現在の入力点をpreview側だけに描いて埋める(確定線は不変)。
         penLiveTip: true,
+        // 線端のヒゲ除去: 画面上この長さ(px)以内の線端が急に折れていれば、pen-up時に切り落とす。0でOFF。
+        penHookTrimScreenPx: 10,
         penTaperIn: 0,
         penTaperOut: 0,
         eraserDabSoftness: 0,

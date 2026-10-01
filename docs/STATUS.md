@@ -38,6 +38,8 @@
 - 自動検証: `build/verify-pen-brush-engine.mjs`（drawing suite）。筆圧カーブ、dab falloff、プリセット正規化/一致、SettingsManager新規key、tilt座標変換（反転/回転）、速度応答、dab renderer（pen spacing・tilt楕円・pool再利用時の回転/伸長/偏位リセット・spacing持ち越し）。意図的な改変2件（pool回転リセット除去、カーブのovershoot防止除去）を検出できることを確認。
 - 描き味追加（2026-10-01）: ペン/消しゴムの縁の柔らかさ、消しゴムの筆圧で消す強さ（既定0）。ペン縁のAA幅`penEdgeAA`（画素一定、既定1px。硬いdabは縁の遷移が1px未満で入り抜き・筆圧変化が2px段差になっていた→最大段差1.25→0.62px、線幅は50%被覆位置補正で維持）。入り抜き`penTaperIn/Out`（画素、既定0。入りは描画中、抜きはpen-up時に記録点からstroke maskを再構築、筆圧なし/マウスでも有効、つけペン風presetに12/40）。dab texture cacheが描画待ちdabの使うtextureを破棄して線が消える不具合を修正（使用中は保持しrelease時に整理、上限40）。
 - メインペン（レスポンス・美観）: realtime筆圧が無平滑だった（既存の距離filterはrecorder側のみ）→ One-Euro安定化`penPressureSmoothing`（既定0.5、筆圧揺れ0.047→0.024、速い強弱は1sample以内に追従）。ライブ先端`penLiveTip`（曲線補間の1sample遅れを、stroke maskの複製へ同じmax合成で先端だけ描いて埋める。表示は確定後と同色、確定線は先端ON/OFFで画素一致、不透明度0.5でも同色）。
+- 線端のヒゲ除去`penHookTrimScreenPx`（既定10、画面px）: pen-up時、線端の画面10px以内が手前の進行方向から70°以上折れていれば切り落として描き直す（入り抜きと同じ再構築、短い線・緩い曲がりは対象外）。
+- PixiJS 8.21更新カードへの入力（brush改修が依存するPixi内部）: `RenderTexture.create({format:'rgba16float'})`と`renderer.context.extensions.colorBufferFloat`判定、blendMode `max` / `none` / `erase` / `inherit`、`TextureSource.autoGenerateMipmaps / mipLevelCount / updateMipmaps()`と`style.update()`（`layer-display-mipmaps.js`は`renderer.render`を包む）、`new Texture({source, frame})`の部分texture、`extract.*({resolution:1})`、dab Sprite poolでのtexture差し替え。TexturePool / RenderTarget cleanupの変更点はここを優先確認。
 - 既知差分: 縮小表示中はmip分のGPU memoryが表示Layerごとに約+33%。未着手候補: 筆圧カーブ、tilt/速度、静止時buildup、dab texture/grain。
 
 ### CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17 Correction Pass & Off-Canvas Investigation)

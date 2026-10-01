@@ -38,7 +38,7 @@ const {
     brushPresetMatches,
     normalizeUserBrushPresets
 } = await import('../system/drawing/brush-presets.js');
-const { BrushCore } = await import('../system/drawing/brush-core.js');
+const { BrushCore, trimStrokeHooks } = await import('../system/drawing/brush-core.js');
 const { SettingsManager } = await import('../system/settings-manager.js');
 const { Texture } = await import('pixi.js');
 
@@ -306,6 +306,35 @@ const near = (actual, expected, epsilon, message) => {
     const off = runFilter(0, noisy);
     assert.deepEqual(off, noisy.map(([v]) => v), 'strength 0 passes pressure through unchanged');
     window.TegakiSettingsManager = undefined;
+}
+
+// ============================================================================
+// 6c. 線端のヒゲ除去
+// ============================================================================
+{
+    const line = (x0, y0, x1, y1, n) => Array.from({ length: n + 1 }, (_, i) => ({
+        x: x0 + (x1 - x0) * i / n, y: y0 + (y1 - y0) * i / n, pressure: 0.6
+    }));
+    const straight = line(0, 0, 100, 0, 100);
+    const plain = trimStrokeHooks(straight, 10);
+    assert.equal(plain.trimmed, false, 'a straight stroke is not trimmed');
+
+    const endHook = [...straight, ...line(100, 0, 96, 6, 6).slice(1)];
+    const endResult = trimStrokeHooks(endHook, 10);
+    assert.ok(endResult.trimmed && endResult.trimmedEnd > 0, 'a sharp curl at the end is trimmed');
+    assert.ok(endResult.points.at(-1).x >= 90 && Math.abs(endResult.points.at(-1).y) < 1, 'the trimmed end stays on the main stroke');
+    assert.ok(endResult.trimmedEnd <= 10.5, 'no more than the hook length is removed');
+
+    const startHook = [...line(4, -6, 0, 0, 6), ...straight.slice(1)];
+    const startResult = trimStrokeHooks(startHook, 10);
+    assert.ok(startResult.trimmed && startResult.trimmedStart > 0, 'a sharp flick at the start is trimmed');
+
+    const gentle = [...straight, ...line(100, 0, 108, 2, 8).slice(1)];
+    assert.equal(trimStrokeHooks(gentle, 10).trimmed, false, 'a gentle bend at the end is kept');
+
+    const shortStroke = [...line(0, 0, 20, 0, 20), ...line(20, 0, 16, 6, 6).slice(1)];
+    assert.equal(trimStrokeHooks(shortStroke, 10).trimmed, false, 'short strokes are never trimmed');
+    assert.equal(trimStrokeHooks(endHook, 0).trimmed, false, 'hook length 0 disables trimming');
 }
 
 // ============================================================================
