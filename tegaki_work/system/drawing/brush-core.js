@@ -872,8 +872,15 @@ export class BrushCore {
         return this.historyBaselineScratchTexture;
     }
 
+    _isPatchHistoryMode(mode) {
+        if (mode === 'pen' || mode === 'eraser') return true;
+        // airbrushもdab到達範囲(半径0.5×size + scatter 0.2×size)がdirty rect padding(size+4)内に収まる。
+        return (mode === 'airbrush' || mode === 'airbrush-erase')
+            && window.TEGAKI_CONFIG?.brushEngine?.airbrushPatchHistory !== false;
+    }
+
     _isEligibleForGpuBaseline(mode, activeLayer, settings) {
-        if (mode !== 'pen' && mode !== 'eraser') return false;
+        if (!this._isPatchHistoryMode(mode)) return false;
         if (activeLayer?.layerData?.isAnimationWorkingLayer === true) return false;
         if (this._needsSelectionSnapshotForLayer(activeLayer)) return false;
         if (!activeLayer?.layerData?.renderTexture) return false;
@@ -2028,8 +2035,8 @@ export class BrushCore {
         const renderer = this.layerManager?.app?.renderer || window.app?.renderer;
         const renderTexture = layer.layerData?.renderTexture;
 
-        // Stage B: Pen / Eraser 限定 dirty rect patch History の試行
-        const isPatchEligible = (mode === 'pen' || mode === 'eraser')
+        // Stage B: Pen / Eraser / Airbrush の dirty rect patch History の試行
+        const isPatchEligible = this._isPatchHistoryMode(mode)
             && Array.isArray(strokePoints)
             && strokePoints.length > 0
             && renderer?.extract?.pixels
