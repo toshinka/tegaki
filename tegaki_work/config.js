@@ -520,6 +520,12 @@ export const TEGAKI_KEYMAP = {
             shift: true,
             description: '資料 / プレビュー'
         },
+        FOCUS_LINES_TOGGLE: {
+            key: 'KeyF',
+            ctrl: false,
+            shift: true,
+            description: '集中線'
+        },
         PANEL_LAYOUT_TOGGLE: {
             key: 'KeyK',
             ctrl: false,

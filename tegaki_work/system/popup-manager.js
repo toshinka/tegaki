@@ -272,6 +272,10 @@ export class PopupManager {
             if (exceptNames.has('panelLayout') && popupId === 'panel-layout-popup') {
                 return;
             }
+
+            if (exceptNames.has('focusLines') && popupId === 'focus-lines-popup') {
+                return;
+            }
             
             if (exceptNames.has(popupId.replace(/-popup$/, ''))) {
                 return;

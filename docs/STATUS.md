@@ -33,10 +33,18 @@
 - 検証: `verify-ruler.mjs`、drawing / panel-layout suite、vite build。Browser実操作で平行0°/90°/135°・放射線の吸着、Shiftドラッグの回転（90°、Ctrlスナップ）・移動、コマ割りpopup＋重ね表示を開いたままの吸着描画とShiftドラッグ。定規操作はHistoryに積まれない。Owner実機（液タブ）での操作感は今回の変更後は未確認。
 - 次段候補: 傾けられるグリッド、ドラフター型の直線定規、集中線生成ツール、QTP2行化。
 
+### FOCUS LINES — 集中線ツール（2026-10-02, WP-011）
+
+状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING（Ownerは最終受入・pushの権限をClaudeにも付与済み）。設計・操作・制約は[WP-011](work/WP-011-focus-lines.md)。
+- sidebar「集中線」(Shift+F)でpopup。集中線 / 細かい / 太い / ウニフラ / ベタ放射、本数・太さ・尖らせ・抜け(楕円)・長さ・ばらつき・色・seed。キャンバス上の重ね表示（中心と抜けのハンドル）、定規の中心を流用可。
+- 確定は通常Raster Layer「集中線」を1Undoで追加。`layerData.focusLines`(optional)をProjectへ保存・復元し、「レイヤーから再編集→更新」で置換できる。Raster/History/renderer/保存の正本は不変。
+- 数値はダブルクリックで直接入力・ホイール増減（`ui/numeric-field.js`、コマ割りpopupにも導入済み）。`Shift+F`がF1〜F12抑止に巻き込まれていた問題を修正。
+- 検証: `verify-focus-lines.mjs`、`vite build`、Chromium実操作。Owner実機（液タブ）は未確認。
+
 ### OWNER BACKLOG — 未着手の要望（2026-10-01記録、優先順はOwner判断）
 
 優先はメインペンの「レスポンスと美観」。鉛筆風など派生ブラシは遠回りなので避ける。以下は思い出し用の控え（設計・着手は別途カード化）:
-1. 集中線ツール（特に要望強）。
+1. 集中線ツール（特に要望強）。→ [WP-011](work/WP-011-focus-lines.md)で実装済み（Owner受入待ち）。
 2. 定規ツール（直線 / 縦横に傾けて斜めにも使えるグリッド）。
 3. 漫画用コマ割り＆編集ツール（クリスタ / メディバン / アルパカ相当）。→ 第一段を[WP-010](work/WP-010-panel-layout.md)で実装済み（Owner受入待ち）。
 4. トーン（スクリーントーン）系。

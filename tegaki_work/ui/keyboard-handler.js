@@ -103,7 +103,8 @@ export const KeyboardHandler = (function() {
         
         if (e.key === 'F2') return;
         if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
-        if (e.key.startsWith('F') && e.key.length <= 3) {
+        // F1〜F12だけを対象にする(Shift+Fの 'F' を巻き込まない)
+        if (/^F\d{1,2}$/.test(e.key)) {
             e.preventDefault();
             return;
         }
@@ -817,6 +818,11 @@ export const KeyboardHandler = (function() {
                 } else {
                     eventBus.emit('ui:toggle-quick-access');
                 }
+                event.preventDefault();
+                break;
+
+            case 'FOCUS_LINES_TOGGLE':
+                window.coreEngine?.popupManager?.toggle?.('focusLines');
                 event.preventDefault();
                 break;
 

@@ -27,6 +27,17 @@
     "docs/handoffs/2026-10-02-pen-ruler-to-next.md"
   ],
   "domains": {
+    "focus-lines": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": [
+        "tegaki_work/system/focus-lines.js",
+        "tegaki_work/system/focus-lines-raster.js",
+        "tegaki_work/ui/focus-lines-popup.js"
+      ],
+      "patterns": [
+        "^verify-focus-lines"
+      ]
+    },
     "ruler": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [

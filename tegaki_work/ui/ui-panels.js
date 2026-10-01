@@ -24,6 +24,7 @@ const SIDEBAR_POPUP_BUTTONS = Object.freeze({
     referencePreview: 'reference-preview-tool',
     export: 'export-tool',
     panelLayout: 'panel-layout-tool',
+    focusLines: 'focus-lines-tool',
     resize: 'resize-tool',
     quickAccess: 'quick-access-tool',
     animationTable: 'gif-animation-tool',
@@ -448,10 +449,11 @@ export class UIController {
             if (!e.target.closest('.popup-panel') && 
                 !e.target.closest('.album-overlay') &&
                 !e.target.closest('.panel-layout-overlay') &&
+                !e.target.closest('.focus-lines-overlay') &&
                 !e.target.closest('.layer-transform-panel') &&
                 !e.target.closest('.tool-button') &&
                 !e.target.closest('.layer-panel-container')) {
-                this.closeAllPopups(['quickAccess', 'settings', 'animationTable', 'referencePreview', 'panelLayout']);
+                this.closeAllPopups(['quickAccess', 'settings', 'animationTable', 'referencePreview', 'panelLayout', 'focusLines']);
             }
         });
     }
@@ -686,6 +688,9 @@ export class UIController {
         const toolMap = {
             'quick-access-tool': () => {
                 this.toggleQuickAccessPopup();
+            },
+            'focus-lines-tool': () => {
+                this.togglePopup('focusLines');
             },
             'panel-layout-tool': () => {
                 this.togglePopup('panelLayout');

@@ -556,6 +556,7 @@ export class SettingsPopup {
                     || action.startsWith('QUICK_ACCESS_')
                     || action.startsWith('REFERENCE_PREVIEW_')
                     || action.startsWith('PANEL_LAYOUT_')
+                    || action.startsWith('FOCUS_LINES_')
             }
         ];
         const shortcuts = TEGAKI_KEYMAP.getShortcutList();
