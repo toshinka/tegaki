@@ -283,6 +283,18 @@ export class SettingsPopup {
                 </div>
 
                 <div class="setting-group">
+                    <div class="setting-label">筆圧の安定化 (Pressure smoothing)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-pressure-smoothing-slider">
+                            <div class="slider-track" id="pen-pressure-smoothing-track"></div>
+                            <div class="slider-handle" id="pen-pressure-smoothing-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-pressure-smoothing-value">0.50</div>
+                    </div>
+                    <div class="setting-description">筆圧の細かな揺れで線幅が波打つのを抑えます。強弱の素早い変化は遅らせません。0でOFF。</div>
+                </div>
+
+                <div class="setting-group">
                     <div class="setting-label">速度で細く (Velocity)</div>
                     <div class="slider-container">
                         <div class="slider" id="pen-velocity-thinning-slider">
@@ -621,6 +633,10 @@ export class SettingsPopup {
             penVelocityThinningTrack: document.getElementById('pen-velocity-thinning-track'),
             penVelocityThinningHandle: document.getElementById('pen-velocity-thinning-handle'),
             penVelocityThinningValue: document.getElementById('pen-velocity-thinning-value'),
+            penPressureSmoothingSlider: document.getElementById('pen-pressure-smoothing-slider'),
+            penPressureSmoothingTrack: document.getElementById('pen-pressure-smoothing-track'),
+            penPressureSmoothingHandle: document.getElementById('pen-pressure-smoothing-handle'),
+            penPressureSmoothingValue: document.getElementById('pen-pressure-smoothing-value'),
             penTiltStrengthSlider: document.getElementById('pen-tilt-strength-slider'),
             penTiltStrengthTrack: document.getElementById('pen-tilt-strength-track'),
             penTiltStrengthHandle: document.getElementById('pen-tilt-strength-handle'),
@@ -775,7 +791,7 @@ export class SettingsPopup {
 
         [
             'pressure', 'smoothing', 'pressureOpacity', 'penVelocityThinning', 'penTiltStrength',
-            'penTaperIn', 'penTaperOut',
+            'penTaperIn', 'penTaperOut', 'penPressureSmoothing',
             'penDabSoftness', 'penEdgeAA', 'eraserDabSoftness', 'eraserPressureStrength',
             'airbrushFlow', 'airbrushSoftness', 'airbrushScatter', 'airbrushBuildupRate', 'airbrushTiltStrength'
         ].forEach(setupSliderEvents);
@@ -818,6 +834,7 @@ export class SettingsPopup {
             smoothing: { min: this.MIN_SMOOTHING, max: this.MAX_SMOOTHING, settingKey: 'smoothing' },
             pressureOpacity: { min: 0.0, max: 1.0, settingKey: 'pressureOpacityStrength' },
             penVelocityThinning: { min: 0.0, max: 0.9, settingKey: 'penVelocityThinning' },
+            penPressureSmoothing: { min: 0.0, max: 1.0, settingKey: 'penPressureSmoothing' },
             penTiltStrength: { min: 0.0, max: 1.0, settingKey: 'penTiltStrength' },
             penDabSoftness: { min: 0.0, max: 1.0, settingKey: 'penDabSoftness' },
             penTaperIn: { min: 0, max: 300, integer: true, settingKey: 'penTaperIn', format: (v) => (v <= 0 ? 'OFF' : `${v}px`) },
@@ -1001,6 +1018,7 @@ export class SettingsPopup {
         this._updateGenericSlider('airbrushBuildupRate', settings.airbrushBuildupRate ?? defaults.airbrushBuildupRate);
         this._updateGenericSlider('penVelocityThinning', settings.penVelocityThinning ?? defaults.penVelocityThinning);
         this._updateGenericSlider('penTiltStrength', settings.penTiltStrength ?? defaults.penTiltStrength);
+        this._updateGenericSlider('penPressureSmoothing', settings.penPressureSmoothing ?? defaults.penPressureSmoothing);
         this._updateGenericSlider('penTaperIn', settings.penTaperIn ?? defaults.penTaperIn);
         this._updateGenericSlider('penTaperOut', settings.penTaperOut ?? defaults.penTaperOut);
         this._updateGenericSlider('penDabSoftness', settings.penDabSoftness ?? defaults.penDabSoftness);

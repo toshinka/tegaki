@@ -12,6 +12,16 @@
 - 検証: 同一操作をrenderer解像度1 / 2で実行し、Layer画素・snapshot・undo2段・redo・History（patch、4.5MB）・PNG（renderToCanvas）が完全一致。2500px/6Layerで1frame 0.15ms→0.25〜0.41ms。静的verifier `build/verify-history-display-dpr-resolution.mjs`（history suite）がSprite / Container対象extractのresolution指定漏れを検出（修正前コードで失敗を確認）。
 - `displayDevicePixelRatio: true`で有効（起動時に反映、上限2x）。
 
+### OWNER BACKLOG — 未着手の要望（2026-10-01記録、優先順はOwner判断）
+
+優先はメインペンの「レスポンスと美観」。鉛筆風など派生ブラシは遠回りなので避ける。以下は思い出し用の控え（設計・着手は別途カード化）:
+1. 集中線ツール（特に要望強）。
+2. 定規ツール（直線 / 縦横に傾けて斜めにも使えるグリッド）。
+3. 漫画用コマ割り＆編集ツール（クリスタ / メディバン / アルパカ相当）。
+4. トーン（スクリーントーン）系。
+5. QTPのペンスロット: 「PEN · S4 · …」行を拡張ボタン置き場にし、押すとブラシプリセット（6枠程度、SVGのペンアイコンに番号）の行を出す。設定でpreset入れ替え。上記の後。
+6. GPUパーティクル効果（興味あり、token消費と相談）。
+
 ### BRUSH UPGRADE — Pen / Airbrush engine modernization（2026-10-01, branch `claude/brush-upgrade`, local / 未push）
 
 状態: TECHNICAL COMPLETE / OWNER 試用で好感触（実機液タブ）/ 最終受入・push未。全変更は `TEGAKI_CONFIG.brushEngine` のflagで旧挙動へ戻せる。
@@ -27,6 +37,7 @@
 - 不具合確認（2026-10-01）: 選択範囲あり（pen/eraser/airbrush/消しエアブラシ、確定後に範囲外不変・undo復元、描画中は範囲外も表示され確定時に除去＝旧ペンと同じ既存挙動）、クリッピング通常/反転（描画中・確定後とも正しく抜け、旧ペンと同一）、アニメ作業Layer（4tool描画・消去、History非記録、preview後始末）、30°回転+1.5倍+左右反転で実PointerEventの着地位置を確認し不具合なし。回転時の約1.5px下ずれは旧ペンも同値の既存挙動。
 - 自動検証: `build/verify-pen-brush-engine.mjs`（drawing suite）。筆圧カーブ、dab falloff、プリセット正規化/一致、SettingsManager新規key、tilt座標変換（反転/回転）、速度応答、dab renderer（pen spacing・tilt楕円・pool再利用時の回転/伸長/偏位リセット・spacing持ち越し）。意図的な改変2件（pool回転リセット除去、カーブのovershoot防止除去）を検出できることを確認。
 - 描き味追加（2026-10-01）: ペン/消しゴムの縁の柔らかさ、消しゴムの筆圧で消す強さ（既定0）。ペン縁のAA幅`penEdgeAA`（画素一定、既定1px。硬いdabは縁の遷移が1px未満で入り抜き・筆圧変化が2px段差になっていた→最大段差1.25→0.62px、線幅は50%被覆位置補正で維持）。入り抜き`penTaperIn/Out`（画素、既定0。入りは描画中、抜きはpen-up時に記録点からstroke maskを再構築、筆圧なし/マウスでも有効、つけペン風presetに12/40）。dab texture cacheが描画待ちdabの使うtextureを破棄して線が消える不具合を修正（使用中は保持しrelease時に整理、上限40）。
+- メインペン（レスポンス・美観）: realtime筆圧が無平滑だった（既存の距離filterはrecorder側のみ）→ One-Euro安定化`penPressureSmoothing`（既定0.5、筆圧揺れ0.047→0.024、速い強弱は1sample以内に追従）。ライブ先端`penLiveTip`（曲線補間の1sample遅れを、stroke maskの複製へ同じmax合成で先端だけ描いて埋める。表示は確定後と同色、確定線は先端ON/OFFで画素一致、不透明度0.5でも同色）。
 - 既知差分: 縮小表示中はmip分のGPU memoryが表示Layerごとに約+33%。未着手候補: 筆圧カーブ、tilt/速度、静止時buildup、dab texture/grain。
 
 ### CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17 Correction Pass & Off-Canvas Investigation)

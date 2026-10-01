@@ -55,6 +55,7 @@ export class SettingsManager {
             airbrushTiltStrength: this.config?.brushEngine?.airbrushTiltStrength ?? 0.5,
             penDabSoftness: this.config?.brushEngine?.penDabSoftness ?? 0,
             penEdgeAA: this.config?.brushEngine?.penEdgeAA ?? 0,
+            penPressureSmoothing: this.config?.brushEngine?.penPressureSmoothing ?? 0.5,
             penTaperIn: this.config?.brushEngine?.penTaperIn ?? 0,
             penTaperOut: this.config?.brushEngine?.penTaperOut ?? 0,
             eraserDabSoftness: this.config?.brushEngine?.eraserDabSoftness ?? 0,
@@ -198,6 +199,10 @@ export class SettingsManager {
                 const num = parseFloat(v);
                 return isNaN(num) ? undefined : Math.max(0.0, Math.min(4.0, num));
             },
+            penPressureSmoothing: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
             penTaperIn: (v) => {
                 const num = parseFloat(v);
                 return isNaN(num) ? undefined : Math.round(Math.max(0, Math.min(300, num)));
@@ -318,6 +323,7 @@ export class SettingsManager {
             'penTiltStrength',
             'penDabSoftness',
             'penEdgeAA',
+            'penPressureSmoothing',
             'penTaperIn',
             'penTaperOut',
             'eraserDabSoftness',
