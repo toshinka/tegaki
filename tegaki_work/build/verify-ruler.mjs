@@ -4,7 +4,9 @@ import {
     RULER_TYPES,
     applyRulerDrag,
     buildRulerGuideSegments,
+    RULER_OPTION_DEFAULTS,
     resolveRulerGrab,
+    sanitizeRulerOptions,
     sanitizeRulerState,
     snapPointToRuler,
     snapRulerAngle
@@ -88,6 +90,22 @@ const canvas = { width: 1000, height: 800 };
     for (const c of colors) assert.ok(allowed.has(c), `ruler guide color #${c} is not a futaba token`);
     assert.ok(colors.length > 0);
     assert.ok(!/getContext\(\s*['"]2d/.test(src), 'no Canvas2D in ruler system');
+}
+
+// ミニパネルのオプション: 既定は従来値、範囲外はclamp、間隔/本数/角度刻みが幾何へ反映される
+{
+    assert.deepEqual(sanitizeRulerOptions(null), { spacing: 48, spokes: 48, angleSnap: 15, showGuides: true });
+    assert.deepEqual(RULER_OPTION_DEFAULTS, { spacing: 48, spokes: 48, angleSnap: 15, showGuides: true });
+    const o = sanitizeRulerOptions({ spacing: 1, spokes: 9999.6, angleSnap: 'x', showGuides: false });
+    assert.deepEqual(o, { spacing: 12, spokes: 180, angleSnap: 15, showGuides: false });
+    const base = { type: 'parallel', center: { x: 500, y: 400 }, angle: 0 };
+    const wide = buildRulerGuideSegments({ ...base, spacing: 96 }, canvas, 1);
+    const normal = buildRulerGuideSegments(base, canvas, 1);
+    assert.ok(normal.lines.length > wide.lines.length * 1.8, 'wider spacing -> fewer guide lines');
+    assert.equal(buildRulerGuideSegments({ type: 'radial', center: { x: 0, y: 0 }, angle: 0, spokes: 12 }, canvas, 1).lines.length, 12);
+    const rot = resolveRulerGrab({ ...base }, { x: 600, y: 400 }, 1);
+    near(applyRulerDrag({ ...base, angleSnap: 45 }, rot, { x: 600, y: 470 }, { snapAngle: true }).angle, Math.PI / 4, 1e-9, '45deg step');
+    near(applyRulerDrag({ ...base }, rot, { x: 600, y: 470 }, { snapAngle: true }).angle, (30 * Math.PI) / 180, 1e-9, 'default 15deg step');
 }
 
 console.log('ruler verifier: snap / grab / drag / angle snap / sanitize / guide segments / futaba colors ok');

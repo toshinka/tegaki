@@ -18,6 +18,37 @@ export const RULER_ROTATION_RING_SCREEN_PX = 70;
 export const RULER_ANGLE_SNAP_DEG = 15;
 export const RULER_PARALLEL_SPACING_SCREEN_PX = 48;
 export const RULER_RADIAL_SPOKES = 48;
+
+/** 定規の表示・操作オプションの範囲(ミニパネル用)。吸着の幾何そのものには影響しない。 */
+export const RULER_OPTION_LIMITS = Object.freeze({
+    spacing: { min: 12, max: 240 },   // 平行線のガイド間隔(画面px)
+    spokes: { min: 4, max: 180 },     // 放射線のガイド本数
+    angleSnap: { min: 1, max: 90 }    // Ctrl併用時の角度刻み(度)
+});
+export const RULER_OPTION_DEFAULTS = Object.freeze({
+    spacing: RULER_PARALLEL_SPACING_SCREEN_PX,
+    spokes: RULER_RADIAL_SPOKES,
+    angleSnap: RULER_ANGLE_SNAP_DEG,
+    showGuides: true
+});
+
+function clampOption(value, { min, max }, fallback) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+}
+
+/** ミニパネルで調整するオプションのsanitize(壊れた値は既定へ)。 */
+export function sanitizeRulerOptions(raw) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    const L = RULER_OPTION_LIMITS;
+    const D = RULER_OPTION_DEFAULTS;
+    return {
+        spacing: clampOption(src.spacing, L.spacing, D.spacing),
+        spokes: Math.round(clampOption(src.spokes, L.spokes, D.spokes)),
+        angleSnap: clampOption(src.angleSnap, L.angleSnap, D.angleSnap),
+        showGuides: src.showGuides === false ? false : true
+    };
+}
 // 保存値の中心がキャンバスから極端に離れていたら捨てる範囲(キャンバス寸法の倍数)。
 const CENTER_LIMIT_FACTOR = 4;
 
@@ -74,7 +105,8 @@ export function applyRulerDrag(state, grab, world, { snapAngle = false } = {}) {
         return { ...state, center: { x: world.x + grab.offsetX, y: world.y + grab.offsetY } };
     }
     const raw = Math.atan2(world.y - state.center.y, world.x - state.center.x) + grab.grabOffset;
-    return { ...state, angle: snapAngle ? snapRulerAngle(raw) : clampRulerAngle(raw) };
+    const stepDeg = Number.isFinite(state.angleSnap) ? state.angleSnap : RULER_ANGLE_SNAP_DEG;
+    return { ...state, angle: snapAngle ? snapRulerAngle(raw, stepDeg) : clampRulerAngle(raw) };
 }
 
 /**
@@ -105,15 +137,17 @@ export function buildRulerGuideSegments(state, canvas, screenScale = 1) {
     const reach = Math.hypot(canvas.width, canvas.height) + Math.hypot(cx, cy);
     const lines = [];
     if (state.type === 'radial') {
-        for (let i = 0; i < RULER_RADIAL_SPOKES; i++) {
-            const a = (i / RULER_RADIAL_SPOKES) * Math.PI * 2;
+        const spokes = Number.isFinite(state.spokes) ? Math.max(1, Math.round(state.spokes)) : RULER_RADIAL_SPOKES;
+        for (let i = 0; i < spokes; i++) {
+            const a = (i / spokes) * Math.PI * 2;
             lines.push([cx, cy, cx + Math.cos(a) * reach, cy + Math.sin(a) * reach]);
         }
         return { lines, main: null };
     }
     const dirX = Math.cos(state.angle);
     const dirY = Math.sin(state.angle);
-    const spacing = RULER_PARALLEL_SPACING_SCREEN_PX / (screenScale > 0 ? screenScale : 1);
+    const spacingPx = Number.isFinite(state.spacing) && state.spacing > 0 ? state.spacing : RULER_PARALLEL_SPACING_SCREEN_PX;
+    const spacing = spacingPx / (screenScale > 0 ? screenScale : 1);
     const count = Math.ceil(reach / spacing);
     for (let i = -count; i <= count; i++) {
         if (i === 0) continue;

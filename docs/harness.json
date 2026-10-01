@@ -42,7 +42,8 @@
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [
         "tegaki_work/system/ruler-geometry.js",
-        "tegaki_work/system/drawing/ruler-system.js"
+        "tegaki_work/system/drawing/ruler-system.js",
+        "tegaki_work/ui/ruler-popup.js"
       ],
       "patterns": [
         "^verify-ruler"
