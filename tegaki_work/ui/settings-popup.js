@@ -276,6 +276,18 @@ export class SettingsPopup {
                     </div>
                     <div class="setting-description">速く引いた線ほど細く・薄くします（筆圧使用時）。0で無効。</div>
                 </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">傾きで太く (Tilt)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-tilt-strength-slider">
+                            <div class="slider-track" id="pen-tilt-strength-track"></div>
+                            <div class="slider-handle" id="pen-tilt-strength-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-tilt-strength-value">0.00</div>
+                    </div>
+                    <div class="setting-description">ペンを寝かせるほど線を太くします（傾き対応ペンのみ、dab描画時）。0で無効。</div>
+                </div>
             </div>
 
             <div id="tab-spray" class="ui-tab-content">
@@ -330,6 +342,18 @@ export class SettingsPopup {
                         <div class="slider-value" id="airbrush-buildup-rate-value">20/秒</div>
                     </div>
                     <div class="setting-description">ペンを止めていても時間で吹き重ねます。値は1秒あたりの吹き付け回数。0でOFF。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">傾き (Tilt)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="airbrush-tilt-strength-slider">
+                            <div class="slider-track" id="airbrush-tilt-strength-track"></div>
+                            <div class="slider-handle" id="airbrush-tilt-strength-handle"></div>
+                        </div>
+                        <div class="slider-value" id="airbrush-tilt-strength-value">0.50</div>
+                    </div>
+                    <div class="setting-description">ペンを傾けると吹き付けが楕円になり、ペン先の向く側へ広がります（傾き対応ペンのみ）。0で無効。</div>
                 </div>
             </div>
 
@@ -494,6 +518,14 @@ export class SettingsPopup {
             penVelocityThinningTrack: document.getElementById('pen-velocity-thinning-track'),
             penVelocityThinningHandle: document.getElementById('pen-velocity-thinning-handle'),
             penVelocityThinningValue: document.getElementById('pen-velocity-thinning-value'),
+            penTiltStrengthSlider: document.getElementById('pen-tilt-strength-slider'),
+            penTiltStrengthTrack: document.getElementById('pen-tilt-strength-track'),
+            penTiltStrengthHandle: document.getElementById('pen-tilt-strength-handle'),
+            penTiltStrengthValue: document.getElementById('pen-tilt-strength-value'),
+            airbrushTiltStrengthSlider: document.getElementById('airbrush-tilt-strength-slider'),
+            airbrushTiltStrengthTrack: document.getElementById('airbrush-tilt-strength-track'),
+            airbrushTiltStrengthHandle: document.getElementById('airbrush-tilt-strength-handle'),
+            airbrushTiltStrengthValue: document.getElementById('airbrush-tilt-strength-value'),
 
             bucketGapButtons: Array.from(document.querySelectorAll('[data-bucket-setting="gap"]')),
             bucketGapValue: document.getElementById('bucket-gap-value'),
@@ -615,8 +647,8 @@ export class SettingsPopup {
         };
 
         [
-            'pressure', 'smoothing', 'pressureOpacity', 'penVelocityThinning',
-            'airbrushFlow', 'airbrushSoftness', 'airbrushScatter', 'airbrushBuildupRate'
+            'pressure', 'smoothing', 'pressureOpacity', 'penVelocityThinning', 'penTiltStrength',
+            'airbrushFlow', 'airbrushSoftness', 'airbrushScatter', 'airbrushBuildupRate', 'airbrushTiltStrength'
         ].forEach(setupSliderEvents);
     }
 
@@ -656,6 +688,8 @@ export class SettingsPopup {
             smoothing: { min: this.MIN_SMOOTHING, max: this.MAX_SMOOTHING, settingKey: 'smoothing' },
             pressureOpacity: { min: 0.0, max: 1.0, settingKey: 'pressureOpacityStrength' },
             penVelocityThinning: { min: 0.0, max: 0.9, settingKey: 'penVelocityThinning' },
+            penTiltStrength: { min: 0.0, max: 1.0, settingKey: 'penTiltStrength' },
+            airbrushTiltStrength: { min: 0.0, max: 1.0, settingKey: 'airbrushTiltStrength' },
             airbrushFlow: { min: 0.01, max: 1.0, settingKey: 'airbrushFlow' },
             airbrushSoftness: { min: 0.0, max: 1.0, settingKey: 'airbrushSoftness' },
             airbrushScatter: { min: 0.0, max: 1.0, settingKey: 'airbrushScatter' },
@@ -828,6 +862,8 @@ export class SettingsPopup {
         this._updateGenericSlider('airbrushScatter', settings.airbrushScatter ?? defaults.airbrushScatter);
         this._updateGenericSlider('airbrushBuildupRate', settings.airbrushBuildupRate ?? defaults.airbrushBuildupRate);
         this._updateGenericSlider('penVelocityThinning', settings.penVelocityThinning ?? defaults.penVelocityThinning);
+        this._updateGenericSlider('penTiltStrength', settings.penTiltStrength ?? defaults.penTiltStrength);
+        this._updateGenericSlider('airbrushTiltStrength', settings.airbrushTiltStrength ?? defaults.airbrushTiltStrength);
         this._updateBucketGapSlider(settings.bucketGapClose ?? defaults.bucketGapClose);
         this._updateBucketUnderpaintSlider(settings.bucketUnderpaint ?? defaults.bucketUnderpaint);
         this._setBucketRefVisibility(settings.bucketReferenceAllLayers ?? defaults.bucketReferenceAllLayers);

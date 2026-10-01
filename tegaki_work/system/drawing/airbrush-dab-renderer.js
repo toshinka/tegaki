@@ -11,6 +11,9 @@ const DAB_TEXTURE_SIZE = 256;
 const MAX_POOLED_DAB_SPRITES = 4096;
 const MAX_CACHED_DAB_TEXTURES = 4;
 const MIN_PEN_DAB_SPACING = 0.35;
+const AIRBRUSH_TILT_STRETCH = 0.6;
+const AIRBRUSH_TILT_SHIFT = 0.25;
+const PEN_TILT_WIDEN = 1.0;
 const DAB_FALLOFF_SIGMA = 0.3;
 
 export class AirbrushDabRenderer {
@@ -121,8 +124,18 @@ export class AirbrushDabRenderer {
             dabY = y + Math.sin(angle) * distance;
         }
 
+        // ペンの傾き: dabを傾き方向へ伸ばした楕円にし、ペン先側へずらす(エアブラシの噴射円錐)。
+        const tilt = settings.dabTilt;
+        if (tilt && tilt.amount > 0) {
+            const shift = baseSize * AIRBRUSH_TILT_SHIFT * tilt.amount;
+            dabX += Math.cos(tilt.angle) * shift;
+            dabY += Math.sin(tilt.angle) * shift;
+            sprite.rotation = tilt.angle;
+        } else {
+            sprite.rotation = 0;
+        }
         sprite.position.set(dabX, dabY);
-        sprite.width = baseSize;
+        sprite.width = baseSize * (1 + AIRBRUSH_TILT_STRETCH * (tilt?.amount || 0));
         sprite.height = baseSize;
         sprite.tint = isErase ? 0xffffff : (settings.color ?? 0x800000);
         // 筆圧を濃度(アルファ)に直接反映
@@ -186,9 +199,11 @@ export class AirbrushDabRenderer {
     }
 
     _getPenDabWidth(pressure, settings) {
-        return settings.pressureEnabled === true
+        const width = settings.pressureEnabled === true
             ? this.calculateWidth(pressure, settings.size)
             : Math.max(1, settings.size || 1);
+        // ペンの傾き: 寝かせるほど太く(鉛筆の側面)。最大PEN_TILT_WIDEN倍。
+        return width * (1 + PEN_TILT_WIDEN * (settings.dabTilt?.amount || 0));
     }
 
     /**
@@ -198,6 +213,7 @@ export class AirbrushDabRenderer {
     _addPenDab(container, texture, x, y, pressure, settings) {
         const width = this._getPenDabWidth(pressure, settings);
         const sprite = this._acquireSprite(container, texture);
+        sprite.rotation = 0;
         sprite.position.set(x, y);
         sprite.width = width;
         sprite.height = width;

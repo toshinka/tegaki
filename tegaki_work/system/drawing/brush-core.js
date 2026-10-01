@@ -368,6 +368,7 @@ export class BrushCore {
 
         this.isDrawing = true;
         this.penVelocityState = { x: clientX, y: clientY, time: null, speed: 0 };
+        this.currentTilt = null;
         this.realtimeBatchQueue = null;
         this.realtimeBatchDepth = 0;
         this.realtimeBatchMode = null;
@@ -473,6 +474,9 @@ export class BrushCore {
             ? this._stabilizeMovePressure(pressure, currentMode, pointerType)
             : 1.0;
         const sampleTime = Number.isFinite(this.currentSampleTime) ? this.currentSampleTime : this._perfNow();
+        if (this.currentSampleTilt) {
+            this.currentTilt = this._computeLocalTilt(clientX, clientY, localX, localY, this.currentSampleTilt, activeLayer);
+        }
         const processedPressure = (currentMode === 'pen' && pressureEnabled)
             ? this._applyPenVelocityResponse(clientX, clientY, sampleTime, stabilizedPressure)
             : stabilizedPressure;
@@ -619,6 +623,39 @@ export class BrushCore {
         } else {
             this.realtimeEraserApplied = true;
         }
+    }
+
+    /**
+     * PointerEventのtiltX/tiltY(度)を、Layerローカル空間での傾き方向(angle)と傾き量(0=垂直, 1=水平)へ変換する。
+     * canvas回転・反転を反映するため、画面上の方向ベクトルをLayer座標へ写して角度を求める。
+     */
+    _computeLocalTilt(clientX, clientY, localX, localY, sampleTilt, layer) {
+        const tx = Math.tan((Math.max(-89, Math.min(89, sampleTilt.tiltX)) * Math.PI) / 180);
+        const ty = Math.tan((Math.max(-89, Math.min(89, sampleTilt.tiltY)) * Math.PI) / 180);
+        const horizontal = Math.hypot(tx, ty);
+        if (!(horizontal > 1e-3) || !Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+            return { angle: 0, magnitude: 0 };
+        }
+        const altitude = Math.atan(1 / horizontal);
+        const magnitude = Math.max(0, Math.min(1, 1 - altitude / (Math.PI / 2)));
+        // ペン上端が倒れている向きの反対(ペン先が向く側)を噴射方向とする。
+        const probe = 16;
+        const px = clientX - (tx / horizontal) * probe;
+        const py = clientY - (ty / horizontal) * probe;
+        const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(px, py);
+        const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
+        const local = this.coordinateSystem.worldToLocal(worldX, worldY, layer);
+        const angle = Math.atan2(local.localY - localY, local.localX - localX);
+        return { angle: Number.isFinite(angle) ? angle : 0, magnitude };
+    }
+
+    /** 現在の傾きをdab描画用に返す。強さ0や傾き情報なしではnull。 */
+    _getDabTilt(settingKey, fallbackStrength) {
+        const userStrength = window.TegakiSettingsManager?.get?.(settingKey);
+        const strength = Math.max(0, Math.min(1, Number(userStrength ?? fallbackStrength ?? 0)));
+        const tilt = this.currentTilt;
+        if (!(strength > 0) || !tilt || !(tilt.magnitude > 0)) return null;
+        return { angle: tilt.angle, amount: strength * tilt.magnitude };
     }
 
     /**
@@ -827,6 +864,7 @@ export class BrushCore {
                 const isLast = index === infos.length - 1;
                 // coalesced sampleは同じ処理時刻にまとまるため、速度計算には各sampleの入力時刻を使う。
                 this.currentSampleTime = Number(info.timeStamp);
+                this.currentSampleTilt = { tiltX: Number(info.tiltX) || 0, tiltY: Number(info.tiltY) || 0 };
                 this.updateStroke(
                     info.clientX,
                     info.clientY,
@@ -837,6 +875,7 @@ export class BrushCore {
             });
         } finally {
             this.currentSampleTime = null;
+            this.currentSampleTilt = null;
             if (isBatchableMode) {
                 this._flushRealtimeBatch();
             }
@@ -1437,12 +1476,21 @@ export class BrushCore {
             color: 0xffffff,
             mode: 'airbrush'
         };
+        if (this.airbrushState.dabMode === 'airbrush') {
+            maskSettings.dabTilt = this._getDabTilt(
+                'airbrushTiltStrength',
+                window.TEGAKI_CONFIG?.brushEngine?.airbrushTiltStrength ?? 0.5
+            );
+        }
         if (this.airbrushState.dabMode === 'pen') {
             const engine = window.TEGAKI_CONFIG?.brushEngine || {};
             maskSettings.mode = 'pen';
             maskSettings.dabMode = 'pen';
             maskSettings.penDabSoftness = engine.penDabSoftness ?? 0;
             maskSettings.penDabSpacingRatio = engine.penDabSpacingRatio ?? 0.05;
+            if (this.airbrushState.mode === 'pen') {
+                maskSettings.dabTilt = this._getDabTilt('penTiltStrength', engine.penTiltStrength ?? 0);
+            }
             if (this.airbrushState.mode === 'eraser') {
                 // 旧Graphics消しゴムと同じく、筆圧は径だけに効かせ濃さは常に1で消す。
                 maskSettings.pressureEnabled = settings.eraserPressureEnabled === true;
@@ -2232,7 +2280,11 @@ export class BrushCore {
 
             // 1. bounds が一致しているか確認（一致しない場合は full fallback）
             if (rasterBoundsEqual(beforeBounds, currentBounds)) {
-                const settings = strokeSettings || this._getCurrentSettings();
+                const baseSettings = strokeSettings || this._getCurrentSettings();
+                // airbrushの傾き楕円(最大1.6倍幅+0.25×size偏位)とscatterまで含めるため余白を広げる。
+                const settings = (mode === 'airbrush' || mode === 'airbrush-erase')
+                    ? { ...baseSettings, size: Math.ceil(Number(baseSettings?.size || 1) * 1.3) }
+                    : baseSettings;
                 const projectDirtyRect = calculateStrokeDirtyRect(strokePoints, settings);
                 const localDirtyRect = projectRectToRasterLocal(projectDirtyRect, currentBounds);
 

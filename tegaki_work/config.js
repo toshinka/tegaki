@@ -88,6 +88,9 @@ export const TEGAKI_CONFIG = {
         penVelocityThinning: 0.3,
         penVelocitySlow: 0.6,
         penVelocityFast: 4.0,
+        // ペンの傾き(設定画面で調整、ここは既定値)。airbrushは楕円化+噴射方向へずらす、penは寝かせるほど太く。
+        airbrushTiltStrength: 0.5,
+        penTiltStrength: 0,
         // pen dabの硬さ(0=硬い円)と、dab径に対する間隔比。
         penDabSoftness: 0,
         penDabSpacingRatio: 0.05

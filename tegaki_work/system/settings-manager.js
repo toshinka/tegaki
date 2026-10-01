@@ -50,6 +50,8 @@ export class SettingsManager {
             airbrushScatter: this.config?.BRUSH_DEFAULTS?.airbrushScatter ?? 0.0,
             airbrushBuildupRate: this.config?.brushEngine?.airbrushBuildupRate ?? 20,
             penVelocityThinning: this.config?.brushEngine?.penVelocityThinning ?? 0.3,
+            airbrushTiltStrength: this.config?.brushEngine?.airbrushTiltStrength ?? 0.5,
+            penTiltStrength: this.config?.brushEngine?.penTiltStrength ?? 0,
             statusPanelVisible: this.config?.ui?.statusPanelVisible !== undefined 
                 ? this.config.ui.statusPanelVisible 
                 : true,
@@ -171,6 +173,14 @@ export class SettingsManager {
                 const num = parseFloat(v);
                 return isNaN(num) ? undefined : Math.max(0.0, Math.min(0.9, num));
             },
+            airbrushTiltStrength: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
+            penTiltStrength: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
             statusPanelVisible: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
             },
@@ -271,6 +281,8 @@ export class SettingsManager {
             'airbrushScatter',
             'airbrushBuildupRate',
             'penVelocityThinning',
+            'airbrushTiltStrength',
+            'penTiltStrength',
             'statusPanelVisible',
             'exportResolution',
             'bucketGapClose',
