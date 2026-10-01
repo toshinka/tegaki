@@ -234,6 +234,10 @@ export class SettingsPopup {
 
                 <div class="setting-group">
                     <div class="setting-label">線補正（スムーズ度）</div>
+                    <div class="pressure-curve-selection stabilizer-mode-selection">
+                        <button class="pressure-curve-btn active" type="button" data-stabilizer-mode="follow">追従</button>
+                        <button class="pressure-curve-btn" type="button" data-stabilizer-mode="string">ひも</button>
+                    </div>
                     <div class="slider-container">
                         <div class="slider" id="smoothing-slider">
                             <div class="slider-track" id="smoothing-track"></div>
@@ -241,6 +245,7 @@ export class SettingsPopup {
                         </div>
                         <div class="slider-value" id="smoothing-value">0.5</div>
                     </div>
+                    <div class="setting-description">追従: 線がペンを少し遅れて追いかけます。ひも: ペンが一定距離（0.5で画面16px）動くまで線が動かず、手ぶれを無視して長い線を滑らかにします。離した位置まで線はつながります。</div>
                 </div>
 
                 <div class="setting-group">
@@ -969,6 +974,16 @@ export class SettingsPopup {
             });
         });
         this._setupPressureCurveEditor();
+        this.popup?.querySelectorAll('[data-stabilizer-mode]').forEach(btn => {
+            btn.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const mode = btn.dataset.stabilizerMode;
+                this.settingsManager?.set('stabilizerMode', mode);
+                this._applyStabilizerModeUI(mode);
+                this._scheduleBrushPresetRender();
+            });
+        });
         this._setupBrushPresets();
         this.elements.pressureOpacityToggle?.addEventListener('change', () => {
             this.settingsManager?.set('pressureOpacityEnabled', this.elements.pressureOpacityToggle.checked);
@@ -1030,6 +1045,7 @@ export class SettingsPopup {
         this._updateBucketUnderpaintSlider(settings.bucketUnderpaint ?? defaults.bucketUnderpaint);
         this._setBucketRefVisibility(settings.bucketReferenceAllLayers ?? defaults.bucketReferenceAllLayers);
         this._applyPressureCurveUI(settings.pressureCurve ?? defaults.pressureCurve);
+        this._applyStabilizerModeUI(settings.stabilizerMode ?? 'follow');
         this._setPressureOpacityEnabled(settings.pressureOpacityEnabled ?? defaults.pressureOpacityEnabled);
         this._setStatusPanelVisibility(settings.statusPanelVisible ?? defaults.statusPanelVisible);
         if (this.elements.animationAutoCreateNext) {
@@ -1136,6 +1152,12 @@ export class SettingsPopup {
         this.elements.historyUsage.dataset.pressure = pressure;
         this.elements.historyUsage.textContent =
             `履歴: ${usage.entries} / ${usage.maxEntries}　使用量: ${usedMB.toFixed(1)} MB / ${formatLimit(maxMB)}${suffix}`;
+    }
+
+    _applyStabilizerModeUI(mode) {
+        this.popup?.querySelectorAll('[data-stabilizer-mode]').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.stabilizerMode === (mode === 'string' ? 'string' : 'follow'));
+        });
     }
 
     _applyPressureCurveUI(curve) {

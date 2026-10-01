@@ -32,6 +32,8 @@
 - メインペン（レスポンス・美観）: realtime筆圧が無平滑だった（既存の距離filterはrecorder側のみ）→ One-Euro安定化`penPressureSmoothing`（既定0.5、筆圧揺れ0.047→0.024、速い強弱は1sample以内に追従）。ライブ先端`penLiveTip`（曲線補間の1sample遅れを、stroke maskの複製へ同じmax合成で先端だけ描いて埋める。表示は確定後と同色、確定線は先端ON/OFFで画素一致、不透明度0.5でも同色）。
 - 線端のヒゲ除去`penHookTrimScreenPx`（既定10、画面px）: pen-up時、線端の画面10px以内が手前の進行方向から70°以上折れていれば切り落として描き直す（入り抜きと同じ再構築、短い線・緩い曲がりは対象外）。
 - PixiJS 8.21更新カードへの入力（brush改修が依存するPixi内部）: `RenderTexture.create({format:'rgba16float'})`と`renderer.context.extensions.colorBufferFloat`判定、blendMode `max` / `none` / `erase` / `inherit`、`TextureSource.autoGenerateMipmaps / mipLevelCount / updateMipmaps()`と`style.update()`（`layer-display-mipmaps.js`は`renderer.render`を包む）、`new Texture({source, frame})`の部分texture、`extract.*({resolution:1})`、dab Sprite poolでのtexture差し替え。TexturePool / RenderTarget cleanupの変更点はここを優先確認。
+- 線補正に「ひも」方式（`stabilizerMode`='string'）: 線補正の値0.5でひも長16画面px、半径内の手ぶれでは線が動かず超えた分だけ引かれる。離した位置まで線をつなぐ（`stabilizerCatchUp`既定ON）。±4pxの手ぶれで線の中心線揺れ 補正なし1.90 / 追従1.15 / ひも0.62px。設定画面ペンタブの線補正に「追従 / ひも」切替。ブラシプリセットに含む。
+- 起動時にQuickパネルのアクティブスロット（ペン/消しゴム/エアブラシのサイズ・不透明度）をBrushSettingsへ反映（Owner commit `0c348d6e`）。
 - 既知差分: 縮小表示中はmip分のGPU memoryが表示Layerごとに約+33%。未着手候補: 筆圧カーブ、tilt/速度、静止時buildup、dab texture/grain。
 
 ### CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17 Correction Pass & Off-Canvas Investigation)
