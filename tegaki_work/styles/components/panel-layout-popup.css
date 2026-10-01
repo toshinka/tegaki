@@ -281,3 +281,91 @@
     stroke-width: 4px;
     pointer-events: none;
 }
+
+/* ===== ふたば配色のform部品（native既定の白/灰を使わない）===== */
+#panel-layout-popup input[type="range"].pl-range {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 16px;
+    background: transparent;
+    cursor: pointer;
+}
+
+#panel-layout-popup input[type="range"].pl-range::-webkit-slider-runnable-track {
+    height: 6px;
+    border: 1px solid var(--futaba-medium);
+    border-radius: 4px;
+    background: linear-gradient(to right,
+        var(--futaba-light-maroon) var(--pl-fill, 0%),
+        var(--futaba-light-medium) var(--pl-fill, 0%));
+}
+
+#panel-layout-popup input[type="range"].pl-range::-moz-range-track {
+    height: 6px;
+    border: 1px solid var(--futaba-medium);
+    border-radius: 4px;
+    background: var(--futaba-light-medium);
+}
+
+#panel-layout-popup input[type="range"].pl-range::-moz-range-progress {
+    height: 6px;
+    border-radius: 4px;
+    background: var(--futaba-light-maroon);
+}
+
+#panel-layout-popup input[type="range"].pl-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
+    border: 2px solid var(--futaba-maroon);
+    border-radius: 50%;
+    background: var(--futaba-light-maroon);
+}
+
+#panel-layout-popup input[type="range"].pl-range::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border: 2px solid var(--futaba-maroon);
+    border-radius: 50%;
+    background: var(--futaba-light-maroon);
+}
+
+#panel-layout-popup input[type="range"].pl-range:hover::-webkit-slider-thumb { background: var(--futaba-maroon); }
+#panel-layout-popup input[type="range"].pl-range:hover::-moz-range-thumb { background: var(--futaba-maroon); }
+#panel-layout-popup input[type="range"].pl-range:focus-visible { outline: 2px solid var(--active-border); outline-offset: 2px; border-radius: 4px; }
+
+#panel-layout-popup input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    border: 1.5px solid var(--futaba-medium);
+    border-radius: 4px;
+    background: var(--futaba-background);
+    cursor: pointer;
+}
+
+#panel-layout-popup input[type="checkbox"]:hover { border-color: var(--futaba-light-maroon); }
+
+#panel-layout-popup input[type="checkbox"]:checked {
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-light-maroon)
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ffffee' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3.5 8.5 3 3 6-7'/%3E%3C/svg%3E")
+        center / 12px no-repeat;
+}
+
+#panel-layout-popup input[type="checkbox"]:focus-visible { outline: 2px solid var(--active-border); outline-offset: 2px; }
+
+#panel-layout-popup input[type="color"].pl-color {
+    border: 1.5px solid var(--futaba-medium);
+    background: var(--futaba-background);
+    padding: 2px;
+    cursor: pointer;
+}
+
+#panel-layout-popup input[type="color"].pl-color::-webkit-color-swatch-wrapper { padding: 0; }
+#panel-layout-popup input[type="color"].pl-color::-webkit-color-swatch { border: 1px solid var(--futaba-maroon); border-radius: 2px; }
+#panel-layout-popup input[type="color"].pl-color::-moz-color-swatch { border: 1px solid var(--futaba-maroon); border-radius: 2px; }

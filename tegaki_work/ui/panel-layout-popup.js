@@ -496,6 +496,13 @@ export class PanelLayoutPopup {
         this.elements.editStatus.textContent = this.editing ? '— 再編集中' : '';
         this.elements.updateBtn.hidden = !this.editing;
         this.elements.loadBtn.disabled = !this._activePanelLayout();
+        // range の塗り量(webkitはtrackの進行部を持たないので、CSS変数でグラデーションを描く)
+        this.popup.querySelectorAll('.pl-range').forEach((input) => {
+            const min = Number(input.min);
+            const max = Number(input.max);
+            const pct = max > min ? ((Number(input.value) - min) / (max - min)) * 100 : 0;
+            input.style.setProperty('--pl-fill', `${Math.max(0, Math.min(100, pct))}%`);
+        });
     }
 
     _syncOverlayVisibility() {
