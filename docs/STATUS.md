@@ -26,6 +26,7 @@
 - Owner選択B/E/F: 傾き（tiltX/YをLayer座標の方向・量へ変換、canvas回転/反転反映。airbrushは楕円化+ペン先側へ偏位、pen dabは寝かせて太く。強さsliderはエアブラシ既定0.5・ペン既定0）。スプレー設定に先端プレビュー（engineと同じfalloff/flow/scatterをCPU再現）。ブラシプリセット（`system/drawing/brush-presets.js`、描き味のみ保存＝筆圧カーブ/速度/傾き/流量等、サイズ・不透明度はQuick Accessスロットの担当のまま。組み込み ペン:標準/つけペン風/鉛筆風、エアブラシ:標準/くっきり/ふんわり溜め、ユーザー保存最大12件/tool、`brushPresets`保存）。
 - 不具合確認（2026-10-01）: 選択範囲あり（pen/eraser/airbrush/消しエアブラシ、確定後に範囲外不変・undo復元、描画中は範囲外も表示され確定時に除去＝旧ペンと同じ既存挙動）、クリッピング通常/反転（描画中・確定後とも正しく抜け、旧ペンと同一）、アニメ作業Layer（4tool描画・消去、History非記録、preview後始末）、30°回転+1.5倍+左右反転で実PointerEventの着地位置を確認し不具合なし。回転時の約1.5px下ずれは旧ペンも同値の既存挙動。
 - 自動検証: `build/verify-pen-brush-engine.mjs`（drawing suite）。筆圧カーブ、dab falloff、プリセット正規化/一致、SettingsManager新規key、tilt座標変換（反転/回転）、速度応答、dab renderer（pen spacing・tilt楕円・pool再利用時の回転/伸長/偏位リセット・spacing持ち越し）。意図的な改変2件（pool回転リセット除去、カーブのovershoot防止除去）を検出できることを確認。
+- 描き味追加（2026-10-01）: ペン/消しゴムの縁の柔らかさ、消しゴムの筆圧で消す強さ（既定0）。ペン縁のAA幅`penEdgeAA`（画素一定、既定1px。硬いdabは縁の遷移が1px未満で入り抜き・筆圧変化が2px段差になっていた→最大段差1.25→0.62px、線幅は50%被覆位置補正で維持）。入り抜き`penTaperIn/Out`（画素、既定0。入りは描画中、抜きはpen-up時に記録点からstroke maskを再構築、筆圧なし/マウスでも有効、つけペン風presetに12/40）。dab texture cacheが描画待ちdabの使うtextureを破棄して線が消える不具合を修正（使用中は保持しrelease時に整理、上限40）。
 - 既知差分: 縮小表示中はmip分のGPU memoryが表示Layerごとに約+33%。未着手候補: 筆圧カーブ、tilt/速度、静止時buildup、dab texture/grain。
 
 ### CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17 Correction Pass & Off-Canvas Investigation)

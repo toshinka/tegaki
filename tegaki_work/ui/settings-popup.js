@@ -305,6 +305,82 @@ export class SettingsPopup {
                     </div>
                     <div class="setting-description">ペンを寝かせるほど線を太くします（傾き対応ペンのみ、dab描画時）。0で無効。</div>
                 </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">入り (Taper in)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-taper-in-slider">
+                            <div class="slider-track" id="pen-taper-in-track"></div>
+                            <div class="slider-handle" id="pen-taper-in-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-taper-in-value">OFF</div>
+                    </div>
+                    <div class="setting-description">描き始めを指定の長さ（画素）で細くします。筆圧なし・マウスでも効きます。0でOFF。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">抜き (Taper out)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-taper-out-slider">
+                            <div class="slider-track" id="pen-taper-out-track"></div>
+                            <div class="slider-handle" id="pen-taper-out-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-taper-out-value">OFF</div>
+                    </div>
+                    <div class="setting-description">描き終わりを指定の長さ（画素）で細くします。ペンを離した時に付きます。0でOFF。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">縁の柔らかさ (Softness)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-dab-softness-slider">
+                            <div class="slider-track" id="pen-dab-softness-track"></div>
+                            <div class="slider-handle" id="pen-dab-softness-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-dab-softness-value">0.00</div>
+                    </div>
+                    <div class="setting-description">線の縁をぼかします。0でくっきり、上げるほど柔らかい線になります。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">縁のアンチエイリアス (AA)</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-edge-aa-slider">
+                            <div class="slider-track" id="pen-edge-aa-track"></div>
+                            <div class="slider-handle" id="pen-edge-aa-handle"></div>
+                        </div>
+                        <div class="slider-value" id="pen-edge-aa-value">0.0px</div>
+                    </div>
+                    <div class="setting-description">線の太さに関係なく縁を指定画素ぶん滑らかにし、入り抜きや筆圧変化の段差(ジャギー)を抑えます（書き出しにも反映）。既定1px。0で従来の硬い縁。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label setting-section-label">消しゴム</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">消しゴムの柔らかさ</div>
+                    <div class="slider-container">
+                        <div class="slider" id="eraser-dab-softness-slider">
+                            <div class="slider-track" id="eraser-dab-softness-track"></div>
+                            <div class="slider-handle" id="eraser-dab-softness-handle"></div>
+                        </div>
+                        <div class="slider-value" id="eraser-dab-softness-value">0.00</div>
+                    </div>
+                    <div class="setting-description">消しゴムの縁をぼかします。0でくっきり消します。</div>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label">筆圧で消す強さ</div>
+                    <div class="slider-container">
+                        <div class="slider" id="eraser-pressure-strength-slider">
+                            <div class="slider-track" id="eraser-pressure-strength-track"></div>
+                            <div class="slider-handle" id="eraser-pressure-strength-handle"></div>
+                        </div>
+                        <div class="slider-value" id="eraser-pressure-strength-value">0.00</div>
+                    </div>
+                    <div class="setting-description">弱い筆圧ほど薄く消します（消しゴムの筆圧が有効な時）。0で常に完全に消します。</div>
+                </div>
             </div>
 
             <div id="tab-spray" class="ui-tab-content">
@@ -549,6 +625,30 @@ export class SettingsPopup {
             penTiltStrengthTrack: document.getElementById('pen-tilt-strength-track'),
             penTiltStrengthHandle: document.getElementById('pen-tilt-strength-handle'),
             penTiltStrengthValue: document.getElementById('pen-tilt-strength-value'),
+            penTaperInSlider: document.getElementById('pen-taper-in-slider'),
+            penTaperInTrack: document.getElementById('pen-taper-in-track'),
+            penTaperInHandle: document.getElementById('pen-taper-in-handle'),
+            penTaperInValue: document.getElementById('pen-taper-in-value'),
+            penTaperOutSlider: document.getElementById('pen-taper-out-slider'),
+            penTaperOutTrack: document.getElementById('pen-taper-out-track'),
+            penTaperOutHandle: document.getElementById('pen-taper-out-handle'),
+            penTaperOutValue: document.getElementById('pen-taper-out-value'),
+            penDabSoftnessSlider: document.getElementById('pen-dab-softness-slider'),
+            penDabSoftnessTrack: document.getElementById('pen-dab-softness-track'),
+            penDabSoftnessHandle: document.getElementById('pen-dab-softness-handle'),
+            penDabSoftnessValue: document.getElementById('pen-dab-softness-value'),
+            penEdgeAASlider: document.getElementById('pen-edge-aa-slider'),
+            penEdgeAATrack: document.getElementById('pen-edge-aa-track'),
+            penEdgeAAHandle: document.getElementById('pen-edge-aa-handle'),
+            penEdgeAAValue: document.getElementById('pen-edge-aa-value'),
+            eraserDabSoftnessSlider: document.getElementById('eraser-dab-softness-slider'),
+            eraserDabSoftnessTrack: document.getElementById('eraser-dab-softness-track'),
+            eraserDabSoftnessHandle: document.getElementById('eraser-dab-softness-handle'),
+            eraserDabSoftnessValue: document.getElementById('eraser-dab-softness-value'),
+            eraserPressureStrengthSlider: document.getElementById('eraser-pressure-strength-slider'),
+            eraserPressureStrengthTrack: document.getElementById('eraser-pressure-strength-track'),
+            eraserPressureStrengthHandle: document.getElementById('eraser-pressure-strength-handle'),
+            eraserPressureStrengthValue: document.getElementById('eraser-pressure-strength-value'),
             airbrushTiltStrengthSlider: document.getElementById('airbrush-tilt-strength-slider'),
             airbrushTiltStrengthTrack: document.getElementById('airbrush-tilt-strength-track'),
             airbrushTiltStrengthHandle: document.getElementById('airbrush-tilt-strength-handle'),
@@ -675,6 +775,8 @@ export class SettingsPopup {
 
         [
             'pressure', 'smoothing', 'pressureOpacity', 'penVelocityThinning', 'penTiltStrength',
+            'penTaperIn', 'penTaperOut',
+            'penDabSoftness', 'penEdgeAA', 'eraserDabSoftness', 'eraserPressureStrength',
             'airbrushFlow', 'airbrushSoftness', 'airbrushScatter', 'airbrushBuildupRate', 'airbrushTiltStrength'
         ].forEach(setupSliderEvents);
     }
@@ -717,6 +819,12 @@ export class SettingsPopup {
             pressureOpacity: { min: 0.0, max: 1.0, settingKey: 'pressureOpacityStrength' },
             penVelocityThinning: { min: 0.0, max: 0.9, settingKey: 'penVelocityThinning' },
             penTiltStrength: { min: 0.0, max: 1.0, settingKey: 'penTiltStrength' },
+            penDabSoftness: { min: 0.0, max: 1.0, settingKey: 'penDabSoftness' },
+            penTaperIn: { min: 0, max: 300, integer: true, settingKey: 'penTaperIn', format: (v) => (v <= 0 ? 'OFF' : `${v}px`) },
+            penTaperOut: { min: 0, max: 300, integer: true, settingKey: 'penTaperOut', format: (v) => (v <= 0 ? 'OFF' : `${v}px`) },
+            penEdgeAA: { min: 0.0, max: 4.0, settingKey: 'penEdgeAA', format: (v) => `${v.toFixed(1)}px` },
+            eraserDabSoftness: { min: 0.0, max: 1.0, settingKey: 'eraserDabSoftness' },
+            eraserPressureStrength: { min: 0.0, max: 1.0, settingKey: 'eraserPressureStrength' },
             airbrushTiltStrength: { min: 0.0, max: 1.0, settingKey: 'airbrushTiltStrength' },
             airbrushFlow: { min: 0.01, max: 1.0, settingKey: 'airbrushFlow' },
             airbrushSoftness: { min: 0.0, max: 1.0, settingKey: 'airbrushSoftness' },
@@ -893,6 +1001,12 @@ export class SettingsPopup {
         this._updateGenericSlider('airbrushBuildupRate', settings.airbrushBuildupRate ?? defaults.airbrushBuildupRate);
         this._updateGenericSlider('penVelocityThinning', settings.penVelocityThinning ?? defaults.penVelocityThinning);
         this._updateGenericSlider('penTiltStrength', settings.penTiltStrength ?? defaults.penTiltStrength);
+        this._updateGenericSlider('penTaperIn', settings.penTaperIn ?? defaults.penTaperIn);
+        this._updateGenericSlider('penTaperOut', settings.penTaperOut ?? defaults.penTaperOut);
+        this._updateGenericSlider('penDabSoftness', settings.penDabSoftness ?? defaults.penDabSoftness);
+        this._updateGenericSlider('penEdgeAA', settings.penEdgeAA ?? defaults.penEdgeAA);
+        this._updateGenericSlider('eraserDabSoftness', settings.eraserDabSoftness ?? defaults.eraserDabSoftness);
+        this._updateGenericSlider('eraserPressureStrength', settings.eraserPressureStrength ?? defaults.eraserPressureStrength);
         this._updateGenericSlider('airbrushTiltStrength', settings.airbrushTiltStrength ?? defaults.airbrushTiltStrength);
         this._updateBucketGapSlider(settings.bucketGapClose ?? defaults.bucketGapClose);
         this._updateBucketUnderpaintSlider(settings.bucketUnderpaint ?? defaults.bucketUnderpaint);

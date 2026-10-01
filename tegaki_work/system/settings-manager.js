@@ -53,6 +53,12 @@ export class SettingsManager {
             airbrushBuildupRate: this.config?.brushEngine?.airbrushBuildupRate ?? 20,
             penVelocityThinning: this.config?.brushEngine?.penVelocityThinning ?? 0.3,
             airbrushTiltStrength: this.config?.brushEngine?.airbrushTiltStrength ?? 0.5,
+            penDabSoftness: this.config?.brushEngine?.penDabSoftness ?? 0,
+            penEdgeAA: this.config?.brushEngine?.penEdgeAA ?? 0,
+            penTaperIn: this.config?.brushEngine?.penTaperIn ?? 0,
+            penTaperOut: this.config?.brushEngine?.penTaperOut ?? 0,
+            eraserDabSoftness: this.config?.brushEngine?.eraserDabSoftness ?? 0,
+            eraserPressureStrength: 0,
             penTiltStrength: this.config?.brushEngine?.penTiltStrength ?? 0,
             statusPanelVisible: this.config?.ui?.statusPanelVisible !== undefined 
                 ? this.config.ui.statusPanelVisible 
@@ -184,6 +190,30 @@ export class SettingsManager {
                 const num = parseFloat(v);
                 return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
             },
+            penDabSoftness: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
+            penEdgeAA: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(4.0, num));
+            },
+            penTaperIn: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.round(Math.max(0, Math.min(300, num)));
+            },
+            penTaperOut: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.round(Math.max(0, Math.min(300, num)));
+            },
+            eraserDabSoftness: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
+            eraserPressureStrength: (v) => {
+                const num = parseFloat(v);
+                return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
+            },
             statusPanelVisible: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
             },
@@ -286,6 +316,12 @@ export class SettingsManager {
             'penVelocityThinning',
             'airbrushTiltStrength',
             'penTiltStrength',
+            'penDabSoftness',
+            'penEdgeAA',
+            'penTaperIn',
+            'penTaperOut',
+            'eraserDabSoftness',
+            'eraserPressureStrength',
             'statusPanelVisible',
             'exportResolution',
             'bucketGapClose',
