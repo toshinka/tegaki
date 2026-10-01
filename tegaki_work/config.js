@@ -71,6 +71,8 @@ export const TEGAKI_CONFIG = {
         airbrushEventBatching: true,
         // 消しエアブラシのstroke中previewを対象Layerだけに効く合成表示にする(falseで旧scene上erase合成)。
         airbrushErasePreviewComposite: true,
+        // 消しpreviewの再合成をdabが触れた矩形だけに限る(大キャンバスで軽量化)。falseで毎回全面。
+        airbrushErasePreviewDirtyRect: true,
         // airbrushもGPU baseline + dirty rect patch Historyを使う(falseでstroke前後の全面snapshot)。
         airbrushPatchHistory: true,
         // 縮小表示(<90%)中だけLayer textureへmipmapを付け、細線の途切れ・ちらつきを抑える。等倍以上で自動停止。

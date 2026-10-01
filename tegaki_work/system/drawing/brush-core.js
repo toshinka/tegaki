@@ -17,7 +17,7 @@
  * ============================================================================
  */
 
-import { Graphics, Container, Sprite, RenderTexture, Rectangle } from 'pixi.js';
+import { Graphics, Container, Sprite, RenderTexture, Rectangle, Texture } from 'pixi.js';
 import { rasterBoundsEqual } from '../raster-bounds.js';
 import {
     calculateStrokeDirtyRect,
@@ -1507,6 +1507,10 @@ export class BrushCore {
 
         if (renderContainer && this.layerManager.app?.renderer) {
             this._applyLayerRasterRenderOffset(this.airbrushState.targetLayer, renderContainer);
+            // 消し用previewは今回dabが触れた範囲だけ再合成するため、release前にmask座標での範囲を取る。
+            const dirtyRect = this.airbrushState.erasePreview
+                ? this._getDabContainerMaskRect(renderContainer)
+                : null;
             this.layerManager.app.renderer.render({
                 container: renderContainer,
                 target: this.airbrushState.maskTexture,
@@ -1514,7 +1518,7 @@ export class BrushCore {
             });
 
             this.strokeRenderer.releaseAirbrushSegment(renderContainer);
-            this._refreshAirbrushErasePreview();
+            this._refreshAirbrushErasePreview(dirtyRect);
             this._requestLiveCanvasRender('realtime-airbrush');
         } else if (renderContainer) {
             this.strokeRenderer.releaseAirbrushSegment(renderContainer);
@@ -1686,10 +1690,57 @@ export class BrushCore {
         container.destroy({ children: true, texture: false, baseTexture: false });
     }
 
-    _refreshAirbrushErasePreview() {
+    _refreshAirbrushErasePreview(dirtyRect = null) {
         const state = this.airbrushState;
         if (!state?.erasePreview) return;
+        if (dirtyRect && window.TEGAKI_CONFIG?.brushEngine?.airbrushErasePreviewDirtyRect !== false) {
+            this._renderAirbrushErasePreviewRect(state.erasePreview, state.maskTexture, dirtyRect);
+            return;
+        }
         this._renderAirbrushErasePreview(state.erasePreview, state.maskTexture);
+    }
+
+    /** dab container(位置offset適用済み)のmask texture上の整数矩形。AA分を少し広げ、texture内へclampする。 */
+    _getDabContainerMaskRect(container) {
+        const mask = this.airbrushState?.maskTexture;
+        if (!container || !mask || container.children.length === 0) return null;
+        const local = container.getLocalBounds();
+        if (!Number.isFinite(local.x) || local.width <= 0 || local.height <= 0) return null;
+        const pad = 2;
+        const x0 = Math.max(0, Math.floor(local.x + container.position.x - pad));
+        const y0 = Math.max(0, Math.floor(local.y + container.position.y - pad));
+        const x1 = Math.min(mask.width, Math.ceil(local.x + local.width + container.position.x + pad));
+        const y1 = Math.min(mask.height, Math.ceil(local.y + local.height + container.position.y + pad));
+        if (x1 <= x0 || y1 <= y0) return null;
+        return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+    }
+
+    /**
+     * previewの指定矩形だけ「Layer複製 - mask」を再合成する。
+     * 'none'合成で元Layerの画素を矩形へそのまま写し、その上からmask(累積)をeraseする。
+     */
+    _renderAirbrushErasePreviewRect(preview, maskTexture, rect) {
+        const renderer = this.layerManager.app?.renderer;
+        if (!preview || !renderer || !maskTexture) return;
+        const frame = new Rectangle(rect.x, rect.y, rect.width, rect.height);
+        const sourcePart = new Texture({ source: preview.sourceTexture.source, frame });
+        const maskPart = new Texture({ source: maskTexture.source, frame: frame.clone() });
+        const container = new Container();
+        const copySprite = new Sprite(sourcePart);
+        copySprite.position.set(rect.x, rect.y);
+        copySprite.blendMode = 'none';
+        const eraseSprite = new Sprite(maskPart);
+        eraseSprite.position.set(rect.x, rect.y);
+        eraseSprite.blendMode = 'erase';
+        container.addChild(copySprite, eraseSprite);
+        renderer.render({
+            container,
+            target: preview.texture,
+            clear: false
+        });
+        container.destroy({ children: true });
+        sourcePart.destroy(false);
+        maskPart.destroy(false);
     }
 
     _cleanupAirbrushErasePreview(preview) {
