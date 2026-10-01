@@ -127,7 +127,8 @@ export class ProjectManager {
                     isFolder: true,
                     folderExpanded: data.folderExpanded !== false,
                     children: Array.isArray(data.children) ? [...data.children] : [],
-                    parentId: data.parentId || null
+                    parentId: data.parentId || null,
+                    ...(data.panelLayout ? { panelLayout: data.panelLayout } : {})
                 });
                 continue;
             }
@@ -657,7 +658,7 @@ export class ProjectManager {
                 
                 layer.visible = layer.layerData.visible;
                 layer.alpha = layer.layerData.opacity;
-                if (!layerInfo.isFolder && layerInfo.panelLayout) {
+                if (layerInfo.panelLayout) {
                     // 壊れたcommandは黙って無視し、Raster画素だけを読み込む
                     const panelLayout = sanitizePanelLayoutData(layerInfo.panelLayout);
                     if (panelLayout) layer.layerData.panelLayout = panelLayout;

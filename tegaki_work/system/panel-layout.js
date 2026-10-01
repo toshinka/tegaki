@@ -4,8 +4,8 @@
  * 責務: 漫画コマ割りのpure幾何。分割木(BSP)から各コマの四角形を導出する
  * 依存: なし（DOM / Pixi / Canvasを使わない）
  * 被依存: ui/panel-layout-popup.js, build/verify-panel-layout.mjs
- * 公開API: sanitizePanelLayoutData, isValidPanelTree, setPanelLineWidth, setPanelCorner,
- *   resetPanelCorners, hitTestCorner, createPanelTree, resolvePanelLayout, splitPanel, removePanel,
+ * 公開API: sanitizePanelLayoutData, isValidPanelTree, setPanelLineWidth, setPanelDeleted,
+ *   dragPanelCorner, resetOuterCorners, snapSplitPoint, alignLayout, hitTestCorner, createPanelTree, resolvePanelLayout, splitPanel, removePanel,
  *   updateSplit, setPanelBleed, hitTestPanel, hitTestSplit, dragSplitRatio, buildPresetTree,
  *   PANEL_PRESETS, normalizePanelLayoutParams
  * 保存: 木そのものはここでは保存しない。popupが(a)UI設定をlocalStorageへ、(b)確定した枠Layerの
@@ -13,16 +13,24 @@
  * 実装状態: ✅実装（WP-010 Rough Product Pass）
  *
  * データ契約
- *   node = { id, kind: 'panel', bleed?: {top,right,bottom,left}, lineWidth?: number, corners?: [[dx,dy]x4] }
+ *   node = { id, kind: 'panel', bleed?: {top,right,bottom,left}, lineWidth?: number, deleted?: true }
  *        | { id, kind: 'split', dir: 'h'|'v', ratio, slant, gap: number|null, a, b }
  *   dir 'h' = 水平に切って a=上 / b=下、'v' = 垂直に切って a=左 / b=右。
  *   ratio = a側が占める割合(0..1)。slant = 切断線の傾き(割合単位。0で直線)。
  *   gap = この分割線だけの間隔(px)。nullなら全体paramsのgapを使う。
  *   bleed = 辺ごとに外周余白を無視してキャンバス端まで伸ばす(裁ち落とし)。
- *   lineWidth = このコマだけの線幅(px)。corners = 解決後の頂点を動かすオフセット(自由変形)。
+ *   lineWidth = このコマだけの線幅(px)。deleted = コマを描かず番号も振らない(領域は空白のまま)。
+ *   root node のみ outer?: [[dx,dy]x4] = ページ外周4頂点のオフセット。
+ *   頂点ドラッグは「その頂点が乗る分割線の端 / 外周」を動かす(setPanelCornerの代わりにdragPanelCorner)。
+ *   このため斜め変形しても隣のコマは設定の間隔を保って追従する。
+ *   番号: 右上から(日本式)。h分割は a→b、v分割は b(右)→a(左) の順に深さ優先で振る。
  *   コマは常に凸四角形 [TL, TR, BR, BL]。
  * ============================================================================
  */
+
+/** 既定色はふたば配色(白・灰・黒を使わない)。futaba-maroon / futaba-cream。 */
+export const PANEL_DEFAULT_LINE_COLOR = '#800000';
+export const PANEL_DEFAULT_PAPER_COLOR = '#f0e0d6';
 
 export const PANEL_LAYOUT_LIMITS = Object.freeze({
     margin: { min: 0, max: 400 },
@@ -104,17 +112,29 @@ export function listPanels(node, out = []) {
     return out;
 }
 
+function stripOuter(node) {
+    const { outer, ...rest } = node;
+    if (node.kind === 'split') return { ...rest, a: stripOuter(node.a), b: stripOuter(node.b) };
+    return rest;
+}
+
+/** 根が差し替わる編集でも外周オフセットを新しい根へ引き継ぐ。 */
+function carryOuter(before, after) {
+    if (!before.outer || after === before) return after;
+    return { ...stripOuter(after), outer: before.outer };
+}
+
 /** コマ panelId を dir に ratio で二分割する。新しいコマは a/b それぞれ新IDを持つ(aが元のIDを継ぐ)。 */
 export function splitPanel(root, panelId, dir, ratio = 0.5, extra = {}) {
     const target = findNode(root, panelId);
     if (!target || target.kind !== 'panel') return root;
-    return mapNode(root, panelId, (panel) => makeSplit(
+    return carryOuter(root, mapNode(root, panelId, (panel) => makeSplit(
         dir === 'v' ? 'v' : 'h',
         ratio,
         panel,
         { id: nextId('p'), kind: 'panel' },
         extra
-    ));
+    )));
 }
 
 /** コマを削除し、兄弟が親の領域を引き継ぐ(結合)。最後の1コマは削除しない。 */
@@ -123,7 +143,7 @@ export function removePanel(root, panelId) {
     const parent = findParent(root, panelId);
     if (!parent) return root;
     const sibling = parent.a.id === panelId ? parent.b : parent.a;
-    return mapNode(root, parent.id, () => sibling);
+    return carryOuter(root, mapNode(root, parent.id, () => sibling));
 }
 
 export function updateSplit(root, splitId, patch = {}) {
@@ -160,26 +180,56 @@ export function setPanelLineWidth(root, panelId, lineWidth) {
     });
 }
 
-/** 解決後の頂点 index(0..3=TL,TR,BR,BL) を (dx,dy) だけ動かす。 */
-export function setPanelCorner(root, panelId, index, dx, dy) {
+export function setPanelDeleted(root, panelId, deleted) {
     return mapNode(root, panelId, (node) => {
-        if (node.kind !== 'panel' || !(index >= 0 && index < 4)) return node;
-        const corners = (node.corners || [[0, 0], [0, 0], [0, 0], [0, 0]]).map(c => [...c]);
-        corners[index] = [Number(dx) || 0, Number(dy) || 0];
+        if (node.kind !== 'panel') return node;
         const next = { ...node };
-        if (corners.every(([x, y]) => Math.abs(x) < 1e-6 && Math.abs(y) < 1e-6)) delete next.corners;
-        else next.corners = corners;
+        if (deleted) next.deleted = true;
+        else delete next.deleted;
         return next;
     });
 }
 
-export function resetPanelCorners(root, panelId) {
-    return mapNode(root, panelId, (node) => {
-        if (node.kind !== 'panel' || !node.corners) return node;
-        const next = { ...node };
-        delete next.corners;
+/** ページ外周の頂点オフセットを消す(外周を元の矩形へ戻す)。 */
+export function resetOuterCorners(root) {
+    if (!root.outer) return root;
+    const next = { ...root };
+    delete next.outer;
+    return next;
+}
+
+/**
+ * 解決済みコマ panelId の頂点 index(0..3=TL,TR,BR,BL) をポインタ pt へ動かす。
+ * 頂点が分割線の端なら、その線の端(割合)だけを動かすので、間隔を保ったまま隣のコマも追従する。
+ * 外周の頂点なら外周オフセットを動かす(全コマが追従)。
+ */
+export function dragPanelCorner(root, resolved, panelId, index, pt) {
+    const panel = resolved.panels.find(p => p.id === panelId);
+    const src = panel?.cornerSources?.[index];
+    if (!src) return root;
+    if (src.type === 'root') {
+        const base = resolved.rootBase[src.index];
+        const outer = (root.outer || [[0, 0], [0, 0], [0, 0], [0, 0]]).map(c => [...c]);
+        outer[src.index] = [pt.x - base.x, pt.y - base.y];
+        const next = { ...root };
+        if (outer.every(([x, y]) => Math.abs(x) < 1e-6 && Math.abs(y) < 1e-6)) delete next.outer;
+        else next.outer = outer;
         return next;
-    });
+    }
+    const split = resolved.splits.find(sp => sp.id === src.splitId);
+    if (!split) return root;
+    const [e0, e1] = split.edges[src.end];
+    // 隅は中心線から間隔の半分だけa側/b側へずれているので、中心線の端へ補正してから辺へ射影する
+    const sign = src.side === 'a' ? 1 : -1;
+    const target = { x: pt.x + split.normal.x * (split.gap / 2) * sign, y: pt.y + split.normal.y * (split.gap / 2) * sign };
+    const dx = e1.x - e0.x;
+    const dy = e1.y - e0.y;
+    const t = clamp(((target.x - e0.x) * dx + (target.y - e0.y) * dy) / (dx * dx + dy * dy || 1), 0.02, 0.98);
+    const t0 = split.node.ratio + (split.node.slant || 0) / 2;
+    const t1 = split.node.ratio - (split.node.slant || 0) / 2;
+    const n0 = src.end === 0 ? t : t0;
+    const n1 = src.end === 1 ? t : t1;
+    return updateSplit(root, split.id, { ratio: (n0 + n1) / 2, slant: n0 - n1 });
 }
 
 export function isValidPanelTree(node, depth = 0) {
@@ -206,10 +256,7 @@ export function sanitizePanelLayoutData(data) {
             if (Number.isFinite(node.lineWidth)) {
                 out.lineWidth = clamp(node.lineWidth, PANEL_LAYOUT_LIMITS.lineWidth.min, PANEL_LAYOUT_LIMITS.lineWidth.max);
             }
-            if (Array.isArray(node.corners) && node.corners.length === 4
-                && node.corners.every(c => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]))) {
-                out.corners = node.corners.map(c => [c[0], c[1]]);
-            }
+            if (node.deleted === true) out.deleted = true;
             return out;
         }
         return {
@@ -223,13 +270,19 @@ export function sanitizePanelLayoutData(data) {
             b: clean(node.b)
         };
     };
-    const color = /^#[0-9a-f]{6}$/i.test(data.color || '') ? data.color : '#000000';
-    const paperColor = /^#[0-9a-f]{6}$/i.test(data.paperColor || '') ? data.paperColor : '#ffffff';
+    const color = /^#[0-9a-f]{6}$/i.test(data.color || '') ? data.color : PANEL_DEFAULT_LINE_COLOR;
+    const paperColor = /^#[0-9a-f]{6}$/i.test(data.paperColor || '') ? data.paperColor : PANEL_DEFAULT_PAPER_COLOR;
+    const tree = clean(data.tree);
+    const outer = data.tree.outer;
+    if (Array.isArray(outer) && outer.length === 4
+        && outer.every(c => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]))) {
+        tree.outer = outer.map(c => [c[0], c[1]]);
+    }
     return {
         v: 1,
         groupId: typeof data.groupId === 'string' ? data.groupId : null,
-        role: data.role === 'paper' || data.role === 'inner' ? data.role : 'lines',
-        tree: clean(data.tree),
+        role: ['paper', 'inner', 'folder'].includes(data.role) ? data.role : 'lines',
+        tree,
         params: normalizePanelLayoutParams(data.params),
         color,
         paperColor
@@ -261,7 +314,7 @@ function cutPoints(edgeA0, edgeA1, edgeB0, edgeB1, t0, t1, offset, nx, ny) {
     return { line: [p0, p1], q0: q0 || p0, q1: q1 || p1 };
 }
 
-function splitQuad(quad, node, gapPx) {
+function splitQuad(quad, node, gapPx, src) {
     const [TL, TR, BR, BL] = quad;
     const half = gapPx / 2;
     const slant = node.slant || 0;
@@ -277,10 +330,15 @@ function splitQuad(quad, node, gapPx) {
         if (n.x * (BL.x - TL.x) + n.y * (BL.y - TL.y) < 0) n = { x: -n.x, y: -n.y }; // 下向き(b側)
         const up = cutPoints(TL, BL, TR, BR, t0, t1, -half, n.x, n.y);
         const down = cutPoints(TL, BL, TR, BR, t0, t1, half, n.x, n.y);
+        const sid = node.id;
         return {
             cut: base.line,
             a: [TL, TR, up.q1, up.q0],
-            b: [down.q0, down.q1, BR, BL]
+            b: [down.q0, down.q1, BR, BL],
+            aSrc: [src[0], src[1], { type: 'cut', splitId: sid, end: 1, side: 'a' }, { type: 'cut', splitId: sid, end: 0, side: 'a' }],
+            bSrc: [{ type: 'cut', splitId: sid, end: 0, side: 'b' }, { type: 'cut', splitId: sid, end: 1, side: 'b' }, src[2], src[3]],
+            edges: [[TL, BL], [TR, BR]],
+            normal: n
         };
     }
 
@@ -292,10 +350,15 @@ function splitQuad(quad, node, gapPx) {
     if (n.x * (TR.x - TL.x) + n.y * (TR.y - TL.y) < 0) n = { x: -n.x, y: -n.y }; // 右向き(b側)
     const left = cutPoints(TL, TR, BL, BR, t0, t1, -half, n.x, n.y);
     const right = cutPoints(TL, TR, BL, BR, t0, t1, half, n.x, n.y);
+    const sid = node.id;
     return {
         cut: base.line,
         a: [TL, left.q0, left.q1, BL],
-        b: [right.q0, TR, BR, right.q1]
+        b: [right.q0, TR, BR, right.q1],
+        aSrc: [src[0], { type: 'cut', splitId: sid, end: 0, side: 'a' }, { type: 'cut', splitId: sid, end: 1, side: 'a' }, src[3]],
+        bSrc: [{ type: 'cut', splitId: sid, end: 0, side: 'b' }, src[1], src[2], { type: 'cut', splitId: sid, end: 1, side: 'b' }],
+        edges: [[TL, TR], [BL, BR]],
+        normal: n
     };
 }
 
@@ -341,41 +404,51 @@ export function resolvePanelLayout(root, canvas, rawParams = {}) {
     const width = Math.max(1, Number(canvas?.width) || 1);
     const height = Math.max(1, Number(canvas?.height) || 1);
     const m = Math.min(params.margin, Math.min(width, height) / 2 - 1);
-    const rootQuad = [
+    const rootBase = [
         { x: m, y: m },
         { x: width - m, y: m },
         { x: width - m, y: height - m },
         { x: m, y: height - m }
     ];
+    const rootQuad = root.outer
+        ? rootBase.map((p, i) => ({ x: p.x + root.outer[i][0], y: p.y + root.outer[i][1] }))
+        : rootBase;
     const panels = [];
     const splits = [];
+    const numbers = numberPanels(root);
     let valid = true;
 
-    const walk = (node, quad) => {
+    const walk = (node, quad, src) => {
         if (node.kind === 'panel') {
-            if (quadMinEdge(quad) < MIN_PANEL_EDGE) valid = false;
-            const baseQuad = applyBleed(quad, node.bleed, { width, height });
-            const finalQuad = node.corners
-                ? baseQuad.map((p, i) => ({ x: p.x + node.corners[i][0], y: p.y + node.corners[i][1] }))
-                : baseQuad;
+            if (quadMinEdge(quad) < MIN_PANEL_EDGE && node.deleted !== true) valid = false;
             panels.push({
                 id: node.id,
-                quad: finalQuad,
-                baseQuad,
+                quad: applyBleed(quad, node.bleed, { width, height }),
                 bleed: node.bleed || null,
                 lineWidth: Number.isFinite(node.lineWidth) ? node.lineWidth : null,
-                hasCorners: !!node.corners
+                deleted: node.deleted === true,
+                number: numbers.get(node.id) ?? null,
+                cornerSources: src
             });
             return;
         }
         const gapPx = node.gap ?? params.gap;
-        const result = splitQuad(quad, node, gapPx);
-        splits.push({ id: node.id, dir: node.dir, cut: result.cut, region: quad, node });
-        walk(node.a, result.a);
-        walk(node.b, result.b);
+        const result = splitQuad(quad, node, gapPx, src);
+        splits.push({
+            id: node.id,
+            dir: node.dir,
+            cut: result.cut,
+            region: quad,
+            node,
+            gap: gapPx,
+            edges: result.edges,
+            normal: result.normal
+        });
+        walk(node.a, result.a, result.aSrc);
+        walk(node.b, result.b, result.bSrc);
     };
-    walk(root, rootQuad);
-    return { panels, splits, valid, params };
+    walk(root, rootQuad, [0, 1, 2, 3].map(index => ({ type: 'root', index })));
+    return { panels, splits, valid, params, rootBase };
 }
 
 function pointInQuad(pt, quad) {
@@ -446,6 +519,119 @@ export function dragSplitRatio(resolved, splitId, pt) {
     const len2 = dx * dx + dy * dy || 1;
     return clamp(((pt.x - a0.x) * dx + (pt.y - a0.y) * dy) / len2,
         PANEL_LAYOUT_LIMITS.ratio.min, PANEL_LAYOUT_LIMITS.ratio.max);
+}
+
+// ---------------------------------------------------------------- 番号 / 吸着 / 整列
+
+/** 右上から数える日本式の番号。deletedは番号を飛ばす。Map(panelId → 1..N) */
+export function numberPanels(root) {
+    const map = new Map();
+    let n = 0;
+    const walk = (node) => {
+        if (node.kind === 'panel') {
+            if (node.deleted !== true) map.set(node.id, (n += 1));
+            return;
+        }
+        if (node.dir === 'v') {
+            walk(node.b);
+            walk(node.a);
+        } else {
+            walk(node.a);
+            walk(node.b);
+        }
+    };
+    walk(root);
+    return map;
+}
+
+function isAxisAlignedRegion(region) {
+    const [TL, TR, BR, BL] = region;
+    const eps = 0.75;
+    return Math.abs(TL.y - TR.y) < eps && Math.abs(BL.y - BR.y) < eps
+        && Math.abs(TL.x - BL.x) < eps && Math.abs(TR.x - BR.x) < eps;
+}
+
+/** 他の同方向・水平/垂直な分割線の位置へ、ドラッグ中の点を吸着させる(snapPx以内)。 */
+export function snapSplitPoint(resolved, splitId, pt, snapPx = 6) {
+    const split = resolved.splits.find(s => s.id === splitId);
+    if (!split) return pt;
+    const axis = split.dir === 'h' ? 'y' : 'x';
+    let best = null;
+    let bestDist = snapPx;
+    for (const other of resolved.splits) {
+        if (other.id === splitId || other.dir !== split.dir || Math.abs(other.node.slant || 0) > 0.001) continue;
+        const value = other.cut[0][axis];
+        const dist = Math.abs(pt[axis] - value);
+        if (dist <= bestDist) {
+            bestDist = dist;
+            best = value;
+        }
+    }
+    return best === null ? pt : { ...pt, [axis]: best };
+}
+
+const NICE_RATIOS = [1 / 2, 1 / 3, 2 / 3, 1 / 4, 3 / 4, 1 / 5, 2 / 5, 3 / 5, 4 / 5];
+
+/**
+ * わずかなズレを整える: 小さな傾き→0、素直な分割比へスナップ、
+ * 別々の列にある水平/垂直の分割線(ほぼ同じ位置)を同じ位置へ揃える。
+ * @returns {{ tree, changed: number }}
+ */
+export function alignLayout(root, canvas, params, options = {}) {
+    const tolPx = options.tolPx ?? 14;
+    const tolSlant = options.tolSlant ?? 0.03;
+    const tolRatio = options.tolRatio ?? 0.015;
+    let tree = root;
+    let changed = 0;
+
+    const visit = (node) => {
+        if (node.kind !== 'split') return;
+        if (node.slant && Math.abs(node.slant) < tolSlant) {
+            tree = updateSplit(tree, node.id, { slant: 0 });
+            changed += 1;
+        }
+        const target = NICE_RATIOS.find(r => Math.abs(r - node.ratio) < tolRatio && Math.abs(r - node.ratio) > 1e-6);
+        if (target !== undefined) {
+            tree = updateSplit(tree, node.id, { ratio: target });
+            changed += 1;
+        }
+        visit(node.a);
+        visit(node.b);
+    };
+    visit(root);
+
+    // 位置の揃え: 1回に1クラスタずつ適用し、再解決して繰り返す(親の移動が子の領域を変えるため)
+    for (let pass = 0; pass < 24; pass += 1) {
+        const resolved = resolvePanelLayout(tree, canvas, params);
+        let applied = false;
+        for (const dir of ['h', 'v']) {
+            const axis = dir === 'h' ? 'y' : 'x';
+            const candidates = resolved.splits
+                .filter(sp => sp.dir === dir && !sp.node.slant && isAxisAlignedRegion(sp.region))
+                .map(sp => ({ sp, value: sp.cut[0][axis] }))
+                .sort((a, b) => a.value - b.value);
+            for (let i = 0; i < candidates.length && !applied; i += 1) {
+                const group = [candidates[i]];
+                for (let j = i + 1; j < candidates.length; j += 1) {
+                    if (candidates[j].value - group[0].value <= tolPx) group.push(candidates[j]);
+                }
+                const mean = group.reduce((sum, g) => sum + g.value, 0) / group.length;
+                if (group.length < 2 || group.every(g => Math.abs(g.value - mean) < 0.5)) continue;
+                for (const g of group) {
+                    const [TL, TR, BR, BL] = g.sp.region;
+                    const start = dir === 'h' ? TL.y : TL.x;
+                    const end = dir === 'h' ? BL.y : TR.x;
+                    const ratio = (mean - start) / (end - start || 1);
+                    tree = updateSplit(tree, g.sp.id, { ratio });
+                    changed += 1;
+                }
+                applied = true;
+            }
+            if (applied) break;
+        }
+        if (!applied) break;
+    }
+    return { tree, changed };
 }
 
 // ---------------------------------------------------------------- プリセット

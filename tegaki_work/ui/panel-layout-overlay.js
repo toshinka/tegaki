@@ -97,8 +97,15 @@ export class PanelLayoutOverlay {
             if (pts.some(p => !p)) continue;
             const points = pts.map(p => `${p.x},${p.y}`).join(' ');
             const selected = panel.id === selectedId;
-            const poly = el('polygon', { points, class: `pl-ov-panel${selected ? ' is-selected' : ''}` });
+            const poly = el('polygon', { points, class: `pl-ov-panel${selected ? ' is-selected' : ''}${panel.deleted ? ' is-deleted' : ''}` });
             this.svg.appendChild(poly);
+            if (panel.number) {
+                const cx = pts.reduce((sum, p) => sum + p.x, 0) / 4;
+                const cy = pts.reduce((sum, p) => sum + p.y, 0) / 4;
+                const text = el('text', { x: cx, y: cy, class: 'pl-ov-number' });
+                text.textContent = String(panel.number);
+                this.svg.appendChild(text);
+            }
             const hit = el('polygon', { points, class: 'pl-ov-hit', 'data-kind': 'panel' });
             hit.addEventListener('pointerdown', e => this._down({ type: 'panel', id: panel.id }, e));
             this.svg.appendChild(hit);

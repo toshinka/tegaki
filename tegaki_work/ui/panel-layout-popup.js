@@ -16,9 +16,13 @@
 import { TegakiEventBus } from '../system/event-bus.js';
 import { historyManager } from '../system/history.js';
 import {
+    PANEL_DEFAULT_LINE_COLOR,
+    PANEL_DEFAULT_PAPER_COLOR,
     PANEL_LAYOUT_LIMITS,
     PANEL_PRESETS,
+    alignLayout,
     buildPresetById,
+    dragPanelCorner,
     dragSplitRatio,
     findNode,
     findParent,
@@ -28,12 +32,13 @@ import {
     isValidPanelTree,
     normalizePanelLayoutParams,
     removePanel,
-    resetPanelCorners,
+    resetOuterCorners,
     resolvePanelLayout,
     sanitizePanelLayoutData,
     setPanelBleed,
-    setPanelCorner,
+    setPanelDeleted,
     setPanelLineWidth,
+    snapSplitPoint,
     splitPanel,
     updateSplit
 } from '../system/panel-layout.js';
@@ -79,8 +84,8 @@ export class PanelLayoutPopup {
         this.elements = {};
 
         this.params = normalizePanelLayoutParams();
-        this.color = '#000000';
-        this.paperColor = '#ffffff';
+        this.color = PANEL_DEFAULT_LINE_COLOR;
+        this.paperColor = PANEL_DEFAULT_PAPER_COLOR;
         this.outputMode = 'lines';
         this.showOverlay = true;
         this.tree = buildPresetById('grid4');
@@ -116,8 +121,10 @@ export class PanelLayoutPopup {
             if (!raw) return;
             const data = JSON.parse(raw);
             if (data?.params) this.params = normalizePanelLayoutParams(data.params);
-            if (/^#[0-9a-f]{6}$/i.test(data?.color || '')) this.color = data.color;
-            if (/^#[0-9a-f]{6}$/i.test(data?.paperColor || '')) this.paperColor = data.paperColor;
+            // 旧既定(黒/白)のままの保存値はふたば配色の既定へ移行する
+            const legacyDefaults = data?.color === '#000000' && data?.paperColor === '#ffffff';
+            if (!legacyDefaults && /^#[0-9a-f]{6}$/i.test(data?.color || '')) this.color = data.color;
+            if (!legacyDefaults && /^#[0-9a-f]{6}$/i.test(data?.paperColor || '')) this.paperColor = data.paperColor;
             if (OUTPUT_MODES.some(m => m.id === data?.outputMode)) this.outputMode = data.outputMode;
             if (typeof data?.showOverlay === 'boolean') this.showOverlay = data.showOverlay;
             if (data?.tree && isValidPanelTree(data.tree)) {
@@ -156,7 +163,7 @@ export class PanelLayoutPopup {
         if (!popup) {
             popup = document.createElement('div');
             popup.id = POPUP_ID;
-            popup.className = 'popup-panel popup-panel--translucent panel-layout-popup';
+            popup.className = 'popup-panel popup-panel--translucent ui-scrollbar panel-layout-popup';
             popup.style.top = '60px';
             popup.style.left = '60px';
             (document.querySelector('.main-layout') || document.body).appendChild(popup);
@@ -197,7 +204,7 @@ export class PanelLayoutPopup {
             <div class="pl-title">コマ割り <span class="pl-edit-status" data-role="edit-status"></span></div>
             <div class="pl-presets" role="group" aria-label="プリセット">${presetButtons}</div>
             <canvas class="pl-preview" width="${PREVIEW_MAX.width}" height="${PREVIEW_MAX.height}" aria-label="コマ割りプレビュー"></canvas>
-            <div class="pl-hint">コマ/線/頂点をドラッグ。キャンバス上でも同じ操作ができます</div>
+            <div class="pl-hint">コマ/線/頂点をドラッグ（Altで吸着オフ）。番号は右上から</div>
             <label class="pl-row pl-check">
                 <input type="checkbox" data-role="overlay-toggle">
                 <span>キャンバス上に重ねて表示・操作する</span>
@@ -205,7 +212,12 @@ export class PanelLayoutPopup {
             <div class="pl-actions" role="group" aria-label="選択コマの操作">
                 <button type="button" class="pl-btn" data-action="split-h" title="選択コマを上下に分割">上下に分割</button>
                 <button type="button" class="pl-btn" data-action="split-v" title="選択コマを左右に分割">左右に分割</button>
-                <button type="button" class="pl-btn" data-action="remove" title="選択コマを削除し隣のコマが広がる">結合</button>
+                <button type="button" class="pl-btn" data-action="remove" title="選択コマを消して隣のコマが広がる">結合</button>
+                <button type="button" class="pl-btn" data-action="toggle-delete" data-role="delete-btn" title="選択コマを描かず空白にする（番号も飛ぶ）。もう一度押すと復活">削除</button>
+            </div>
+            <div class="pl-actions" role="group" aria-label="全体の操作">
+                <button type="button" class="pl-btn" data-action="align" title="わずかなズレを整える（小さな傾き・素直な分割比・ほぼ同じ位置の線を揃える）">整列</button>
+                <button type="button" class="pl-btn" data-action="reset-outer" title="外周の頂点を元の矩形へ戻す">外周を戻す</button>
             </div>
             <div class="pl-split-group" data-role="split-group">
                 <label class="pl-row">
@@ -232,7 +244,6 @@ export class PanelLayoutPopup {
                 </div>
                 <div class="pl-row">
                     <button type="button" class="pl-btn pl-btn--small" data-action="reset-panel-line">線を全体に合わせる</button>
-                    <button type="button" class="pl-btn pl-btn--small" data-action="reset-corners">頂点を元に戻す</button>
                 </div>
             </div>
             <div class="pl-sep"></div>
@@ -269,7 +280,8 @@ export class PanelLayoutPopup {
             loadBtn: q('[data-action="load-active"]'),
             overlayToggle: q('[data-role="overlay-toggle"]'),
             paperLabel: q('[data-role="paper-label"]'),
-            paperColor: q('[data-color="paper"]')
+            paperColor: q('[data-color="paper"]'),
+            deleteBtn: q('[data-role="delete-btn"]')
         };
         this._bind();
         this._syncControls();
@@ -377,12 +389,20 @@ export class PanelLayoutPopup {
                 this.tree = setPanelLineWidth(this.tree, id, null);
                 this._changed();
             }
-        } else if (action === 'reset-corners') {
+        } else if (action === 'reset-outer') {
+            this.tree = resetOuterCorners(this.tree);
+            this._changed();
+        } else if (action === 'toggle-delete') {
             const id = this._selectedPanelId();
-            if (id) {
-                this.tree = resetPanelCorners(this.tree, id);
-                this._changed();
-            }
+            if (!id) return showFeedbackToast('削除するコマを選択してください');
+            const node = findNode(this.tree, id);
+            this.tree = setPanelDeleted(this.tree, id, node.deleted !== true);
+            this._changed();
+        } else if (action === 'align') {
+            const result = alignLayout(this.tree, this._canvasSize(), this.params);
+            this.tree = result.tree;
+            this._changed();
+            showFeedbackToast(result.changed ? `整列しました（${result.changed}箇所）` : 'すでに整っています');
         }
     }
 
@@ -452,6 +472,7 @@ export class PanelLayoutPopup {
         this.elements.paperLabel.hidden = !paper;
         this.elements.paperColor.hidden = !paper;
         this.elements.overlayToggle.checked = this.showOverlay;
+        this.elements.deleteBtn.textContent = panel?.deleted === true ? '復活' : '削除';
         this.elements.editStatus.textContent = this.editing ? '— 再編集中' : '';
         this.elements.updateBtn.hidden = !this.editing;
         this.elements.loadBtn.disabled = !this._activePanelLayout();
@@ -474,7 +495,7 @@ export class PanelLayoutPopup {
         const move = (e) => {
             if (!this.drag || e.pointerId !== this.drag.pointerId) return;
             const pt = toPoint(e);
-            if (pt) this._applyDrag(pt);
+            if (pt) this._applyDrag(pt, e.altKey === true);
         };
         const up = (e) => {
             if (!this.drag || e.pointerId !== this.drag.pointerId) return;
@@ -506,17 +527,15 @@ export class PanelLayoutPopup {
         this.drag = null;
     }
 
-    _applyDrag(pt) {
+    _applyDrag(pt, noSnap = false) {
         const drag = this.drag;
         if (!drag || !this.resolved) return;
         if (drag.type === 'split') {
-            const ratio = dragSplitRatio(this.resolved, drag.id, pt);
+            const target = noSnap ? pt : snapSplitPoint(this.resolved, drag.id, pt, 6 / Math.max(this.scale, 0.2));
+            const ratio = dragSplitRatio(this.resolved, drag.id, target);
             if (ratio !== null) this.tree = updateSplit(this.tree, drag.id, { ratio });
         } else if (drag.type === 'corner') {
-            const panel = this.resolved.panels.find(p => p.id === drag.id);
-            if (!panel) return;
-            const base = panel.baseQuad[drag.index];
-            this.tree = setPanelCorner(this.tree, drag.id, drag.index, pt.x - base.x, pt.y - base.y);
+            this.tree = dragPanelCorner(this.tree, this.resolved, drag.id, drag.index, pt);
         }
         this._persist();
         this._redraw();
@@ -595,6 +614,14 @@ export class PanelLayoutPopup {
         };
         for (const panel of this.resolved.panels) {
             trace(panel.quad);
+            if (panel.deleted) {
+                ctx.setLineDash([3, 4]);
+                ctx.strokeStyle = panel.id === this.selectedId ? '#ff8c42' : '#b8706b';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                ctx.setLineDash([]);
+                continue;
+            }
             ctx.fillStyle = this.outputMode === 'paper'
                 ? this.paperColor
                 : (panel.id === this.selectedId ? 'rgba(255, 140, 66, 0.22)' : 'rgba(212, 168, 160, 0.28)');
@@ -607,7 +634,20 @@ export class PanelLayoutPopup {
             ctx.lineWidth = Math.max(1, (panel.lineWidth ?? this.params.lineWidth) * s);
             ctx.lineJoin = 'miter';
             ctx.stroke();
+            if (panel.number) {
+                const cx = panel.quad.reduce((sum, q) => sum + q.x, 0) / 4 * s;
+                const cy = panel.quad.reduce((sum, q) => sum + q.y, 0) / 4 * s;
+                ctx.font = `700 ${Math.max(12, Math.min(34, 30 * s * 2))}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = '#ffffee';
+                ctx.strokeText(String(panel.number), cx, cy);
+                ctx.fillStyle = 'rgba(128, 0, 0, 0.5)';
+                ctx.fillText(String(panel.number), cx, cy);
+            }
             if (panel.id === this.selectedId) {
+                trace(panel.quad);
                 ctx.strokeStyle = '#ff8c42';
                 ctx.lineWidth = 2;
                 ctx.stroke();
@@ -708,6 +748,7 @@ export class PanelLayoutPopup {
         const names = { paper: 'コマ白', inner: 'コマ内描画', lines: 'コマ枠' };
         let recorded = 0;
         let failure = null;
+        const memberIds = [];
 
         for (const role of roles) {
             const raster = this._rasterFor(role, resolved);
@@ -720,6 +761,7 @@ export class PanelLayoutPopup {
             }
             if (!created) { failure = 'コマ枠レイヤーを作成できません'; break; }
             recorded += 1;
+            memberIds.push(created.layer.layerData.id);
             if (role === 'inner') {
                 const layerId = created.layer.layerData.id;
                 this._setClipping(layerId, 'normal');
@@ -730,6 +772,22 @@ export class PanelLayoutPopup {
                     meta: { type: 'panel-layout-clipping', layerId }
                 });
                 recorded += 1;
+            }
+        }
+
+        // 白コマ / コマ内描画 / 枠線 は1セットとして専用フォルダへ収納する(下から paper, inner, lines の順)
+        if (!failure && roles.length > 1) {
+            const folder = this.layerSystem.createFolder?.('コマ割り');
+            if (folder?.layer?.layerData) {
+                recorded += 1;
+                folder.layer.layerData.panelLayout = this._layoutMeta('folder', groupId);
+                const folderId = folder.layer.layerData.id;
+                for (const id of memberIds) {
+                    const alreadyInside = this.layerSystem.getLayers()
+                        .find(l => l.layerData?.id === id)?.layerData?.parentId === folderId;
+                    if (!alreadyInside && this.layerSystem.moveLayerIntoFolder(id, folderId)) recorded += 1;
+                }
+                this.layerSystem.refreshClippingMasks?.();
             }
         }
 
@@ -816,7 +874,7 @@ export class PanelLayoutPopup {
         this.params = data.params;
         this.color = data.color;
         this.paperColor = data.paperColor;
-        if (data.role === 'paper' || data.role === 'inner') this.outputMode = 'paper';
+        if (data.role === 'paper' || data.role === 'inner' || data.role === 'folder') this.outputMode = 'paper';
         this.selectedId = null;
         this.editing = data.groupId ? { groupId: data.groupId } : null;
         this.popup.querySelector('[data-color="line"]').value = this.color;

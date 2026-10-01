@@ -17,6 +17,7 @@
 状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING（Ownerは最終受入・pushの権限をClaudeにも付与済み）。設計・範囲・制約は[WP-010](work/WP-010-panel-layout.md)。
 - sidebarの「コマ割り」(Shift+K)でpopup。プリセット、分割/結合、分割線・頂点ドラッグ（popup内とキャンバス上の重ね表示の両方）、傾き、線ごとの間隔、コマごとの線幅、裁ち落とし、余白/間隔/線幅/色。
 - 出力は「枠線のみ」または「白コマ＋コマ内クリッピング＋枠線」の3Layer。いずれも1回のUndoで戻る。確定Layerは`layerData.panelLayout`(optional)を持ち、Projectへ保存・復元、「レイヤーから再編集→更新」で置換できる。Raster/History/renderer/既存保存の正本は変更なし。
+- Phase 3: ふたば配色の既定(線#800000/下地#f0e0d6)、頂点ドラッグで隣のコマが間隔を保って追従、コマの削除/復活、整列＋吸着、`コマ割り`フォルダ収納、右上起点の番号。
 - 検証: `verify-panel-layout.mjs`、`vite build`、Chromium実操作（上記全項目とproject save→load往復）。Owner実機（液タブ）は未確認。
 
 ### OWNER BACKLOG — 未着手の要望（2026-10-01記録、優先順はOwner判断）

@@ -11,7 +11,7 @@
 
 function parseColor(color) {
     const m = /^#?([0-9a-f]{6})$/i.exec(String(color || '').trim());
-    return m ? `#${m[1]}` : '#000000';
+    return m ? `#${m[1]}` : '#800000';
 }
 
 /**
@@ -23,7 +23,7 @@ export function rasterizePanelFrames(resolved, options = {}) {
     const height = Math.max(1, Math.round(options.height || 1));
     const mode = options.mode === 'fill' ? 'fill' : 'lines';
     const lineWidth = Number(options.lineWidth) || 0;
-    if (mode === 'lines' && lineWidth <= 0 && !resolved.panels.some(p => (p.lineWidth ?? 0) > 0)) {
+    if (mode === 'lines' && lineWidth <= 0 && !resolved.panels.some(p => !p.deleted && (p.lineWidth ?? 0) > 0)) {
         return { ok: false, reason: '線の太さが0です' };
     }
     if (typeof document === 'undefined') return { ok: false, reason: 'Canvas2Dを利用できません' };
@@ -40,6 +40,7 @@ export function rasterizePanelFrames(resolved, options = {}) {
     ctx.lineJoin = 'miter';
     ctx.miterLimit = 4;
     for (const panel of resolved.panels) {
+        if (panel.deleted) continue;
         ctx.beginPath();
         panel.quad.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
         ctx.closePath();
