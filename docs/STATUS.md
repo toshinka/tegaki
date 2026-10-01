@@ -4,6 +4,16 @@
 更新日: 2026-09-18。CHECKPOINT BASELINE HEAD: `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`と一致した状態で修正・検証を実施。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
+### BRUSH UPGRADE — Pen / Airbrush engine modernization（2026-10-01, branch `claude/brush-upgrade`, local / 未push）
+
+状態: TECHNICAL COMPLETE / OWNER 試用で好感触（実機液タブ）/ 最終受入・push未。全変更は `TEGAKI_CONFIG.brushEngine` のflagで旧挙動へ戻せる。
+- Airbrush: stroke maskをrgba16float化（低flow dabの8bit量子化解消）、hardness(1-softness)パラメータ化falloff + mipmap、dab Sprite/Container pool、mask描画をpointer event単位で1 renderへbatch（size4/60event: 470→65 calls、出力同一）。
+- Pen / Eraser / Airbrush: realtime区間をcentripetal Catmull-Rom補間（1sample先読み、pointerupで最終区間flush）。`curve-interpolator.js`をES module化。
+- Pen: 既定でairbrushと共通dab engine（float mask + max合成、opacityはcommit時一括）。抜きが重なりで濃くならずpressure opacityが効く。tap（無移動）は旧Graphics final bakeのまま。
+- 消しエアブラシ不具合修正: commit spriteをrender root直置きしていたためerase blendが無視され白で塗っていた → 親Container経由でerase。stroke中previewは対象Layerのraster spriteを「Layer複製 − mask」合成textureへ一時差し替え（下Layerまで抜けて見えた問題を解消）。
+- flags: `airbrushHighPrecisionMask` / `airbrushHardnessFalloff` / `airbrushDabPooling` / `airbrushEventBatching` / `airbrushErasePreviewComposite` / `realtimeCurveInterpolation` / `penDabRendering`(+`penDabSoftness`, `penDabSpacingRatio`)。
+- 既知差分: blend mode付きLayerではstroke中previewが通常合成（従来airbrushと同じ）。未着手候補: 筆圧カーブ、tilt/速度、静止時buildup、dab texture/grain、大キャンバス縮小時の表示mipmap・stroke開始時full baseline/履歴コスト。
+
 ### CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17 Correction Pass & Off-Canvas Investigation)
 
 - 根本原因1: 外部画像読み込み時、`layerData.rasterBounds` はキャンバス全面（例: 1920×1080）となる。これを拡縮（例: 2.5倍〜3倍）した際、`bakeTransform` が実描画内容（`calculateOpaqueRasterBounds`）ではなく全面 `rasterBounds` を affine 変換して `targetBounds` を求めていたため、18.7メガピクセル等に膨張し、`_isRasterBakeSizeAllowed`（16 MP上限）に抵触して `false` を返していた。
