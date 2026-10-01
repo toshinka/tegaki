@@ -6,50 +6,31 @@
  * 被依存: brush-core.js(吸着)、drawing-engine.js(編集ドラッグの振り分け)、keyboard-handler.js(R / Shift+R)
  * 非所有: Layer raster、History、保存(定規状態はブラウザ毎の利便設定としてlocalStorageに置く)。
  *
- * 座標はすべて文書(world)座標。ガイドはworldContainerの子として描くため書き出しには含まれない。
- * 吸着は「描き始めの点を通り、定規の方向に沿う直線」へ以後の点を射影する(クリスタの特殊定規と同じ考え方)。
- *   平行線: 方向 = 定規の角度
- *   放射線: 方向 = 中心→描き始めの点(集中線)
+ * 純幾何(吸着の射影・つかみ判定・角度スナップ・保存値のsanitize・ガイド線分)は system/ruler-geometry.js。
+ * ガイドはworldContainerの子として描くため書き出しには含まれない。色はふたば配色(styles/main.css のtoken値)。
  * ============================================================================
  */
 
 import { Graphics } from 'pixi.js';
+import {
+    RULER_TYPES,
+    RULER_TYPE_LABELS,
+    RULER_ROTATION_RING_SCREEN_PX,
+    applyRulerDrag,
+    buildRulerGuideSegments,
+    resolveRulerGrab,
+    sanitizeRulerState,
+    snapPointToRuler
+} from '../ruler-geometry.js';
 
-export const RULER_TYPES = ['parallel', 'radial'];
-const RULER_TYPE_LABELS = { parallel: '平行線定規', radial: '放射線定規（集中線）' };
+export { RULER_TYPES, snapPointToRuler };
+
 const STORAGE_KEY = 'tegaki-ruler-state-v1';
-const CENTER_HANDLE_SCREEN_PX = 14;
-const ROTATION_RING_SCREEN_PX = 70;
-const ANGLE_SNAP_DEG = 15;
-
-const clampAngle = (angle) => {
-    const turn = Math.PI * 2;
-    return ((angle % turn) + turn) % turn;
-};
-
-/**
- * 定規への吸着(純粋関数)。anchorを通り、定規が決める方向の直線へpointを射影する。
- * @returns {{x:number, y:number}}
- */
-export function snapPointToRuler(state, anchor, point) {
-    if (!state?.enabled || !anchor || !point) return point;
-    let dirX;
-    let dirY;
-    if (state.type === 'radial') {
-        dirX = anchor.x - state.center.x;
-        dirY = anchor.y - state.center.y;
-        const length = Math.hypot(dirX, dirY);
-        // 中心そのものから描き始めた場合は方向が決まらないため吸着しない。
-        if (!(length > 1e-6)) return point;
-        dirX /= length;
-        dirY /= length;
-    } else {
-        dirX = Math.cos(state.angle);
-        dirY = Math.sin(state.angle);
-    }
-    const t = (point.x - anchor.x) * dirX + (point.y - anchor.y) * dirY;
-    return { x: anchor.x + dirX * t, y: anchor.y + dirY * t };
-}
+// main.css: --futaba-maroon / --futaba-medium / --futaba-cream / --active-border
+const GUIDE_COLOR = 0x800000;
+const GUIDE_SUB_COLOR = 0xb8706b;
+const HANDLE_FILL_COLOR = 0xf0e0d6;
+const ROTATE_COLOR = 0xff8c42;
 
 export class RulerSystem {
     constructor({ cameraSystem, coordinateSystem, eventBus = null, config = null } = {}) {
@@ -80,15 +61,18 @@ export class RulerSystem {
             world.addChild(this.overlay);
         }
         if (typeof window !== 'undefined') {
-            const onKey = (e) => {
-                const held = e.shiftKey === true;
+            const setShiftHeld = (held) => {
                 if (held !== this.shiftHeld) {
                     this.shiftHeld = held;
                     this.redraw();
                 }
             };
+            // Shift自体のkeyupはshiftKeyがtrueのまま届く環境があるため、keyで判定する。
+            const onKey = (e) => setShiftHeld(e.key === 'Shift' ? e.type === 'keydown' : e.shiftKey === true);
             window.addEventListener('keydown', onKey, true);
             window.addEventListener('keyup', onKey, true);
+            // 別窓でShiftを離すなどkeyupを取り逃した場合も、次のポインタ移動で表示を戻す。
+            window.addEventListener('pointermove', (e) => setShiftHeld(e.shiftKey === true), { capture: true, passive: true });
             window.addEventListener('blur', () => {
                 this.shiftHeld = false;
                 this.redraw();
@@ -164,18 +148,7 @@ export class RulerSystem {
         // 定規の操作は線補正(LazyBrush)を通さない生のペン位置で追従させる。
         const world = this._clientToWorld(info.rawClientX ?? info.clientX, info.rawClientY ?? info.clientY);
         if (!world) return false;
-        const scale = this._getScreenScale();
-        const distancePx = Math.hypot(world.x - this.state.center.x, world.y - this.state.center.y) * scale;
-        if (distancePx <= CENTER_HANDLE_SCREEN_PX || this.state.type === 'radial') {
-            this.drag = {
-                kind: 'move',
-                offsetX: this.state.center.x - world.x,
-                offsetY: this.state.center.y - world.y
-            };
-        } else {
-            const grabAngle = Math.atan2(world.y - this.state.center.y, world.x - this.state.center.x);
-            this.drag = { kind: 'rotate', grabOffset: this.state.angle - grabAngle };
-        }
+        this.drag = resolveRulerGrab(this.state, world, this._getScreenScale());
         this.redraw();
         return true;
     }
@@ -185,17 +158,10 @@ export class RulerSystem {
         // 定規の操作は線補正(LazyBrush)を通さない生のペン位置で追従させる。
         const world = this._clientToWorld(info.rawClientX ?? info.clientX, info.rawClientY ?? info.clientY);
         if (!world) return true;
-        if (this.drag.kind === 'move') {
-            this.state.center = { x: world.x + this.drag.offsetX, y: world.y + this.drag.offsetY };
-            this._hasStoredCenter = true;
-        } else {
-            let angle = Math.atan2(world.y - this.state.center.y, world.x - this.state.center.x) + this.drag.grabOffset;
-            if (event?.ctrlKey || event?.metaKey) {
-                const step = (ANGLE_SNAP_DEG * Math.PI) / 180;
-                angle = Math.round(angle / step) * step;
-            }
-            this.state.angle = clampAngle(angle);
-        }
+        const next = applyRulerDrag(this.state, this.drag, world, { snapAngle: event?.ctrlKey || event?.metaKey });
+        this.state.center = next.center;
+        this.state.angle = next.angle;
+        if (this.drag.kind === 'move') this._hasStoredCenter = true;
         this.redraw();
         return true;
     }
@@ -224,56 +190,38 @@ export class RulerSystem {
         const scale = this._getScreenScale();
         const px = (value) => value / scale;
         const canvas = window.TEGAKI_CONFIG?.canvas || { width: 400, height: 400 };
-        const reach = Math.hypot(canvas.width, canvas.height) + Math.hypot(this.state.center.x, this.state.center.y);
         const { x: cx, y: cy } = this.state.center;
-        const guideColor = 0x3d8fd1;
-
-        if (this.state.type === 'radial') {
-            const spokes = 48;
-            for (let i = 0; i < spokes; i++) {
-                const a = (i / spokes) * Math.PI * 2;
-                g.moveTo(cx, cy);
-                g.lineTo(cx + Math.cos(a) * reach, cy + Math.sin(a) * reach);
-            }
-            g.stroke({ width: px(1), color: guideColor, alpha: 0.28 });
-        } else {
-            const dirX = Math.cos(this.state.angle);
-            const dirY = Math.sin(this.state.angle);
-            const normalX = -dirY;
-            const normalY = dirX;
-            const spacing = px(48);
-            const count = Math.ceil(reach / spacing);
-            for (let i = -count; i <= count; i++) {
-                const ox = cx + normalX * spacing * i;
-                const oy = cy + normalY * spacing * i;
-                g.moveTo(ox - dirX * reach, oy - dirY * reach);
-                g.lineTo(ox + dirX * reach, oy + dirY * reach);
-            }
-            g.stroke({ width: px(1), color: guideColor, alpha: 0.22 });
-            g.moveTo(cx - dirX * reach, cy - dirY * reach);
-            g.lineTo(cx + dirX * reach, cy + dirY * reach);
-            g.stroke({ width: px(1.5), color: guideColor, alpha: 0.55 });
+        const { lines, main } = buildRulerGuideSegments(this.state, canvas, scale);
+        for (const [x1, y1, x2, y2] of lines) {
+            g.moveTo(x1, y1);
+            g.lineTo(x2, y2);
+        }
+        g.stroke({ width: px(1), color: main ? GUIDE_SUB_COLOR : GUIDE_COLOR, alpha: main ? 0.4 : 0.3 });
+        if (main) {
+            g.moveTo(main[0], main[1]);
+            g.lineTo(main[2], main[3]);
+            g.stroke({ width: px(1.5), color: GUIDE_COLOR, alpha: 0.6 });
         }
 
         // 中心点(常時)と、Shift中は操作ハンドル(中心=移動、外周リング=回転)。
         const editing = this.shiftHeld || this.drag;
         g.circle(cx, cy, px(editing ? 7 : 4));
-        g.fill({ color: 0xffffff, alpha: 0.9 });
-        g.stroke({ width: px(1.5), color: guideColor, alpha: 1 });
+        g.fill({ color: HANDLE_FILL_COLOR, alpha: 0.9 });
+        g.stroke({ width: px(1.5), color: GUIDE_COLOR, alpha: 1 });
         if (editing) {
             g.moveTo(cx - px(11), cy);
             g.lineTo(cx + px(11), cy);
             g.moveTo(cx, cy - px(11));
             g.lineTo(cx, cy + px(11));
-            g.stroke({ width: px(1.5), color: guideColor, alpha: 1 });
+            g.stroke({ width: px(1.5), color: GUIDE_COLOR, alpha: 1 });
             if (this.state.type === 'parallel') {
-                g.circle(cx, cy, px(ROTATION_RING_SCREEN_PX));
-                g.stroke({ width: px(2), color: 0xff8c42, alpha: 0.85 });
+                g.circle(cx, cy, px(RULER_ROTATION_RING_SCREEN_PX));
+                g.stroke({ width: px(2), color: ROTATE_COLOR, alpha: 0.85 });
                 // 回転方向の目印(定規の向き)
-                const hx = cx + Math.cos(this.state.angle) * px(ROTATION_RING_SCREEN_PX);
-                const hy = cy + Math.sin(this.state.angle) * px(ROTATION_RING_SCREEN_PX);
+                const hx = cx + Math.cos(this.state.angle) * px(RULER_ROTATION_RING_SCREEN_PX);
+                const hy = cy + Math.sin(this.state.angle) * px(RULER_ROTATION_RING_SCREEN_PX);
                 g.circle(hx, hy, px(6));
-                g.fill({ color: 0xff8c42, alpha: 1 });
+                g.fill({ color: ROTATE_COLOR, alpha: 1 });
             }
         }
     }
@@ -302,17 +250,18 @@ export class RulerSystem {
 
     _loadState() {
         try {
-            const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-            if (!saved) return;
-            if (RULER_TYPES.includes(saved.type)) this.state.type = saved.type;
-            if (Number.isFinite(saved.angle)) this.state.angle = clampAngle(saved.angle);
-            if (Number.isFinite(saved.center?.x) && Number.isFinite(saved.center?.y)) {
-                this.state.center = { x: saved.center.x, y: saved.center.y };
+            const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+            if (!raw) return;
+            // 起動直後に吸着が効いていると驚くため、ON/OFFは保存しない(常にOFFで起動)。
+            const saved = sanitizeRulerState(raw, window.TEGAKI_CONFIG?.canvas);
+            this.state.type = saved.type;
+            this.state.angle = saved.angle;
+            if (saved.center) {
+                this.state.center = saved.center;
                 this._hasStoredCenter = true;
             }
-            // 起動直後に吸着が効いていると驚くため、ON/OFFは保存しない(常にOFFで起動)。
         } catch (_error) {
-            // localStorageが使えない環境では既定値のまま
+            // localStorageが使えない・壊れた値の場合は既定値のまま
         }
     }
 

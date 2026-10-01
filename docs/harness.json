@@ -26,6 +26,16 @@
     "docs/handoffs/2026-09-06-wp002-to-wp003.md"
   ],
   "domains": {
+    "ruler": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": [
+        "tegaki_work/system/ruler-geometry.js",
+        "tegaki_work/system/drawing/ruler-system.js"
+      ],
+      "patterns": [
+        "^verify-ruler"
+      ]
+    },
     "panel-layout": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [
