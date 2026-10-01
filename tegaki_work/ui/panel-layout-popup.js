@@ -47,6 +47,7 @@ import {
 } from '../system/panel-layout.js';
 import { emptyPanelRaster, rasterizePanelFrames } from '../system/panel-layout-raster.js';
 import { PanelLayoutOverlay } from './panel-layout-overlay.js';
+import { attachNumericField } from './numeric-field.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { showFeedbackToast } from './feedback-toast.js';
 
@@ -178,7 +179,7 @@ export class PanelLayoutPopup {
         this._build();
         // プレビューcanvasとrangeはpopup移動ではなく自前のpointer操作を優先する。
         this.popupDragCleanup = attachPopupDrag(popup, {
-            interactiveSelector: 'button, input, select, textarea, a, canvas, .popup-close-btn, .ui-close-button'
+            interactiveSelector: 'button, input, select, textarea, a, canvas, .pl-value, .popup-close-btn, .ui-close-button'
         });
     }
 
@@ -355,6 +356,19 @@ export class PanelLayoutPopup {
             btn.addEventListener('click', () => this._onAction(btn.dataset.action));
         });
 
+        // ホイール増減 + 値のダブルクリック直接入力
+        const fields = [
+            ...SLIDERS.map(sl => ({ sel: `input[data-param="${sl.key}"]`, value: sl.key })),
+            { sel: '[data-split="slant"]', value: 'slant', toDisplay: v => Math.round(v * 100), fromDisplay: v => v / 100, wheelStep: 0.01 },
+            { sel: '[data-split="gap"]', value: 'splitGap' },
+            { sel: '[data-panel="lineWidth"]', value: 'panelLineWidth' }
+        ];
+        this._fieldDetachers = fields.map(({ sel, value, ...opts }) => attachNumericField({
+            range: root.querySelector(sel),
+            valueEl: root.querySelector(`[data-value-for="${value}"]`),
+            ...opts
+        }));
+
         const canvas = this.elements.canvas;
         canvas.addEventListener('pointerdown', (e) => this._onPreviewPointerDown(e));
         canvas.addEventListener('pointermove', (e) => this._onPreviewHover(e));
@@ -459,7 +473,7 @@ export class PanelLayoutPopup {
             const input = this.popup.querySelector(`input[data-param="${s.key}"]`);
             if (input && Number(input.value) !== this.params[s.key]) input.value = String(this.params[s.key]);
             const out = this.popup.querySelector(`[data-value-for="${s.key}"]`);
-            if (out) out.textContent = `${this.params[s.key]}${s.unit}`;
+            if (out && !out.dataset.editing) out.textContent = `${this.params[s.key]}${s.unit}`;
         }
         const panel = this._selectedPanelId() ? findNode(this.tree, this._selectedPanelId()) : null;
         const split = this._selectedParentSplit();
@@ -468,14 +482,13 @@ export class PanelLayoutPopup {
         if (split) {
             this.popup.querySelector('[data-split="slant"]').value = String(split.slant || 0);
             this.popup.querySelector('[data-split="gap"]').value = String(split.gap ?? (split.dir === 'v' ? this.params.gapV : this.params.gapH));
-            this.popup.querySelector('[data-value-for="slant"]').textContent = `${Math.round((split.slant || 0) * 100)}%`;
-            this.popup.querySelector('[data-value-for="splitGap"]').textContent = split.gap == null ? '全体' : `${split.gap}px`;
+            this._setText('slant', `${Math.round((split.slant || 0) * 100)}%`);
+            this._setText('splitGap', split.gap == null ? '全体' : `${split.gap}px`);
         }
         if (panel) {
             const width = panel.lineWidth ?? this.params.lineWidth;
             this.popup.querySelector('[data-panel="lineWidth"]').value = String(width);
-            this.popup.querySelector('[data-value-for="panelLineWidth"]').textContent =
-                panel.lineWidth == null ? '全体' : `${panel.lineWidth}px`;
+            this._setText('panelLineWidth', panel.lineWidth == null ? '全体' : `${panel.lineWidth}px`);
         }
         this.popup.querySelectorAll('[data-bleed]').forEach(btn => {
             const on = panel?.bleed?.[btn.dataset.bleed] === true;
@@ -503,6 +516,12 @@ export class PanelLayoutPopup {
             const pct = max > min ? ((Number(input.value) - min) / (max - min)) * 100 : 0;
             input.style.setProperty('--pl-fill', `${Math.max(0, Math.min(100, pct))}%`);
         });
+    }
+
+    /** 値表示の更新。直接入力中(dataset.editing)は入力欄を壊さない。 */
+    _setText(key, text) {
+        const el = this.popup.querySelector(`[data-value-for="${key}"]`);
+        if (el && !el.dataset.editing) el.textContent = text;
     }
 
     _syncOverlayVisibility() {
