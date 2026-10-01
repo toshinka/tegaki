@@ -77,6 +77,8 @@ export const TEGAKI_CONFIG = {
         zoomedOutDisplayMipmaps: true,
         // penをGraphics線分ではなくairbrushと共通のdab engine(float mask + max合成)で描く。抜きが重なりで濃くならない。falseで旧Graphics線分。
         penDabRendering: true,
+        // 消しゴムもpenと同じdab engineで消す(Layerだけに効くpreview、同じ縁AA)。falseで旧Graphics線分。
+        eraserDabRendering: true,
         // pen dabの硬さ(0=硬い円)と、dab径に対する間隔比。
         penDabSoftness: 0,
         penDabSpacingRatio: 0.05

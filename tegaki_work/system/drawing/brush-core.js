@@ -596,7 +596,8 @@ export class BrushCore {
      * 旧Graphics final bakeと同じく、径はcalculateWidth、濃さはpressure opacity。
      */
     _renderPenDabTapIfNeeded(mode, strokeData) {
-        if (mode !== 'pen' || this.realtimePenApplied || this.airbrushState?.dabMode !== 'pen') return;
+        if (this.airbrushState?.dabMode !== 'pen') return;
+        if (mode === 'pen' ? this.realtimePenApplied : (mode !== 'eraser' || this.realtimeEraserApplied)) return;
         const points = strokeData?.points || [];
         if (points.length === 0) return;
         if (strokeData.isSingleDot === true || points.length === 1) {
@@ -606,11 +607,22 @@ export class BrushCore {
                 this._renderRealtimeAirbrushSegment([points[i - 1], points[i]]);
             }
         }
-        this.realtimePenApplied = true;
+        if (mode === 'pen') {
+            this.realtimePenApplied = true;
+        } else {
+            this.realtimeEraserApplied = true;
+        }
     }
 
     _isPenDabEnabled(mode) {
-        return mode === 'pen' && window.TEGAKI_CONFIG?.brushEngine?.penDabRendering === true;
+        const engine = window.TEGAKI_CONFIG?.brushEngine;
+        if (mode === 'pen') return engine?.penDabRendering === true;
+        if (mode === 'eraser') return engine?.eraserDabRendering === true;
+        return false;
+    }
+
+    _isEraseDabMode(mode) {
+        return mode === 'airbrush-erase' || mode === 'eraser';
     }
 
     _isRealtimeCurveEnabled(mode) {
@@ -834,7 +846,11 @@ export class BrushCore {
 
         if (mode === 'eraser') {
             if (distance <= 0) return;
-            this._renderRealtimeEraserSegment(segmentPoints);
+            if (this.airbrushState?.dabMode === 'pen') {
+                this._renderRealtimeAirbrushSegment(segmentPoints);
+            } else {
+                this._renderRealtimeEraserSegment(segmentPoints);
+            }
             this.realtimeEraserApplied = true;
         } else if (mode === 'pen') {
             if (distance <= 0) return;
@@ -1343,6 +1359,11 @@ export class BrushCore {
             maskSettings.dabMode = 'pen';
             maskSettings.penDabSoftness = engine.penDabSoftness ?? 0;
             maskSettings.penDabSpacingRatio = engine.penDabSpacingRatio ?? 0.05;
+            if (this.airbrushState.mode === 'eraser') {
+                // 旧Graphics消しゴムと同じく、筆圧は径だけに効かせ濃さは常に1で消す。
+                maskSettings.pressureEnabled = settings.eraserPressureEnabled === true;
+                maskSettings.pressureOpacityEnabled = false;
+            }
         }
         const batch = this.airbrushBatch;
         const renderContainer = this.strokeRenderer.renderAirbrushSegment(
@@ -1444,19 +1465,20 @@ export class BrushCore {
             clearColor: [0, 0, 0, 0]
         });
         empty.destroy();
-        const dabMode = settings.mode === 'pen' ? 'pen' : 'airbrush';
+        const dabMode = (settings.mode === 'pen' || settings.mode === 'eraser') ? 'pen' : 'airbrush';
+        const isErase = this._isEraseDabMode(settings.mode);
         // pen dabはmaskへ濃度1で置き、線の不透明度はpreview / commit spriteで一括適用する。
-        const strokeOpacity = dabMode === 'pen'
+        const strokeOpacity = settings.mode === 'pen'
             ? Math.max(0, Math.min(1, Number(settings.opacity ?? 1)))
             : 1;
         const previewSprite = new Sprite(maskTexture);
         previewSprite.label = 'airbrushStrokePreview';
         previewSprite.alpha = strokeOpacity;
-        previewSprite.tint = settings.mode === 'airbrush-erase'
+        previewSprite.tint = isErase
             ? 0xffffff
             : (settings.color ?? 0x800000);
         // 描画中previewはLayerのblend mode(乗算等)を継承し、pen-up後の見た目と揃える。
-        previewSprite.blendMode = settings.mode === 'airbrush-erase' ? 'erase' : 'inherit';
+        previewSprite.blendMode = isErase ? 'erase' : 'inherit';
         this._syncLayerRasterSpritePosition(activeLayer, previewSprite);
 
         if (activeLayer.layerData?.clipping) {
@@ -1473,7 +1495,7 @@ export class BrushCore {
 
         // 消しエアブラシのpreviewをscene上でerase合成すると下のLayerまで抜けて見えるため、
         // Layer自身のraster spriteを「Layer複製 - mask」の合成textureへ一時的に差し替える。
-        const erasePreview = settings.mode === 'airbrush-erase'
+        const erasePreview = isErase
             ? this._beginAirbrushErasePreview(activeLayer, width, height)
             : null;
         if (!erasePreview) {
@@ -1524,10 +1546,9 @@ export class BrushCore {
         state.previewSprite.mask = null;
         state.previewSprite.setMask({ mask: null, inverse: false });
         const commitSprite = new Sprite(state.maskTexture);
-        commitSprite.tint = state.mode === 'airbrush-erase'
-            ? 0xffffff
-            : state.color;
-        commitSprite.blendMode = state.mode === 'airbrush-erase' ? 'erase' : 'normal';
+        const isErase = this._isEraseDabMode(state.mode);
+        commitSprite.tint = isErase ? 0xffffff : state.color;
+        commitSprite.blendMode = isErase ? 'erase' : 'normal';
         commitSprite.alpha = state.opacity ?? 1;
         // render rootに直接置いたspriteのblendModeは適用されず、eraseが白の通常合成になる。
         // 親Containerを挟み、子spriteのblendModeとして確実に効かせる。
@@ -1834,7 +1855,7 @@ export class BrushCore {
         if ((mode === 'airbrush' || mode === 'airbrush-erase') && hasRealtimeApplied) {
             this._commitAirbrushStroke(activeLayer);
         }
-        if (mode === 'pen' && this.airbrushState?.dabMode === 'pen' && hasRealtimeApplied) {
+        if ((mode === 'pen' || mode === 'eraser') && this.airbrushState?.dabMode === 'pen' && hasRealtimeApplied) {
             this._commitAirbrushStroke(activeLayer);
         }
         if (mode === 'pen' && this.penOpacityState && hasRealtimeApplied) {

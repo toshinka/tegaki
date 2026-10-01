@@ -13,7 +13,8 @@
 - 消しエアブラシ不具合修正: commit spriteをrender root直置きしていたためerase blendが無視され白で塗っていた → 親Container経由でerase。stroke中previewは対象Layerのraster spriteを「Layer複製 − mask」合成textureへ一時差し替え（下Layerまで抜けて見えた問題を解消）。
 - flags: `airbrushHighPrecisionMask` / `airbrushHardnessFalloff` / `airbrushDabPooling` / `airbrushEventBatching` / `airbrushErasePreviewComposite` / `realtimeCurveInterpolation` / `penDabRendering`(+`penDabSoftness`, `penDabSpacingRatio`)。
 - 大キャンバス（2500px / 6 Layer / 25%表示で計測）: airbrushにもGPU baseline + dirty rect patch History（stroke開始56→1.6ms、確定50→24ms、History 64→12MB/stroke、undo/redo画素一致, flag `airbrushPatchHistory`）。縮小表示(<90%)中だけLayer textureへmipmapを付ける`system/drawing/layer-display-mipmaps.js`（renderer.renderを包み書込先をdirty化し読出前に再生成、等倍以上で停止。2px線の途切れ解消、描画中/undo後も表示同期、追加コスト計測誤差内, flag `zoomedOutDisplayMipmaps`）。Layer合成は6枚で約1.5ms/frameのため未対応。
-- 既知差分: blend mode付きLayerではstroke中previewが通常合成（従来airbrushと同じ）。縮小表示中はmip分のGPU memoryが表示Layerごとに約+33%。未着手候補: 筆圧カーブ、tilt/速度、静止時buildup、dab texture/grain。
+- 追加（PR後続）: pen dabの無移動tapもdab engineで確定。描画中previewをLayerのblend mode（乗算等）へ継承。消しゴムもdab engineへ統合（`eraserDabRendering`、Layerだけに効くpreview、patch History、undo/redo画素一致）。
+- 既知差分: 縮小表示中はmip分のGPU memoryが表示Layerごとに約+33%。未着手候補: 筆圧カーブ、tilt/速度、静止時buildup、dab texture/grain。
 
 ### CURRENT BUGFIX — Imported Raster Scale Lost After Project Save / Reload (2026-09-17 Correction Pass & Off-Canvas Investigation)
 
