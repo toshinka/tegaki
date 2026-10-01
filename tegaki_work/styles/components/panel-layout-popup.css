@@ -427,3 +427,7 @@
 .focus-lines-overlay .fl-ov-handle.is-center { fill: var(--futaba-light-maroon); stroke: var(--futaba-maroon); }
 
 #ruler-popup { width: 268px; }
+
+/* 漫画ツールのタブ行（ui/manga-tabs.js）。閉じるボタンと重ならないよう右を空ける */
+.manga-tabs-host { margin: 0 30px 6px 0; }
+.manga-tabs-host:empty { display: none; }
