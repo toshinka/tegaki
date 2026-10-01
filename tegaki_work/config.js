@@ -79,6 +79,13 @@ export const TEGAKI_CONFIG = {
         penDabRendering: true,
         // 消しゴムもpenと同じdab engineで消す(Layerだけに効くpreview、同じ縁AA)。falseで旧Graphics線分。
         eraserDabRendering: true,
+        // Airbrush: ペンを止めていても時間で吹き重なる(クリスタ式)。rateは1秒あたりのdab数。
+        airbrushBuildup: true,
+        airbrushBuildupRate: 20,
+        // Pen: 速く引くほど細く・薄く(実効筆圧を最大この割合まで下げる。0で無効)。速度は画面px/ms。
+        penVelocityThinning: 0.3,
+        penVelocitySlow: 0.6,
+        penVelocityFast: 4.0,
         // pen dabの硬さ(0=硬い円)と、dab径に対する間隔比。
         penDabSoftness: 0,
         penDabSpacingRatio: 0.05

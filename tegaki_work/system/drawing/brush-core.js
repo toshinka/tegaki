@@ -38,6 +38,8 @@ import {
 import { generateAdaptiveInterpolationPoints } from './realtime-stroke-sampling.js';
 import { CurveInterpolator } from './curve-interpolator.js';
 
+const AIRBRUSH_BUILDUP_POLL_MS = 8;
+
 export class BrushCore {
     constructor() {
         this.isDrawing = false;
@@ -365,6 +367,7 @@ export class BrushCore {
             : null;
 
         this.isDrawing = true;
+        this.penVelocityState = { x: clientX, y: clientY, time: null, speed: 0 };
         this.realtimeBatchQueue = null;
         this.realtimeBatchDepth = 0;
         this.realtimeBatchMode = null;
@@ -466,9 +469,13 @@ export class BrushCore {
         // 描き始めの 0.0 と合わせるため、最小値を 0.1 -> 0.0 に変更。
         // これにより点描時の突然の肥大化を防ぐ。
         const pressureEnabled = this._isPressureEnabledForMode(currentMode, settings, pointerType);
-        const processedPressure = pressureEnabled
+        const stabilizedPressure = pressureEnabled
             ? this._stabilizeMovePressure(pressure, currentMode, pointerType)
             : 1.0;
+        const sampleTime = Number.isFinite(this.currentSampleTime) ? this.currentSampleTime : this._perfNow();
+        const processedPressure = (currentMode === 'pen' && pressureEnabled)
+            ? this._applyPenVelocityResponse(clientX, clientY, sampleTime, stabilizedPressure)
+            : stabilizedPressure;
 
         const pointsBeforeEvent = this.strokeRecorder.getCurrentPoints().length;
         const currentControlPoint = {
@@ -614,6 +621,76 @@ export class BrushCore {
         }
     }
 
+    /**
+     * 速く引いた線ほど細く・薄くする。画面px/msの平滑化速度で実効筆圧を最大penVelocityThinning割まで下げる。
+     * 画面座標で測るため表示倍率に依存しない。
+     */
+    _applyPenVelocityResponse(clientX, clientY, sampleTime, pressure) {
+        const engine = window.TEGAKI_CONFIG?.brushEngine || {};
+        const strength = Math.max(0, Math.min(0.9, Number(engine.penVelocityThinning ?? 0)));
+        const state = this.penVelocityState;
+        if (!(strength > 0) || !state || !Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+            return pressure;
+        }
+
+        if (Number.isFinite(state.time) && Number.isFinite(sampleTime)) {
+            const dt = sampleTime - state.time;
+            if (dt > 0.5) {
+                const instant = Math.hypot(clientX - state.x, clientY - state.y) / dt;
+                // 1sampleの揺れで太さが跳ねないよう指数平滑する。
+                state.speed += (Math.min(instant, 20) - state.speed) * 0.35;
+                state.x = clientX;
+                state.y = clientY;
+                state.time = sampleTime;
+            }
+        } else {
+            state.x = clientX;
+            state.y = clientY;
+            state.time = sampleTime;
+        }
+
+        const slow = Number(engine.penVelocitySlow ?? 0.6);
+        const fast = Math.max(slow + 0.1, Number(engine.penVelocityFast ?? 4.0));
+        const t = Math.max(0, Math.min(1, (state.speed - slow) / (fast - slow)));
+        const eased = t * t * (3 - 2 * t);
+        return pressure * (1 - strength * eased);
+    }
+
+    /**
+     * Airbrush: ペンを止めていても時間経過でdabを吹き重ねる(クリスタ式の溜まり)。
+     * 最後にdabを置いてからairbrushBuildupRateの間隔が空いたら現在位置へ1dab置く。
+     */
+    _startAirbrushBuildup() {
+        const engine = window.TEGAKI_CONFIG?.brushEngine || {};
+        const state = this.airbrushState;
+        if (!state || state.dabMode !== 'airbrush' || engine.airbrushBuildup === false) return;
+        if (typeof setTimeout !== 'function') return;
+
+        // 表示frameに依存せず一定間隔で判定する(rAFは非表示時に止まるため使わない)。
+        state.lastDabTime = this._perfNow();
+        const tick = () => {
+            const current = this.airbrushState;
+            if (current !== state) return;
+            state.buildupTimer = setTimeout(tick, AIRBRUSH_BUILDUP_POLL_MS);
+            if (!this.isDrawing) return;
+
+            const rate = Math.max(1, Math.min(120, Number(window.TEGAKI_CONFIG?.brushEngine?.airbrushBuildupRate ?? 20)));
+            const now = this._perfNow();
+            if (now - state.lastDabTime < 1000 / rate) return;
+            if (!Number.isFinite(this.lastLocalX) || !Number.isFinite(this.lastLocalY)) return;
+
+            this._renderRealtimeAirbrushSegment([{
+                x: this.lastLocalX,
+                y: this.lastLocalY,
+                pressure: this.lastPressure
+            }]);
+            // 筆圧0等でdabが置かれなくても、次の判定まで間隔を空ける。
+            state.lastDabTime = now;
+            this.realtimeAirbrushApplied = true;
+        };
+        state.buildupTimer = setTimeout(tick, AIRBRUSH_BUILDUP_POLL_MS);
+    }
+
     _isPenDabEnabled(mode) {
         const engine = window.TEGAKI_CONFIG?.brushEngine;
         if (mode === 'pen') return engine?.penDabRendering === true;
@@ -744,6 +821,8 @@ export class BrushCore {
             infos.forEach((info, index) => {
                 if (!info) return;
                 const isLast = index === infos.length - 1;
+                // coalesced sampleは同じ処理時刻にまとまるため、速度計算には各sampleの入力時刻を使う。
+                this.currentSampleTime = Number(info.timeStamp);
                 this.updateStroke(
                     info.clientX,
                     info.clientY,
@@ -753,6 +832,7 @@ export class BrushCore {
                 );
             });
         } finally {
+            this.currentSampleTime = null;
             if (isBatchableMode) {
                 this._flushRealtimeBatch();
             }
@@ -1408,6 +1488,9 @@ export class BrushCore {
 
     _drawAirbrushDabContainer(renderContainer) {
         const dabCount = renderContainer?.children?.length || 0;
+        if (dabCount > 0 && this.airbrushState) {
+            this.airbrushState.lastDabTime = this._perfNow();
+        }
         const realtime = this.strokeInputProfile?.realtime;
         if (realtime) {
             realtime.airbrushRenderCalls++;
@@ -1512,6 +1595,7 @@ export class BrushCore {
             mode: settings.mode,
             color: settings.color ?? 0x800000
         };
+        this._startAirbrushBuildup();
         this._requestLiveCanvasRender('airbrush-preview-start');
     }
 
@@ -1613,6 +1697,9 @@ export class BrushCore {
     }
 
     _cleanupAirbrushStroke() {
+        if (this.airbrushState?.buildupTimer) {
+            clearTimeout(this.airbrushState.buildupTimer);
+        }
         if (this.airbrushBatch?.container) {
             this.strokeRenderer.releaseAirbrushSegment(this.airbrushBatch.container);
         }
