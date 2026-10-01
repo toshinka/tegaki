@@ -452,10 +452,11 @@ export class UIController {
                 !e.target.closest('.album-overlay') &&
                 !e.target.closest('.panel-layout-overlay') &&
                 !e.target.closest('.focus-lines-overlay') &&
+                !e.target.closest('.balloon-overlay') &&
                 !e.target.closest('.layer-transform-panel') &&
                 !e.target.closest('.tool-button') &&
                 !e.target.closest('.layer-panel-container')) {
-                this.closeAllPopups(['quickAccess', 'settings', 'animationTable', 'referencePreview', 'panelLayout', 'focusLines', 'ruler']);
+                this.closeAllPopups(['quickAccess', 'settings', 'animationTable', 'referencePreview', 'panelLayout', 'focusLines', 'ruler', 'balloon']);
             }
         });
     }

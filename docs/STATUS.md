@@ -48,6 +48,14 @@
 状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。サイドバーは「漫画ツール」1アイコン（旧: コマ割り/集中線の2アイコン）。窓の上端に長丸タブ（`コマ | 集中線`、今後`吹き出し`/`トーン`を追加）。
 - 部品: `ui/pill-tabs.js` + `styles/components/pill-tabs.css`（LAYER/TRANSFORM/RIGと同じtoken・寸法の長丸タブ。右ワークスペースのタブをこの部品へ寄せる統一は別カード）。切替は`ui/manga-tabs.js`（各ツールは従来どおり別popup。タブ切替で同じ位置に入れ替え、最後に使ったタブを記録）。ショートカット(Shift+K/Shift+F)は従来どおり直接開く。新しいツールは`MANGA_TABS`へ1行足してpopupを登録するだけ。
 
+### BALLOON — 吹き出し（縦書き・フォント管理つき）（2026-10-02, WP-013）
+
+状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING（Ownerは最終受入・pushの権限をClaudeにも付与済み）。設計・操作・制約は[WP-013](work/WP-013-balloon.md)。
+- 漫画ツールの`吹き出し`タブ（`Shift+B`）。楕円/角丸/雲/ギザギザ + しっぽ（尖り/丸）。**縦書き必須**: ブラウザの組版（CSS vertical-rl + 縦中横 + 禁則）をSVG foreignObject経由でRGBA化（`system/lettering-raster.js`）。
+- フォント: 端末のフォント（実在判定）+ ユーザー取り込み（.ttf/.otf/.woff/.woff2をIndexedDBへ、フォルダで分類・移動・名前変更・削除）。フォントは同梱せず、実体はProjectに入れない。
+- 確定は通常Raster Layer「吹き出し」を1Undoで追加。`layerData.balloon`(optional)をProjectへ保存・復元し、「レイヤーから再編集→更新」で置換。Raster/History/renderer/既存保存の正本は不変。
+- 検証: `verify-balloon.mjs`、`vite build`、Chromium実操作（縦書き・取り込みフォント・フォルダ・往復）。Owner実機（液タブ・実フォント）は未確認。
+
 ### OWNER BACKLOG — 未着手の要望（2026-10-01記録、優先順はOwner判断）
 
 優先はメインペンの「レスポンスと美観」。鉛筆風など派生ブラシは遠回りなので避ける。以下は思い出し用の控え（設計・着手は別途カード化）:
