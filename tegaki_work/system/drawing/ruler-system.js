@@ -19,6 +19,7 @@ import {
     applyRulerDrag,
     buildRulerGuideSegments,
     resolveRulerGrab,
+    sanitizeRulerOptions,
     sanitizeRulerState,
     snapPointToRuler
 } from '../ruler-geometry.js';
@@ -43,7 +44,8 @@ export class RulerSystem {
             enabled: false,
             type: 'parallel',
             center: { x: canvas.width / 2, y: canvas.height / 2 },
-            angle: 0
+            angle: 0,
+            ...sanitizeRulerOptions(null)
         };
         this._loadState();
         this.anchor = null;
@@ -97,7 +99,7 @@ export class RulerSystem {
         this.state.enabled = !this.state.enabled;
         this._saveState();
         this.redraw();
-        this._announce(this.state.enabled ? `${RULER_TYPE_LABELS[this.state.type]} ON（Shift+ドラッグで移動・回転）` : '定規 OFF');
+        this._announce(this.state.enabled ? `${RULER_TYPE_LABELS[this.state.type]} ON（Shift+ドラッグで移動・回転 / Alt+Rで設定）` : '定規 OFF');
         this.eventBus?.emit?.('ruler:changed', { ...this.getState() });
         return this.state.enabled;
     }
@@ -118,8 +120,37 @@ export class RulerSystem {
             enabled: this.state.enabled,
             type: this.state.type,
             center: { ...this.state.center },
-            angle: this.state.angle
+            angle: this.state.angle,
+            spacing: this.state.spacing,
+            spokes: this.state.spokes,
+            angleSnap: this.state.angleSnap,
+            showGuides: this.state.showGuides
         };
+    }
+
+    /**
+     * ミニパネルなど外部からの状態変更。値はsanitizeしてから反映し、保存・再描画・通知まで行う。
+     * @param {{enabled?: boolean, type?: string, angle?: number, center?: {x:number,y:number}, spacing?: number, spokes?: number, angleSnap?: number, showGuides?: boolean}} patch
+     */
+    setState(patch = {}) {
+        const canvas = window.TEGAKI_CONFIG?.canvas;
+        if (typeof patch.enabled === 'boolean') this.state.enabled = patch.enabled;
+        const base = sanitizeRulerState({
+            type: patch.type ?? this.state.type,
+            angle: patch.angle ?? this.state.angle,
+            center: patch.center ?? this.state.center
+        }, canvas);
+        this.state.type = base.type;
+        this.state.angle = base.angle;
+        if (base.center) {
+            this.state.center = base.center;
+            if (patch.center) this._hasStoredCenter = true;
+        }
+        Object.assign(this.state, sanitizeRulerOptions({ ...this.state, ...patch }));
+        this._saveState();
+        this.redraw();
+        this.eventBus?.emit?.('ruler:changed', { ...this.getState() });
+        return this.getState();
     }
 
     // ---------------------------------------------------------------- 吸着
@@ -163,6 +194,8 @@ export class RulerSystem {
         this.state.angle = next.angle;
         if (this.drag.kind === 'move') this._hasStoredCenter = true;
         this.redraw();
+        // ミニパネルの数値をドラッグ中も追従させる(popup側でrAFに合体される)
+        this.eventBus?.emit?.('ruler:changed', { ...this.getState() });
         return true;
     }
 
@@ -191,16 +224,19 @@ export class RulerSystem {
         const px = (value) => value / scale;
         const canvas = window.TEGAKI_CONFIG?.canvas || { width: 400, height: 400 };
         const { x: cx, y: cy } = this.state.center;
-        const { lines, main } = buildRulerGuideSegments(this.state, canvas, scale);
-        for (const [x1, y1, x2, y2] of lines) {
-            g.moveTo(x1, y1);
-            g.lineTo(x2, y2);
-        }
-        g.stroke({ width: px(1), color: main ? GUIDE_SUB_COLOR : GUIDE_COLOR, alpha: main ? 0.4 : 0.3 });
-        if (main) {
-            g.moveTo(main[0], main[1]);
-            g.lineTo(main[2], main[3]);
-            g.stroke({ width: px(1.5), color: GUIDE_COLOR, alpha: 0.6 });
+        // ガイド線は非表示にできる(吸着は有効のまま)。中心点とShift中のハンドルは常に出す。
+        if (this.state.showGuides !== false) {
+            const { lines, main } = buildRulerGuideSegments(this.state, canvas, scale);
+            for (const [x1, y1, x2, y2] of lines) {
+                g.moveTo(x1, y1);
+                g.lineTo(x2, y2);
+            }
+            g.stroke({ width: px(1), color: main ? GUIDE_SUB_COLOR : GUIDE_COLOR, alpha: main ? 0.4 : 0.3 });
+            if (main) {
+                g.moveTo(main[0], main[1]);
+                g.lineTo(main[2], main[3]);
+                g.stroke({ width: px(1.5), color: GUIDE_COLOR, alpha: 0.6 });
+            }
         }
 
         // 中心点(常時)と、Shift中は操作ハンドル(中心=移動、外周リング=回転)。
@@ -256,6 +292,7 @@ export class RulerSystem {
             const saved = sanitizeRulerState(raw, window.TEGAKI_CONFIG?.canvas);
             this.state.type = saved.type;
             this.state.angle = saved.angle;
+            Object.assign(this.state, sanitizeRulerOptions(raw));
             if (saved.center) {
                 this.state.center = saved.center;
                 this._hasStoredCenter = true;
@@ -270,7 +307,11 @@ export class RulerSystem {
             localStorage.setItem(STORAGE_KEY, JSON.stringify({
                 type: this.state.type,
                 angle: this.state.angle,
-                center: this.state.center
+                center: this.state.center,
+                spacing: this.state.spacing,
+                spokes: this.state.spokes,
+                angleSnap: this.state.angleSnap,
+                showGuides: this.state.showGuides
             }));
         } catch (_error) {
             // 保存できなくても動作は継続

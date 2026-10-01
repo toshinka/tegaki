@@ -31,7 +31,9 @@
 - ガイドはworldContainer上のGraphicsで書き出し対象外、線幅は画面px一定。色はふたば配色（線#800000・補助線#b8706b・中心#f0e0d6・回転#ff8c42、verifierが他色を検出）。定規の種類・角度・中心はlocalStorage（UI設定、Project schemaは不変）に保存し、読込時にsanitize。
 - 修正: Shiftのkeyupが`shiftKey:true`で届く/取り逃した場合に編集ハンドルが出たままになる問題（keyで判定＋pointermoveで再同期）。設定のショートカット一覧にコマ割り(PANEL_LAYOUT_TOGGLE)が無くverify-shortcut-learning-boundaryが失敗していた問題（main由来）。
 - 検証: `verify-ruler.mjs`、drawing / panel-layout suite、vite build。Browser実操作で平行0°/90°/135°・放射線の吸着、Shiftドラッグの回転（90°、Ctrlスナップ）・移動、コマ割りpopup＋重ね表示を開いたままの吸着描画とShiftドラッグ。定規操作はHistoryに積まれない。Owner実機（液タブ）での操作感は今回の変更後は未確認。
-- 次段候補: 傾けられるグリッド、ドラフター型の直線定規、集中線生成ツール、QTP2行化。
+- ミニパネル（2026-10-02追加）: `Alt+R`で開く小窓（`ui/ruler-popup.js`）。ON/OFF・種類・角度（数値入力+0/45/90/135°）・ガイド間隔（画面px）/本数・Ctrl+Shift角度刻み・中心X/Y・ガイド線の表示/非表示（吸着は有効のまま）。数値はダブルクリック入力・ホイール増減。Shift+ドラッグ中も数値が追従。状態の正本は`RulerSystem.setState`（localStorage）。ミニパネルは外クリックで閉じない。
+- 方針メモ: 定規の種類は増やさず、このミニパネルで調整する（傾けられるグリッド/ドラフター型は後回し）。
+- 次段候補: 傾けられるグリッド、ドラフター型の直線定規、QTP2行化。
 
 ### FOCUS LINES — 集中線ツール（2026-10-02, WP-011）
 

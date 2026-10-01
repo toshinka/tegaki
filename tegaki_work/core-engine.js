@@ -66,6 +66,7 @@ import { QuickAccessPopup } from './ui/quick-access-popup.js';
 import { ResizePopup } from './ui/resize-popup.js';
 import { PanelLayoutPopup } from './ui/panel-layout-popup.js';
 import { FocusLinesPopup } from './ui/focus-lines-popup.js';
+import { RulerPopup } from './ui/ruler-popup.js';
 import { ExportPopup } from './ui/export-popup.js';
 import { AlbumPopup } from './ui/album-popup.js';
 import { ReferencePreviewViewer } from './ui/reference-preview-viewer.js';
@@ -382,6 +383,10 @@ export class CoreEngine {
         this.popupManager.register('resize', ResizePopup, {
             coreEngine: this,
             history: this.history
+        });
+        this.popupManager.register('ruler', RulerPopup, {
+            eventBus: this.eventBus,
+            getRuler: () => this.rulerSystem
         });
         this.popupManager.register('focusLines', FocusLinesPopup, {
             layerSystem: this.layerSystem,

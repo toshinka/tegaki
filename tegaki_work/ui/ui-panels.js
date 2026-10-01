@@ -453,7 +453,7 @@ export class UIController {
                 !e.target.closest('.layer-transform-panel') &&
                 !e.target.closest('.tool-button') &&
                 !e.target.closest('.layer-panel-container')) {
-                this.closeAllPopups(['quickAccess', 'settings', 'animationTable', 'referencePreview', 'panelLayout', 'focusLines']);
+                this.closeAllPopups(['quickAccess', 'settings', 'animationTable', 'referencePreview', 'panelLayout', 'focusLines', 'ruler']);
             }
         });
     }

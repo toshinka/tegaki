@@ -800,6 +800,11 @@ export const KeyboardHandler = (function() {
                 }
                 break;
 
+            case 'RULER_PANEL_TOGGLE':
+                window.coreEngine?.popupManager?.toggle?.('ruler');
+                event.preventDefault();
+                break;
+
             case 'RULER_TYPE_CYCLE':
                 if (window.rulerSystem?.cycleType) {
                     window.rulerSystem.cycleType();
