@@ -591,6 +591,24 @@ export class BrushCore {
         });
     }
 
+    /**
+     * 無移動tap / 極短strokeはrealtime区間が描かれないため、pen dab時もここでdab engineへ流す。
+     * 旧Graphics final bakeと同じく、径はcalculateWidth、濃さはpressure opacity。
+     */
+    _renderPenDabTapIfNeeded(mode, strokeData) {
+        if (mode !== 'pen' || this.realtimePenApplied || this.airbrushState?.dabMode !== 'pen') return;
+        const points = strokeData?.points || [];
+        if (points.length === 0) return;
+        if (strokeData.isSingleDot === true || points.length === 1) {
+            this._renderRealtimeAirbrushSegment([points[0]]);
+        } else {
+            for (let i = 1; i < points.length; i++) {
+                this._renderRealtimeAirbrushSegment([points[i - 1], points[i]]);
+            }
+        }
+        this.realtimePenApplied = true;
+    }
+
     _isPenDabEnabled(mode) {
         return mode === 'pen' && window.TEGAKI_CONFIG?.brushEngine?.penDabRendering === true;
     }
@@ -1239,7 +1257,8 @@ export class BrushCore {
         const previewSprite = new Sprite(texture);
         previewSprite.label = 'penOpacityStrokePreview';
         previewSprite.alpha = Math.max(0, Math.min(1, Number(settings.opacity ?? 1)));
-        previewSprite.blendMode = 'normal';
+        // 'normal'を明示するとLayer containerのblend mode(乗算等)を上書きするため、親から継承する。
+        previewSprite.blendMode = 'inherit';
         this._syncLayerRasterSpritePosition(activeLayer, previewSprite);
 
         if (activeLayer.layerData?.clipping) {
@@ -1436,7 +1455,8 @@ export class BrushCore {
         previewSprite.tint = settings.mode === 'airbrush-erase'
             ? 0xffffff
             : (settings.color ?? 0x800000);
-        previewSprite.blendMode = settings.mode === 'airbrush-erase' ? 'erase' : 'normal';
+        // 描画中previewはLayerのblend mode(乗算等)を継承し、pen-up後の見た目と揃える。
+        previewSprite.blendMode = settings.mode === 'airbrush-erase' ? 'erase' : 'inherit';
         this._syncLayerRasterSpritePosition(activeLayer, previewSprite);
 
         if (activeLayer.layerData?.clipping) {
@@ -1789,6 +1809,7 @@ export class BrushCore {
         }
 
         strokeData = this._stabilizeShortPenStroke(strokeData, settings, mode);
+        this._renderPenDabTapIfNeeded(mode, strokeData);
 
         const finalPoint = strokeData?.points?.[strokeData.points.length - 1];
         if (
