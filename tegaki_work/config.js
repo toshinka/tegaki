@@ -60,7 +60,9 @@ export const TEGAKI_CONFIG = {
      */
     brushEngine: {
         // Airbrush per-stroke maskをrgba16floatで確保し、低flow dabの8bit量子化を防ぐ。
-        airbrushHighPrecisionMask: true
+        airbrushHighPrecisionMask: true,
+        // dab形状をhardness(1-softness)でパラメータ化したfalloffで生成する。falseで旧radial gradient。
+        airbrushHardnessFalloff: true
     },
     webgpu: {
         enabled: false,

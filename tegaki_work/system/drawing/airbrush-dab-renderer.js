@@ -7,6 +7,8 @@ import { Container, Sprite, Texture } from 'pixi.js';
 
 const AIRBRUSH_FLOW_REFERENCE_SPACING_RATIO = 0.18;
 const MIN_PRESSURE_DAB = 0.02;
+const DAB_TEXTURE_SIZE = 256;
+const DAB_FALLOFF_SIGMA = 0.3;
 
 export class AirbrushDabRenderer {
     constructor(options = {}) {
@@ -119,43 +121,98 @@ export class AirbrushDabRenderer {
 
     _getTexture(providedSoftness = 0.8) {
         const softness = Math.max(0, Math.min(1, Number(providedSoftness) || 0));
-        if (this.texture && this.textureSoftness === softness) {
+        const useFalloff = window.TEGAKI_CONFIG?.brushEngine?.airbrushHardnessFalloff !== false;
+        const textureKey = `${useFalloff ? 'falloff' : 'legacy'}:${softness}`;
+        if (this.texture && this.textureSoftness === textureKey) {
             return this.texture;
         }
-        this.textureSoftness = softness;
+        this.textureSoftness = textureKey;
 
-        const size = 256;
-        const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
+        const canvas = useFalloff
+            ? createFalloffDabCanvas(softness)
+            : createLegacyGradientDabCanvas(softness);
 
-        const context = canvas.getContext('2d');
-        const center = size / 2;
-        context.clearRect(0, 0, size, size);
-
-        const hardEdge = 1 - softness;
-        const innerStop = hardEdge * 0.3;
-        const midStop = innerStop + ((1 - innerStop) * 0.4);
-        const gradient = context.createRadialGradient(center, center, 0, center, center, center);
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
-        if (innerStop > 0.01) {
-            gradient.addColorStop(innerStop, 'rgba(255, 255, 255, 1.0)');
-        }
-        gradient.addColorStop(midStop, `rgba(255, 255, 255, ${(0.4 * softness).toFixed(3)})`);
-        gradient.addColorStop(0.85, 'rgba(255, 255, 255, 0.02)');
-        gradient.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
-
-        context.fillStyle = gradient;
-        context.fillRect(0, 0, size, size);
-
-        this.texture?.destroy();
-        this.texture = Texture.from(canvas);
+        this.texture?.destroy(true);
+        // 小径dabで256px textureを縮小sampleしても粗くならないようmipmapを生成する。
+        this.texture = Texture.from({ resource: canvas, autoGenerateMipmaps: true }, true);
         return this.texture;
     }
 
     destroy() {
-        this.texture?.destroy();
+        this.texture?.destroy(true);
         this.texture = null;
         this.textureSoftness = null;
     }
+}
+
+/**
+ * hardness(=1-softness)でパラメータ化した円形falloff。
+ * softness 0 は1texel幅AAだけの硬い円、既定0.8は旧radial gradientに近いGaussian寄りの裾になる。
+ */
+export function computeDabFalloff(radius, softness) {
+    if (radius >= 1) return 0;
+    const core = (1 - softness) * (1 - softness);
+    if (radius <= core) return 1;
+    const t = (radius - core) / (1 - core);
+    const tail = Math.exp(-1 / (2 * DAB_FALLOFF_SIGMA * DAB_FALLOFF_SIGMA));
+    const gaussian = Math.exp(-(t * t) / (2 * DAB_FALLOFF_SIGMA * DAB_FALLOFF_SIGMA));
+    return Math.max(0, (gaussian - tail) / (1 - tail));
+}
+
+function createFalloffDabCanvas(softness) {
+    const size = DAB_TEXTURE_SIZE;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext('2d');
+    const image = context.createImageData(size, size);
+    const data = image.data;
+    const radiusPx = size / 2;
+    // 外周1texel手前で0へ落とし、clamp sampleでtexture端が滲まないようにする。
+    const edgeRadiusPx = radiusPx - 1;
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            const dx = x + 0.5 - radiusPx;
+            const dy = y + 0.5 - radiusPx;
+            const distancePx = Math.hypot(dx, dy);
+            const radius = distancePx / edgeRadiusPx;
+            // 硬い縁はtexel単位のcoverageでAAする。
+            const edgeCoverage = Math.max(0, Math.min(1, edgeRadiusPx - distancePx + 0.5));
+            const alpha = computeDabFalloff(Math.min(radius, 0.999999), softness) * edgeCoverage;
+            const index = (y * size + x) * 4;
+            data[index] = 255;
+            data[index + 1] = 255;
+            data[index + 2] = 255;
+            data[index + 3] = Math.round(alpha * 255);
+        }
+    }
+    context.putImageData(image, 0, 0);
+    return canvas;
+}
+
+function createLegacyGradientDabCanvas(softness) {
+    const size = DAB_TEXTURE_SIZE;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+
+    const context = canvas.getContext('2d');
+    const center = size / 2;
+    context.clearRect(0, 0, size, size);
+
+    const hardEdge = 1 - softness;
+    const innerStop = hardEdge * 0.3;
+    const midStop = innerStop + ((1 - innerStop) * 0.4);
+    const gradient = context.createRadialGradient(center, center, 0, center, center, center);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    if (innerStop > 0.01) {
+        gradient.addColorStop(innerStop, 'rgba(255, 255, 255, 1.0)');
+    }
+    gradient.addColorStop(midStop, `rgba(255, 255, 255, ${(0.4 * softness).toFixed(3)})`);
+    gradient.addColorStop(0.85, 'rgba(255, 255, 255, 0.02)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
+
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, size, size);
+    return canvas;
 }
