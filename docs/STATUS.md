@@ -6,11 +6,11 @@
 
 ### DISPLAY DPR — 表示解像度と作品解像度の分離（2026-10-01, branch `claude/display-dpr`、`claude/brush-upgrade`へ積層）
 
-状態: TECHNICAL COMPLETE / OWNER 実機確認待ち。既定OFF（`TEGAKI_CONFIG.renderer.displayDevicePixelRatio=false`）。
+状態: TECHNICAL COMPLETE。Owner指示で既定ON（`TEGAKI_CONFIG.renderer.displayDevicePixelRatio=true`、falseで従来1x表示）。
 - 原因特定: PixiJS v8のextract / generateTextureはSprite / Container対象かつresolution未指定だと画面rendererの解像度で読む。画面だけDPR2にすると、Layer snapshot・GPU baseline・patch Historyが2倍画素になり、undoでLayerが1280×1280へ壊れ、Historyは全面snapshotへ落ち(4.5→48MB)、PNGも変化した（修正前コードで再現確認）。
 - 修正: 作品側の読み出し6箇所（layer-system snapshot、brush-core baseline / patch before / after、thumbnail、album fallback、preview縮小元）へ`resolution: 1`を明示。画面rendererだけ`getDisplayResolution()`（`displayDevicePixelRatio`有効時のみ`min(devicePixelRatio, maxDisplayDevicePixelRatio=2)`）。縮小表示mipmapの判定をzoom×renderer解像度へ。
 - 検証: 同一操作をrenderer解像度1 / 2で実行し、Layer画素・snapshot・undo2段・redo・History（patch、4.5MB）・PNG（renderToCanvas）が完全一致。2500px/6Layerで1frame 0.15ms→0.25〜0.41ms。静的verifier `build/verify-history-display-dpr-resolution.mjs`（history suite）がSprite / Container対象extractのresolution指定漏れを検出（修正前コードで失敗を確認）。
-- 有効化はconfigで`displayDevicePixelRatio: true`（起動時に反映）。実機の高DPR表示での見え方・負荷はOwner確認待ち。
+- 既定ON（起動時に反映、上限2x）。実機の高DPR表示での見え方・負荷はOwner確認待ち。
 
 ### BRUSH UPGRADE — Pen / Airbrush engine modernization（2026-10-01, branch `claude/brush-upgrade`, local / 未push）
 

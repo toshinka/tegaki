@@ -26,8 +26,8 @@ export const TEGAKI_CONFIG = {
      */
     renderer: {
         resolution: 1,
-        // 画面表示だけを端末のdevicePixelRatioで描く(作品・保存・書き出しは常に1x)。既定OFF。
-        displayDevicePixelRatio: false,
+        // 画面表示だけを端末のdevicePixelRatioで描く(作品・保存・書き出しは常に1x)。falseで従来の1x表示。
+        displayDevicePixelRatio: true,
         // 高DPR端末での描画負荷を抑える上限。
         maxDisplayDevicePixelRatio: 2,
         backgroundColor: 0x000000,

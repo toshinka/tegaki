@@ -91,9 +91,9 @@ for (const [relative, pattern] of requireOneX) {
     assert.ok(pattern.test(text), `${relative} keeps resolution: 1 on its document-side extract`);
 }
 
-// 画面DPRは設定でのみ有効になり、既定は従来どおり固定解像度。
+// 画面DPRは設定(displayDevicePixelRatio)で切り替える。値はboolean。
 const configText = fs.readFileSync(path.join(workRoot, 'config.js'), 'utf8');
-assert.match(configText, /displayDevicePixelRatio:\s*false/, 'display DPR is off by default');
+assert.match(configText, /displayDevicePixelRatio:\s*(true|false)/, 'display DPR switch exists in config');
 const initializerText = fs.readFileSync(path.join(workRoot, 'core-initializer.js'), 'utf8');
 assert.match(initializerText, /resolution:\s*getDisplayResolution\(\)/, 'renderer resolution goes through getDisplayResolution');
 assert.match(initializerText, /displayDevicePixelRatio !== true\) return fixed/, 'DPR is used only when explicitly enabled');
