@@ -4,6 +4,14 @@
 更新日: 2026-09-18。CHECKPOINT BASELINE HEAD: `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`。今回の開始時worktreeはcleanで、指定packageの想定HEAD `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`と一致した状態で修正・検証を実施。
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 
+### DISPLAY DPR — 表示解像度と作品解像度の分離（2026-10-01, branch `claude/display-dpr`、`claude/brush-upgrade`へ積層）
+
+状態: TECHNICAL COMPLETE。既定OFF（Owner実機で、ON時は画面が書き出しPNGより滑らかに見え見た目と提出物が一致しないため1x表示を維持）。作品側読み出しの1x固定（resolution: 1）はONでもOFFでも有効な安全策として残す。
+- 原因特定: PixiJS v8のextract / generateTextureはSprite / Container対象かつresolution未指定だと画面rendererの解像度で読む。画面だけDPR2にすると、Layer snapshot・GPU baseline・patch Historyが2倍画素になり、undoでLayerが1280×1280へ壊れ、Historyは全面snapshotへ落ち(4.5→48MB)、PNGも変化した（修正前コードで再現確認）。
+- 修正: 作品側の読み出し6箇所（layer-system snapshot、brush-core baseline / patch before / after、thumbnail、album fallback、preview縮小元）へ`resolution: 1`を明示。画面rendererだけ`getDisplayResolution()`（`displayDevicePixelRatio`有効時のみ`min(devicePixelRatio, maxDisplayDevicePixelRatio=2)`）。縮小表示mipmapの判定をzoom×renderer解像度へ。
+- 検証: 同一操作をrenderer解像度1 / 2で実行し、Layer画素・snapshot・undo2段・redo・History（patch、4.5MB）・PNG（renderToCanvas）が完全一致。2500px/6Layerで1frame 0.15ms→0.25〜0.41ms。静的verifier `build/verify-history-display-dpr-resolution.mjs`（history suite）がSprite / Container対象extractのresolution指定漏れを検出（修正前コードで失敗を確認）。
+- `displayDevicePixelRatio: true`で有効（起動時に反映、上限2x）。
+
 ### OWNER BACKLOG — 未着手の要望（2026-10-01記録、優先順はOwner判断）
 
 優先はメインペンの「レスポンスと美観」。鉛筆風など派生ブラシは遠回りなので避ける。以下は思い出し用の控え（設計・着手は別途カード化）:

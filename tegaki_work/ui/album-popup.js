@@ -1274,6 +1274,8 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
 
         const canvas = this.app.renderer.extract.canvas({
             target,
+            // 画面DPRに依存させず、作品の実画素(1x)で読み出す。
+            resolution: 1,
             clearColor: [1, 1, 1, 1]
         });
         return canvas?.toDataURL?.('image/png') || null;

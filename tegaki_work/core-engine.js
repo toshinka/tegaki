@@ -416,7 +416,18 @@ export class CoreEngine {
             this.popupManager
         );
         window.uiController = this.uiController;
-        
+
+        // 17.1 ステータスパネルのCanvasサイズ表示。サイズ変更・Project読込・PSD取込は全てcamera:resizedを通るため、
+        // ここで一元的に追従させる(初期値も固定文字列ではなく実サイズにする)。
+        const syncCanvasInfo = (width, height) => {
+            const element = document.getElementById('canvas-info');
+            if (!element || !Number.isFinite(Number(width)) || !Number.isFinite(Number(height))) return;
+            element.textContent = `${width}×${height}px`;
+        };
+        syncCanvasInfo(this.config?.canvas?.width ?? window.TEGAKI_CONFIG?.canvas?.width,
+            this.config?.canvas?.height ?? window.TEGAKI_CONFIG?.canvas?.height);
+        this.eventBus.on('camera:resized', ({ width, height } = {}) => syncCanvasInfo(width, height));
+
         // 17. キーボードハンドラの初期化
         this.keyboardHandler.init();
 

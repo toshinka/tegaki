@@ -2823,6 +2823,8 @@ export class BrushCore {
                             );
                             baselineResult = renderer.extract.pixels({
                                 target: baselineSprite,
+                                // 画面DPRに依存させず、Layer実画素(1x)で読み出す。
+                                resolution: 1,
                                 frame,
                                 clearColor: '#00000000'
                             });
@@ -2865,6 +2867,8 @@ export class BrushCore {
                             );
                             afterResult = renderer.extract.pixels({
                                 target: tempSprite,
+                                // 画面DPRに依存させず、Layer実画素(1x)で読み出す。
+                                resolution: 1,
                                 frame,
                                 clearColor: '#00000000'
                             });
@@ -2957,6 +2961,8 @@ export class BrushCore {
                 try {
                     result = renderer.extract.pixels({
                         target: sprite,
+                        // 画面DPRに依存させず、Layer実画素(1x)で読み出す。
+                        resolution: 1,
                         clearColor: '#00000000'
                     });
                 } finally {

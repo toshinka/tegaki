@@ -1481,6 +1481,8 @@ export class ReferencePreviewViewer {
             try {
                 rawCanvas = app.renderer.extract.canvas({
                     target: container,
+                    // プレビュー用の縮小元は作品の実画素(1x)で読み出し、画面DPRで膨らませない。
+                    resolution: 1,
                     clearColor: [1, 1, 1, 1]
                 });
             } catch (err) {
