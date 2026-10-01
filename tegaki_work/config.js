@@ -508,6 +508,12 @@ export const TEGAKI_KEYMAP = {
             shift: true,
             description: '資料 / プレビュー'
         },
+        PANEL_LAYOUT_TOGGLE: {
+            key: 'KeyK',
+            ctrl: false,
+            shift: true,
+            description: 'コマ割り'
+        },
         QUICK_ACCESS_PRESET_PREV: {
             key: 'BracketLeft',
             ctrl: false,

@@ -315,6 +315,23 @@ export class HistoryManager {
         };
     }
 
+    /**
+     * 直近に記録済みのcommand count件を1つのcompositeへ畳む(複数Layer生成を1回のUndoにする用途)。
+     * 現在位置が末尾で、count件が揃っている場合だけ実行する。
+     */
+    mergeLastCommands(count, name = 'composite', meta = {}) {
+        if (this.isApplying || !Number.isInteger(count) || count < 2) return false;
+        if (this.index !== this.stack.length - 1 || this.stack.length < count) return false;
+        const commands = this.stack.splice(this.stack.length - count, count);
+        const composite = this.createComposite(commands, name);
+        composite.byteSize = commands.reduce((sum, cmd) => sum + this._getCommandByteSize(cmd), 0);
+        composite.meta = { ...composite.meta, ...meta };
+        this.stack.push(composite);
+        this.index = this.stack.length - 1;
+        this._notifyHistoryChanged(composite, 'record');
+        return true;
+    }
+
     _validateCommand(command) {
         return (
             command &&
