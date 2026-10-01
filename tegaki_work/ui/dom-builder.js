@@ -68,6 +68,7 @@ export const DOMBuilder = (function() {
             { id: 'export-tool', icon: 'export', title: '画像・アニメ出力', role: 'popup-launcher', popupName: 'export', controls: 'export-popup' },
             { separator: true },
             { id: 'panel-layout-tool', icon: 'panelLayout', title: 'コマ割り (Shift+K)', role: 'popup-launcher', popupName: 'panelLayout', controls: 'panel-layout-popup' },
+            { id: 'focus-lines-tool', icon: 'focusLines', title: '集中線 (Shift+F)', role: 'popup-launcher', popupName: 'focusLines', controls: 'focus-lines-popup' },
             { id: 'resize-tool', icon: 'resize', title: 'リサイズ', role: 'popup-launcher', popupName: 'resize', controls: 'resize-settings' },
             { separator: true },
             { id: 'quick-access-tool', textIcon: 'Q', title: 'Quick Tool Panel (Q)', role: 'popup-launcher', popupName: 'quickAccess', controls: 'quick-access-popup' },

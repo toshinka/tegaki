@@ -23,6 +23,7 @@ import {
 } from './clipping-mode.js';
 import { normalizeRasterBounds } from './raster-bounds.js';
 import { sanitizePanelLayoutData } from './panel-layout.js';
+import { sanitizeFocusLinesData } from './focus-lines.js';
 import {
     RASTER_PIXEL_ENCODING_BASE64,
     serializeRasterPixels
@@ -164,6 +165,8 @@ export class ProjectManager {
                 }),
                 // コマ割りLayerの再編集用vector data(optional。旧版は無視して通常Rasterとして読む)
                 ...(data.panelLayout ? { panelLayout: data.panelLayout } : {}),
+                // 集中線Layerの再編集用parameter(optional)
+                ...(data.focusLines ? { focusLines: data.focusLines } : {}),
                 image: imageData
             });
         }
@@ -658,6 +661,10 @@ export class ProjectManager {
                 
                 layer.visible = layer.layerData.visible;
                 layer.alpha = layer.layerData.opacity;
+                if (layerInfo.focusLines) {
+                    const focusLines = sanitizeFocusLinesData(layerInfo.focusLines, TEGAKI_CONFIG.canvas);
+                    if (focusLines) layer.layerData.focusLines = focusLines;
+                }
                 if (layerInfo.panelLayout) {
                     // 壊れたcommandは黙って無視し、Raster画素だけを読み込む
                     const panelLayout = sanitizePanelLayoutData(layerInfo.panelLayout);
