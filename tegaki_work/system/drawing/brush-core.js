@@ -917,12 +917,12 @@ export class BrushCore {
 
         if (!state.tipComposite) {
             if (!container) return;
-            state.tipComposite = RenderTexture.create({
-                width: state.maskTexture.width,
-                height: state.maskTexture.height,
-                resolution: 1,
-                format: state.maskTexture.source.format
-            });
+            state.tipComposite = this._acquireStrokeTexture(
+                'tip',
+                state.maskTexture.width,
+                state.maskTexture.height,
+                state.maskTexture.source.format
+            );
             this._copyMaskRegionToTipComposite({ x: 0, y: 0, width: state.maskTexture.width, height: state.maskTexture.height });
             state.previewSprite.texture = state.tipComposite;
         }
@@ -966,7 +966,7 @@ export class BrushCore {
         if (state.previewSprite && !state.previewSprite.destroyed) {
             state.previewSprite.texture = state.maskTexture;
         }
-        state.tipComposite.destroy(true);
+        this._releaseStrokeTexture('tip', state.tipComposite);
         state.tipComposite = null;
         state.tipRect = null;
     }
@@ -992,6 +992,143 @@ export class BrushCore {
         } catch (_error) {
             return screenPx;
         }
+    }
+
+    /**
+     * dirty rect patch Historyの遅延読み出し版。
+     * before(GPU baseline scratch)とafter(Layer RT)の矩形を矩形サイズのRenderTextureへGPU上で複製し、
+     * 画素(straight RGBA)への読み出しはidle時に行う。undo/redo時に未読み出しならその場で読む。
+     * GPU baselineが無い(CPU snapshot経路)場合やflag OFFでは従来の即時読み出しに任せる(false)。
+     */
+    _recordDeferredPatchHistory({ mode, layerId, layerIndex, renderer, renderTexture, gpuBaseline, localDirtyRect }) {
+        if (window.TEGAKI_CONFIG?.brushEngine?.deferredPatchReadback === false) return false;
+        if (!gpuBaseline || !this.historyBaselineScratchTexture || !renderer || !renderTexture) return false;
+
+        const rect = { ...localDirtyRect };
+        const copyRect = (sourceTexture) => {
+            const target = RenderTexture.create({ width: rect.width, height: rect.height, resolution: 1 });
+            const frame = new Rectangle(rect.x, rect.y, rect.width, rect.height);
+            const part = new Texture({ source: sourceTexture.source, frame });
+            const sprite = new Sprite(part);
+            sprite.blendMode = 'none';
+            const container = new Container();
+            container.addChild(sprite);
+            renderer.render({ container, target, clear: true, clearColor: [0, 0, 0, 0] });
+            container.destroy({ children: true });
+            part.destroy(false);
+            return target;
+        };
+
+        let beforeRT = null;
+        let afterRT = null;
+        try {
+            beforeRT = copyRect(this.historyBaselineScratchTexture);
+            afterRT = copyRect(renderTexture);
+        } catch (error) {
+            beforeRT?.destroy(true);
+            afterRT?.destroy(true);
+            return false;
+        }
+
+        const beforePatch = { rect, pixels: null, pendingTexture: beforeRT };
+        const afterPatch = { rect: { ...rect }, pixels: null, pendingTexture: afterRT };
+        const resolvePatch = (patch) => {
+            if (patch.pixels || !patch.pendingTexture) return patch.pixels;
+            const texture = patch.pendingTexture;
+            patch.pendingTexture = null;
+            try {
+                const result = renderer.extract.pixels({ target: texture });
+                const source = result?.pixels
+                    || (result instanceof Uint8ClampedArray ? result : (result?.buffer ? new Uint8ClampedArray(result.buffer) : null));
+                const length = rect.width * rect.height * 4;
+                if (source && source.byteLength >= length) {
+                    patch.pixels = new Uint8ClampedArray(source.subarray(0, length));
+                    unpremultiplyPixels(patch.pixels);
+                }
+            } finally {
+                texture.destroy(true);
+            }
+            return patch.pixels;
+        };
+        const resolveBoth = () => {
+            resolvePatch(beforePatch);
+            resolvePatch(afterPatch);
+        };
+
+        const restorePatch = (targetPatch) => {
+            resolveBoth();
+            if (!targetPatch.pixels || !layerId || !this.layerManager) return;
+            const targetLayer = typeof this.layerManager.getLayerById === 'function'
+                ? this.layerManager.getLayerById(layerId)
+                : this.layerManager.getLayers?.().find(l => l.layerData?.id === layerId || l.id === layerId);
+            if (!targetLayer) return;
+            const currentSnap = this.layerManager.createLayerRasterSnapshot(targetLayer, { includePathCollections: false });
+            if (!currentSnap) return;
+            applyPixelPatch(currentSnap.pixels, currentSnap.width, currentSnap.height, targetPatch.pixels, targetPatch.rect);
+            this.layerManager.restoreLayerRasterSnapshot(currentSnap, { restorePathCollections: false });
+        };
+
+        const byteSize = rect.width * rect.height * 4 * 2;
+        historyManager.record({
+            name: `draw-${mode}`,
+            do: () => restorePatch(afterPatch),
+            undo: () => restorePatch(beforePatch),
+            meta: {
+                type: 'draw-patch',
+                mode,
+                layerId,
+                layerIndex,
+                dirtyRect: rect,
+                byteSize,
+                deferredReadback: true
+            },
+            byteSize
+        });
+
+        // 描画が落ち着いた時に読み出す(連続描画中のframeを邪魔しない)。
+        const schedule = typeof requestIdleCallback === 'function'
+            ? (fn) => requestIdleCallback(fn, { timeout: 1000 })
+            : (fn) => setTimeout(fn, 50);
+        schedule(() => {
+            try {
+                resolveBoth();
+            } catch (error) {
+                console.warn('[BrushCore] deferred history readback failed', error);
+            }
+        });
+        return true;
+    }
+
+    /**
+     * stroke毎の全面texture(airbrush / pen dabのfloat mask、ライブ先端の複製)を再利用する。
+     * 大キャンバスでは1枚数十MBのため、毎stroke生成・破棄するとGPUメモリの確保が繰り返される。
+     * 用途ごとに1枚だけ保持し、同じ寸法・形式なら使い回す(中身は取得側でclearする)。
+     */
+    _acquireStrokeTexture(kind, width, height, format = null) {
+        this.strokeTexturePool = this.strokeTexturePool || {};
+        const pooled = this.strokeTexturePool[kind];
+        const wantFormat = format || 'bgra8unorm';
+        if (pooled && !pooled.destroyed && pooled.width === width && pooled.height === height
+            && (pooled.source.format || 'bgra8unorm') === wantFormat
+            && window.TEGAKI_CONFIG?.brushEngine?.strokeTexturePooling !== false) {
+            this.strokeTexturePool[kind] = null;
+            return pooled;
+        }
+        if (pooled && !pooled.destroyed) pooled.destroy(true);
+        this.strokeTexturePool[kind] = null;
+        return RenderTexture.create({ width, height, resolution: 1, ...(format ? { format } : {}) });
+    }
+
+    _releaseStrokeTexture(kind, texture) {
+        if (!texture || texture.destroyed) return;
+        this.strokeTexturePool = this.strokeTexturePool || {};
+        if (window.TEGAKI_CONFIG?.brushEngine?.strokeTexturePooling === false) {
+            texture.destroy(true);
+            return;
+        }
+        const previous = this.strokeTexturePool[kind];
+        if (previous && previous !== texture && !previous.destroyed) previous.destroy(true);
+        this.strokeTexturePool[kind] = texture;
     }
 
     _getPenTaperLengths() {
@@ -1963,12 +2100,7 @@ export class BrushCore {
             || this.layerManager.canvasHeight
             || 1;
         const maskFormat = this._getAirbrushMaskFormat();
-        const maskTexture = RenderTexture.create({
-            width,
-            height,
-            resolution: 1,
-            ...(maskFormat ? { format: maskFormat } : {})
-        });
+        const maskTexture = this._acquireStrokeTexture('mask', width, height, maskFormat);
         const empty = new Container();
         this.layerManager.app.renderer.render({
             container: empty,
@@ -2191,7 +2323,7 @@ export class BrushCore {
             }
             state.previewSprite.destroy({ texture: false, baseTexture: false });
         }
-        state?.maskTexture?.destroy(true);
+        this._releaseStrokeTexture('mask', state?.maskTexture);
         this.airbrushState = null;
     }
 
@@ -2667,6 +2799,16 @@ export class BrushCore {
                 const localDirtyRect = projectRectToRasterLocal(projectDirtyRect, currentBounds);
 
                 if (localDirtyRect && localDirtyRect.width > 0 && localDirtyRect.height > 0) {
+                    // 2'. pen-up時のGPU→CPU読み出し(大キャンバスで数十ms)を避け、矩形をGPU上で複製して
+                    //     History登録し、画素の読み出しはidle時に行う。undo/redoは未読み出しなら即時に読む。
+                    if (this._recordDeferredPatchHistory({
+                        mode, layer, layerId, layerIndex, renderer, renderTexture, gpuBaseline, localDirtyRect
+                    })) {
+                        beforeSnapshot = null;
+                        this.strokeHistoryBefore = null;
+                        this.strokeHistoryGpuBaseline = null;
+                        return;
+                    }
                     // 2. beforePatch の取得（GPU baseline scratch からの抽出、または CPU snapshot からの crop）
                     let beforePatchPixels = null;
                     if (gpuBaseline && this.historyBaselineScratchTexture) {
