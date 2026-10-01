@@ -3089,7 +3089,7 @@ export class QuickAccessPopup {
         if (window.brushSettings?.getMaxSizeForMode) {
             return window.brushSettings.getMaxSizeForMode(tool);
         }
-        return tool === 'pen' ? 500 : 100;
+        return (tool === 'pen' || tool === 'airbrush') ? 500 : 100;
     }
 
     _clampOpacity(value) {

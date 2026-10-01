@@ -46,7 +46,7 @@ export class BrushSettings {
         this.minWidth = this.config.BRUSH_DEFAULTS?.minWidth || 0.5;
         this.defaultMaxWidth = 100;
         this.penMaxWidth = 500;
-        this.airbrushMaxWidth = 100;
+        this.airbrushMaxWidth = 500;
         
         this.mode = 'pen'; // 'pen' | 'eraser' | 'fill' | 'lasso-fill'
         this.pressureEnabled = true;
