@@ -12,7 +12,16 @@
 - 検証: 同一操作をrenderer解像度1 / 2で実行し、Layer画素・snapshot・undo2段・redo・History（patch、4.5MB）・PNG（renderToCanvas）が完全一致。2500px/6Layerで1frame 0.15ms→0.25〜0.41ms。静的verifier `build/verify-history-display-dpr-resolution.mjs`（history suite）がSprite / Container対象extractのresolution指定漏れを検出（修正前コードで失敗を確認）。
 - `displayDevicePixelRatio: true`で有効（起動時に反映、上限2x）。
 
-### RULER — 定規（平行線 / 放射線）基本実装（2026-10-02, branch `claude/ruler-tool`、`claude/display-dpr`へ積層）
+### PANEL LAYOUT — コマ割りツール（2026-10-01, WP-010 phase 1-2）
+
+状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING（Ownerは最終受入・pushの権限をClaudeにも付与済み）。設計・範囲・制約は[WP-010](work/WP-010-panel-layout.md)。
+- sidebarの「コマ割り」(Shift+K)でpopup。プリセット、分割/結合、分割線・頂点ドラッグ（popup内とキャンバス上の重ね表示の両方）、傾き、線ごとの間隔、コマごとの線幅、裁ち落とし、余白/間隔/線幅/色。
+- 出力は「枠線のみ」または「白コマ＋コマ内クリッピング＋枠線」の3Layer。いずれも1回のUndoで戻る。確定Layerは`layerData.panelLayout`(optional)を持ち、Projectへ保存・復元、「レイヤーから再編集→更新」で置換できる。Raster/History/renderer/既存保存の正本は変更なし。
+- Phase 3: ふたば配色の既定(線#800000/下地#f0e0d6)、頂点ドラッグで隣のコマが間隔を保って追従、コマの削除/復活、整列＋吸着、`コマ割り`フォルダ収納、右上起点の番号。
+- Phase 4: コマ別フォルダ（コマ1フォルダ…）、縦/横の間隔二系統（縦細め横太め）、フリーコマ（コマ内コマ / フリー化）。
+- 検証: `verify-panel-layout.mjs`、`vite build`、Chromium実操作（上記全項目とproject save→load往復）。Owner実機（液タブ）は未確認。
+
+### RULER — 定規（平行線 / 放射線）基本実装（2026-10-02, branch `claude/ruler-tool`、main（コマ割り込み）へ追従）
 
 状態: Owner実機確認済み「完成形と言って良いレベル」。Shift方式（説明前に自然に操作できた）を正式採用し、モード方式（R=編集⇄描画 / Esc=OFF）は試作後に取り下げ。QTPスロット化・定規ウィンドウは必要性が低く後段。`system/drawing/ruler-system.js`。
 - 操作: R=ON/OFF（起動時は常にOFF）、Shift+R=種類切替（平行線→放射線）、定規ON中のShift+ドラッグ=中心付近で移動・それ以外で回転（Ctrl併用で15°刻み、放射線は移動のみ）。Shift中は中心アイコンと回転リングを表示。定規ON中はShift直線を無効化（定規が直線を担う）。
@@ -26,7 +35,7 @@
 優先はメインペンの「レスポンスと美観」。鉛筆風など派生ブラシは遠回りなので避ける。以下は思い出し用の控え（設計・着手は別途カード化）:
 1. 集中線ツール（特に要望強）。
 2. 定規ツール（直線 / 縦横に傾けて斜めにも使えるグリッド）。
-3. 漫画用コマ割り＆編集ツール（クリスタ / メディバン / アルパカ相当）。
+3. 漫画用コマ割り＆編集ツール（クリスタ / メディバン / アルパカ相当）。→ 第一段を[WP-010](work/WP-010-panel-layout.md)で実装済み（Owner受入待ち）。
 4. トーン（スクリーントーン）系。
 5. QTPのペンスロット: 「PEN · S4 · …」行を拡張ボタン置き場にし、押すとブラシプリセット（6枠程度、SVGのペンアイコンに番号）の行を出す。設定でpreset入れ替え。上記の後。
 6. GPUパーティクル効果（興味あり、token消費と相談）。

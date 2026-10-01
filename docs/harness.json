@@ -26,6 +26,17 @@
     "docs/handoffs/2026-09-06-wp002-to-wp003.md"
   ],
   "domains": {
+    "panel-layout": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": [
+        "tegaki_work/system/panel-layout.js",
+        "tegaki_work/system/panel-layout-raster.js",
+        "tegaki_work/ui/panel-layout-popup.js"
+      ],
+      "patterns": [
+        "^verify-panel-layout"
+      ]
+    },
     "history": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": ["tegaki_work/system/history.js", "tegaki_work/system/drawing/raster-patch-history.js"],

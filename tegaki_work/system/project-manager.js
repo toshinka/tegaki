@@ -22,6 +22,7 @@ import {
     getClippingMode
 } from './clipping-mode.js';
 import { normalizeRasterBounds } from './raster-bounds.js';
+import { sanitizePanelLayoutData } from './panel-layout.js';
 import {
     RASTER_PIXEL_ENCODING_BASE64,
     serializeRasterPixels
@@ -126,7 +127,8 @@ export class ProjectManager {
                     isFolder: true,
                     folderExpanded: data.folderExpanded !== false,
                     children: Array.isArray(data.children) ? [...data.children] : [],
-                    parentId: data.parentId || null
+                    parentId: data.parentId || null,
+                    ...(data.panelLayout ? { panelLayout: data.panelLayout } : {})
                 });
                 continue;
             }
@@ -160,6 +162,8 @@ export class ProjectManager {
                     width: data.renderTexture?.width || canvasWidth,
                     height: data.renderTexture?.height || canvasHeight
                 }),
+                // コマ割りLayerの再編集用vector data(optional。旧版は無視して通常Rasterとして読む)
+                ...(data.panelLayout ? { panelLayout: data.panelLayout } : {}),
                 image: imageData
             });
         }
@@ -654,6 +658,11 @@ export class ProjectManager {
                 
                 layer.visible = layer.layerData.visible;
                 layer.alpha = layer.layerData.opacity;
+                if (layerInfo.panelLayout) {
+                    // 壊れたcommandは黙って無視し、Raster画素だけを読み込む
+                    const panelLayout = sanitizePanelLayoutData(layerInfo.panelLayout);
+                    if (panelLayout) layer.layerData.panelLayout = panelLayout;
+                }
                 if (!layerInfo.isFolder) {
                     layer.blendMode = layer.layerData.blendMode;
                     if (layer.layerData.layerSprite) {
