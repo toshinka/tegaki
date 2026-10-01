@@ -1252,10 +1252,12 @@ export class BrushCore {
             || activeLayer.layerData?.height
             || this.layerManager.canvasHeight
             || 1;
+        const maskFormat = this._getAirbrushMaskFormat();
         const maskTexture = RenderTexture.create({
             width,
             height,
-            resolution: 1
+            resolution: 1,
+            ...(maskFormat ? { format: maskFormat } : {})
         });
         const empty = new Container();
         this.layerManager.app.renderer.render({
@@ -1295,6 +1297,25 @@ export class BrushCore {
             color: settings.color ?? 0x800000
         };
         this._requestLiveCanvasRender('airbrush-preview-start');
+    }
+
+    /**
+     * 低flow dab(既定0.08≒11/255)の累積を8bitで丸めないため、対応環境ではfloat16 maskを使う。
+     * 非対応(WebGL1 / EXT_color_buffer_float無し)ではnullを返し従来の8bit maskへ戻る。
+     */
+    _getAirbrushMaskFormat() {
+        if (window.TEGAKI_CONFIG?.brushEngine?.airbrushHighPrecisionMask === false) return null;
+        if (this._airbrushMaskFormatCache !== undefined) return this._airbrushMaskFormatCache;
+
+        const renderer = this.layerManager.app?.renderer;
+        let format = null;
+        if (renderer?.name === 'webgpu') {
+            format = 'rgba16float';
+        } else if (renderer?.context?.webGLVersion === 2 && renderer.context.extensions?.colorBufferFloat) {
+            format = 'rgba16float';
+        }
+        this._airbrushMaskFormatCache = format;
+        return format;
     }
 
     _commitAirbrushStroke(activeLayer) {

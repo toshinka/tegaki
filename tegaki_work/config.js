@@ -55,6 +55,13 @@ export const TEGAKI_CONFIG = {
         airbrushSoftness: 0.8,
         airbrushScatter: 0.0
     },
+    /**
+     * ブラシエンジン改良の切替flag。問題時はfalseで旧挙動へ戻せる。
+     */
+    brushEngine: {
+        // Airbrush per-stroke maskをrgba16floatで確保し、低flow dabの8bit量子化を防ぐ。
+        airbrushHighPrecisionMask: true
+    },
     webgpu: {
         enabled: false,
         fallbackToWebGL: true,
