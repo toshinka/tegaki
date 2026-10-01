@@ -369,3 +369,21 @@
 #panel-layout-popup input[type="color"].pl-color::-webkit-color-swatch-wrapper { padding: 0; }
 #panel-layout-popup input[type="color"].pl-color::-webkit-color-swatch { border: 1px solid var(--futaba-maroon); border-radius: 2px; }
 #panel-layout-popup input[type="color"].pl-color::-moz-color-swatch { border: 1px solid var(--futaba-maroon); border-radius: 2px; }
+
+/* 数値の直接入力欄（ui/numeric-field.js）。native既定の白/灰を使わない */
+#panel-layout-popup .pl-value { cursor: text; }
+#panel-layout-popup .numeric-field-input {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    height: 20px;
+    padding: 0 3px;
+    border: 1.5px solid var(--futaba-light-maroon);
+    border-radius: 4px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font: inherit;
+    font-weight: 700;
+    text-align: right;
+}
+#panel-layout-popup .numeric-field-input:focus { outline: 2px solid var(--active-border); outline-offset: 0; }
