@@ -14,7 +14,7 @@
 
 ### RULER — 定規（平行線 / 放射線）基本実装（2026-10-02, branch `claude/ruler-tool`、`claude/display-dpr`へ積層）
 
-状態: TECHNICAL COMPLETE / Owner実機確認待ち。`system/drawing/ruler-system.js`。
+状態: Owner実機確認済み「完成形と言って良いレベル」。Shift方式（説明前に自然に操作できた）を正式採用し、モード方式（R=編集⇄描画 / Esc=OFF）は試作後に取り下げ。QTPスロット化・定規ウィンドウは必要性が低く後段。`system/drawing/ruler-system.js`。
 - 操作: R=ON/OFF（起動時は常にOFF）、Shift+R=種類切替（平行線→放射線）、定規ON中のShift+ドラッグ=中心付近で移動・それ以外で回転（Ctrl併用で15°刻み、放射線は移動のみ）。Shift中は中心アイコンと回転リングを表示。定規ON中はShift直線を無効化（定規が直線を担う）。
 - 吸着: brush-coreが画面→文書座標へ変換する箇所で、描き始めの点を通り定規方向（平行線=角度、放射線=中心→始点）の直線へ射影。pen / 消しゴム / エアブラシ / ぼかしが対象（投げ縄塗りは対象外）。線補正・入り抜き・AA等はそのまま効く。
 - ガイドはworldContainer上のGraphicsで書き出し対象外、線幅は画面px一定。定規の種類・角度・中心はlocalStorageに保存。
