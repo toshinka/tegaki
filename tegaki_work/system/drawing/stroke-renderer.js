@@ -31,7 +31,8 @@ export class StrokeRenderer {
         this.textureBridge = null;
         this.webgl2Enabled = false;
         this.airbrushDabRenderer = new AirbrushDabRenderer({
-            calculateWidth: (pressure, size) => this.calculateWidth(pressure, size)
+            calculateWidth: (pressure, size) => this.calculateWidth(pressure, size),
+            calculateOpacity: (pressure, opacity, settings) => this.calculateOpacity(pressure, opacity, settings)
         });
         
         this.config = window.TEGAKI_CONFIG?.webgpu || {};

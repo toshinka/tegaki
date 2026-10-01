@@ -66,7 +66,12 @@ export const TEGAKI_CONFIG = {
         // dab Sprite / segment Containerを再利用する。falseでsegmentごとに生成・破棄。
         airbrushDabPooling: true,
         // pen / eraser / airbrushのrealtime区間をcentripetal Catmull-Romで補間する(1sample先読み)。falseで直線補間。
-        realtimeCurveInterpolation: true
+        realtimeCurveInterpolation: true,
+        // penをGraphics線分ではなくairbrushと共通のdab engine(float mask + max合成)で描く試験設定。
+        penDabRendering: false,
+        // pen dabの硬さ(0=硬い円)と、dab径に対する間隔比。
+        penDabSoftness: 0,
+        penDabSpacingRatio: 0.05
     },
     webgpu: {
         enabled: false,

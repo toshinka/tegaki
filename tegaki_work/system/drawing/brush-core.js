@@ -259,7 +259,8 @@ export class BrushCore {
         const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
         const { localX, localY } = this.coordinateSystem.worldToLocal(worldX, worldY, activeLayer);
 
-        if (currentMode === 'airbrush' || currentMode === 'airbrush-erase') {
+        const usePenDab = this._isPenDabEnabled(currentMode);
+        if (currentMode === 'airbrush' || currentMode === 'airbrush-erase' || usePenDab) {
             const airbrushBeginStart = window.TEGAKI_CONFIG?.debug ? this._perfNow() : null;
             this._beginAirbrushStroke(activeLayer, settings);
             if (Number.isFinite(airbrushBeginStart)) {
@@ -272,7 +273,7 @@ export class BrushCore {
             this._cleanupAirbrushStroke();
         }
 
-        if (this._shouldUsePenOpacityIsolation(currentMode, settings)) {
+        if (!usePenDab && this._shouldUsePenOpacityIsolation(currentMode, settings)) {
             this._beginPenOpacityStroke(activeLayer, settings);
         } else {
             this._cleanupPenOpacityStroke();
@@ -586,6 +587,10 @@ export class BrushCore {
         });
     }
 
+    _isPenDabEnabled(mode) {
+        return mode === 'pen' && window.TEGAKI_CONFIG?.brushEngine?.penDabRendering === true;
+    }
+
     _isRealtimeCurveEnabled(mode) {
         if (window.TEGAKI_CONFIG?.brushEngine?.realtimeCurveInterpolation === false) return false;
         return mode === 'pen' || mode === 'eraser' || mode === 'airbrush' || mode === 'airbrush-erase';
@@ -803,7 +808,11 @@ export class BrushCore {
             this.realtimeEraserApplied = true;
         } else if (mode === 'pen') {
             if (distance <= 0) return;
-            this._renderRealtimePenSegment(segmentPoints);
+            if (this.airbrushState?.dabMode === 'pen') {
+                this._renderRealtimeAirbrushSegment(segmentPoints);
+            } else {
+                this._renderRealtimePenSegment(segmentPoints);
+            }
             this.realtimePenApplied = true;
         } else if (mode === 'airbrush' || mode === 'airbrush-erase') {
             this._renderRealtimeAirbrushSegment(segmentPoints);
@@ -1290,6 +1299,13 @@ export class BrushCore {
             color: 0xffffff,
             mode: 'airbrush'
         };
+        if (this.airbrushState.dabMode === 'pen') {
+            const engine = window.TEGAKI_CONFIG?.brushEngine || {};
+            maskSettings.mode = 'pen';
+            maskSettings.dabMode = 'pen';
+            maskSettings.penDabSoftness = engine.penDabSoftness ?? 0;
+            maskSettings.penDabSpacingRatio = engine.penDabSpacingRatio ?? 0.05;
+        }
         const renderContainer = this.strokeRenderer.renderAirbrushSegment(
             points,
             maskSettings,
@@ -1353,8 +1369,14 @@ export class BrushCore {
             clearColor: [0, 0, 0, 0]
         });
         empty.destroy();
+        const dabMode = settings.mode === 'pen' ? 'pen' : 'airbrush';
+        // pen dabはmaskへ濃度1で置き、線の不透明度はpreview / commit spriteで一括適用する。
+        const strokeOpacity = dabMode === 'pen'
+            ? Math.max(0, Math.min(1, Number(settings.opacity ?? 1)))
+            : 1;
         const previewSprite = new Sprite(maskTexture);
         previewSprite.label = 'airbrushStrokePreview';
+        previewSprite.alpha = strokeOpacity;
         previewSprite.tint = settings.mode === 'airbrush-erase'
             ? 0xffffff
             : (settings.color ?? 0x800000);
@@ -1379,6 +1401,8 @@ export class BrushCore {
             maskTexture,
             previewSprite,
             spacingState: {},
+            dabMode,
+            opacity: strokeOpacity,
             mode: settings.mode,
             color: settings.color ?? 0x800000
         };
@@ -1420,6 +1444,7 @@ export class BrushCore {
             ? 0xffffff
             : state.color;
         commitSprite.blendMode = state.mode === 'airbrush-erase' ? 'erase' : 'normal';
+        commitSprite.alpha = state.opacity ?? 1;
 
         renderer.render({
             container: commitSprite,
@@ -1666,6 +1691,9 @@ export class BrushCore {
         }
 
         if ((mode === 'airbrush' || mode === 'airbrush-erase') && hasRealtimeApplied) {
+            this._commitAirbrushStroke(activeLayer);
+        }
+        if (mode === 'pen' && this.airbrushState?.dabMode === 'pen' && hasRealtimeApplied) {
             this._commitAirbrushStroke(activeLayer);
         }
         if (mode === 'pen' && this.penOpacityState && hasRealtimeApplied) {
