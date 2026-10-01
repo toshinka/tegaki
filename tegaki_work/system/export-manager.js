@@ -539,6 +539,8 @@ export class ExportManager {
             antialias: true
         });
 
+        // フォルダのグループ合成(乗算/不透明度)を最新にしてから描く
+        this.layerSystem.flushFolderComposites?.();
         this.app.renderer.render({
             container,
             target: renderTexture,

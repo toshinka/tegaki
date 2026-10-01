@@ -27,6 +27,16 @@
     "docs/handoffs/2026-10-02-pen-ruler-to-next.md"
   ],
   "domains": {
+    "folder-composite": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": [
+        "tegaki_work/system/folder-composite.js",
+        "tegaki_work/system/layer-system.js"
+      ],
+      "patterns": [
+        "^verify-folder-composite"
+      ]
+    },
     "balloon": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [

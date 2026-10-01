@@ -56,6 +56,13 @@
 - 確定は通常Raster Layer「吹き出し」を1Undoで追加。`layerData.balloon`(optional)をProjectへ保存・復元し、「レイヤーから再編集→更新」で置換。Raster/History/renderer/既存保存の正本は不変。
 - 検証: `verify-balloon.mjs`、`vite build`、Chromium実操作（縦書き・取り込みフォント・フォルダ・往復）。Owner実機（液タブ・実フォント）は未確認。
 
+### FOLDER COMPOSITE — フォルダのグループ合成とサムネイル（2026-10-02, WP-012）
+
+状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。調査と実装結果は[WP-012](work/WP-012-layer-panel-compositing-investigation.md)。
+- フォルダ自身の合成モード（乗算/加算/オーバーレイ）と不透明度が、**グループとして**効く（以前は合成モードは無効、不透明度は子へ掛け算）。`system/folder-composite.js`（子孫をRenderTextureへ合成→フォルダ内のSpriteへblend/alphaを掛ける）。子Layer・History・保存形式は不変。通常・100%のフォルダは従来どおり（パススルー）。書き出しの直前に最新を反映。
+- フォルダの行に中身のサムネイル（子孫の合成の縮小絵、開閉アイコンは左下のバッジ）。
+- 検証: `verify-folder-composite.mjs`、project/drawing/history suite（baselineと同じ）、Chromiumで画素検証（通常/乗算/不透明度/非表示/保存→読込/入れ子/合成解除）。Owner実機は未確認。
+
 ### OWNER BACKLOG — 未着手の要望（2026-10-01記録、優先順はOwner判断）
 
 優先はメインペンの「レスポンスと美観」。鉛筆風など派生ブラシは遠回りなので避ける。以下は思い出し用の控え（設計・着手は別途カード化）:

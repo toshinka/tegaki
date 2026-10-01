@@ -1930,3 +1930,17 @@
     border-color: var(--futaba-light-maroon);
     color: var(--futaba-cream);
 }
+
+/* フォルダのサムネイル: 右パネルのfolder-thumbnail svg規則(幅/高さ/色)より優先して、バッジは小さく保つ */
+.right-panel .folder-thumbnail.has-folder-preview > svg {
+    width: 9px;
+    height: 9px;
+    padding: 1px;
+    stroke: var(--futaba-maroon);
+}
+
+/* 中身のサムネイルを持つフォルダは、中身が見える大きさにする(開閉アイコンの小さな枠より大きく) */
+.right-panel .layer-panel-card-thumb--folder.has-folder-preview {
+    width: 28px !important;
+    height: 28px !important;
+}
