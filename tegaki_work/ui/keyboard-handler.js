@@ -826,6 +826,11 @@ export const KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
 
+            case 'BALLOON_TOGGLE':
+                window.coreEngine?.popupManager?.toggle?.('balloon');
+                event.preventDefault();
+                break;
+
             case 'FOCUS_LINES_TOGGLE':
                 window.coreEngine?.popupManager?.toggle?.('focusLines');
                 event.preventDefault();

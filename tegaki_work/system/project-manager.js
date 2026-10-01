@@ -24,6 +24,7 @@ import {
 import { normalizeRasterBounds } from './raster-bounds.js';
 import { sanitizePanelLayoutData } from './panel-layout.js';
 import { sanitizeFocusLinesData } from './focus-lines.js';
+import { sanitizeBalloonData } from './balloon-geometry.js';
 import {
     RASTER_PIXEL_ENCODING_BASE64,
     serializeRasterPixels
@@ -167,6 +168,8 @@ export class ProjectManager {
                 ...(data.panelLayout ? { panelLayout: data.panelLayout } : {}),
                 // 集中線Layerの再編集用parameter(optional)
                 ...(data.focusLines ? { focusLines: data.focusLines } : {}),
+                // 吹き出しLayerの再編集用parameter(optional。フォントの実体はProjectに入れない)
+                ...(data.balloon ? { balloon: data.balloon } : {}),
                 image: imageData
             });
         }
@@ -661,6 +664,10 @@ export class ProjectManager {
                 
                 layer.visible = layer.layerData.visible;
                 layer.alpha = layer.layerData.opacity;
+                if (layerInfo.balloon) {
+                    const balloon = sanitizeBalloonData(layerInfo.balloon, TEGAKI_CONFIG.canvas);
+                    if (balloon) layer.layerData.balloon = balloon;
+                }
                 if (layerInfo.focusLines) {
                     const focusLines = sanitizeFocusLinesData(layerInfo.focusLines, TEGAKI_CONFIG.canvas);
                     if (focusLines) layer.layerData.focusLines = focusLines;

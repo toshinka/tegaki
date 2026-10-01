@@ -529,6 +529,12 @@ export const TEGAKI_KEYMAP = {
             shift: true,
             description: '資料 / プレビュー'
         },
+        BALLOON_TOGGLE: {
+            key: 'KeyB',
+            ctrl: false,
+            shift: true,
+            description: '吹き出し'
+        },
         FOCUS_LINES_TOGGLE: {
             key: 'KeyF',
             ctrl: false,

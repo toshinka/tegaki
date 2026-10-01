@@ -27,6 +27,19 @@
     "docs/handoffs/2026-10-02-pen-ruler-to-next.md"
   ],
   "domains": {
+    "balloon": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": [
+        "tegaki_work/system/balloon-geometry.js",
+        "tegaki_work/system/balloon-raster.js",
+        "tegaki_work/system/lettering-raster.js",
+        "tegaki_work/system/font-library.js",
+        "tegaki_work/ui/balloon-popup.js"
+      ],
+      "patterns": [
+        "^verify-balloon"
+      ]
+    },
     "focus-lines": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [
