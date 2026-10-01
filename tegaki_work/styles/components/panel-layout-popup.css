@@ -1,0 +1,189 @@
+/* コマ割りpopup（WP-010）。palette / semantic tokenは main.css を参照し、色を複製しない。 */
+#panel-layout-popup {
+    z-index: 4000;
+    width: 316px;
+    max-width: calc(100vw - 112px);
+    padding: 10px;
+    color: var(--futaba-maroon);
+    font-size: 11px;
+}
+
+#panel-layout-popup .pl-title {
+    font-weight: 700;
+    font-size: 12px;
+    margin: 0 28px 6px 2px;
+}
+
+#panel-layout-popup .pl-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-bottom: 6px;
+}
+
+#panel-layout-popup .pl-preset {
+    width: 30px;
+    height: 36px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(207, 156, 151, 0.78);
+    border-radius: 5px;
+    background: rgba(255, 255, 238, 0.62);
+    color: var(--futaba-maroon);
+    cursor: pointer;
+}
+
+#panel-layout-popup .pl-preset:hover {
+    background: rgba(255, 255, 238, 0.86);
+    border-color: var(--futaba-medium);
+}
+
+#panel-layout-popup .pl-preset:focus-visible,
+#panel-layout-popup .pl-btn:focus-visible,
+#panel-layout-popup .pl-chip:focus-visible {
+    outline: 2px solid var(--active-border);
+    outline-offset: 1px;
+}
+
+#panel-layout-popup .pl-preview {
+    display: block;
+    margin: 0 auto;
+    border: 1px solid var(--futaba-medium);
+    border-radius: 3px;
+    touch-action: none;
+    max-width: 100%;
+}
+
+#panel-layout-popup .pl-hint {
+    margin: 3px 0 6px;
+    font-size: 10px;
+    opacity: 0.8;
+    text-align: center;
+}
+
+#panel-layout-popup .pl-actions,
+#panel-layout-popup .pl-footer {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+#panel-layout-popup .pl-footer {
+    justify-content: flex-end;
+    margin: 8px 0 0;
+}
+
+#panel-layout-popup .pl-btn {
+    flex: 1;
+    min-height: 24px;
+    padding: 0 6px;
+    border: 1px solid rgba(207, 156, 151, 0.78);
+    border-radius: 5px;
+    background: rgba(255, 255, 238, 0.62);
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+#panel-layout-popup .pl-btn:hover {
+    background: rgba(255, 255, 238, 0.86);
+    border-color: var(--futaba-medium);
+}
+
+#panel-layout-popup .pl-btn--primary {
+    flex: 2;
+    background: var(--futaba-light-maroon);
+    border-color: var(--futaba-maroon);
+    color: var(--futaba-background);
+}
+
+#panel-layout-popup .pl-btn--primary:hover {
+    background: var(--futaba-maroon);
+}
+
+#panel-layout-popup .pl-btn--small {
+    flex: none;
+    min-height: 20px;
+    margin-bottom: 4px;
+}
+
+#panel-layout-popup .pl-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+#panel-layout-popup .pl-label {
+    flex: 0 0 74px;
+    font-weight: 700;
+}
+
+#panel-layout-popup .pl-range {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--futaba-light-maroon);
+}
+
+#panel-layout-popup .pl-value {
+    flex: 0 0 44px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+#panel-layout-popup .pl-chips {
+    display: inline-flex;
+    gap: 3px;
+}
+
+#panel-layout-popup .pl-chip {
+    min-width: 28px;
+    height: 22px;
+    border: 1px solid rgba(207, 156, 151, 0.78);
+    border-radius: 5px;
+    background: rgba(255, 255, 238, 0.62);
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+#panel-layout-popup .pl-chip.is-selected {
+    background: var(--futaba-light-maroon);
+    border-color: var(--futaba-maroon);
+    color: var(--futaba-background);
+}
+
+#panel-layout-popup .pl-sep {
+    height: 1px;
+    margin: 6px 0;
+    background: rgba(207, 156, 151, 0.52);
+}
+
+#panel-layout-popup .pl-color {
+    width: 44px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid var(--futaba-medium);
+    border-radius: 4px;
+    background: transparent;
+}
+
+#panel-layout-popup .pl-warning {
+    margin-top: 6px;
+    padding: 3px 6px;
+    border: 1px solid var(--futaba-medium);
+    border-radius: 4px;
+    font-size: 10px;
+}
+
+@media (pointer: coarse) {
+    #panel-layout-popup { font-size: 13px; }
+    #panel-layout-popup .pl-btn,
+    #panel-layout-popup .pl-chip { min-height: 38px; font-size: 12px; }
+    #panel-layout-popup .pl-preset { width: 40px; height: 46px; }
+    #panel-layout-popup .pl-label { flex-basis: 88px; }
+}

@@ -806,6 +806,11 @@ export const KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
 
+            case 'PANEL_LAYOUT_TOGGLE':
+                window.coreEngine?.popupManager?.toggle?.('panelLayout');
+                event.preventDefault();
+                break;
+
             case 'REFERENCE_PREVIEW_TOGGLE':
                 {
                     const viewer = window.coreEngine?.popupManager?.get?.('referencePreview') || window.referencePreviewViewer;

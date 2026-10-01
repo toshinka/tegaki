@@ -23,6 +23,7 @@ const SIDEBAR_POPUP_BUTTONS = Object.freeze({
     album: 'library-tool',
     referencePreview: 'reference-preview-tool',
     export: 'export-tool',
+    panelLayout: 'panel-layout-tool',
     resize: 'resize-tool',
     quickAccess: 'quick-access-tool',
     animationTable: 'gif-animation-tool',
@@ -684,6 +685,9 @@ export class UIController {
         const toolMap = {
             'quick-access-tool': () => {
                 this.toggleQuickAccessPopup();
+            },
+            'panel-layout-tool': () => {
+                this.togglePopup('panelLayout');
             },
             'resize-tool': () => {
                 this.togglePopup('resize');

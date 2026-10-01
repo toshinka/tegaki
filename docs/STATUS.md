@@ -12,12 +12,19 @@
 - 検証: 同一操作をrenderer解像度1 / 2で実行し、Layer画素・snapshot・undo2段・redo・History（patch、4.5MB）・PNG（renderToCanvas）が完全一致。2500px/6Layerで1frame 0.15ms→0.25〜0.41ms。静的verifier `build/verify-history-display-dpr-resolution.mjs`（history suite）がSprite / Container対象extractのresolution指定漏れを検出（修正前コードで失敗を確認）。
 - `displayDevicePixelRatio: true`で有効（起動時に反映、上限2x）。
 
+### PANEL LAYOUT — コマ割りツール（2026-10-01, WP-010）
+
+状態: ROUGH PRODUCT PASS / TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。設計・範囲・未実装は[WP-010](work/WP-010-panel-layout.md)。
+- sidebarの「コマ割り」(Shift+K)でpopup。プリセット、上下/左右分割、結合、分割線ドラッグ、傾き、線ごとの間隔、裁ち落とし、余白/間隔/線幅/色。
+- 確定は通常Raster Layer「コマ枠」を1件のHistoryで追加（Undo 1回）。Project schema・保存正本は変更なし。コマ割り木はlocalStorage(UI設定)のみ。
+- 検証: `verify-panel-layout.mjs`、`vite build`、Chromiumで実操作（launcher / Shift+K / 分割 / ドラッグ / 傾き / 適用 / Undo）。Owner実機は未確認。
+
 ### OWNER BACKLOG — 未着手の要望（2026-10-01記録、優先順はOwner判断）
 
 優先はメインペンの「レスポンスと美観」。鉛筆風など派生ブラシは遠回りなので避ける。以下は思い出し用の控え（設計・着手は別途カード化）:
 1. 集中線ツール（特に要望強）。
 2. 定規ツール（直線 / 縦横に傾けて斜めにも使えるグリッド）。
-3. 漫画用コマ割り＆編集ツール（クリスタ / メディバン / アルパカ相当）。
+3. 漫画用コマ割り＆編集ツール（クリスタ / メディバン / アルパカ相当）。→ 第一段を[WP-010](work/WP-010-panel-layout.md)で実装済み（Owner受入待ち）。
 4. トーン（スクリーントーン）系。
 5. QTPのペンスロット: 「PEN · S4 · …」行を拡張ボタン置き場にし、押すとブラシプリセット（6枠程度、SVGのペンアイコンに番号）の行を出す。設定でpreset入れ替え。上記の後。
 6. GPUパーティクル効果（興味あり、token消費と相談）。
