@@ -21,6 +21,7 @@ import {
     normalizePressureCurvePoints,
     evaluatePressureCurve
 } from '../system/drawing/pressure-curve.js';
+import { computeDabFalloff } from '../system/drawing/airbrush-dab-renderer.js';
 
 export class SettingsPopup {
     constructor(dependencies = {}) {
@@ -279,6 +280,11 @@ export class SettingsPopup {
 
             <div id="tab-spray" class="ui-tab-content">
                 <div class="setting-group">
+                    <div class="setting-label">先端プレビュー</div>
+                    <canvas id="airbrush-dab-preview" class="brush-tip-preview" width="240" height="64"></canvas>
+                    <div class="setting-description">左が1回の吹き付け、右が1本のストローク。流量・柔らかさ・揺らぎの変更がすぐ反映されます。</div>
+                </div>
+                <div class="setting-group">
                     <div class="setting-label">流量 (Flow)</div>
                     <div class="slider-container">
                         <div class="slider" id="airbrush-flow-slider">
@@ -442,6 +448,9 @@ export class SettingsPopup {
                     const isActive = c.id === `tab-${targetTab}`;
                     c.classList.toggle('active', isActive);
                 });
+                // 非表示タブのcanvasは寸法0のため、表示時に描き直す。
+                if (targetTab === 'pen') this._drawPressureCurveEditor();
+                if (targetTab === 'spray') this._drawAirbrushDabPreview();
             };
         });
     }
@@ -627,6 +636,9 @@ export class SettingsPopup {
         if (track) track.style.width = percent + '%';
         if (handle) handle.style.left = percent + '%';
         if (display) display.textContent = spec.format ? spec.format(val) : val.toFixed(2);
+        if (type === 'airbrushFlow' || type === 'airbrushSoftness' || type === 'airbrushScatter') {
+            this._scheduleAirbrushDabPreview();
+        }
 
         if (this.eventBus) {
             const eventName = `settings:${spec.settingKey.replace(/[A-Z]/g, m => "-" + m.toLowerCase())}`;
@@ -934,6 +946,100 @@ export class SettingsPopup {
             btn.classList.toggle('active', btn.getAttribute('data-curve') === curve);
         });
         this._drawPressureCurveEditor();
+    }
+
+    _scheduleAirbrushDabPreview() {
+        if (this.dabPreviewFrame) return;
+        const schedule = typeof requestAnimationFrame === 'function'
+            ? requestAnimationFrame
+            : (fn) => setTimeout(fn, 16);
+        this.dabPreviewFrame = schedule(() => {
+            this.dabPreviewFrame = null;
+            this._drawAirbrushDabPreview();
+        });
+    }
+
+    /**
+     * エアブラシ先端のプレビュー。描画engineと同じfalloff・spacing補正flow・scatterを
+     * CPUで小さく再現する(左: 1dab、右: 直線strokeの累積)。
+     */
+    _drawAirbrushDabPreview() {
+        const canvas = this.popup?.querySelector('#airbrush-dab-preview');
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const cssW = Math.round(rect.width || canvas.width);
+        const cssH = Math.round(rect.height || canvas.height);
+        if (cssW <= 0 || cssH <= 0) return;
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const W = Math.round(cssW * dpr);
+        const H = Math.round(cssH * dpr);
+        if (canvas.width !== W || canvas.height !== H) {
+            canvas.width = W;
+            canvas.height = H;
+        }
+
+        const softness = Number(this.currentAirbrushSoftness ?? 0.8);
+        const flow = Math.max(0.001, Math.min(1, Number(this.currentAirbrushFlow ?? 0.08)));
+        const scatter = Number(this.currentAirbrushScatter ?? 0);
+        const spacingRatio = Number(window.TEGAKI_CONFIG?.BRUSH_DEFAULTS?.airbrushSpacingRatio ?? 0.1);
+        const dabAlpha = 1 - Math.pow(1 - flow, spacingRatio / 0.18);
+
+        const style = getComputedStyle(document.documentElement);
+        const hex = (style.getPropertyValue('--futaba-maroon').trim() || '#800000').replace('#', '');
+        const full = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex;
+        const color = [0, 2, 4].map(i => parseInt(full.slice(i, i + 2), 16) || 0);
+
+        const R = Math.max(4, Math.floor(H / 2) - 4 * dpr);
+        const remaining = new Float32Array(W * H).fill(1);
+        const stamp = (cx, cy, alpha) => {
+            const x0 = Math.max(0, Math.floor(cx - R));
+            const x1 = Math.min(W - 1, Math.ceil(cx + R));
+            const y0 = Math.max(0, Math.floor(cy - R));
+            const y1 = Math.min(H - 1, Math.ceil(cy + R));
+            for (let y = y0; y <= y1; y++) {
+                for (let x = x0; x <= x1; x++) {
+                    const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / R;
+                    if (d >= 1) continue;
+                    remaining[y * W + x] *= 1 - alpha * computeDabFalloff(d, softness);
+                }
+            }
+        };
+
+        // 左: 1回の吹き付け(形が見えるよう濃度1で表示)
+        const singleCx = R + 4 * dpr;
+        stamp(singleCx, H / 2, 1);
+
+        // 右: 直線strokeの累積(engineと同じ間隔・flow・scatter)
+        let seed = 7;
+        const random = () => {
+            seed = (seed * 16807) % 2147483647;
+            return seed / 2147483647;
+        };
+        const startX = singleCx + R * 2 + 10 * dpr;
+        const endX = W - R - 4 * dpr;
+        const spacing = Math.max(0.5, 2 * R * spacingRatio);
+        for (let x = startX; x <= endX; x += spacing) {
+            let cx = x;
+            let cy = H / 2;
+            if (scatter > 0) {
+                const angle = random() * Math.PI * 2;
+                const distance = random() * 2 * R * scatter * 0.2;
+                cx += Math.cos(angle) * distance;
+                cy += Math.sin(angle) * distance;
+            }
+            stamp(cx, cy, dabAlpha);
+        }
+
+        const ctx = canvas.getContext('2d');
+        const image = ctx.createImageData(W, H);
+        for (let i = 0; i < W * H; i++) {
+            const a = 1 - remaining[i];
+            image.data[i * 4] = color[0];
+            image.data[i * 4 + 1] = color[1];
+            image.data[i * 4 + 2] = color[2];
+            image.data[i * 4 + 3] = Math.round(a * 255);
+        }
+        ctx.putImageData(image, 0, 0);
     }
 
     /** 現在のカーブ設定を制御点で返す(presetは近似点、customは保存点)。 */
