@@ -12,6 +12,8 @@
  * ============================================================================
  */
 
+import { normalizePressureCurvePoints } from './drawing/pressure-curve.js';
+
 export class SettingsManager {
     constructor(eventBus, config) {
         this.eventBus = eventBus;
@@ -40,6 +42,7 @@ export class SettingsManager {
             pressureCorrection: this.config?.userSettings?.pressureCorrection || 1.0,
             smoothing: this.config?.userSettings?.smoothing || 0.5,
             pressureCurve: this.config?.userSettings?.pressureCurve || 'linear',
+            pressureCurvePoints: null,
             pressureOpacityEnabled: this.config?.userSettings?.pressureOpacityEnabled !== false,
             pressureOpacityStrength: this.config?.userSettings?.pressureOpacityStrength ?? 0.65,
             airbrushFlow: this.config?.BRUSH_DEFAULTS?.airbrushFlow ?? 0.08,
@@ -135,7 +138,11 @@ export class SettingsManager {
                 return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
             },
             pressureCurve: (v) => {
-                return ['linear', 'ease-in', 'ease-out'].includes(v) ? v : undefined;
+                return ['linear', 'ease-in', 'ease-out', 'custom'].includes(v) ? v : undefined;
+            },
+            pressureCurvePoints: (v) => {
+                if (v === null) return null;
+                return normalizePressureCurvePoints(v) ?? undefined;
             },
             pressureOpacityEnabled: (v) => {
                 return typeof v === 'boolean' ? v : undefined;

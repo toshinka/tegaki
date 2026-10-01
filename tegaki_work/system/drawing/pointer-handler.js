@@ -12,6 +12,8 @@
  * ============================================================================
  */
 
+import { evaluatePressureCurve } from './pressure-curve.js';
+
 /**
  * 手ブレ補正クラス（Lerp方式・デッドゾーンなし）
  * スクリーン座標空間で動作するため、ズーム倍率に依存しない。
@@ -111,6 +113,9 @@ export class PointerHandler {
             } else if (curve === 'ease-out') {
                 // 重め：強く押さないと太くならない
                 pressure = pressure * pressure;
+            } else if (curve === 'custom') {
+                // カスタム：設定画面のカーブ編集で作った制御点
+                pressure = evaluatePressureCurve(mgr?.get?.('pressureCurvePoints'), pressure);
             }
             // 'linear' はそのまま
 

@@ -15,6 +15,12 @@
 import { TEGAKI_KEYMAP } from '../config.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
+import {
+    PRESSURE_CURVE_PRESETS,
+    MAX_PRESSURE_CURVE_POINTS,
+    normalizePressureCurvePoints,
+    evaluatePressureCurve
+} from '../system/drawing/pressure-curve.js';
 
 export class SettingsPopup {
     constructor(dependencies = {}) {
@@ -236,7 +242,10 @@ export class SettingsPopup {
                         <button class="pressure-curve-btn active" data-curve="linear">リニア</button>
                         <button class="pressure-curve-btn" data-curve="ease-in">軽め</button>
                         <button class="pressure-curve-btn" data-curve="ease-out">重め</button>
+                        <button class="pressure-curve-btn" data-curve="custom">カスタム</button>
                     </div>
+                    <canvas id="pressure-curve-editor" class="pressure-curve-editor" width="240" height="160"></canvas>
+                    <div class="setting-description">横が入力筆圧、縦が実効筆圧。点をドラッグで調整、空いた所をクリックで点を追加、点をダブルクリックで削除。編集するとカスタムになります。</div>
                 </div>
 
                 <div class="setting-group">
@@ -760,6 +769,7 @@ export class SettingsPopup {
                 this.settingsManager?.set('pressureCurve', curve);
             });
         });
+        this._setupPressureCurveEditor();
         this.elements.pressureOpacityToggle?.addEventListener('change', () => {
             this.settingsManager?.set('pressureOpacityEnabled', this.elements.pressureOpacityToggle.checked);
         });
@@ -922,6 +932,176 @@ export class SettingsPopup {
         const curveBtns = this.popup.querySelectorAll('.pressure-curve-btn[data-curve]');
         curveBtns.forEach(btn => {
             btn.classList.toggle('active', btn.getAttribute('data-curve') === curve);
+        });
+        this._drawPressureCurveEditor();
+    }
+
+    /** 現在のカーブ設定を制御点で返す(presetは近似点、customは保存点)。 */
+    _getEditorCurvePoints() {
+        const curve = this.settingsManager?.get?.('pressureCurve') ?? 'linear';
+        if (curve === 'custom') {
+            return normalizePressureCurvePoints(this.settingsManager?.get?.('pressureCurvePoints'))
+                || PRESSURE_CURVE_PRESETS.linear.map(p => [...p]);
+        }
+        return (PRESSURE_CURVE_PRESETS[curve] || PRESSURE_CURVE_PRESETS.linear).map(p => [...p]);
+    }
+
+    /**
+     * 筆圧カーブの2次元編集(入力筆圧→実効筆圧)。見た目は既存CSS tokenに合わせた最小実装で、
+     * パネル標準化時に部品化しやすいよう描画と操作をこのメソッド群に閉じている。
+     */
+    _setupPressureCurveEditor() {
+        const canvas = this.popup?.querySelector('#pressure-curve-editor');
+        if (!canvas || canvas.dataset.ready === '1') return;
+        canvas.dataset.ready = '1';
+        this.curveEditor = { canvas, points: null, dragIndex: -1, pointerId: null };
+
+        const PAD = 10;
+        const HIT_RADIUS = 9;
+        const toCurve = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const w = rect.width - PAD * 2;
+            const h = rect.height - PAD * 2;
+            return [
+                Math.max(0, Math.min(1, (e.clientX - rect.left - PAD) / w)),
+                Math.max(0, Math.min(1, 1 - (e.clientY - rect.top - PAD) / h))
+            ];
+        };
+        const findPoint = (e, points) => {
+            const rect = canvas.getBoundingClientRect();
+            const w = rect.width - PAD * 2;
+            const h = rect.height - PAD * 2;
+            const px = e.clientX - rect.left;
+            const py = e.clientY - rect.top;
+            let best = -1;
+            let bestDist = HIT_RADIUS;
+            points.forEach(([x, y], i) => {
+                const d = Math.hypot(PAD + x * w - px, PAD + (1 - y) * h - py);
+                if (d <= bestDist) { best = i; bestDist = d; }
+            });
+            return best;
+        };
+        const commit = () => {
+            const points = normalizePressureCurvePoints(this.curveEditor.points);
+            if (!points) return;
+            this.settingsManager?.set('pressureCurvePoints', points);
+            this.settingsManager?.set('pressureCurve', 'custom');
+            this._applyPressureCurveUI('custom');
+        };
+
+        canvas.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const points = this._getEditorCurvePoints();
+            let index = findPoint(e, points);
+            if (index < 0) {
+                if (points.length >= MAX_PRESSURE_CURVE_POINTS) return;
+                const [x, y] = toCurve(e);
+                if (x <= 0.01 || x >= 0.99) return;
+                points.push([x, y]);
+                points.sort((a, b) => a[0] - b[0]);
+                index = points.findIndex(p => p[0] === x && p[1] === y);
+            }
+            this.curveEditor.points = points;
+            this.curveEditor.dragIndex = index;
+            this.curveEditor.pointerId = e.pointerId;
+            try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+            this._drawPressureCurveEditor(points);
+        });
+        canvas.addEventListener('pointermove', (e) => {
+            const editor = this.curveEditor;
+            if (editor.dragIndex < 0 || e.pointerId !== editor.pointerId) return;
+            e.preventDefault();
+            const points = editor.points;
+            const i = editor.dragIndex;
+            const [x, y] = toCurve(e);
+            const isEnd = i === 0 || i === points.length - 1;
+            // 端点はx固定(0/1)、内部点は隣の点を越えない。
+            const minX = isEnd ? points[i][0] : points[i - 1][0] + 0.02;
+            const maxX = isEnd ? points[i][0] : points[i + 1][0] - 0.02;
+            points[i] = [Math.max(minX, Math.min(maxX, x)), y];
+            this._drawPressureCurveEditor(points);
+        });
+        const end = (e) => {
+            const editor = this.curveEditor;
+            if (editor.dragIndex < 0 || e.pointerId !== editor.pointerId) return;
+            editor.dragIndex = -1;
+            editor.pointerId = null;
+            try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+            commit();
+        };
+        canvas.addEventListener('pointerup', end);
+        canvas.addEventListener('pointercancel', end);
+        canvas.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const points = this._getEditorCurvePoints();
+            const index = findPoint(e, points);
+            if (index <= 0 || index >= points.length - 1) return;
+            points.splice(index, 1);
+            this.curveEditor.points = points;
+            commit();
+        });
+
+        this._drawPressureCurveEditor();
+    }
+
+    _drawPressureCurveEditor(points = null) {
+        const canvas = this.curveEditor?.canvas;
+        if (!canvas) return;
+        const pts = points || this._getEditorCurvePoints();
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const cssW = rect.width || canvas.width;
+        const cssH = rect.height || canvas.height;
+        if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+        }
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, cssW, cssH);
+
+        const style = getComputedStyle(document.documentElement);
+        const maroon = style.getPropertyValue('--futaba-maroon').trim() || '#800000';
+        const medium = style.getPropertyValue('--futaba-light-medium').trim() || '#d4a8a0';
+        const active = style.getPropertyValue('--active-border').trim() || '#ff8c42';
+        const PAD = 10;
+        const w = cssW - PAD * 2;
+        const h = cssH - PAD * 2;
+        const X = (x) => PAD + x * w;
+        const Y = (y) => PAD + (1 - y) * h;
+
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = medium;
+        ctx.globalAlpha = 0.6;
+        for (let i = 0; i <= 4; i++) {
+            ctx.beginPath(); ctx.moveTo(X(i / 4), Y(0)); ctx.lineTo(X(i / 4), Y(1)); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(X(0), Y(i / 4)); ctx.lineTo(X(1), Y(i / 4)); ctx.stroke();
+        }
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(1), Y(1)); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+
+        ctx.strokeStyle = maroon;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i <= 64; i++) {
+            const x = i / 64;
+            const y = evaluatePressureCurve(pts, x);
+            if (i === 0) ctx.moveTo(X(x), Y(y)); else ctx.lineTo(X(x), Y(y));
+        }
+        ctx.stroke();
+
+        pts.forEach(([x, y], i) => {
+            ctx.beginPath();
+            ctx.arc(X(x), Y(y), i === this.curveEditor?.dragIndex ? 5 : 4, 0, Math.PI * 2);
+            ctx.fillStyle = i === this.curveEditor?.dragIndex ? active : '#ffffee';
+            ctx.fill();
+            ctx.strokeStyle = maroon;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
         });
     }
 
