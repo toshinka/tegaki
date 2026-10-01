@@ -815,7 +815,10 @@ export class BrushCore {
             1,
             Math.round(Number(canvasConfig.height || this.layerManager.canvasHeight || activeLayer.layerData.renderTexture.height || 1))
         );
-        const padding = Math.ceil(Math.max(4, Number(settings?.size ?? 1) * 2));
+        // 100px以下の従来サイズは size*2 の余白を維持し、それを超える大ブラシは
+        // 半径＋αで頭打ちにしてレイヤーRTの過剰な拡張（VRAM増）を防ぐ。
+        const brushSize = Number(settings?.size ?? 1);
+        const padding = Math.ceil(Math.max(4, Math.min(brushSize * 2, Math.max(200, brushSize / 2 + 4))));
 
         const result = this.layerManager.ensureLayerRasterBoundsForRect(activeLayer, {
             x: 0,

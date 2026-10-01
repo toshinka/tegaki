@@ -26,6 +26,7 @@ const QA_STORAGE_KEYS = {
 const QA_PRESET_TOOLS = ['pen', 'eraser', 'airbrush'];
 const QA_PRESET_SLOT_COUNT = 6;
 const QA_COLOR_SLOT_COUNT = 5;
+const SIZE_SLIDER_BREAKPOINTS = [10, 100];
 const QA_SHORTCUT_ACTIONS = Object.freeze({
     eyedropper: 'TOOL_EYEDROPPER',
     pen: 'TOOL_PEN',
@@ -2196,7 +2197,7 @@ export class QuickAccessPopup {
             }
 
             if (this.isDraggingSize) {
-                const value = this._valueFromSliderEvent(e, this.elements.sizeSlider, this.MIN_SIZE, this.MAX_SIZE);
+                const value = this._sizeFromSliderEvent(e);
                 this._updateSizeSlider(value, { persistPreset: true, emit: true });
             }
 
@@ -2230,7 +2231,7 @@ export class QuickAccessPopup {
 
         this._bindPointerAction(this.elements.sizeSlider, (e) => {
             if (e.target === this.elements.sizeHandle) return;
-            const value = this._valueFromSliderEvent(e, this.elements.sizeSlider, this.MIN_SIZE, this.MAX_SIZE);
+            const value = this._sizeFromSliderEvent(e);
             this._updateSizeSlider(value, { persistPreset: true, emit: true });
         });
 
@@ -2241,11 +2242,11 @@ export class QuickAccessPopup {
         });
 
         this._bindPointerAction(this.elements.sizeDecrease, () => {
-            this._updateSizeSlider(this.currentSize - 0.5, { persistPreset: true, emit: true });
+            this._updateSizeSlider(this._stepSize(this.currentSize, -1), { persistPreset: true, emit: true });
         });
 
         this._bindPointerAction(this.elements.sizeIncrease, () => {
-            this._updateSizeSlider(this.currentSize + 0.5, { persistPreset: true, emit: true });
+            this._updateSizeSlider(this._stepSize(this.currentSize, 1), { persistPreset: true, emit: true });
         });
 
         this._bindPointerAction(this.elements.opacityDecrease, () => {
@@ -2259,7 +2260,7 @@ export class QuickAccessPopup {
         this._bindWheelAdjustment(
             this.elements.sizeSlider?.closest('.qa-slider-card'),
             (direction) => this._updateSizeSlider(
-                this.currentSize + direction * 0.5,
+                this._stepSize(this.currentSize, direction),
                 { persistPreset: true, emit: true }
             )
         );
@@ -2673,7 +2674,7 @@ export class QuickAccessPopup {
         const shouldPersistPreset = options.persistPreset === true;
 
         this.currentSize = this._clampSize(value);
-        const percent = this._toPercent(this.currentSize, this.MIN_SIZE, this.MAX_SIZE);
+        const percent = this._sizeToSliderPercent(this.currentSize);
 
         if (this.elements.sizeTrack) this.elements.sizeTrack.style.width = `${percent}%`;
         if (this.elements.sizeHandle) this.elements.sizeHandle.style.left = `${percent}%`;
@@ -2992,6 +2993,80 @@ export class QuickAccessPopup {
         return min + ((max - min) * percent / 100);
     }
 
+    /**
+     * サイズスライダーの区間。各区間がスライダー幅を等分し、大きい区間ほど1目盛りの増分が粗くなる。
+     * 最大値が100なら 0.5〜10 / 10〜100 の2区間、500なら 100〜500 を加えた3区間になる。
+     */
+    _getSizeSliderStops() {
+        const max = this.MAX_SIZE;
+        const stops = [this.MIN_SIZE];
+        for (const stop of SIZE_SLIDER_BREAKPOINTS) {
+            if (stop > stops[stops.length - 1] && stop < max) stops.push(stop);
+        }
+        if (max > stops[stops.length - 1]) stops.push(max);
+        return stops;
+    }
+
+    _sizeToSliderPercent(size) {
+        const stops = this._getSizeSliderStops();
+        const segments = stops.length - 1;
+        if (segments <= 0) return 0;
+        const value = this._clampSize(size);
+        for (let i = 0; i < segments; i++) {
+            const from = stops[i];
+            const to = stops[i + 1];
+            if (value <= to || i === segments - 1) {
+                const local = Math.max(0, Math.min(1, (value - from) / (to - from)));
+                return ((i + local) / segments) * 100;
+            }
+        }
+        return 100;
+    }
+
+    _sliderPercentToSize(percent) {
+        const stops = this._getSizeSliderStops();
+        const segments = stops.length - 1;
+        if (segments <= 0) return this.MIN_SIZE;
+        const position = (Math.max(0, Math.min(100, percent)) / 100) * segments;
+        const index = Math.min(segments - 1, Math.floor(position));
+        const from = stops[index];
+        const to = stops[index + 1];
+        const raw = from + (to - from) * (position - index);
+        return this._clampSize(this._snapSize(raw));
+    }
+
+    _sizeFromSliderEvent(e) {
+        const slider = this.elements.sizeSlider;
+        if (!slider) return this.MIN_SIZE;
+        const rect = slider.getBoundingClientRect();
+        const percent = ((e.clientX - rect.left) / rect.width) * 100;
+        return this._sliderPercentToSize(percent);
+    }
+
+    /** サイズ帯ごとの目盛り幅: 10未満は0.5、100未満は1、それ以上は5。 */
+    _sizeStepFor(size, direction = 1) {
+        const value = Number(size);
+        if (direction < 0) {
+            if (value > 100) return 5;
+            if (value > 10) return 1;
+            return 0.5;
+        }
+        if (value >= 100) return 5;
+        if (value >= 10) return 1;
+        return 0.5;
+    }
+
+    _snapSize(size) {
+        const step = this._sizeStepFor(size);
+        return Math.round(Number(size) / step) * step;
+    }
+
+    _stepSize(size, direction) {
+        const step = this._sizeStepFor(size, direction);
+        const next = Number(size) + direction * step;
+        return Math.round(next / step) * step;
+    }
+
     _toPercent(value, min, max) {
         if (max <= min) return 0;
         return Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
@@ -3003,10 +3078,18 @@ export class QuickAccessPopup {
         return Math.round(4 + normalized * 6);
     }
 
-    _clampSize(value) {
+    _clampSize(value, tool = null) {
         const numeric = Number(value);
         if (!Number.isFinite(numeric)) return this.MIN_SIZE;
-        return Math.max(this.MIN_SIZE, Math.min(this.MAX_SIZE, numeric));
+        const max = tool ? this._getMaxSizeForTool(tool) : this.MAX_SIZE;
+        return Math.max(this.MIN_SIZE, Math.min(max, numeric));
+    }
+
+    _getMaxSizeForTool(tool) {
+        if (window.brushSettings?.getMaxSizeForMode) {
+            return window.brushSettings.getMaxSizeForMode(tool);
+        }
+        return tool === 'pen' ? 500 : 100;
     }
 
     _clampOpacity(value) {
@@ -3028,7 +3111,7 @@ export class QuickAccessPopup {
         const result = {};
         QA_PRESET_TOOLS.forEach((tool) => {
             result[tool] = QA_DEFAULT_PRESETS[tool].map((preset) => ({
-                size: this._clampSize(preset.size),
+                size: this._clampSize(preset.size, tool),
                 opacity: this._clampOpacity(preset.opacity)
             }));
         });
@@ -3059,7 +3142,7 @@ export class QuickAccessPopup {
                     if (!slot) continue;
 
                     result[tool][i] = {
-                        size: this._clampSize(slot.size),
+                        size: this._clampSize(slot.size, tool),
                         opacity: this._clampOpacity(slot.opacity)
                     };
                 }
