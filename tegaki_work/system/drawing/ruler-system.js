@@ -1,9 +1,7 @@
 /**
  * ============================================================================
  * ファイル名: system/drawing/ruler-system.js
- * 責務: 定規(平行線 / 放射線)の状態・ガイド表示・stroke座標の吸着・編集モードでの定規の移動 / 回転。
- * 操作: R=定規を出して編集 → もう一度Rで描画(吸着)と編集を切替、Shift+R=種類切替、Esc=定規OFF。
- *       編集中は 中心付近のドラッグ=移動、それ以外のドラッグ=回転(Shift併用で15°刻み)。
+ * 責務: 定規(平行線 / 放射線)の状態・ガイド表示・stroke座標の吸着・Shift+ドラッグでの定規編集。
  * 依存: Pixi Graphics、CameraSystem.worldContainer(文書座標)、CoordinateSystem
  * 被依存: brush-core.js(吸着)、drawing-engine.js(編集ドラッグの振り分け)、keyboard-handler.js(R / Shift+R)
  * 非所有: Layer raster、History、保存(定規状態はブラウザ毎の利便設定としてlocalStorageに置く)。
@@ -62,8 +60,6 @@ export class RulerSystem {
         const canvas = config?.canvas || window.TEGAKI_CONFIG?.canvas || { width: 400, height: 400 };
         this.state = {
             enabled: false,
-            // 'edit': ドラッグで定規を移動・回転(描画しない)。'draw': strokeを定規へ吸着して描く。
-            mode: 'edit',
             type: 'parallel',
             center: { x: canvas.width / 2, y: canvas.height / 2 },
             angle: 0
@@ -113,55 +109,22 @@ export class RulerSystem {
         return this.state.enabled === true;
     }
 
-    isEditing() {
-        return this.isEnabled() && this.state.mode === 'edit';
-    }
-
-    /** R: OFFなら定規を出して編集モード、表示中なら編集 ⇄ 描画を切り替える。 */
     toggle() {
-        if (!this.state.enabled) {
-            this.state.enabled = true;
-            this.state.mode = 'edit';
-        } else {
-            this.state.mode = this.state.mode === 'edit' ? 'draw' : 'edit';
-        }
-        this.drag = null;
+        this.state.enabled = !this.state.enabled;
         this._saveState();
         this.redraw();
-        this._announceMode();
+        this._announce(this.state.enabled ? `${RULER_TYPE_LABELS[this.state.type]} ON（Shift+ドラッグで移動・回転）` : '定規 OFF');
         this.eventBus?.emit?.('ruler:changed', { ...this.getState() });
-        return this.state.mode;
-    }
-
-    /** Esc: 定規を消す。 */
-    turnOff() {
-        if (!this.state.enabled) return false;
-        this.state.enabled = false;
-        this.drag = null;
-        this.anchor = null;
-        this.redraw();
-        this._announce('定規 OFF');
-        this.eventBus?.emit?.('ruler:changed', { ...this.getState() });
-        return true;
-    }
-
-    _announceMode() {
-        const label = RULER_TYPE_LABELS[this.state.type];
-        this._announce(this.state.mode === 'edit'
-            ? `${label}：編集（中心ドラッグで移動・周りで回転、Shiftで15°刻み）R で描画へ`
-            : `${label}：描画（R で編集へ、Esc で定規OFF）`);
+        return this.state.enabled;
     }
 
     cycleType() {
         const index = RULER_TYPES.indexOf(this.state.type);
         this.state.type = RULER_TYPES[(index + 1) % RULER_TYPES.length];
-        if (!this.state.enabled) {
-            this.state.enabled = true;
-            this.state.mode = 'edit';
-        }
+        if (!this.state.enabled) this.state.enabled = true;
         this._saveState();
         this.redraw();
-        this._announceMode();
+        this._announce(`${RULER_TYPE_LABELS[this.state.type]}`);
         this.eventBus?.emit?.('ruler:changed', { ...this.getState() });
         return this.state.type;
     }
@@ -169,7 +132,6 @@ export class RulerSystem {
     getState() {
         return {
             enabled: this.state.enabled,
-            mode: this.state.mode,
             type: this.state.type,
             center: { ...this.state.center },
             angle: this.state.angle
@@ -182,7 +144,7 @@ export class RulerSystem {
      * stroke座標(world)を定規へ吸着する。phase='start'で描き始めの点(anchor)を記録する。
      */
     snapWorld(worldX, worldY, phase = 'move') {
-        if (!this.isEnabled() || this.state.mode !== 'draw') {
+        if (!this.isEnabled()) {
             this.anchor = null;
             return { worldX, worldY };
         }
@@ -194,11 +156,11 @@ export class RulerSystem {
         return { worldX: snapped.x, worldY: snapped.y };
     }
 
-    // ---------------------------------------------------------------- 編集モードのドラッグ
+    // ---------------------------------------------------------------- 編集(Shift+ドラッグ)
 
-    /** 編集モード中の押下を定規の移動・回転として受けたらtrue(描画は始めない)。 */
-    handlePointerDown(info) {
-        if (!this.isEditing()) return false;
+    /** Shift+押下を定規編集として受けたらtrue(描画は始めない)。 */
+    handlePointerDown(info, event) {
+        if (!this.isEnabled() || event?.shiftKey !== true) return false;
         // 定規の操作は線補正(LazyBrush)を通さない生のペン位置で追従させる。
         const world = this._clientToWorld(info.rawClientX ?? info.clientX, info.rawClientY ?? info.clientY);
         if (!world) return false;
@@ -228,7 +190,7 @@ export class RulerSystem {
             this._hasStoredCenter = true;
         } else {
             let angle = Math.atan2(world.y - this.state.center.y, world.x - this.state.center.x) + this.drag.grabOffset;
-            if (event?.shiftKey) {
+            if (event?.ctrlKey || event?.metaKey) {
                 const step = (ANGLE_SNAP_DEG * Math.PI) / 180;
                 angle = Math.round(angle / step) * step;
             }
@@ -293,8 +255,8 @@ export class RulerSystem {
             g.stroke({ width: px(1.5), color: guideColor, alpha: 0.55 });
         }
 
-        // 中心点(常時)と、編集モード中は操作ハンドル(中心=移動、外周リング=回転)。
-        const editing = this.state.mode === 'edit' || this.drag;
+        // 中心点(常時)と、Shift中は操作ハンドル(中心=移動、外周リング=回転)。
+        const editing = this.shiftHeld || this.drag;
         g.circle(cx, cy, px(editing ? 7 : 4));
         g.fill({ color: 0xffffff, alpha: 0.9 });
         g.stroke({ width: px(1.5), color: guideColor, alpha: 1 });
