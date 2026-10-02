@@ -56,6 +56,10 @@
 - 確定時に通常Raster Layerを選択Layerへクリップして追加（Undo 1回）。`再編集`→`更新`、Projectは`layerData.tone`(optional)で往復。
 - 検証: `development-harness.mjs test tone` + Chromium（クリップ内のみ描画・Undo/Redo・更新・保存往復）。実機(液タブ)は未確認。
 
+### PILL TABS — 長丸タブの統一（2026-10-02）
+
+- 右ワークスペースの LAYER / TRANSFORM / RIG と、QTP・漫画ツールのタブが、同じ `styles/components/pill-tabs.css` を共有。右ワークスペース側（layer-panel-surface.css）には配置・寸法の差分だけを残した。見た目と挙動は変更なし（幅201px・高さ32px・9px文字を確認）。DOM/class名は据え置きで既存verifierに影響なし。
+
 ### BLEND MODES — 合成モード拡張（2026-10-02, WP-012追記）
 
 - 合成モードを4種→16種（通常+15）に拡張。Pixi描画とCanvas2D（書き出し・アニメ合成）で結果が一致することを全種で確認。オーバーレイが従来効いていなかった不具合（バックバッファ未有効）も修正。詳細は[WP-012](work/WP-012-layer-panel-compositing-investigation.md)追記。Owner実機は未確認。

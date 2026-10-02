@@ -1,5 +1,7 @@
-/* 長丸タブ（ui/pill-tabs.js）。LAYER / TRANSFORM / RIG（layer-panel-surface.css）と同じtoken・寸法の見た目。 */
-.pill-tabs {
+/* 長丸タブ（ui/pill-tabs.js）。右ワークスペースの LAYER / TRANSFORM / RIG（.right-workspace-mode-*）も
+   同じ見た目をここで共有する。配置やフォントなどそちら固有の差分だけ layer-panel-surface.css に残す。 */
+.pill-tabs,
+.right-workspace-frame > .right-workspace-mode-switch {
     display: grid;
     grid-template-columns: repeat(var(--pill-tab-count, 3), minmax(0, 1fr));
     gap: 2px;
@@ -16,7 +18,8 @@
     backdrop-filter: var(--ui-panel-glass-backdrop);
 }
 
-.pill-tab {
+.pill-tab,
+.right-workspace-mode-segment {
     min-width: 0;
     min-height: 26px;
     padding: 3px 6px;
@@ -34,30 +37,37 @@
     cursor: pointer;
 }
 
-.pill-tab:hover:not(.is-selected):not(:disabled) {
+.pill-tab:hover:not(.is-selected):not(:disabled),
+.right-workspace-mode-segment:hover:not(.is-selected):not(:disabled) {
     color: var(--futaba-maroon);
     background: color-mix(in srgb, var(--futaba-cream) 42%, transparent);
 }
 
-.pill-tab:disabled {
+.pill-tab:disabled,
+.right-workspace-mode-segment:disabled {
     color: var(--futaba-medium);
     cursor: not-allowed;
 }
 
 .pill-tab.is-selected,
-.pill-tab[aria-pressed="true"] {
+.pill-tab[aria-pressed="true"],
+.right-workspace-mode-segment.is-selected,
+.right-workspace-mode-segment[aria-pressed="true"] {
     color: var(--futaba-background);
     background: color-mix(in srgb, var(--futaba-maroon) 68%, transparent);
     -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
     backdrop-filter: var(--ui-panel-glass-backdrop);
 }
 
-.pill-tab:focus-visible {
+.pill-tab:focus-visible,
+.right-workspace-mode-segment:focus-visible {
     outline: 2px solid var(--active-border);
     outline-offset: -1px;
 }
 
 @media (pointer: coarse) {
-    .pill-tabs { min-height: 50px; }
-    .pill-tab { min-height: 42px; font-size: 13px; }
+    .pill-tabs,
+    .right-workspace-frame > .right-workspace-mode-switch { min-height: 50px; }
+    .pill-tab,
+    .right-workspace-mode-segment { min-height: 42px; font-size: 13px; }
 }

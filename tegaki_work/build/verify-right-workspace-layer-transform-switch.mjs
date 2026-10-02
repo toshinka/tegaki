@@ -63,9 +63,14 @@ assert.match(frameSource, /transformModeButton\.disabled = false[\s\S]*?rigModeB
 assert.match(frameSource, /transformGateNotice\.textContent = transformGateVisible[\s\S]*?transformBlockMessage/,
     'unsafe Transform targets display the existing R-38 reason inside the lens');
 
-const switchStyle = styleSource.match(
+// 見た目の共通部分は長丸タブ部品(pill-tabs.css)、配置・寸法の差分はlayer-panel-surface.cssにある。両方を一つのスイッチ定義として検査する。
+const pillTabsStyle = readFileSync(new URL('../styles/components/pill-tabs.css', import.meta.url), 'utf8');
+const surfaceSwitchStyle = styleSource.match(
     /\/\* Primary Layer \/ Transform \/ Rig navigation\.[\s\S]*?@media \(pointer: coarse\) \{[\s\S]*?\n\}/u
 )?.[0] || '';
+assert.match(pillTabsStyle, /\.right-workspace-frame > \.right-workspace-mode-switch/,
+    'the right workspace switch shares the pill-tabs component style');
+const switchStyle = surfaceSwitchStyle ? `${surfaceSwitchStyle}\n${pillTabsStyle}` : '';
 assert.ok(switchStyle, 'primary segmented switch owns a scoped component style block');
 assert.match(switchStyle, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/,
     'the three lenses share one navigation hierarchy');
