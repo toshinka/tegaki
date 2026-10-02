@@ -72,6 +72,16 @@
         "^verify-layer-blend-modes"
       ]
     },
+    "canvas-size": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": [
+        "tegaki_work/system/raster-bounds.js",
+        "tegaki_work/ui/resize-popup.js"
+      ],
+      "patterns": [
+        "^verify-canvas-size"
+      ]
+    },
     "tone": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [

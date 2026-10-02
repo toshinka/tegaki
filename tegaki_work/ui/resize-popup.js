@@ -18,7 +18,8 @@ import { TegakiEventBus } from '../system/event-bus.js';
 import {
     rebaseNormalizedAnchorForCanvasResize,
     resolveCanvasResizeOffset,
-    validateRasterSurfaceSize
+    validateRasterSurfaceSize,
+    getRasterSafePixels
 } from '../system/raster-bounds.js';
 import {
     resolveResizeContentTransform,
@@ -61,7 +62,8 @@ export class ResizePopup {
         
         const canvasConfig = window.TEGAKI_CONFIG?.canvas || {};
         this.MIN_SIZE = canvasConfig.minSize || 100;
-        this.MAX_SIZE = canvasConfig.maxSize || 2500;
+        this.MAX_SIZE = canvasConfig.maxSize || 2500; // スライダーの右端
+        this.ABSOLUTE_MAX_SIZE = canvasConfig.absoluteMaxSize || 8192; // 数値入力・プリセットの上限(GPUのテクスチャ上限も別途見る)
         
         this._ensurePopupElement();
     }
@@ -198,8 +200,19 @@ export class ResizePopup {
                         <button class="resize-preset-btn" data-width="1280" data-height="720">
                             HD<br>1280×720
                         </button>
+                        <button class="resize-preset-btn" data-width="1200" data-height="1200">
+                            正方形<br>1200×1200
+                        </button>
+                        <button class="resize-preset-btn" data-width="1700" data-height="2400">
+                            B5相当<br>1700×2400
+                        </button>
+                        <button class="resize-preset-btn" data-width="4960" data-height="7016" title="A4 / 600dpi。1レイヤー約140MB。軽量化は書き出し時に原寸、描画中は縮小表示が目安">
+                            漫画原稿<br>4960×7016
+                        </button>
                     </div>
                     
+                    <div class="resize-memory-note" id="resize-memory-note" aria-live="polite"></div>
+
                     <button class="resize-apply-btn" id="apply-resize">適用</button>
                 </div>
 
@@ -566,7 +579,7 @@ export class ResizePopup {
                 : Math.round(this.currentWidth);
         const suffix = isScale ? '%' : 'px';
         const min = isScale ? this.CONTENT_SCALE_MIN : this.MIN_SIZE;
-        const max = isScale ? this.CONTENT_SCALE_MAX : this.MAX_SIZE;
+        const max = isScale ? this.CONTENT_SCALE_MAX : this.ABSOLUTE_MAX_SIZE;
         const previousText = display.textContent;
 
         const input = document.createElement('input');
@@ -637,11 +650,12 @@ export class ResizePopup {
             this._updateResizePreview();
             return;
         }
-        this.currentWidth = Math.max(this.MIN_SIZE, Math.min(this.MAX_SIZE, value));
-        const percent = ((this.currentWidth - this.MIN_SIZE) / (this.MAX_SIZE - this.MIN_SIZE)) * 100;
+        this.currentWidth = Math.max(this.MIN_SIZE, Math.min(this.ABSOLUTE_MAX_SIZE, value));
+        const percent = Math.min(100, ((this.currentWidth - this.MIN_SIZE) / (this.MAX_SIZE - this.MIN_SIZE)) * 100);
         this.elements.widthTrack.style.width = percent + '%';
         this.elements.widthHandle.style.left = percent + '%';
         this.elements.widthDisplay.textContent = this.currentWidth + 'px';
+        this._updateMemoryNote();
         this._updateResizePreview();
     }
     
@@ -650,12 +664,26 @@ export class ResizePopup {
             this._updateWidthSlider(this.contentScalePercent);
             return;
         }
-        this.currentHeight = Math.max(this.MIN_SIZE, Math.min(this.MAX_SIZE, value));
-        const percent = ((this.currentHeight - this.MIN_SIZE) / (this.MAX_SIZE - this.MIN_SIZE)) * 100;
+        this.currentHeight = Math.max(this.MIN_SIZE, Math.min(this.ABSOLUTE_MAX_SIZE, value));
+        const percent = Math.min(100, ((this.currentHeight - this.MIN_SIZE) / (this.MAX_SIZE - this.MIN_SIZE)) * 100);
         this.elements.heightTrack.style.width = percent + '%';
         this.elements.heightHandle.style.left = percent + '%';
         this.elements.heightDisplay.textContent = this.currentHeight + 'px';
+        this._updateMemoryNote();
         this._updateResizePreview();
+    }
+
+    /** 指定サイズの目安メモリ(1レイヤーのRGBA)。大きいキャンバスでは注意を出す。 */
+    _updateMemoryNote() {
+        const note = document.getElementById('resize-memory-note');
+        if (!note) return;
+        const pixels = this.currentWidth * this.currentHeight;
+        const megabytes = Math.round(pixels * 4 / 1048576);
+        const big = pixels > 16 * 1024 * 1024;
+        note.textContent = big
+            ? `1レイヤー約${megabytes}MB。レイヤー数とUndoで増えます（重いときはレイヤーを統合）`
+            : `1レイヤー約${megabytes}MB`;
+        note.classList.toggle('is-large', big);
     }
 
     _setupTargetModeButtons() {
@@ -1304,7 +1332,7 @@ export class ResizePopup {
             const output = this._resolveScaledSnapshotOutput(entry.snapshot, sourceBounds, transform);
             const validation = validateRasterSurfaceSize(output?.bounds || { width: 1, height: 1 }, {
                 maxAxis,
-                maxPixels: 16 * 1024 * 1024
+                maxPixels: getRasterSafePixels(window.TEGAKI_CONFIG?.canvas)
             });
             if (!validation.ok) {
                 return {
