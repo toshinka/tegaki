@@ -1080,7 +1080,7 @@ canvas {
     cursor: pointer;
 }
 
-/* フォルダの中身のサムネイル。開閉アイコンは左下の小さなバッジに退く */
+/* フォルダの中身のサムネイル。フォルダのアイコンは左上に重ねる（上下に並べない） */
 .folder-thumbnail .folder-composite-preview {
     position: absolute;
     inset: 0;
@@ -1093,7 +1093,9 @@ canvas {
 .folder-thumbnail.has-folder-preview > svg {
     position: absolute;
     left: 1px;
-    bottom: 1px;
+    top: 1px;
+    bottom: auto;
+    z-index: 1;
     width: 11px;
     height: 11px;
     padding: 1px;
