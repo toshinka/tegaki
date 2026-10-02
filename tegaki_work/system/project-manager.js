@@ -24,6 +24,7 @@ import {
 import { normalizeRasterBounds } from './raster-bounds.js';
 import { sanitizePanelLayoutData } from './panel-layout.js';
 import { sanitizeFocusLinesData } from './focus-lines.js';
+import { sanitizeToneData } from './tone-geometry.js';
 import { sanitizeBalloonData } from './balloon-geometry.js';
 import {
     RASTER_PIXEL_ENCODING_BASE64,
@@ -168,6 +169,8 @@ export class ProjectManager {
                 ...(data.panelLayout ? { panelLayout: data.panelLayout } : {}),
                 // 集中線Layerの再編集用parameter(optional)
                 ...(data.focusLines ? { focusLines: data.focusLines } : {}),
+                // トーンLayerの再編集用parameter(optional)
+                ...(data.tone ? { tone: data.tone } : {}),
                 // 吹き出しLayerの再編集用parameter(optional。フォントの実体はProjectに入れない)
                 ...(data.balloon ? { balloon: data.balloon } : {}),
                 image: imageData
@@ -671,6 +674,10 @@ export class ProjectManager {
                 if (layerInfo.focusLines) {
                     const focusLines = sanitizeFocusLinesData(layerInfo.focusLines, TEGAKI_CONFIG.canvas);
                     if (focusLines) layer.layerData.focusLines = focusLines;
+                }
+                if (layerInfo.tone) {
+                    const tone = sanitizeToneData(layerInfo.tone);
+                    if (tone) layer.layerData.tone = tone;
                 }
                 if (layerInfo.panelLayout) {
                     // 壊れたcommandは黙って無視し、Raster画素だけを読み込む

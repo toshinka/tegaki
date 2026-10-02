@@ -375,6 +375,7 @@ export class CoreEngine {
         QuickAccessPopup.applyStoredActiveSlots(this.brushSettings);
         this.popupManager.register('quickAccess', QuickAccessPopup, {
             brushSettings: this.brushSettings,
+            layerSystem: this.layerSystem,
             textRasterService: new TextRasterService({
                 layerSystem: this.layerSystem,
                 cameraSystem: this.cameraSystem,

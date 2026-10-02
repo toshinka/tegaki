@@ -74,3 +74,84 @@
     outline: 2px solid var(--active-border);
     outline-offset: 1px;
 }
+
+/* QTPタブ(ペン / トーン)。ビューは枠を持たず、既存のsection配置をそのまま保つ。 */
+#quick-access-popup.qa-popup .qa-view {
+    display: contents;
+}
+
+#quick-access-popup.qa-popup .qa-view[hidden] {
+    display: none;
+}
+
+#quick-access-popup.qa-popup .qa-tabs-host {
+    margin: 2px 0 6px;
+}
+
+#quick-access-popup.qa-popup .qa-tabs-host .pill-tabs {
+    min-height: 26px;
+}
+
+#quick-access-popup.qa-popup .qa-tabs-host .pill-tab {
+    min-height: 20px;
+    padding: 2px 4px;
+    font-size: 10px;
+}
+
+/* トーンタブは数値欄が要るため幅を広げる */
+#quick-access-popup.qa-popup.qa-popup--tone {
+    --ui-qa-popup-width: 232px;
+}
+
+#quick-access-popup.qa-popup .qa-tone-view {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-height: calc(100vh - 140px);
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+#quick-access-popup.qa-popup .qa-tone-view > * {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+#quick-access-popup.qa-popup .qa-tone-view .pl-title {
+    margin-right: 22px;
+}
+
+#quick-access-popup.qa-popup .qa-tone-view[hidden] {
+    display: none;
+}
+
+#quick-access-popup.qa-popup .qa-tone-preview {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 150 / 96;
+    background: var(--futaba-background);
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 6px;
+}
+
+#quick-access-popup.qa-popup .qa-tone-slots {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 3px;
+}
+
+#quick-access-popup.qa-popup .qa-tone-slot.is-filled {
+    border-color: var(--futaba-maroon);
+}
+
+#quick-access-popup.qa-popup .qa-tone-view .pl-label {
+    flex-basis: 50px;
+}
+
+#quick-access-popup.qa-popup .qa-tone-view .pl-value {
+    flex-basis: 38px;
+}
