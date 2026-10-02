@@ -1465,6 +1465,7 @@
 .right-panel .folder-thumbnail svg,
 .right-panel .folder-item svg {
     stroke: var(--ui-layer-text);
+    fill: var(--futaba-background);
 }
 
 .right-panel .layer-controls-row .layer-add-button svg,
