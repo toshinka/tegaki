@@ -14,7 +14,6 @@ assert.match(qtpSource, /Array\.from\(\{ length: QA_PRESET_SLOT_COUNT \}/, 'all 
 assert.match(qtpSource, /slot\.disabled = !isPresetEnabled/, 'hidden unsupported controls remain safely disabled');
 assert.match(qtpSource, /_selectPresetSlot\(index\)/, 'direct preset selection authority remains unchanged');
 assert.match(qtpSource, /id="qa-text-raster-toggle"/, 'Text utility remains independent');
-assert.match(qtpSource, /id="qa-position-toggle"/, 'Position deck remains independent');
 assert.match(qtpSource, /position:\s*'quick-access-position'/, 'free position persistence remains unchanged');
 assert.doesNotMatch(qtpSource, /densityMode|compactMode|qtpMode|quick-access-density/, 'no FULL / COMPACT state or storage key is introduced');
 

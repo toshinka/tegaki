@@ -29,7 +29,37 @@ import { showFeedbackToast } from './feedback-toast.js';
 
 const STORAGE_KEY = 'tegaki-tone-v1';
 const SLOTS_KEY = 'tegaki-tone-slots-v1';
-const SLOT_COUNT = 6;
+const COLOR_SLOTS_KEY = 'tegaki-tone-colors-v1';
+const COLOR_SLOT_COUNT = 6;
+const NAME_MAX = 20;
+const FUTABA_COLORS = Object.freeze([
+    { id: 'maroon', label: 'ふたば濃茶', value: '#800000' },
+    { id: 'light-maroon', label: 'ふたば茶', value: '#9c3835' },
+    { id: 'medium', label: 'ふたば中', value: '#b8706b' },
+    { id: 'light-medium', label: 'ふたば薄茶', value: '#d4a8a0' },
+    { id: 'cream', label: 'ふたばクリーム', value: '#f0e0d6' },
+    { id: 'background', label: 'ふたば背景', value: '#ffffee' }
+]);
+
+/** 定型プリセット(漫画でよく使うもの)。ユーザーは上書き・改名でき、行ごとに初期へ戻せる。 */
+export const TONE_FACTORY_PRESETS = Object.freeze([
+    { name: '網点 10%', patch: { shape: 'dot', pitch: 8, angle: 45, density: 0.1 } },
+    { name: '網点 20%', patch: { shape: 'dot', pitch: 8, angle: 45, density: 0.2 } },
+    { name: '網点 30%', patch: { shape: 'dot', pitch: 8, angle: 45, density: 0.3 } },
+    { name: '網点 50%', patch: { shape: 'dot', pitch: 8, angle: 45, density: 0.5 } },
+    { name: '網点 70%', patch: { shape: 'dot', pitch: 8, angle: 45, density: 0.7 } },
+    { name: '粗い網点 30%', patch: { shape: 'dot', pitch: 16, angle: 45, density: 0.3 } },
+    { name: 'ひし形 30%', patch: { shape: 'diamond', pitch: 10, angle: 0, density: 0.3 } },
+    { name: '斜線', patch: { shape: 'line', pitch: 8, angle: 45, density: 0.3 } },
+    { name: '横線', patch: { shape: 'line', pitch: 8, angle: 0, density: 0.3 } },
+    { name: 'グラデ 上→下', patch: { shape: 'dot', pitch: 8, angle: 45, density: 0.7, gradient: true, density2: 0, gradAngle: 90 } }
+]);
+const SLOT_COUNT = TONE_FACTORY_PRESETS.length;
+
+function factoryPreset(index) {
+    const f = TONE_FACTORY_PRESETS[index];
+    return { name: f.name, params: normalizeToneParams({ ...defaultToneParams(), ...f.patch }) };
+}
 const PREVIEW = { width: 150, height: 96 };
 const PERCENT = { toDisplay: v => Math.round(v * 100), fromDisplay: v => v / 100, wheelStep: 0.05, unit: '%' };
 
@@ -52,7 +82,10 @@ export class TonePanel {
         this.root = null;
         this.elements = {};
         this.params = defaultToneParams();
-        this.slots = Array.from({ length: SLOT_COUNT }, () => null);
+        this.slots = Array.from({ length: SLOT_COUNT }, () => null); // null=定型のまま / {name, params}=上書き
+        this.colorSlots = Array.from({ length: COLOR_SLOT_COUNT }, () => null);
+        this.layerName = 'トーン';
+        this.selectedSlot = -1;
         this.editing = null; // { layerId }
         this._layerListener = () => this._syncControls();
         this.eventBus?.on?.('layer:activated', this._layerListener);
@@ -65,7 +98,15 @@ export class TonePanel {
             if (data?.params) this.params = normalizeToneParams(data.params);
             const slots = JSON.parse(localStorage.getItem(SLOTS_KEY) || 'null');
             if (Array.isArray(slots)) {
-                this.slots = Array.from({ length: SLOT_COUNT }, (_, i) => (slots[i] ? normalizeToneParams(slots[i]) : null));
+                this.slots = Array.from({ length: SLOT_COUNT }, (_, i) => {
+                    const slot = slots[i];
+                    if (!slot?.params) return null;
+                    return { name: String(slot.name || factoryPreset(i).name).slice(0, NAME_MAX), params: normalizeToneParams(slot.params) };
+                });
+            }
+            const colors = JSON.parse(localStorage.getItem(COLOR_SLOTS_KEY) || 'null');
+            if (Array.isArray(colors)) {
+                this.colorSlots = Array.from({ length: COLOR_SLOT_COUNT }, (_, i) => (/^#[0-9a-f]{6}$/i.test(colors[i] || '') ? colors[i] : null));
             }
         } catch (error) {
             // 壊れた設定は既定へ戻す(Projectには無関係)
@@ -76,6 +117,7 @@ export class TonePanel {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify({ params: this.params }));
             localStorage.setItem(SLOTS_KEY, JSON.stringify(this.slots));
+            localStorage.setItem(COLOR_SLOTS_KEY, JSON.stringify(this.colorSlots));
         } catch (error) {
             // localStorage不可でも動作は続ける
         }
@@ -91,6 +133,15 @@ export class TonePanel {
     mount(container) {
         this.root = container;
         container.classList.add('qa-tone-view');
+        const slots = this.slots.map((_, i) =>
+            `<button type="button" class="pl-chip qa-tone-slot-name" data-tone-slot="${i}" title="クリック=呼び出し / ダブルクリック=名前を変更"></button>`
+        ).join('');
+        const futaba = FUTABA_COLORS.map(c =>
+            `<button type="button" class="qa-tone-swatch" data-swatch="${c.value}" style="--swatch:${c.value}" title="${c.label} ${c.value}" aria-label="${c.label}"></button>`
+        ).join('');
+        const colorSlots = this.colorSlots.map((_, i) =>
+            `<button type="button" class="qa-tone-swatch qa-tone-swatch--slot" data-color-slot="${i}" title="フリー色${i + 1}（空=現在色を保存 / 登録済=使う / Shift+クリック=上書き）"></button>`
+        ).join('');
         const shapes = TONE_SHAPES.map(s => `<button type="button" class="pl-chip" data-shape="${s.id}">${s.label}</button>`).join('');
         const rows = FIELDS.map(f => `
             <label class="pl-row${f.grad ? ' qa-tone-grad-row' : ''}">
@@ -98,12 +149,21 @@ export class TonePanel {
                 <input type="range" class="pl-range" data-field="${f.key}" min="${f.min}" max="${f.max}" step="${f.step}">
                 <span class="pl-value" data-value-for="${f.key}"></span>
             </label>`).join('');
-        const slots = this.slots.map((_, i) =>
-            `<button type="button" class="pl-chip qa-tone-slot" data-tone-slot="${i}" title="スロット${i + 1}（空=現在値を保存 / 登録済=呼び出し / Shift+クリック=上書き保存）">${i + 1}</button>`
-        ).join('');
         container.innerHTML = `
             <div class="pl-title">トーン <span class="pl-edit-status" data-role="edit-status"></span></div>
-            <div class="pl-chips qa-tone-slots" role="group" aria-label="プリセット">${slots}</div>
+            <div class="pl-footer qa-tone-top">
+                <button type="button" class="pl-btn pl-btn--primary" data-action="apply" title="選択レイヤーにクリップして新規追加（Undo 1回で戻る）">適用</button>
+                <button type="button" class="pl-btn pl-btn--primary" data-action="update" data-role="update-btn" title="再編集中のLayerを置き換え（Undo 1回で戻る）" hidden>更新</button>
+            </div>
+            <label class="pl-row">
+                <span class="pl-label">名前</span>
+                <input type="text" class="qa-tone-name-input" data-role="layer-name" maxlength="${NAME_MAX + 8}" spellcheck="false">
+            </label>
+            <div class="qa-tone-slots" role="group" aria-label="定型プリセット">${slots}</div>
+            <div class="pl-footer qa-tone-slot-actions">
+                <button type="button" class="pl-btn" data-action="slot-save" title="選んだ枠へ現在の設定を保存">枠に保存</button>
+                <button type="button" class="pl-btn" data-action="slot-reset" title="選んだ枠だけ定型に戻す">枠を戻す</button>
+            </div>
             <div class="pl-chips" role="group" aria-label="形">${shapes}</div>
             <canvas class="pl-preview qa-tone-preview" width="${PREVIEW.width}" height="${PREVIEW.height}" aria-label="トーンプレビュー"></canvas>
             ${rows}
@@ -111,18 +171,18 @@ export class TonePanel {
             <label class="pl-row pl-check"><input type="checkbox" data-opt="crisp"><span>くっきり(二値)</span></label>
             <label class="pl-row pl-check"><input type="checkbox" data-opt="clipToLayer"><span>選択レイヤーにクリップ</span></label>
             <label class="pl-row pl-check"><input type="checkbox" data-opt="fitArea"><span>範囲に合わせる</span></label>
-            <div class="pl-row">
-                <span class="pl-label">色</span>
-                <input type="color" class="pl-color" data-role="color" value="${this.params.color}">
-                <button type="button" class="pl-btn pl-btn--small" data-action="main-color" title="メインカラーを使う">メイン色</button>
+            <div class="qa-tone-colors" role="group" aria-label="色">
+                <div class="qa-tone-swatch-row">${futaba}</div>
+                <div class="qa-tone-swatch-row">${colorSlots}</div>
+                <div class="pl-row">
+                    <span class="pl-label">色</span>
+                    <input type="color" class="pl-color" data-role="color" value="${this.params.color}" title="その他の色">
+                    <button type="button" class="pl-btn pl-btn--small" data-action="main-color" title="メインカラーを使う">メイン色</button>
+                </div>
             </div>
             <div class="pl-footer">
                 <button type="button" class="pl-btn" data-action="reset">リセット</button>
                 <button type="button" class="pl-btn" data-action="load-active" title="選択中のトーンLayerから読み込んで再編集">再編集</button>
-            </div>
-            <div class="pl-footer">
-                <button type="button" class="pl-btn pl-btn--primary" data-action="update" data-role="update-btn" title="再編集中のLayerを置き換え（Undo 1回で戻る）" hidden>更新</button>
-                <button type="button" class="pl-btn pl-btn--primary" data-action="apply" title="新規Layerとして追加（Undo 1回で戻る）">適用</button>
             </div>
         `;
         const q = (sel) => container.querySelector(sel);
@@ -131,7 +191,8 @@ export class TonePanel {
             color: q('[data-role="color"]'),
             editStatus: q('[data-role="edit-status"]'),
             updateBtn: q('[data-role="update-btn"]'),
-            loadBtn: q('[data-action="load-active"]')
+            loadBtn: q('[data-action="load-active"]'),
+            layerName: q('[data-role="layer-name"]')
         };
         this._bind();
         this._syncControls();
@@ -150,7 +211,16 @@ export class TonePanel {
             this._setParams({ ...this.params, [input.dataset.opt]: input.checked });
         }));
         this.elements.color.addEventListener('input', (e) => this._setParams({ ...this.params, color: e.target.value }));
-        root.querySelectorAll('[data-tone-slot]').forEach(btn => btn.addEventListener('click', (e) => this._onSlot(Number(btn.dataset.toneSlot), e.shiftKey)));
+        root.querySelectorAll('[data-tone-slot]').forEach(btn => {
+            const index = Number(btn.dataset.toneSlot);
+            btn.addEventListener('click', () => { this.selectedSlot = index; this._loadSlot(index); });
+            btn.addEventListener('dblclick', () => this._renameSlot(index, btn));
+        });
+        root.querySelectorAll('[data-swatch]').forEach(btn => btn.addEventListener('click', () => this._setParams({ ...this.params, color: btn.dataset.swatch })));
+        root.querySelectorAll('[data-color-slot]').forEach(btn => btn.addEventListener('click', (e) => this._onColorSlot(Number(btn.dataset.colorSlot), e.shiftKey)));
+        this.elements.layerName.addEventListener('input', () => { this.layerName = this.elements.layerName.value; });
+        this.elements.layerName.addEventListener('keydown', e => e.stopPropagation());
+        this.elements.layerName.addEventListener('keyup', e => e.stopPropagation());
         root.querySelectorAll('[data-action]').forEach(btn => btn.addEventListener('click', () => this._onAction(btn.dataset.action)));
         this._detachers = FIELDS.map(f => attachNumericField({
             range: root.querySelector(`input[data-field="${f.key}"]`),
@@ -161,25 +231,83 @@ export class TonePanel {
         }));
     }
 
-    _onSlot(index, overwrite) {
-        if (!this.slots[index] || overwrite) {
-            this.slots[index] = normalizeToneParams(this.params);
+    _slot(index) {
+        return this.slots[index] || factoryPreset(index);
+    }
+
+    _loadSlot(index) {
+        const slot = this._slot(index);
+        this.layerName = `トーン ${slot.name}`;
+        this.elements.layerName.value = this.layerName;
+        this._setParams(slot.params);
+    }
+
+    _saveSlot(index) {
+        const name = this._slot(index).name;
+        this.slots[index] = { name, params: normalizeToneParams(this.params) };
+        this._persist();
+        this._syncControls();
+        showFeedbackToast(`「${name}」に現在の設定を保存しました`);
+    }
+
+    _resetSlot(index) {
+        this.slots[index] = null;
+        this._persist();
+        this._syncControls();
+        showFeedbackToast(`「${factoryPreset(index).name}」を定型に戻しました`);
+    }
+
+    _renameSlot(index, button) {
+        const slot = this._slot(index);
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'qa-tone-name-input';
+        input.maxLength = NAME_MAX;
+        input.value = slot.name;
+        button.replaceWith(input);
+        input.focus();
+        input.select();
+        let done = false;
+        const finish = (commit) => {
+            if (done) return;
+            done = true;
+            const name = input.value.trim().slice(0, NAME_MAX);
+            if (commit && name) this.slots[index] = { name, params: slot.params };
+            this._persist();
+            input.replaceWith(button);
+            this._syncControls();
+        };
+        input.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        });
+        input.addEventListener('keyup', e => e.stopPropagation());
+        input.addEventListener('blur', () => finish(true));
+    }
+
+    _onColorSlot(index, overwrite) {
+        if (!this.colorSlots[index] || overwrite) {
+            this.colorSlots[index] = this.params.color;
             this._persist();
             this._syncControls();
-            showFeedbackToast(`スロット${index + 1}に保存しました`);
         } else {
-            this._setParams(this.slots[index]);
+            this._setParams({ ...this.params, color: this.colorSlots[index] });
         }
     }
 
     _onAction(action) {
         if (action === 'reset') {
             this.editing = null;
+            this.layerName = 'トーン';
             this._setParams(defaultToneParams());
         } else if (action === 'main-color') {
             const color = this.getMainColor?.() || window.brushSettings?.getColor?.();
             const hex = typeof color === 'number' ? `#${color.toString(16).padStart(6, '0')}` : color;
             if (/^#[0-9a-f]{6}$/i.test(hex || '')) this._setParams({ ...this.params, color: hex });
+        } else if (action === 'slot-save' || action === 'slot-reset') {
+            if (this.selectedSlot < 0) return showFeedbackToast('先に枠を選んでください');
+            if (action === 'slot-save') this._saveSlot(this.selectedSlot); else this._resetSlot(this.selectedSlot);
         } else if (action === 'apply') {
             this.apply();
         } else if (action === 'update') {
@@ -217,10 +345,21 @@ export class TonePanel {
         });
         this.root.querySelectorAll('input[data-opt]').forEach(input => { input.checked = this.params[input.dataset.opt] === true; });
         this.root.querySelectorAll('[data-tone-slot]').forEach(btn => {
-            const filled = !!this.slots[Number(btn.dataset.toneSlot)];
-            btn.classList.toggle('is-filled', filled);
-            btn.style.opacity = filled ? '1' : '0.55';
+            const i = Number(btn.dataset.toneSlot);
+            btn.textContent = this._slot(i).name;
+            btn.classList.toggle('is-filled', !!this.slots[i]);
+            btn.setAttribute('aria-pressed', String(i === this.selectedSlot));
         });
+        this.root.querySelectorAll('[data-swatch]').forEach(btn => {
+            btn.classList.toggle('is-selected', btn.dataset.swatch.toLowerCase() === this.params.color.toLowerCase());
+        });
+        this.root.querySelectorAll('[data-color-slot]').forEach(btn => {
+            const c = this.colorSlots[Number(btn.dataset.colorSlot)];
+            btn.style.setProperty('--swatch', c || 'transparent');
+            btn.classList.toggle('is-empty', !c);
+            btn.classList.toggle('is-selected', !!c && c.toLowerCase() === this.params.color.toLowerCase());
+        });
+        if (document.activeElement !== this.elements.layerName) this.elements.layerName.value = this.layerName;
         this.elements.color.value = this.params.color;
         this.elements.editStatus.textContent = this.editing ? '— 再編集中' : '';
         this.elements.updateBtn.hidden = !this.editing;
@@ -296,7 +435,8 @@ export class TonePanel {
 
     apply() {
         if (!this._guard()) return { ok: false };
-        const area = this.layerSystem.getActiveLayer?.() || null;
+        let area = this.layerSystem.getActiveLayer?.() || null;
+        if (area?.layerData?.tone) area = this._clipOwner(area) || area; // トーンの上に重ねる時は元の範囲に合わせる
         const clip = this.params.clipToLayer === true && !!area && !area.layerData?.isBackground && !area.layerData?.isFolder;
         const raster = this._raster(clip ? area : null);
         if (!raster.ok) {
@@ -312,7 +452,7 @@ export class TonePanel {
                 rasterBounds: raster.rasterBounds,
                 paths: [],
                 pathsData: []
-            }, { name: 'トーン', historyName: 'tone-apply', source: 'tone' });
+            }, { name: (this.layerName || '').trim() || 'トーン', historyName: 'tone-apply', source: 'tone' });
         } catch (error) {
             created = null;
         }
