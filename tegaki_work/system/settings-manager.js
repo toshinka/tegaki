@@ -47,6 +47,7 @@ export class SettingsManager {
             stabilizerMode: 'follow',
             stabilizerCatchUp: true,
             brushPresets: { pen: [], airbrush: [] },
+            qtpBrushPresetIds: { pen: null, airbrush: null }, // QTPの二行目に出すpreset id(null=全て)
             pressureOpacityEnabled: this.config?.userSettings?.pressureOpacityEnabled !== false,
             pressureOpacityStrength: this.config?.userSettings?.pressureOpacityStrength ?? 0.65,
             airbrushFlow: this.config?.BRUSH_DEFAULTS?.airbrushFlow ?? 0.08,
@@ -160,6 +161,12 @@ export class SettingsManager {
                 return normalizePressureCurvePoints(v) ?? undefined;
             },
             brushPresets: (v) => normalizeUserBrushPresets(v, (key, value) => this.validateValue(key, value)),
+            qtpBrushPresetIds: (v) => {
+                const clean = (list) => (Array.isArray(list)
+                    ? list.filter(id => typeof id === 'string' && id.length <= 64).slice(0, 24)
+                    : null);
+                return { pen: clean(v?.pen), airbrush: clean(v?.airbrush) };
+            },
             pressureOpacityEnabled: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
             },

@@ -312,17 +312,49 @@
     display: none;
 }
 
-#quick-access-popup.qa-popup .qa-tool-group-open {
-    display: flex;
-    align-items: center;
-    gap: 4px;
+#quick-access-popup.qa-popup .qa-tool-sub-row {
     margin-top: 3px;
-    font-size: 9px;
+    padding: 2px;
+    border: 1px solid var(--futaba-light-maroon);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--futaba-cream) 55%, transparent);
+}
+
+#quick-access-popup.qa-popup .qa-tool-sub-row[hidden],
+#quick-access-popup.qa-popup .qa-tool-sub-fill[hidden],
+#quick-access-popup.qa-popup .qa-tool-sub-presets[hidden] {
+    display: none;
+}
+
+#quick-access-popup.qa-popup .qa-tool-sub-fill,
+#quick-access-popup.qa-popup .qa-tool-sub-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+}
+
+#quick-access-popup.qa-popup .qa-sub-button {
+    min-width: 24px;
+    height: 24px;
+    padding: 0 4px;
+    border: 1px solid var(--futaba-medium);
+    border-radius: 6px;
     color: var(--futaba-maroon);
+    background: var(--futaba-background);
+    font-size: 9px;
+    font-weight: 700;
     cursor: pointer;
 }
 
-#quick-access-popup.qa-popup .qa-tool-group-open input {
-    margin: 0;
-    accent-color: var(--futaba-maroon);
+#quick-access-popup.qa-popup .qa-sub-button svg {
+    width: 14px;
+    height: 14px;
+    stroke: currentColor;
+    pointer-events: none;
+}
+
+#quick-access-popup.qa-popup .qa-sub-button.active {
+    color: var(--futaba-background);
+    background: var(--futaba-light-maroon);
+    border-color: var(--futaba-maroon);
 }

@@ -17,7 +17,8 @@ import { TegakiEventBus } from '../system/event-bus.js';
 import { UI_ICONS } from './ui-icons.js';
 import { createPillTabs } from './pill-tabs.js';
 import { TonePanel } from './tone-panel.js';
-import { TOOL_GROUP_MEMBERS, getToolGroupState, isToolGroupMember, onToolGroupChange, setToolGroupCurrent, setToolGroupOpen } from './tool-group.js';
+import { TOOL_GROUP_MEMBERS, getToolGroupState, isToolGroupMember, onToolGroupChange, setToolGroupCurrent } from './tool-group.js';
+import { applyBrushPresetValues, brushPresetMatches, getBrushPresetTool, listQtpBrushPresets } from '../system/drawing/brush-presets.js';
 
 const QA_STORAGE_KEYS = {
     position: 'quick-access-position',
@@ -1284,7 +1285,6 @@ export class QuickAccessPopup {
                     </button>
                     <button class="qa-tool-button ui-help-tooltip" id="qa-fill-tool" type="button"
                         aria-label="塗りつぶし" ${shortcutHints.fill}>
-                        <span class="qa-fill-ref-strip" id="qa-fill-ref-all-toggle" title="表示中レイヤーをすべて参照して塗りつぶす"></span>
                         ${UI_ICONS.fill}
                     </button>
                     <button class="qa-tool-button qa-tool-group-tab ui-help-tooltip" id="qa-tool-group-tab" type="button"
@@ -1300,9 +1300,15 @@ export class QuickAccessPopup {
                         ${UI_ICONS.lasso || '<span class="qa-tool-text-icon">縄</span>'}
                     </button>
                 </div>
-                <label class="qa-tool-group-open" title="図形・範囲ツールの二行目を開いたままにする（外すとShift+Lで送る）">
-                    <input type="checkbox" id="qa-tool-group-open"><span>二行目を開く</span>
-                </label>
+                <div class="qa-tool-sub-row" id="qa-tool-sub-row" hidden>
+                    <div class="qa-tool-sub-fill" id="qa-tool-sub-fill" hidden>
+                        <button class="qa-sub-button qa-sub-button--text" id="qa-fill-ref-all-toggle" type="button"
+                            title="表示中のレイヤーをすべて参照して塗る" aria-label="全レイヤー参照">ALL</button>
+                        <button class="qa-sub-button" id="qa-fill-erase-btn" type="button"
+                            title="消しバケツ（塗った範囲を消す）" aria-label="消しバケツ">${UI_ICONS.eraser}</button>
+                    </div>
+                    <div class="qa-tool-sub-presets" id="qa-tool-sub-presets" hidden></div>
+                </div>
             </section>
 
             <!-- 3. プリセットスロット -->
@@ -1509,7 +1515,10 @@ export class QuickAccessPopup {
             lassoFillToolBtn: document.getElementById('qa-lasso-fill-tool'),
             toolGroupTabBtn: document.getElementById('qa-tool-group-tab'),
             toolGroupRow: document.getElementById('qa-tool-group-row'),
-            toolGroupOpen: document.getElementById('qa-tool-group-open'),
+            toolSubRow: document.getElementById('qa-tool-sub-row'),
+            toolSubFill: document.getElementById('qa-tool-sub-fill'),
+            toolSubPresets: document.getElementById('qa-tool-sub-presets'),
+            fillEraseBtn: document.getElementById('qa-fill-erase-btn'),
             selectionToolBtn: document.getElementById('qa-selection-tool'),
             textRasterToggleBtn: document.getElementById('qa-text-raster-toggle'),
             textRasterPanel: document.getElementById('qa-text-raster-panel'),
@@ -1726,7 +1735,9 @@ export class QuickAccessPopup {
         });
         this._bindPointerAction(this.elements.lassoFillToolBtn, () => this._switchTool('lasso-fill'));
         this._bindPointerAction(this.elements.toolGroupTabBtn, () => this._switchTool(getToolGroupState().current));
-        this.elements.toolGroupOpen?.addEventListener('change', (e) => setToolGroupOpen(e.target.checked));
+        this._bindPointerAction(this.elements.fillEraseBtn, () => this._switchTool(this.currentTool === 'eraser-fill' ? 'fill' : 'eraser-fill'));
+        this._settingsUpdatedListener = () => this._renderToolSubRow();
+        this.eventBus?.on?.('settings:updated', this._settingsUpdatedListener);
         this._toolGroupUnsubscribe = onToolGroupChange(() => this._updateToolGroup());
         this._bindPointerAction(this.elements.selectionToolBtn, () => this._switchTool('selection'));
         this._bindPointerAction(this.elements.eyedropperBtn, () => this._switchTool('eyedropper'));
@@ -2606,15 +2617,57 @@ export class QuickAccessPopup {
     }
 
     _updateToolGroup() {
-        const { toolGroupTabBtn, toolGroupRow, toolGroupOpen } = this.elements;
+        const { toolGroupTabBtn, toolGroupRow } = this.elements;
         if (!toolGroupTabBtn) return;
         const state = getToolGroupState();
         const member = TOOL_GROUP_MEMBERS.find(m => m.tool === state.current) || TOOL_GROUP_MEMBERS[0];
         toolGroupTabBtn.innerHTML = UI_ICONS[member.icon] || member.label;
         toolGroupTabBtn.title = `${member.label}（Shift+Lで次の図形・範囲ツールへ）`;
         toolGroupTabBtn.classList.toggle('active', isToolGroupMember(this.currentTool));
-        if (toolGroupRow) toolGroupRow.hidden = !state.open;
-        if (toolGroupOpen) toolGroupOpen.checked = state.open;
+        // 二行目: 選んだツールの派生(図形・範囲ツールは仲間、塗りは参照/消し、ペンは筆のpreset)
+        if (toolGroupRow) toolGroupRow.hidden = !isToolGroupMember(this.currentTool);
+        this._renderToolSubRow();
+    }
+
+    _getSettingsManager() {
+        return window.TegakiSettingsManager && typeof window.TegakiSettingsManager.get === 'function'
+            ? window.TegakiSettingsManager
+            : null;
+    }
+
+    _renderToolSubRow() {
+        const { toolSubRow, toolSubFill, toolSubPresets, fillEraseBtn } = this.elements;
+        if (!toolSubRow) return;
+        const tool = this.currentTool;
+        const isFill = tool === 'fill' || tool === 'eraser-fill';
+        const brushTool = getBrushPresetTool(tool);
+        const manager = this._getSettingsManager();
+        const presets = brushTool && manager
+            ? listQtpBrushPresets(brushTool, manager.get('brushPresets'), manager.get('qtpBrushPresetIds'))
+            : [];
+
+        toolSubFill.hidden = !isFill;
+        toolSubPresets.hidden = presets.length === 0;
+        toolSubRow.hidden = !isFill && presets.length === 0;
+        if (fillEraseBtn) fillEraseBtn.classList.toggle('active', tool === 'eraser-fill');
+        if (isFill) this._updateFillRefAllToggle();
+
+        toolSubPresets.textContent = '';
+        if (!presets.length) return;
+        const getSetting = (key) => manager.get(key);
+        presets.forEach((preset) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'qa-sub-button qa-sub-button--text';
+            button.textContent = preset.name;
+            button.title = `${preset.name}（筆の性格プリセット）`;
+            button.classList.toggle('active', brushPresetMatches(preset, brushTool, getSetting));
+            this._bindPointerAction(button, () => {
+                applyBrushPresetValues(brushTool, preset, manager);
+                this._renderToolSubRow();
+            });
+            toolSubPresets.appendChild(button);
+        });
     }
 
     _switchTool(tool) {

@@ -27,7 +27,8 @@ import {
     BUILTIN_BRUSH_PRESETS,
     MAX_USER_BRUSH_PRESETS,
     brushPresetMatches,
-    captureBrushPresetValues
+    captureBrushPresetValues,
+    applyBrushPresetValues
 } from '../system/drawing/brush-presets.js';
 
 export class SettingsPopup {
@@ -1319,20 +1320,47 @@ export class SettingsPopup {
                 button.classList.toggle('active', preset.id === active?.id);
                 list.appendChild(button);
             });
+            this._renderQtpPresetToggles(list, tool);
             const deleteButton = this.popup.querySelector(`[data-preset-action="delete"][data-preset-tool="${tool}"]`);
             if (deleteButton) deleteButton.disabled = !active || active.builtin;
+        });
+    }
+
+    /** QTPの二行目に出すpresetを選ぶチェック列(presetごと)。 */
+    _renderQtpPresetToggles(list, tool) {
+        let box = list.nextElementSibling;
+        if (!box?.classList?.contains('brush-preset-qtp')) {
+            box = document.createElement('div');
+            box.className = 'brush-preset-qtp';
+            list.after(box);
+        }
+        const presets = this._getBrushPresetList(tool);
+        const ids = this.settingsManager?.get?.('qtpBrushPresetIds')?.[tool];
+        const shown = Array.isArray(ids) ? new Set(ids) : new Set(presets.map(p => p.id));
+        box.innerHTML = '<span class="brush-preset-qtp-label">QTPに出す</span>';
+        presets.forEach(preset => {
+            const label = document.createElement('label');
+            label.className = 'brush-preset-qtp-item';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.checked = shown.has(preset.id);
+            input.addEventListener('change', () => {
+                const current = this.settingsManager.get('qtpBrushPresetIds') || { pen: null, airbrush: null };
+                const next = presets.map(p => p.id).filter(id => (id === preset.id ? input.checked : shown.has(id)));
+                this.settingsManager.set('qtpBrushPresetIds', { ...current, [tool]: next });
+                this._renderBrushPresets();
+            });
+            const text = document.createElement('span');
+            text.textContent = preset.name;
+            label.append(input, text);
+            box.appendChild(label);
         });
     }
 
     _applyBrushPreset(tool, presetId) {
         const preset = this._getBrushPresetList(tool).find(item => item.id === presetId);
         if (!preset || !this.settingsManager) return;
-        const values = preset.values || {};
-        // customカーブは制御点を先に入れてから種類を切り替える。
-        const keys = [...BRUSH_PRESET_KEYS[tool]].sort((a, b) => (a === 'pressureCurvePoints' ? -1 : b === 'pressureCurvePoints' ? 1 : 0));
-        keys.forEach(key => {
-            if (key in values) this.settingsManager.set(key, values[key]);
-        });
+        applyBrushPresetValues(tool, preset, this.settingsManager);
         this._setSelectedBrushPreset(tool, preset.id);
         this._applySettingsToUI(this.settingsManager.get());
         this._drawPressureCurveEditor();
