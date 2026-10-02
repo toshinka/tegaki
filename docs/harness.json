@@ -61,6 +61,17 @@
         "^verify-focus-lines"
       ]
     },
+    "blend-modes": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": [
+        "tegaki_work/system/layer-blend-modes.js",
+        "tegaki_work/system/layer-system.js",
+        "tegaki_work/ui/layer-panel-renderer.js"
+      ],
+      "patterns": [
+        "^verify-layer-blend-modes"
+      ]
+    },
     "tone": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [

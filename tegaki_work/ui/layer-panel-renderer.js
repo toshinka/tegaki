@@ -22,6 +22,7 @@
  */
 
 import { UI_ICONS } from './ui-icons.js';
+import { LAYER_BLEND_MODES, LAYER_BLEND_MODE_GROUPS, getLayerBlendModeShortLabel } from '../system/layer-blend-modes.js';
 import { RightWorkspaceFrame } from './right-workspace-frame.js';
 import { TEGAKI_CONFIG } from '../config.js';
 import {
@@ -2334,12 +2335,6 @@ export class LayerPanelRenderer {
         const rawLayerName = viewState.name;
         const layerName = this._escapeHtml(rawLayerName);
         const presets = [0, 25, 50, 75, 100];
-        const blendModes = [
-            { value: 'normal', label: '通常' },
-            { value: 'multiply', label: '乗算' },
-            { value: 'add', label: '加算' },
-            { value: 'overlay', label: 'オーバーレイ' }
-        ];
 
         popup.innerHTML = `
             <div class="layer-attribute-popup__header">
@@ -2358,7 +2353,7 @@ export class LayerPanelRenderer {
                 <label class="layer-attribute-blend-field">
                     <span class="layer-attribute-blend-label">合成</span>
                     <select class="layer-attribute-blend-select" aria-label="合成モード">
-                        ${blendModes.map(mode => `<option value="${mode.value}"${mode.value === blendMode ? ' selected' : ''}>${mode.label}</option>`).join('')}
+                        ${this._buildBlendModeOptionsHtml(blendMode)}
                     </select>
                 </label>
                 ${canToggleClipping ? `
@@ -2674,13 +2669,17 @@ export class LayerPanelRenderer {
     }
 
     _getBlendModeLabel(blendMode) {
-        const labels = {
-            normal: '',
-            multiply: '乗算',
-            add: '加算',
-            overlay: 'OL'
-        };
-        return labels[blendMode] || '';
+        return getLayerBlendModeShortLabel(blendMode);
+    }
+
+    _buildBlendModeOptionsHtml(selected) {
+        return LAYER_BLEND_MODE_GROUPS.map((group) => {
+            const options = LAYER_BLEND_MODES
+                .filter(mode => mode.group === group.id)
+                .map(mode => `<option value="${mode.value}"${mode.value === selected ? ' selected' : ''}>${mode.label}</option>`)
+                .join('');
+            return group.label ? `<optgroup label="${group.label}">${options}</optgroup>` : options;
+        }).join('');
     }
 
     _handleAttributePopupOutsidePointerDown(e) {
