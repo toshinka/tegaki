@@ -165,8 +165,13 @@ export class LayerSystem {
         this._setupAnimationSystemIntegration();
         this._setupVKeyEvents();
         this._setupResizeEvents();
-        this.eventBus.on('drawing:stroke-completed', () => {
-            this.refreshClippingMasks({ source: 'drawing:stroke-completed' });
+        this.eventBus.on('drawing:stroke-completed', (payload = {}) => {
+            // 描いたLayerを元(クリッピングの土台)にしているマスクだけ作り直す。
+            // 全マスクの作り直しは土台の枚数ぶんGPU→CPU読み戻し+全画素走査になり、描画直後に大きな停止が出る。
+            const strokedLayerId = payload?.data?.layerId ?? payload?.layerId ?? null;
+            this.refreshClippingMasks(strokedLayerId
+                ? { source: 'drawing:stroke-completed', reuseMasks: true, dirtyLayerIds: [strokedLayerId] }
+                : { source: 'drawing:stroke-completed' });
         });
         this.eventBus.on('layer:content-changed', () => {
             this.refreshClippingMasks({ source: 'layer:content-changed' });
@@ -2463,9 +2468,14 @@ export class LayerSystem {
         // (マスク作成はGPU→CPU読み戻しを伴い、クリッピング枚数に比例して重い)。
         const reusable = options.reuseMasks === true ? new Map() : null;
         if (reusable) {
+            // dirtyLayerIds: 画素が変わったLayer。それを土台に含むマスクは再利用せず作り直す。
+            const dirty = Array.isArray(options.dirtyLayerIds) && options.dirtyLayerIds.length
+                ? new Set(options.dirtyLayerIds)
+                : null;
             for (const layer of layers) {
                 const d = layer.layerData;
                 if (!d?.clippingMaskTexture || !d.effectiveClippingSourceId) continue;
+                if (dirty && d.effectiveClippingSourceId.split(',').some(id => dirty.has(id))) continue;
                 const list = reusable.get(d.effectiveClippingSourceId) || [];
                 list.push(d.clippingMaskTexture);
                 reusable.set(d.effectiveClippingSourceId, list);
@@ -2474,6 +2484,16 @@ export class LayerSystem {
         }
         this.clearClippingMasks();
         this._keptMaskTextures = null;
+
+        // マスクが作れなかった(土台が空など)組は、画素が変わるまで毎回作り直そうとしない(作成は全画素の読み戻しで重い)。
+        if (!reusable || !this._emptyClippingMaskKeys) {
+            this._emptyClippingMaskKeys = new Set();
+        } else if (Array.isArray(options.dirtyLayerIds) && options.dirtyLayerIds.length) {
+            const dirtyIds = new Set(options.dirtyLayerIds);
+            for (const key of [...this._emptyClippingMaskKeys]) {
+                if (key.split(',').some(id => dirtyIds.has(id))) this._emptyClippingMaskKeys.delete(key);
+            }
+        }
 
         for (const layer of layers) {
             const data = layer.layerData;
@@ -2499,7 +2519,9 @@ export class LayerSystem {
             const sourceKey = sourceLayers.map(source => source.layerData?.id).filter(Boolean).join(',');
             const reused = reusable?.get(sourceKey)?.pop() || null;
             if (reused && diagnosticSample) diagnosticSample.reusedMaskCount = (diagnosticSample.reusedMaskCount || 0) + 1;
-            const maskTexture = reused || this._createBinaryClippingMaskTexture(sourceLayers);
+            const knownEmpty = !reused && this._emptyClippingMaskKeys.has(sourceKey);
+            const maskTexture = reused || (knownEmpty ? null : this._createBinaryClippingMaskTexture(sourceLayers));
+            if (!maskTexture && !knownEmpty) this._emptyClippingMaskKeys.add(sourceKey);
             if (!maskTexture) {
                 data.clippingDisplaySuppressed = true;
                 if (data.isFolder) {
@@ -3265,7 +3287,8 @@ export class LayerSystem {
         oldSprite.destroy({ texture: false, baseTexture: false });
 
         if (this.coordAPI) this.coordAPI.clearCache();
-        this.refreshClippingMasks();
+        // 描画範囲を広げても画素は変わらないので、クリッピングのマスクは再利用する(ペンを置くたびの全作り直しを避ける)。
+        this.refreshClippingMasks({ source: 'raster-bounds-expanded', reuseMasks: true });
         return { ok: true, changed: true, bounds: { ...newBounds } };
     }
 
@@ -6192,7 +6215,8 @@ export class LayerSystem {
         this._panelClippingRefreshScheduled = true;
         queueMicrotask(() => {
             this._panelClippingRefreshScheduled = false;
-            this.refreshClippingMasks({ source: 'panel-update-request' });
+            // パネルの再描画は画素を変えない。マスクは再利用し、構成(土台や表示)が変わったものだけ作り直す。
+            this.refreshClippingMasks({ source: 'panel-update-request', reuseMasks: true });
         });
     }
 
