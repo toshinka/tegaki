@@ -143,11 +143,11 @@ export const BUILTIN_BRUSH_PRESETS = {
                 penTaperIn: 0,
                 penTaperOut: 0,
                 smoothing: 0.8,
-                penTipShape: 'round',
+                penTipShape: 'square',
                 penTipAspect: 1,
                 penTipAngle: 0,
                 penPressureSizeStrength: 0,
-                penCapShape: 'square'
+                penCapShape: 'round'
             }
         },
         {
