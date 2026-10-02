@@ -181,6 +181,15 @@ export function calculateOpaqueRasterBounds(snapshot, alphaThreshold = 0) {
     };
 }
 
+/** 既定の安全ピクセル数(約1678万)。キャンバス自体がそれより大きいとき(漫画原稿4960×7016など)は、キャンバス1枚分まで許す。 */
+export const RASTER_SAFE_PIXELS_DEFAULT = 16 * 1024 * 1024;
+
+export function getRasterSafePixels(canvas = null) {
+    const width = Math.max(0, Math.round(Number(canvas?.width) || 0));
+    const height = Math.max(0, Math.round(Number(canvas?.height) || 0));
+    return Math.max(RASTER_SAFE_PIXELS_DEFAULT, width * height);
+}
+
 export function validateRasterSurfaceSize(bounds, options = {}) {
     if (!bounds || typeof bounds !== 'object') {
         return { ok: false, reason: 'missing-bounds', bounds: null };

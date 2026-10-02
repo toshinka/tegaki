@@ -2934,6 +2934,7 @@ canvas {
 
 .resize-preset-group {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     margin: 5px 0;
 }
@@ -2943,7 +2944,7 @@ canvas {
 }
 
 .resize-preset-btn {
-    flex: 1;
+    flex: 1 1 28%;
     padding: 4px 3px;
     font-size: 8px;
     font-weight: 600;
@@ -2964,6 +2965,17 @@ canvas {
 
 .resize-preset-btn:active {
     transform: translateY(0);
+}
+
+.resize-memory-note {
+    margin: 2px 0 4px;
+    font-size: 9px;
+    color: var(--futaba-medium);
+}
+
+.resize-memory-note.is-large {
+    color: var(--active-border);
+    font-weight: 700;
 }
 
 .resize-apply-btn {

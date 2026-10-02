@@ -17,7 +17,8 @@ export const TEGAKI_CONFIG = {
         width: 400, 
         height: 400,
         minSize: 100,
-        maxSize: 2500
+        maxSize: 2500,          // リサイズスライダーの右端
+        absoluteMaxSize: 8192   // 数値入力・プリセットで指定できる上限(漫画原稿4960×7016を含む)
     },
     
     /**

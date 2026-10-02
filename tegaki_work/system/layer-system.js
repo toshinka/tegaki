@@ -31,7 +31,8 @@ import {
     resolveCanvasResizeOffset,
     translateRasterBounds,
     unionRasterBounds,
-    validateRasterSurfaceSize
+    validateRasterSurfaceSize,
+    getRasterSafePixels
 } from './raster-bounds.js';
 import {
     applyDirectionalTransformDrag,
@@ -870,7 +871,7 @@ export class LayerSystem {
     _isRasterBakeSizeAllowed(bounds) {
         return validateRasterSurfaceSize(bounds, {
             maxAxis: Number.MAX_SAFE_INTEGER,
-            maxPixels: 16 * 1024 * 1024
+            maxPixels: getRasterSafePixels(this.config?.canvas)
         }).ok;
     }
 
