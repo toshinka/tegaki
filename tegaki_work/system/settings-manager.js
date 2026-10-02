@@ -65,6 +65,7 @@ export class SettingsManager {
             // ペン先の形(筆プリセット): round=丸 / square=角(アスペクト=厚み比、角度=nibの向き)
             penPressureSizeStrength: 1, // 筆圧が径に効く強さ(0=一定径)
             penCapShape: 'round', // 線の入り/抜き: round=丸 / square=水平垂直の四角(角ペン)
+            penTipFollow: 'fixed', // 角ペンの向き: fixed=固定角 / follow=ペンを離した後に進行方向へ追従
             penTipShape: 'round',
             penTipAspect: 1,
             penTipAngle: 0,
@@ -234,6 +235,7 @@ export class SettingsManager {
             },
             penCapShape: (v) => (['round', 'square'].includes(v) ? v : undefined),
             penPressureSizeStrength: (v) => { const n = parseFloat(v); return isNaN(n) ? undefined : Math.max(0, Math.min(1, n)); },
+            penTipFollow: (v) => (['fixed', 'follow'].includes(v) ? v : undefined),
             penTipShape: (v) => (['round', 'square'].includes(v) ? v : undefined),
             eraserTipShape: (v) => (['round', 'square'].includes(v) ? v : undefined),
             penTipAspect: (v) => { const n = parseFloat(v); return isNaN(n) ? undefined : Math.max(0.15, Math.min(1, n)); },
@@ -360,7 +362,7 @@ export class SettingsManager {
             'eraserPressureStrength',
             'penPressureSizeStrength',
             'penCapShape',
-            'penTipShape', 'penTipAspect', 'penTipAngle',
+            'penTipShape', 'penTipAspect', 'penTipAngle', 'penTipFollow',
             'eraserTipShape', 'eraserTipAspect', 'eraserTipAngle',
             'statusPanelVisible',
             'exportResolution',

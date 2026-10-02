@@ -158,7 +158,7 @@
     "drawing": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": ["tegaki_work/system/drawing/drawing-engine.js", "tegaki_work/system/drawing/pointer-handler.js", "tegaki_work/system/drawing/brush-core.js", "tegaki_work/coordinate-system.js"],
-      "patterns": ["^verify-pen-", "^verify-long-drawing-", "^verify-raster-snapshot-memory", "^verify-text-to-raster", "^verify-camera-view-anchor"]
+      "patterns": ["^verify-pen-", "^verify-nib-angle", "^verify-long-drawing-", "^verify-raster-snapshot-memory", "^verify-text-to-raster", "^verify-camera-view-anchor"]
     },
     "transform": {
       "architecture": "docs/ARCHITECTURE.md",

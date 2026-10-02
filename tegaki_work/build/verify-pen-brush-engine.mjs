@@ -145,7 +145,7 @@ const near = (actual, expected, epsilon, message) => {
         pressureCorrection: 1, pressureCurve: 'custom', pressureCurvePoints: [[0, 0], [0.5, 0.2], [1, 1]],
         pressureOpacityEnabled: true, pressureOpacityStrength: 0.65, penVelocityThinning: 0.3,
         penTiltStrength: 0, penDabSoftness: 0, penEdgeAA: 0, stabilizerMode: 'follow', penTaperIn: 0, penTaperOut: 0, penPressureSmoothing: 0.5, smoothing: 0.5,
-        penTipShape: 'round', penTipAspect: 1, penTipAngle: 0, penPressureSizeStrength: 1, penCapShape: 'round'
+        penTipShape: 'round', penTipAspect: 1, penTipAngle: 0, penTipFollow: 'fixed', penPressureSizeStrength: 1, penCapShape: 'round'
     };
     const get = key => store[key];
     const captured = captureBrushPresetValues('pen', get);

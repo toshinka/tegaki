@@ -28,6 +28,7 @@ export const BRUSH_PRESET_KEYS = {
         'penTipShape',
         'penTipAspect',
         'penTipAngle',
+        'penTipFollow',
         'penPressureSizeStrength',
         'penCapShape'
     ],
@@ -55,6 +56,7 @@ export const BRUSH_PRESET_DEFAULTS = Object.freeze({
     penTipShape: 'round',
     penTipAspect: 1,
     penTipAngle: 0,
+    penTipFollow: 'fixed',
     eraserTipShape: 'round',
     eraserTipAspect: 1,
     eraserTipAngle: 0,
@@ -151,6 +153,32 @@ export const BUILTIN_BRUSH_PRESETS = {
             }
         },
         {
+            id: 'builtin-pen-square-follow',
+            name: '角ペン(追従)',
+            values: {
+                pressureCorrection: 1.0,
+                pressureCurve: 'ease-out',
+                pressureCurvePoints: null,
+                pressureOpacityEnabled: false,
+                pressureOpacityStrength: 0.65,
+                penPressureSmoothing: 0.85,
+                penVelocityThinning: 0,
+                penTiltStrength: 0,
+                penDabSoftness: 0,
+                penEdgeAA: 1,
+                stabilizerMode: 'follow',
+                penTaperIn: 0,
+                penTaperOut: 0,
+                smoothing: 0.8,
+                penTipShape: 'square',
+                penTipAspect: 1,
+                penTipAngle: 0,
+                penTipFollow: 'follow',
+                penPressureSizeStrength: 0,
+                penCapShape: 'round'
+            }
+        },
+        {
             id: 'builtin-pen-pencil',
             name: '鉛筆風',
             values: {
@@ -227,6 +255,7 @@ for (const preset of BUILTIN_BRUSH_PRESETS.pen) {
         penTipShape: BRUSH_PRESET_DEFAULTS.penTipShape,
         penTipAspect: BRUSH_PRESET_DEFAULTS.penTipAspect,
         penTipAngle: BRUSH_PRESET_DEFAULTS.penTipAngle,
+        penTipFollow: BRUSH_PRESET_DEFAULTS.penTipFollow,
         penPressureSizeStrength: BRUSH_PRESET_DEFAULTS.penPressureSizeStrength,
         penCapShape: BRUSH_PRESET_DEFAULTS.penCapShape,
         ...preset.values

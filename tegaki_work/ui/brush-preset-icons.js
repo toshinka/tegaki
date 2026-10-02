@@ -30,6 +30,7 @@ const BUILTIN = {
     'builtin-pen-ink': { svg: NIB, tone: 'normal' },
     'builtin-pen-mili': { svg: MILI, tone: 'normal' },
     'builtin-pen-square': { svg: SQUARE_PEN, tone: 'normal' },
+    'builtin-pen-square-follow': { svg: SQUARE_PEN, tone: 'strong' },
     'builtin-pen-pencil': { svg: PENCIL, tone: 'soft' },
     'builtin-eraser-standard': { svg: UI_ICONS.eraser, tone: 'normal' },
     'builtin-eraser-square': { svg: UI_ICONS.eraser, tone: 'strong' },
