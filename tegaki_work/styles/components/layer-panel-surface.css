@@ -1879,10 +1879,14 @@
     color: var(--futaba-cream);
 }
 
-/* フォルダのサムネイル: 右パネルのfolder-thumbnail svg規則(幅/高さ/色)より優先して、バッジは小さく保つ */
+/* フォルダのサムネイル: 右パネルのfolder-thumbnail svg規則(幅/高さ/色)より優先して、フォルダのアイコンは左上の小さな重ねにする */
 .right-panel .folder-thumbnail.has-folder-preview > svg {
-    width: 9px;
-    height: 9px;
+    position: absolute;
+    left: 1px;
+    top: 1px;
+    bottom: auto;
+    width: 10px;
+    height: 10px;
     padding: 1px;
     stroke: var(--futaba-maroon);
 }
