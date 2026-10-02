@@ -7,7 +7,8 @@ const maxAbs = (a) => Math.max(...a.map(Math.abs));
 assert.equal(targetNibAngle(0), 0);
 assert.equal(targetNibAngle(90), 0);
 assert.equal(targetNibAngle(180), 0);
-assert.equal(targetNibAngle(5), 0, 'near-axis stays flat');
+assert.equal(targetNibAngle(3), 0, 'near-axis stays flat');
+assert.ok(Math.abs(targetNibAngle(20) - 20) < 1, 'a shallow diagonal already follows (no 0deg square left standing)');
 assert.ok(Math.abs(Math.abs(targetNibAngle(45)) - 45) < 1e-6, '45deg heading aligns the nib edge with the stroke');
 assert.ok(Math.abs(targetNibAngle(30) - 30) < 8);
 
