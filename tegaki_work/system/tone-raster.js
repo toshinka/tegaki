@@ -8,8 +8,8 @@
  * 実装状態: ✅実装（WP-014）
  *
  * 描き方
- *   濃度0.5以下 … セルの中心に網点/ひし形を置く（面積 = 濃度 × pitch²）
- *   濃度0.5超   … セルを塗りつぶし、中心に「抜け」を開ける（面積 = (1-濃度) × pitch²）
+ *   接するまで(網点 π/4 ≒ 78.5% / ひし形 50%) … セルの中心に網点/ひし形（面積 = 濃度 × pitch²）
+ *   それを超えると … セルを塗りつぶし、セル角(半セルずらし)に「抜け」を開ける（面積 = (1-濃度) × pitch²）
  *   線          … 回転した格子に沿う帯。太さ = 濃度 × pitch
  *   濃度は TONE_RASTER_LEVELS 段にまとめて1回のfillでまとめ描きする。
  * ============================================================================
@@ -68,12 +68,18 @@ export function rasterizeTone(rawParams, options = {}) {
     const sin = Math.sin(rad);
     const pitch = p.pitch;
     const levels = TONE_RASTER_LEVELS;
+    // 網点は円が接する面積比(π/4)、ひし形は頂点が接する0.5で「塗り+抜け」へ切り替える。
+    // 抜けは半セルずらした位置(=隣り合う点の間のすき間)に開けるので、切替の前後で絵が連続する。
+    const highThreshold = p.shape === 'diamond' ? 0.5 : Math.PI / 4;
+    const half = pitch * 0.5;
+    const offU = half * cos - half * sin;
+    const offV = half * sin + half * cos;
     const low = Array.from({ length: levels + 1 }, () => []);   // 濃度 <= 0.5 / 線
     const high = Array.from({ length: levels + 1 }, () => []);  // 濃度 > 0.5 (面+抜け)
 
     const cells = forEachToneCell(p, ref, fill, (x, y, d) => {
         const q = Math.max(1, Math.round(d * levels));
-        if (p.shape !== 'line' && d > 0.5) high[q].push(x, y); else low[q].push(x, y);
+        if (p.shape !== 'line' && d > highThreshold) high[q].push(x, y); else low[q].push(x, y);
     });
     if (cells === 0) return { ok: false, reason: '濃度が0です' };
 
@@ -121,7 +127,7 @@ export function rasterizeTone(rawParams, options = {}) {
         if (hole <= 0.0005) continue;
         ctx.beginPath();
         for (let k = 0; k < a.length; k += 2) {
-            const x = a[k]; const y = a[k + 1];
+            const x = a[k] + offU; const y = a[k + 1] + offV;
             if (p.shape === 'diamond') {
                 diamondPath(ctx, x, y, pitch * Math.sqrt(hole / 2), cos, sin);
             } else {

@@ -17,6 +17,7 @@ import { TegakiEventBus } from '../system/event-bus.js';
 import { UI_ICONS } from './ui-icons.js';
 import { createPillTabs } from './pill-tabs.js';
 import { TonePanel } from './tone-panel.js';
+import { TOOL_GROUP_MEMBERS, getToolGroupState, isToolGroupMember, onToolGroupChange, setToolGroupCurrent, setToolGroupOpen } from './tool-group.js';
 
 const QA_STORAGE_KEYS = {
     position: 'quick-access-position',
@@ -36,6 +37,7 @@ const QA_SHORTCUT_ACTIONS = Object.freeze({
     airbrush: 'TOOL_AIRBRUSH_BLUR_TOGGLE',
     fill: 'TOOL_FILL',
     lassoFill: 'TOOL_LASSO_FILL',
+    toolGroup: 'TOOL_GROUP_CYCLE',
     selection: 'TOOL_RECT_SELECTION'
 });
 const QA_DEFAULT_MAIN_COLOR = 0x800000;
@@ -938,17 +940,6 @@ export class QuickAccessPopup {
                 overflow: hidden;
             }
 
-            .qa-preset-slot-index {
-                position: absolute;
-                top: 1px;
-                left: 2px;
-                font-size: 6px;
-                line-height: 1;
-                font-weight: 700;
-                color: rgba(128, 0, 0, 0.52);
-                pointer-events: none;
-            }
-
             .qa-preset-slot:hover {
                 transform: translateY(-1px);
                 background: rgba(240, 224, 214, 0.78);
@@ -1296,15 +1287,22 @@ export class QuickAccessPopup {
                         <span class="qa-fill-ref-strip" id="qa-fill-ref-all-toggle" title="表示中レイヤーをすべて参照して塗りつぶす"></span>
                         ${UI_ICONS.fill}
                     </button>
-                    <button class="qa-tool-button ui-help-tooltip" id="qa-lasso-fill-tool" type="button"
-                        aria-label="投げ縄塗り" ${shortcutHints.lassoFill}>
-                        ${UI_ICONS.lasso || '<span class="qa-tool-text-icon">縄</span>'}
-                    </button>
+                    <button class="qa-tool-button qa-tool-group-tab ui-help-tooltip" id="qa-tool-group-tab" type="button"
+                        aria-label="図形・範囲ツール" ${shortcutHints.toolGroup}></button>
+                </div>
+                <div class="qa-tool-grid qa-tool-group-row" id="qa-tool-group-row" hidden>
                     <button class="qa-tool-button ui-help-tooltip" id="qa-selection-tool" type="button"
                         aria-label="矩形選択" ${shortcutHints.selection}>
                         ${UI_ICONS.rectangleSelect || '<span class="qa-tool-text-icon">選</span>'}
                     </button>
+                    <button class="qa-tool-button ui-help-tooltip" id="qa-lasso-fill-tool" type="button"
+                        aria-label="投げ縄塗り" ${shortcutHints.lassoFill}>
+                        ${UI_ICONS.lasso || '<span class="qa-tool-text-icon">縄</span>'}
+                    </button>
                 </div>
+                <label class="qa-tool-group-open" title="図形・範囲ツールの二行目を開いたままにする（外すとShift+Lで送る）">
+                    <input type="checkbox" id="qa-tool-group-open"><span>二行目を開く</span>
+                </label>
             </section>
 
             <!-- 3. プリセットスロット -->
@@ -1315,7 +1313,6 @@ export class QuickAccessPopup {
                 <div class="qa-preset-grid" id="qa-preset-grid">
                     ${Array.from({ length: QA_PRESET_SLOT_COUNT }, (_, index) => `
                         <button class="qa-preset-slot" data-slot="${index}" type="button" title="スロット${index + 1}" aria-label="スロット${index + 1}">
-                            <span class="qa-preset-slot-index" aria-hidden="true">${index + 1}</span>
                             <span class="qa-preset-ring">
                                 <span class="qa-preset-dot"></span>
                             </span>
@@ -1510,6 +1507,9 @@ export class QuickAccessPopup {
             eraserToolBtn: document.getElementById('qa-eraser-tool'),
             fillToolBtn: document.getElementById('qa-fill-tool'),
             lassoFillToolBtn: document.getElementById('qa-lasso-fill-tool'),
+            toolGroupTabBtn: document.getElementById('qa-tool-group-tab'),
+            toolGroupRow: document.getElementById('qa-tool-group-row'),
+            toolGroupOpen: document.getElementById('qa-tool-group-open'),
             selectionToolBtn: document.getElementById('qa-selection-tool'),
             textRasterToggleBtn: document.getElementById('qa-text-raster-toggle'),
             textRasterPanel: document.getElementById('qa-text-raster-panel'),
@@ -1725,6 +1725,9 @@ export class QuickAccessPopup {
             this._switchTool(nextMode);
         });
         this._bindPointerAction(this.elements.lassoFillToolBtn, () => this._switchTool('lasso-fill'));
+        this._bindPointerAction(this.elements.toolGroupTabBtn, () => this._switchTool(getToolGroupState().current));
+        this.elements.toolGroupOpen?.addEventListener('change', (e) => setToolGroupOpen(e.target.checked));
+        this._toolGroupUnsubscribe = onToolGroupChange(() => this._updateToolGroup());
         this._bindPointerAction(this.elements.selectionToolBtn, () => this._switchTool('selection'));
         this._bindPointerAction(this.elements.eyedropperBtn, () => this._switchTool('eyedropper'));
 
@@ -2602,9 +2605,22 @@ export class QuickAccessPopup {
         });
     }
 
+    _updateToolGroup() {
+        const { toolGroupTabBtn, toolGroupRow, toolGroupOpen } = this.elements;
+        if (!toolGroupTabBtn) return;
+        const state = getToolGroupState();
+        const member = TOOL_GROUP_MEMBERS.find(m => m.tool === state.current) || TOOL_GROUP_MEMBERS[0];
+        toolGroupTabBtn.innerHTML = UI_ICONS[member.icon] || member.label;
+        toolGroupTabBtn.title = `${member.label}（Shift+Lで次の図形・範囲ツールへ）`;
+        toolGroupTabBtn.classList.toggle('active', isToolGroupMember(this.currentTool));
+        if (toolGroupRow) toolGroupRow.hidden = !state.open;
+        if (toolGroupOpen) toolGroupOpen.checked = state.open;
+    }
+
     _switchTool(tool) {
         const normalizedTool = this._normalizeTool(tool);
         this.currentTool = normalizedTool;
+        if (isToolGroupMember(normalizedTool)) setToolGroupCurrent(normalizedTool);
         this._updateToolButtons();
 
         if (normalizedTool === 'selection') {
@@ -2804,6 +2820,7 @@ export class QuickAccessPopup {
     }
 
     _updateToolButtons() {
+        this._updateToolGroup();
         const buttons = [
             this.elements.penToolBtn,
             this.elements.airbrushToolBtn,

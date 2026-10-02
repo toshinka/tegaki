@@ -58,6 +58,7 @@ assert.doesNotMatch(settingsSource, /<span class="help-key">B<\/span>/,
 assert.match(settingsSource, /TEGAKI_KEYMAP\.getShortcutList\(\)/,
     'Settings reads the canonical shortcut list');
 
+const escapeRegExp = (text) => String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const qtpControls = [
     { control: 'eyedropper', id: 'qa-eyedropper-btn', action: 'TOOL_EYEDROPPER' },
     { control: 'pen', id: 'qa-pen-tool', action: 'TOOL_PEN' },
@@ -65,7 +66,8 @@ const qtpControls = [
     { control: 'airbrush', id: 'qa-airbrush-tool', action: 'TOOL_AIRBRUSH_BLUR_TOGGLE' },
     { control: 'fill', id: 'qa-fill-tool', action: 'TOOL_FILL' },
     { control: 'lassoFill', id: 'qa-lasso-fill-tool', action: 'TOOL_LASSO_FILL' },
-    { control: 'selection', id: 'qa-selection-tool', action: 'TOOL_RECT_SELECTION' }
+    { control: 'selection', id: 'qa-selection-tool', action: 'TOOL_RECT_SELECTION' },
+    { control: 'toolGroup', id: 'qa-tool-group-tab', action: 'TOOL_GROUP_CYCLE' }
 ];
 const qtpShortcutContext = {
     _escapeHtml: QuickAccessPopup.prototype._escapeHtml
@@ -86,12 +88,12 @@ for (const { control, id, action } of qtpControls) {
         `${id} projects its canonical hint attributes`);
     assert.doesNotMatch(openingTag, /\stitle=/,
         `${id} does not keep a duplicate native title`);
-    assert.match(attributes, new RegExp(`aria-keyshortcuts="${descriptor.keys[0]}"`),
+    assert.match(attributes, new RegExp(`aria-keyshortcuts="${escapeRegExp(descriptor.keys[0])}"`),
         `${id} exposes ${descriptor.keys[0]} to assistive technology`);
-    assert.match(attributes, new RegExp(`data-tooltip="${descriptor.description} · ${descriptor.keys[0]}"`),
+    assert.match(attributes, new RegExp(`data-tooltip="${escapeRegExp(`${descriptor.description} · ${descriptor.keys[0]}`)}"`),
         `${id} tooltip uses the canonical description and key`);
 }
 assert.equal((qtpSource.match(/\$\{shortcutHints\.[A-Za-z]+\}/g) || []).length, qtpControls.length,
-    'Phase 8y remains limited to the seven QTP tool controls');
+    'Phase 8y remains limited to the eight QTP tool controls');
 
-console.log('verify-shortcut-learning-boundary: execution authority, canonical Settings projection and seven QTP tool hints OK');
+console.log('verify-shortcut-learning-boundary: execution authority, canonical Settings projection and eight QTP tool hints OK');

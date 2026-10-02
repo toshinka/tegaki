@@ -56,6 +56,13 @@
 - 確定時に通常Raster Layerを選択Layerへクリップして追加（Undo 1回）。`再編集`→`更新`、Projectは`layerData.tone`(optional)で往復。
 - 検証: `development-harness.mjs test tone` + Chromium（クリップ内のみ描画・Undo/Redo・更新・保存往復）。実機(液タブ)は未確認。
 
+### QTP TOOL GROUP — 図形・範囲ツールのタブ化（2026-10-02）
+
+- ペンスロット左上の番号を削除。投げ縄塗り・矩形選択は一行目の代表タブ（現在の代表ツールのアイコン）+ 二行目にまとめた。`二行目を開く`のチェックで二行目を開いたままに／閉じて代表タブだけにできる（チェック状態・代表ツールはUI設定 `tegaki-qa-tool-group`）。
+- `Shift+L`=図形・範囲ツールを一方向に送ってループ（`ui/tool-group.js`）。`L`=投げ縄塗り、`M`=矩形選択は従来どおり。メンバー追加は `TOOL_GROUP_MEMBERS` へ。
+- トーン: 網点が接する濃度(π/4)で「塗り+抜け」へ切り替え、抜けは半セルずらして置くようにして、グラデーションの途中に出ていた継ぎ目を解消。
+- Owner実機（液タブ）は未確認。
+
 ### BALLOON — 吹き出し（縦書き・フォント管理つき）（2026-10-02, WP-013）
 
 状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING（Ownerは最終受入・pushの権限をClaudeにも付与済み）。設計・操作・制約は[WP-013](work/WP-013-balloon.md)。

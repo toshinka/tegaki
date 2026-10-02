@@ -13,6 +13,7 @@
  */
 
 import { TEGAKI_KEYMAP } from '../config.js';
+import { cycleToolGroup } from './tool-group.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { historyManager } from '../system/history.js';
 import { Container } from 'pixi.js';
@@ -473,6 +474,31 @@ export const KeyboardHandler = (function() {
                 }
                 event.preventDefault();
                 break;
+
+            case 'TOOL_GROUP_CYCLE': {
+                if (event.repeat) {
+                    event.preventDefault();
+                    break;
+                }
+                const current = window.brushSettings?.getMode?.();
+                const currentTool = api?.selection?.isToolActive?.() === true ? 'selection' : (api?.tool?.get?.() || current);
+                const target = cycleToolGroup(currentTool);
+                if (!confirmActiveTransformsForToolSwitch(target)) {
+                    event.preventDefault();
+                    break;
+                }
+                if (target === 'selection') {
+                    api?.selection?.setToolActive?.(true);
+                    syncToolUI('selection');
+                } else if (api?.tool?.set?.(target)) {
+                    syncToolUI(target);
+                } else if (window.coreEngine?.switchTool) {
+                    window.coreEngine.switchTool(target);
+                    syncToolUI(target);
+                }
+                event.preventDefault();
+                break;
+            }
 
             case 'TOOL_EYEDROPPER':
                 if (!confirmActiveTransformsForToolSwitch('eyedropper')) {

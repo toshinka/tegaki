@@ -288,3 +288,41 @@
 #quick-access-popup.qa-popup .qa-tone-view input[type="range"].pl-range::-moz-range-progress {
     background: var(--futaba-maroon);
 }
+
+/* 図形・範囲ツールグループ: 一行目のタブ(代表ツール)と二行目 */
+#quick-access-popup.qa-popup .qa-tool-group-tab::after {
+    content: "";
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-top: 4px solid var(--futaba-maroon);
+    transform: rotate(-45deg) translate(1px, -1px);
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+#quick-access-popup.qa-popup .qa-tool-group-row {
+    margin-top: 2px;
+}
+
+#quick-access-popup.qa-popup .qa-tool-group-row[hidden] {
+    display: none;
+}
+
+#quick-access-popup.qa-popup .qa-tool-group-open {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 3px;
+    font-size: 9px;
+    color: var(--futaba-maroon);
+    cursor: pointer;
+}
+
+#quick-access-popup.qa-popup .qa-tool-group-open input {
+    margin: 0;
+    accent-color: var(--futaba-maroon);
+}
