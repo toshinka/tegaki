@@ -124,6 +124,7 @@ export class RulerSystem {
             spacing: this.state.spacing,
             spokes: this.state.spokes,
             angleSnap: this.state.angleSnap,
+            perspective: this.state.perspective,
             showGuides: this.state.showGuides
         };
     }
@@ -167,7 +168,7 @@ export class RulerSystem {
             this.anchor = { x: worldX, y: worldY };
             return { worldX, worldY };
         }
-        const snapped = snapPointToRuler(this.state, this.anchor, { x: worldX, y: worldY });
+        const snapped = snapPointToRuler(this.state, this.anchor, { x: worldX, y: worldY }, window.TEGAKI_CONFIG?.canvas);
         return { worldX: snapped.x, worldY: snapped.y };
     }
 
@@ -311,6 +312,7 @@ export class RulerSystem {
                 spacing: this.state.spacing,
                 spokes: this.state.spokes,
                 angleSnap: this.state.angleSnap,
+                perspective: this.state.perspective,
                 showGuides: this.state.showGuides
             }));
         } catch (_error) {

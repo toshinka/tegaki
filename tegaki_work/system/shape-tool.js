@@ -22,6 +22,7 @@ import { normalizeRasterBounds } from './raster-bounds.js';
 import { estimateRasterHistoryPairBytes } from './raster-snapshot-memory.js';
 import { showFeedbackToast } from '../ui/feedback-toast.js';
 import { createInlineNumberField } from '../ui/inline-number-field.js';
+import { attachPopupDrag } from '../ui/popup-drag-helper.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const VERTEX_HIT = 11; // px(画面)
@@ -402,6 +403,11 @@ export class ShapeEditor {
         wrap.style.display = 'none';
         const stop = event => event.stopPropagation();
         wrap.addEventListener('pointerdown', stop);
+        // 余白をつかんで動かせる(動かしたら自動配置はやめる)
+        this.detachDrag = attachPopupDrag(wrap, {
+            interactiveSelector: 'button, input, label, select',
+            onDragEnd: () => { wrap.dataset.moved = '1'; }
+        });
 
         const button = (cls, text, title, onClick) => {
             const el = document.createElement('button');
@@ -548,12 +554,14 @@ export class ShapeEditor {
         if (y + height > area.bottom - 4) y = minY - gap - height;
         x = Math.max(area.left + 4, Math.min(area.right - width - 4, x));
         y = Math.max(area.top + 4, Math.min(area.bottom - height - 4, y));
-        buttons.wrap.style.left = `${x - area.left}px`;
-        buttons.wrap.style.top = `${y - area.top}px`;
+        if (buttons.wrap.dataset.moved === '1') return;
+        buttons.wrap.style.left = `${x}px`;
+        buttons.wrap.style.top = `${y}px`;
     }
 
     destroy() {
         this.parts?.g?.remove?.();
+        this.detachDrag?.();
         this.buttons?.wrap?.remove?.();
         this.parts = null;
         this.buttons = null;

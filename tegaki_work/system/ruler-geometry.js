@@ -23,12 +23,14 @@ export const RULER_RADIAL_SPOKES = 48;
 export const RULER_OPTION_LIMITS = Object.freeze({
     spacing: { min: 12, max: 240 },   // 平行線のガイド間隔(画面px)
     spokes: { min: 4, max: 180 },     // 放射線のガイド本数
-    angleSnap: { min: 1, max: 90 }    // Ctrl併用時の角度刻み(度)
+    angleSnap: { min: 1, max: 90 },   // Ctrl併用時の角度刻み(度)
+    perspective: { min: -95, max: 95 } // 平行線の遠近(%)。+は向きの先へ絞られ、-は開く。0=平行
 });
 export const RULER_OPTION_DEFAULTS = Object.freeze({
     spacing: RULER_PARALLEL_SPACING_SCREEN_PX,
     spokes: RULER_RADIAL_SPOKES,
     angleSnap: RULER_ANGLE_SNAP_DEG,
+    perspective: 0,
     showGuides: true
 });
 
@@ -46,6 +48,7 @@ export function sanitizeRulerOptions(raw) {
         spacing: clampOption(src.spacing, L.spacing, D.spacing),
         spokes: Math.round(clampOption(src.spokes, L.spokes, D.spokes)),
         angleSnap: clampOption(src.angleSnap, L.angleSnap, D.angleSnap),
+        perspective: Math.round(clampOption(src.perspective, L.perspective, D.perspective)),
         showGuides: src.showGuides === false ? false : true
     };
 }
@@ -63,10 +66,25 @@ export function snapRulerAngle(angle, stepDeg = RULER_ANGLE_SNAP_DEG) {
 }
 
 /**
+ * 平行線定規の「遠近」の消失点（文書座標）。perspectiveが0なら無し。
+ * 中心から定規の向きへ、キャンバス対角 × 100/perspective(%) だけ進んだ点。+なら向きの先、-なら反対側。
+ */
+export function rulerVanishingPoint(state, canvas) {
+    const p = Number(state?.perspective) || 0;
+    if (state?.type === 'radial' || Math.abs(p) < 0.5) return null;
+    const diag = Math.hypot(canvas?.width || 1000, canvas?.height || 1000);
+    const distance = (diag * 100) / p;
+    return {
+        x: state.center.x + Math.cos(state.angle) * distance,
+        y: state.center.y + Math.sin(state.angle) * distance
+    };
+}
+
+/**
  * 定規への吸着。anchorを通り、定規が決める方向の直線へpointを射影する。
  * @returns {{x:number, y:number}}
  */
-export function snapPointToRuler(state, anchor, point) {
+export function snapPointToRuler(state, anchor, point, canvas = null) {
     if (!state?.enabled || !anchor || !point) return point;
     let dirX;
     let dirY;
@@ -79,8 +97,19 @@ export function snapPointToRuler(state, anchor, point) {
         dirX /= length;
         dirY /= length;
     } else {
-        dirX = Math.cos(state.angle);
-        dirY = Math.sin(state.angle);
+        const vanishing = rulerVanishingPoint(state, canvas || { width: 1000, height: 1000 });
+        if (vanishing) {
+            // 遠近: 描き始めの点から消失点へ向かう直線に吸着する
+            dirX = vanishing.x - anchor.x;
+            dirY = vanishing.y - anchor.y;
+            const length = Math.hypot(dirX, dirY);
+            if (!(length > 1e-6)) return point;
+            dirX /= length;
+            dirY /= length;
+        } else {
+            dirX = Math.cos(state.angle);
+            dirY = Math.sin(state.angle);
+        }
     }
     const t = (point.x - anchor.x) * dirX + (point.y - anchor.y) * dirY;
     return { x: anchor.x + dirX * t, y: anchor.y + dirY * t };
@@ -149,11 +178,21 @@ export function buildRulerGuideSegments(state, canvas, screenScale = 1) {
     const spacingPx = Number.isFinite(state.spacing) && state.spacing > 0 ? state.spacing : RULER_PARALLEL_SPACING_SCREEN_PX;
     const spacing = spacingPx / (screenScale > 0 ? screenScale : 1);
     const count = Math.ceil(reach / spacing);
+    const vanishing = rulerVanishingPoint(state, canvas);
     for (let i = -count; i <= count; i++) {
         if (i === 0) continue;
         const ox = cx - dirY * spacing * i;
         const oy = cy + dirX * spacing * i;
-        lines.push([ox - dirX * reach, oy - dirY * reach, ox + dirX * reach, oy + dirY * reach]);
+        let ux = dirX;
+        let uy = dirY;
+        if (vanishing) {
+            // 遠近: 各ガイドは消失点を通る（中心では等間隔で、向きの先で絞られる/開く）
+            const vx = vanishing.x - ox;
+            const vy = vanishing.y - oy;
+            const length = Math.hypot(vx, vy);
+            if (length > 1e-6) { ux = vx / length; uy = vy / length; }
+        }
+        lines.push([ox - ux * reach, oy - uy * reach, ox + ux * reach, oy + uy * reach]);
     }
     return { lines, main: [cx - dirX * reach, cy - dirY * reach, cx + dirX * reach, cy + dirY * reach] };
 }

@@ -96,6 +96,7 @@ export class RulerPopup {
                     <button type="button" class="pl-btn" data-angle="135">135°</button>
                 </div>
                 ${row('spacing', 'ガイド間隔', L.spacing.min, L.spacing.max, 1, '画面上の間隔(px)。拡大しても一定')}
+                ${row('perspective', '遠近', L.perspective.min, L.perspective.max, 1, '向きの先へガイドが絞られる(+)/開く(-)。0で平行。吸着もガイドに沿う（ビルの窓など軽いパース用）')}
                 ${row('angleSnap', '角度刻み', L.angleSnap.min, L.angleSnap.max, 1, 'Ctrl+Shift+ドラッグの刻み(度)')}
             </div>
             <div data-role="radial-only">
@@ -117,6 +118,7 @@ export class RulerPopup {
             { key: 'angle', unit: '°' },
             { key: 'spacing', unit: 'px' },
             { key: 'angleSnap', unit: '°' },
+            { key: 'perspective', unit: '%' },
             { key: 'spokes', unit: '本' },
             { key: 'cx', unit: 'px' },
             { key: 'cy', unit: 'px' }
@@ -156,6 +158,7 @@ export class RulerPopup {
             case 'angle': ruler.setState({ angle: toRad(value) % TAU }); break;
             case 'spacing': ruler.setState({ spacing: value }); break;
             case 'angleSnap': ruler.setState({ angleSnap: value }); break;
+            case 'perspective': ruler.setState({ perspective: value }); break;
             case 'spokes': ruler.setState({ spokes: value }); break;
             case 'cx': ruler.setState({ center: { x: value, y: state.center.y } }); break;
             case 'cy': ruler.setState({ center: { x: state.center.x, y: value } }); break;
@@ -180,6 +183,7 @@ export class RulerPopup {
             angle: toDeg(state.angle),
             spacing: state.spacing,
             angleSnap: state.angleSnap,
+            perspective: state.perspective,
             spokes: state.spokes,
             cx: Math.round(state.center.x * 10) / 10,
             cy: Math.round(state.center.y * 10) / 10
