@@ -8550,3 +8550,40 @@ button.anim-motion-graph-legend-item.is-primary {
 #env-snapshot-section .env-item-name { font-size: 11px; font-weight: 700; color: var(--futaba-maroon); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #env-snapshot-section .env-item-meta { font-size: 9px; color: var(--futaba-medium); }
 #env-snapshot-section .env-item-actions { display: flex; gap: 3px; flex: none; }
+
+/* アルバム: 環境タイル */
+.album-env-heading {
+    grid-column: 1 / -1;
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--futaba-light-medium);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--futaba-light-maroon);
+}
+.album-card--env { position: relative; display: flex; flex-direction: column; cursor: default; }
+.album-card--env-add {
+    border: 2px dashed var(--futaba-medium);
+    background: color-mix(in srgb, var(--futaba-cream) 55%, transparent);
+    color: var(--futaba-maroon);
+    cursor: pointer;
+    font: inherit;
+}
+.album-card--env-add .thumbnail-container { display: flex; align-items: center; justify-content: center; }
+.album-env-plus { font-size: 34px; font-weight: 700; color: var(--futaba-medium); }
+.album-env-caption { font-size: 10px; font-weight: 700; padding: 3px 4px; text-align: center; }
+.album-env-badge { background: var(--active-border); color: var(--futaba-background); }
+.album-env-actions { display: flex; gap: 2px; padding: 3px; }
+.album-env-actions button {
+    flex: 1;
+    height: 20px;
+    padding: 0;
+    border: 1px solid var(--futaba-medium);
+    border-radius: 4px;
+    color: var(--futaba-maroon);
+    background: var(--futaba-background);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.album-env-actions button:hover { border-color: var(--futaba-maroon); background: var(--futaba-cream); }

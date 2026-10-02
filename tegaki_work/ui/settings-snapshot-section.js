@@ -25,7 +25,7 @@ const formatTime = (ts) => {
 };
 
 /** カード画像(Futaba配色)。設定本体はこの画像のPNGチャンクに埋め込む。 */
-function renderCardCanvas(snapshot) {
+export function renderCardCanvas(snapshot) {
     const canvas = document.createElement('canvas');
     canvas.width = 480;
     canvas.height = 270;
@@ -63,13 +63,81 @@ function canvasToPngBytes(canvas) {
     });
 }
 
+/**
+ * 設定popupとアルバムのタイルで共有する操作(保存 / 復元 / PNG書き出し / 削除)。
+ * @returns {{ store, storage, saveCurrent, restore, exportPng, remove, importFile }}
+ */
+export function createSnapshotActions({ store = new SettingsSnapshotStore(), storage = window.localStorage } = {}) {
+    const current = (name) => collectSettingsSnapshot(storage, { name, createdAt: Date.now() });
+    return {
+        store,
+        storage,
+        async saveCurrent(name) {
+            const finalName = (name || '').trim() || `環境 ${formatTime(Date.now())}`;
+            await store.add(current(finalName));
+            showFeedbackToast(`環境「${finalName}」を保存しました`);
+            return finalName;
+        },
+        async restore(item) {
+            if (!window.confirm(`「${item.snapshot.name}」の環境に戻します。\n今の環境は「復元前（自動）」として保存され、復元後にページを再読み込みします。`)) return false;
+            try {
+                await store.add(current('復元前（自動）'));
+                const result = applySettingsSnapshot(storage, item.snapshot);
+                if (!result.ok) throw new Error(result.reason);
+                showFeedbackToast('環境を復元しました。再読み込みします');
+                setTimeout(() => window.location.reload(), 600);
+                return true;
+            } catch (error) {
+                showFeedbackToast('環境を復元できませんでした');
+                return false;
+            }
+        },
+        async exportPng(snapshot) {
+            try {
+                const bytes = embedSnapshotInPng(await canvasToPngBytes(renderCardCanvas(snapshot)), snapshot);
+                const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `tegaki-env_${snapshot.name.replace(/[^\w\-ぁ-んァ-ヶ一-龠]/g, '_')}_${snapshot.createdAt}.png`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 2000);
+            } catch (error) {
+                showFeedbackToast('PNGを書き出せませんでした');
+            }
+        },
+        async remove(item) {
+            if (!window.confirm(`「${item.snapshot.name}」を削除しますか？`)) return false;
+            await store.remove(item.id);
+            return true;
+        },
+        async importFile(file) {
+            let snapshot = null;
+            if (file.type === 'application/json' || /\.json$/i.test(file.name)) {
+                snapshot = sanitizeSettingsSnapshot(JSON.parse(await file.text()));
+            } else {
+                snapshot = extractSnapshotFromPng(new Uint8Array(await file.arrayBuffer()));
+            }
+            if (!snapshot) {
+                showFeedbackToast('環境の情報が見つかりませんでした');
+                return false;
+            }
+            snapshot.name = `${snapshot.name}（読込）`.slice(0, 40);
+            await store.add({ ...snapshot, createdAt: Date.now() });
+            showFeedbackToast('読み込みました。復元はアルバム/設定の一覧から');
+            return true;
+        }
+    };
+}
+
 export function mountSettingsSnapshotSection(container, options = {}) {
     if (!container) return null;
-    const store = options.store || new SettingsSnapshotStore();
-    const storage = options.storage || window.localStorage;
+    const api = options.actions || createSnapshotActions({ store: options.store, storage: options.storage });
+    const store = api.store;
     container.innerHTML = `
         <div class="setting-label">環境スナップショット</div>
-        <div class="setting-description">QTP・各ツールの設定を名前を付けて保存し、あとで当時のまま復元します。作品・アルバム・取り込みフォントは含みません。PNGに埋め込んで持ち運べます。</div>
+        <div class="setting-description">QTP・各ツールの設定を名前を付けて保存し、あとで当時のまま復元します。作品・アルバム・取り込みフォントは含みません。PNGに埋め込んで持ち運べます（アルバムにも環境タイルが並びます）。</div>
         <div class="env-row">
             <input type="text" class="env-name" maxlength="40" placeholder="名前（例: 下書き用）" aria-label="スナップショット名">
             <button type="button" class="pressure-curve-btn" data-env-action="save">今の環境を保存</button>
@@ -85,8 +153,6 @@ export function mountSettingsSnapshotSection(container, options = {}) {
     // 入力欄のキーがキャンバスのショートカットへ漏れない
     nameInput.addEventListener('keydown', e => e.stopPropagation());
     nameInput.addEventListener('keyup', e => e.stopPropagation());
-
-    const current = (name) => collectSettingsSnapshot(storage, { name, createdAt: Date.now() });
 
     const render = async () => {
         let items = [];
@@ -105,78 +171,29 @@ export function mountSettingsSnapshotSection(container, options = {}) {
                     <button type="button" class="pressure-curve-btn" data-act="png">PNG</button>
                     <button type="button" class="pressure-curve-btn" data-act="delete">削除</button>
                 </div>`;
-            row.querySelector('[data-act="restore"]').addEventListener('click', () => restore(item));
-            row.querySelector('[data-act="png"]').addEventListener('click', () => exportPng(item.snapshot));
-            row.querySelector('[data-act="delete"]').addEventListener('click', async () => {
-                if (!window.confirm(`「${item.snapshot.name}」を削除しますか？`)) return;
-                await store.remove(item.id);
-                render();
-            });
+            row.querySelector('[data-act="restore"]').addEventListener('click', () => api.restore(item));
+            row.querySelector('[data-act="png"]').addEventListener('click', () => api.exportPng(item.snapshot));
+            row.querySelector('[data-act="delete"]').addEventListener('click', async () => { if (await api.remove(item)) render(); });
             list.appendChild(row);
         }
     };
 
-    const restore = async (item) => {
-        if (!window.confirm(`「${item.snapshot.name}」の環境に戻します。\n今の環境は「復元前（自動）」として保存され、復元後にページを再読み込みします。`)) return;
-        try {
-            await store.add(current('復元前（自動）'));
-            const result = applySettingsSnapshot(storage, item.snapshot);
-            if (!result.ok) throw new Error(result.reason);
-            showFeedbackToast('環境を復元しました。再読み込みします');
-            setTimeout(() => window.location.reload(), 600);
-        } catch (error) {
-            showFeedbackToast('環境を復元できませんでした');
-        }
-    };
-
-    const exportPng = async (snapshot) => {
-        try {
-            const bytes = embedSnapshotInPng(await canvasToPngBytes(renderCardCanvas(snapshot)), snapshot);
-            const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `tegaki-env_${snapshot.name.replace(/[^\w\-ぁ-んァ-ヶ一-龠]/g, '_')}_${snapshot.createdAt}.png`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 2000);
-        } catch (error) {
-            showFeedbackToast('PNGを書き出せませんでした');
-        }
-    };
-
     container.querySelector('[data-env-action="save"]').addEventListener('click', async () => {
-        const name = nameInput.value.trim() || `環境 ${formatTime(Date.now())}`;
         try {
-            await store.add(current(name));
+            await api.saveCurrent(nameInput.value);
             nameInput.value = '';
-            showFeedbackToast(`環境「${name}」を保存しました`);
             render();
         } catch (error) {
             showFeedbackToast('環境を保存できませんでした');
         }
     });
-
     container.querySelector('[data-env-action="import"]').addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', async () => {
         const file = fileInput.files?.[0];
         fileInput.value = '';
         if (!file) return;
         try {
-            let snapshot = null;
-            if (file.type === 'application/json' || /\.json$/i.test(file.name)) {
-                snapshot = sanitizeSettingsSnapshot(JSON.parse(await file.text()));
-            } else {
-                snapshot = extractSnapshotFromPng(new Uint8Array(await file.arrayBuffer()));
-            }
-            if (!snapshot) {
-                showFeedbackToast('環境の情報が見つかりませんでした');
-                return;
-            }
-            snapshot.name = `${snapshot.name}（読込）`.slice(0, 40);
-            await store.add({ ...snapshot, createdAt: Date.now() });
-            showFeedbackToast('読み込みました。一覧の「復元」で戻せます');
-            render();
+            if (await api.importFile(file)) render();
         } catch (error) {
             showFeedbackToast('読み込めませんでした');
         }
