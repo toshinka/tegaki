@@ -741,8 +741,6 @@
     flex-direction: column;
     gap: 4px;
     padding: 0 1px 2px;
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--futaba-medium) 58%, transparent) transparent;
 }
 
 .right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector .transform-popup-header {

@@ -1645,7 +1645,7 @@ canvas {
 }
 
 .layer-panel-items.layer-panel-items--scrollable {
-    padding-right: 11px; /* スクロールバーの幅に合わせて調整 */
+    padding-right: 17px; /* スクロールバーの幅に合わせて調整 */
     scrollbar-gutter: stable;
 }
 
@@ -1655,12 +1655,10 @@ canvas {
 
 /* レイヤーパネル用スクロールバーの微調整 (ui-scrollbar クラスが適用されている前提) */
 .layer-panel-items.ui-scrollbar::-webkit-scrollbar {
-    width: 10px;
+    width: 16px;
 }
 
 .layer-panel-items {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 0, 0, 0.25) transparent;
 }
 
 @media (pointer: coarse) {
@@ -3853,8 +3851,6 @@ canvas {
 
 /* ===== 共通スクロールバー (目に優しい透過栗色) ===== */
 .ui-scrollbar {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 0, 0, 0.25) transparent;
 }
 
 .ui-scrollbar::-webkit-scrollbar {
@@ -3880,8 +3876,6 @@ canvas {
 
 /* ギャラリー固有の定義を共通クラスへ統合（またはエイリアス） */
 #albumGallery {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 0, 0, 0.25) transparent;
 }
 
 /* ===== アルバムポップアップ追加スタイル ===== */
@@ -4914,8 +4908,6 @@ canvas {
     min-width: 0;
     max-width: min(430px, 58vw);
     overflow-x: auto;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 0, 0, 0.25) transparent;
 }
 
 .anim-motion-target-tab {
@@ -8004,8 +7996,6 @@ button.anim-motion-graph-legend-item.is-primary {
     overflow-x: auto;
     flex: 1;
     margin-right: 8px;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 0, 0, 0.25) transparent;
 }
 
 .reference-preview-viewer .viewer-thumbnail-title {
@@ -8771,4 +8761,100 @@ body.layer-card-dragging * {
 }
 .layer-panel-card-drag-preview {
     border-width: 3px;
+}
+
+/* ===== スクロールバーの太さを一元化（つかめる幅） =====
+   標準の scrollbar-width / scrollbar-color を指定すると、Chromiumは ::-webkit-scrollbar の指定を無視して
+   極細になる。そのため標準指定は Firefox 等（::-webkit-scrollbar 非対応）にだけ使う。 */
+:is(
+    .ui-scrollbar,
+    #albumGallery,
+    .layer-panel-items,
+    .anim-motion-target-tabs,
+    .reference-preview-viewer .viewer-tabs-bar,
+    .right-workspace-frame > .layer-panel-container > .layer-controls-row,
+    .right-workspace-rig-lens-content,
+    .right-workspace-rig-bone-tree--compact,
+    .right-workspace-rig-bone-tree--flat,
+    .right-workspace-rig-bone-tree--expanded,
+    .right-workspace-rig-structure-board-viewport,
+    .right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector
+)::-webkit-scrollbar {
+    width: 16px;
+    height: 16px;
+}
+:is(
+    .ui-scrollbar,
+    #albumGallery,
+    .layer-panel-items,
+    .anim-motion-target-tabs,
+    .reference-preview-viewer .viewer-tabs-bar,
+    .right-workspace-frame > .layer-panel-container > .layer-controls-row,
+    .right-workspace-rig-lens-content,
+    .right-workspace-rig-bone-tree--compact,
+    .right-workspace-rig-bone-tree--flat,
+    .right-workspace-rig-bone-tree--expanded,
+    .right-workspace-rig-structure-board-viewport,
+    .right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector
+)::-webkit-scrollbar-track {
+    background: rgba(233, 194, 186, 0.2);
+    border-radius: 6px;
+}
+:is(
+    .ui-scrollbar,
+    #albumGallery,
+    .layer-panel-items,
+    .anim-motion-target-tabs,
+    .reference-preview-viewer .viewer-tabs-bar,
+    .right-workspace-frame > .layer-panel-container > .layer-controls-row,
+    .right-workspace-rig-lens-content,
+    .right-workspace-rig-bone-tree--compact,
+    .right-workspace-rig-bone-tree--flat,
+    .right-workspace-rig-bone-tree--expanded,
+    .right-workspace-rig-structure-board-viewport,
+    .right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector
+)::-webkit-scrollbar-thumb {
+    background: rgba(128, 0, 0, 0.32);
+    border-radius: 10px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    min-height: 36px;
+    min-width: 36px;
+}
+:is(
+    .ui-scrollbar,
+    #albumGallery,
+    .layer-panel-items,
+    .anim-motion-target-tabs,
+    .reference-preview-viewer .viewer-tabs-bar,
+    .right-workspace-frame > .layer-panel-container > .layer-controls-row,
+    .right-workspace-rig-lens-content,
+    .right-workspace-rig-bone-tree--compact,
+    .right-workspace-rig-bone-tree--flat,
+    .right-workspace-rig-bone-tree--expanded,
+    .right-workspace-rig-structure-board-viewport,
+    .right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector
+)::-webkit-scrollbar-thumb:hover {
+    background: var(--futaba-medium);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+}
+@supports not selector(::-webkit-scrollbar) {
+    :is(
+        .ui-scrollbar,
+        #albumGallery,
+        .layer-panel-items,
+        .anim-motion-target-tabs,
+        .reference-preview-viewer .viewer-tabs-bar,
+        .right-workspace-frame > .layer-panel-container > .layer-controls-row,
+        .right-workspace-rig-lens-content,
+        .right-workspace-rig-bone-tree--compact,
+        .right-workspace-rig-bone-tree--flat,
+        .right-workspace-rig-bone-tree--expanded,
+        .right-workspace-rig-structure-board-viewport,
+        .right-panel .layer-panel-context-inspector .layer-transform-panel.is-context-inspector
+    ) {
+        scrollbar-width: auto;
+        scrollbar-color: rgba(128, 0, 0, 0.32) transparent;
+    }
 }
