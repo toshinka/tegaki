@@ -112,12 +112,15 @@
         "tegaki_work/system/gradient-fill.js",
         "tegaki_work/system/selection-area-tools.js",
         "tegaki_work/system/shape-geometry.js",
-        "tegaki_work/system/shape-tool.js"
+        "tegaki_work/system/shape-tool.js",
+        "tegaki_work/system/border-fill.js",
+        "tegaki_work/system/border-tool.js"
       ],
       "patterns": [
         "^verify-auto-select",
         "^verify-gradient-fill",
-        "^verify-shape-geometry"
+        "^verify-shape-geometry",
+        "^verify-border-fill"
       ]
     },
     "tone": {

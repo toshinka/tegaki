@@ -89,6 +89,7 @@ export class PixelSelectionSystem {
         // 図形の編集中にツールを替えたら、その図形は確定する
         this.areaTools?.shape?.commit?.();
         this.toolMode = next;
+        this.areaTools?.border?.sync?.();
         this.drag = null;
         this.areaTools?.pointerCancel?.({ pointerId: this.areaTools.gradientDrag?.pointerId });
         this.eventBus?.emit('selection:tool-mode-changed', { mode: next });
@@ -507,6 +508,7 @@ export class PixelSelectionSystem {
         if (this.toolActive === nextActive) return true;
         if (!nextActive) this.areaTools?.shape?.commit?.();
         this.toolActive = nextActive;
+        this.areaTools?.border?.sync?.();
         this.drag = null;
         this._syncCursor();
         this._updateOverlay();
@@ -1155,6 +1157,12 @@ export class PixelSelectionSystem {
         const onKeyDown = event => {
             if (this._isTextInputFocused()) return;
             if (event.target?.closest?.('.reference-preview-viewer')) return;
+            if (this.toolActive && this.toolMode === 'border' && event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                this.areaTools.border.apply();
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
             const shapeEditor = this.areaTools?.shape;
             if (shapeEditor?.isEditing?.() && this.toolActive && !event.ctrlKey && !event.metaKey && !event.altKey) {
                 if (event.key === 'Enter') {
@@ -1858,6 +1866,7 @@ export class PixelSelectionSystem {
         if (!this.areaTools) return;
         this.areaTools.renderMask(this.state?.mask ? this._getSelectionContext() : null);
         this.areaTools.shape?.render?.();
+        this.areaTools.border?.render?.();
         this._watchMaskOverlay();
     }
 

@@ -16,6 +16,7 @@
 import { floodSelectRegion, traceMaskOutline, AUTO_SELECT_LIMITS } from './auto-select.js';
 import { applyGradientToPixels } from './gradient-fill.js';
 import { ShapeEditor } from './shape-tool.js';
+import { BorderEditor } from './border-tool.js';
 import { normalizeRasterBounds } from './raster-bounds.js';
 import { estimateRasterHistoryPairBytes } from './raster-snapshot-memory.js';
 import { showFeedbackToast } from '../ui/feedback-toast.js';
@@ -23,11 +24,11 @@ import { showFeedbackToast } from '../ui/feedback-toast.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const STORAGE_KEY = 'tegaki-area-tools-v1';
 
-export const SELECTION_TOOL_MODES = Object.freeze(['rect', 'auto', 'gradient', 'shape-rect', 'shape-ellipse']);
+export const SELECTION_TOOL_MODES = Object.freeze(['rect', 'auto', 'gradient', 'shape-rect', 'shape-ellipse', 'border']);
 
 const TOOL_TO_MODE = Object.freeze({
     selection: 'rect', 'auto-select': 'auto', gradient: 'gradient',
-    'shape-rect': 'shape-rect', 'shape-ellipse': 'shape-ellipse'
+    'shape-rect': 'shape-rect', 'shape-ellipse': 'shape-ellipse', border: 'border'
 });
 export function toolNameToSelectionMode(tool) {
     return TOOL_TO_MODE[tool] || null;
@@ -44,10 +45,12 @@ export class AreaToolController {
         this.options = {
             auto: { tolerance: AUTO_SELECT_LIMITS.tolerance.default, referenceAll: false, contiguous: true },
             gradient: { kind: 'linear', fade: 'sub' }, // fade: 'sub'=メイン→サブ色 / 'transparent'=メイン→透明
-            shape: { join: 'miter' } // 線の図形: 四角の角 miter=尖る / round=丸い
+            shape: { join: 'miter' }, // 線の図形: 四角の角 miter=尖る / round=丸い
+            border: { radius: 4, position: 'outside' } // フチ: 太さ(px) / 位置 outside=外 inside=内
         };
         this.gradientDrag = null;
         this.shape = new ShapeEditor(this);
+        this.border = new BorderEditor(this);
         this.maskImage = null;
         this.guideLine = null;
         this._restore();
@@ -64,6 +67,9 @@ export class AreaToolController {
             if (['linear', 'radial'].includes(data.gradient?.kind)) this.options.gradient.kind = data.gradient.kind;
             if (['sub', 'transparent'].includes(data.gradient?.fade)) this.options.gradient.fade = data.gradient.fade;
             if (['miter', 'round'].includes(data.shape?.join)) this.options.shape.join = data.shape.join;
+            const radius = Number(data.border?.radius);
+            if (Number.isFinite(radius)) this.options.border.radius = Math.max(1, Math.min(100, Math.round(radius)));
+            if (['outside', 'inside'].includes(data.border?.position)) this.options.border.position = data.border.position;
         } catch (error) {
             // 壊れた設定は既定へ
         }
@@ -81,6 +87,7 @@ export class AreaToolController {
         if (patch.auto) Object.assign(this.options.auto, patch.auto);
         if (patch.gradient) Object.assign(this.options.gradient, patch.gradient);
         if (patch.shape) Object.assign(this.options.shape, patch.shape);
+        if (patch.border) Object.assign(this.options.border, patch.border);
         this._persist();
         this.system.eventBus?.emit('selection:area-options-changed', JSON.parse(JSON.stringify(this.options)));
     }
@@ -110,6 +117,7 @@ export class AreaToolController {
         if (mode === 'shape-rect' || mode === 'shape-ellipse') {
             return this.shape.pointerDown(event, target);
         }
+        if (mode === 'border') return true; // フチは操作盤で行う。キャンバスのドラッグは何もしない
         if (target.kind !== 'layer') {
             showFeedbackToast('フォルダでは使えません。Raster Layerを選んでください');
             return false;
