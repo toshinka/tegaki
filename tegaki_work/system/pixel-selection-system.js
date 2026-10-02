@@ -26,7 +26,7 @@ import { estimateRasterHistoryPairBytes } from './raster-snapshot-memory.js';
 import { showFeedbackToast } from '../ui/feedback-toast.js';
 import { layerTransformBasicOverlay } from '../ui/layer-transform-basic-overlay.js';
 import { TRANSFORM_EDIT_TRANSACTION_TARGET } from './animation/transform-edit-transaction.js';
-import { AreaToolController, toolNameToSelectionMode } from './selection-area-tools.js';
+import { AreaToolController, SELECTION_TOOL_MODES, toolNameToSelectionMode } from './selection-area-tools.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MIN_SELECTION_SIZE = 1;
@@ -83,9 +83,11 @@ export class PixelSelectionSystem {
     }
 
     setToolMode(mode) {
-        const next = ['rect', 'auto', 'gradient'].includes(mode) ? mode : 'rect';
+        const next = SELECTION_TOOL_MODES.includes(mode) ? mode : 'rect';
         if (this.toolMode === next) return true;
         if (this.transformSession && !this.confirmTransform()) return false;
+        // 図形の編集中にツールを替えたら、その図形は確定する
+        this.areaTools?.shape?.commit?.();
         this.toolMode = next;
         this.drag = null;
         this.areaTools?.pointerCancel?.({ pointerId: this.areaTools.gradientDrag?.pointerId });
@@ -503,6 +505,7 @@ export class PixelSelectionSystem {
     setToolActive(active) {
         const nextActive = active === true;
         if (this.toolActive === nextActive) return true;
+        if (!nextActive) this.areaTools?.shape?.commit?.();
         this.toolActive = nextActive;
         this.drag = null;
         this._syncCursor();
@@ -1152,6 +1155,21 @@ export class PixelSelectionSystem {
         const onKeyDown = event => {
             if (this._isTextInputFocused()) return;
             if (event.target?.closest?.('.reference-preview-viewer')) return;
+            const shapeEditor = this.areaTools?.shape;
+            if (shapeEditor?.isEditing?.() && this.toolActive && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                if (event.key === 'Enter') {
+                    shapeEditor.commit();
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    return;
+                }
+                if (event.key === 'Escape') {
+                    shapeEditor.cancel();
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    return;
+                }
+            }
             if (event.key === 'Escape' && this.transformSession) {
                 this.cancelTransform('escape');
                 event.preventDefault();
@@ -1372,7 +1390,7 @@ export class PixelSelectionSystem {
     }
 
     _handlePointerMove(event) {
-        if (this.areaTools?.gradientDrag && this.areaTools.pointerMove(event)) {
+        if (this.areaTools?.hasActiveDrag?.() && this.areaTools.pointerMove(event)) {
             event.preventDefault();
             event.stopImmediatePropagation();
             return;
@@ -1436,7 +1454,7 @@ export class PixelSelectionSystem {
     }
 
     _handlePointerUp(event) {
-        if (this.areaTools?.gradientDrag && this.areaTools.pointerUp(event)) {
+        if (this.areaTools?.hasActiveDrag?.() && this.areaTools.pointerUp(event)) {
             event.preventDefault();
             event.stopImmediatePropagation();
             return;
@@ -1484,7 +1502,7 @@ export class PixelSelectionSystem {
     }
 
     _handlePointerCancel(event) {
-        if (this.areaTools?.gradientDrag && this.areaTools.pointerCancel(event)) {
+        if (this.areaTools?.hasActiveDrag?.() && this.areaTools.pointerCancel(event)) {
             event.preventDefault();
             event.stopImmediatePropagation();
             return;
@@ -1839,6 +1857,7 @@ export class PixelSelectionSystem {
         if (this.state?.mask && this.overlayPolygon) this.overlayPolygon.removeAttribute('points');
         if (!this.areaTools) return;
         this.areaTools.renderMask(this.state?.mask ? this._getSelectionContext() : null);
+        this.areaTools.shape?.render?.();
         this._watchMaskOverlay();
     }
 

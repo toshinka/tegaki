@@ -8587,3 +8587,68 @@ button.anim-motion-graph-legend-item.is-primary {
     cursor: pointer;
 }
 .album-env-actions button:hover { border-color: var(--futaba-maroon); background: var(--futaba-cream); }
+
+/* 線の図形ツール(四角/楕円)の編集表示 */
+.shape-tool-preview {
+    fill: none;
+    stroke-linecap: round;
+    pointer-events: none;
+}
+.shape-tool-guide {
+    fill: rgba(255, 140, 66, 0.05);
+    stroke: var(--futaba-maroon);
+    stroke-width: 1;
+    stroke-dasharray: 5 4;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+}
+.shape-tool-stem {
+    stroke: var(--futaba-maroon);
+    stroke-width: 1;
+    pointer-events: none;
+}
+.shape-tool-vertex {
+    fill: var(--futaba-background);
+    stroke: var(--futaba-maroon);
+    stroke-width: 2;
+    pointer-events: none;
+}
+.shape-tool-edge {
+    fill: var(--futaba-light-medium);
+    stroke: var(--futaba-maroon);
+    stroke-width: 1.5;
+    pointer-events: none;
+}
+.shape-tool-rotate {
+    fill: var(--active-border);
+    stroke: var(--futaba-maroon);
+    stroke-width: 1.5;
+    pointer-events: none;
+}
+.shape-tool-actions {
+    position: absolute;
+    z-index: 950;
+    display: flex;
+    gap: 6px;
+}
+.shape-tool-confirm,
+.shape-tool-cancel {
+    border: 2px solid var(--futaba-maroon);
+    border-radius: 999px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font-weight: bold;
+    font-size: 13px;
+    padding: 5px 14px;
+    cursor: pointer;
+}
+.shape-tool-confirm {
+    background: var(--active-border);
+}
+.shape-tool-cancel {
+    padding: 5px 10px;
+}
+.shape-tool-confirm:hover,
+.shape-tool-cancel:hover {
+    background: var(--futaba-light-medium);
+}

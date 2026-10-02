@@ -34,9 +34,11 @@ export const TOOL_SLOTS = Object.freeze([
         ])
     },
     {
-        id: 'shape', label: '図形塗り', kind: 'tools', tool: 'lasso-fill', elementId: 'qa-lasso-fill-tool', icon: 'lasso', action: 'TOOL_LASSO_FILL',
+        id: 'shape', label: '図形', kind: 'tools', tool: 'lasso-fill', elementId: 'qa-lasso-fill-tool', icon: 'lasso', action: 'TOOL_LASSO_FILL',
         members: Object.freeze([
-            { id: 'lasso-fill', tool: 'lasso-fill', label: '投げ縄塗り', icon: 'lasso' }
+            { id: 'lasso-fill', tool: 'lasso-fill', label: '投げ縄塗り', icon: 'lasso' },
+            { id: 'shape-rect', tool: 'shape-rect', label: '線の四角', icon: 'shapeRect' },
+            { id: 'shape-ellipse', tool: 'shape-ellipse', label: '線の楕円', icon: 'shapeEllipse' }
         ])
     },
     {
@@ -58,6 +60,8 @@ const TOOL_TO_SLOT = Object.freeze({
     'eraser-fill': 'bucket',
     gradient: 'bucket',
     'lasso-fill': 'shape',
+    'shape-rect': 'shape',
+    'shape-ellipse': 'shape',
     selection: 'select',
     'auto-select': 'select'
 });

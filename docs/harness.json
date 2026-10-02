@@ -110,11 +110,14 @@
       "entrypoints": [
         "tegaki_work/system/auto-select.js",
         "tegaki_work/system/gradient-fill.js",
-        "tegaki_work/system/selection-area-tools.js"
+        "tegaki_work/system/selection-area-tools.js",
+        "tegaki_work/system/shape-geometry.js",
+        "tegaki_work/system/shape-tool.js"
       ],
       "patterns": [
         "^verify-auto-select",
-        "^verify-gradient-fill"
+        "^verify-gradient-fill",
+        "^verify-shape-geometry"
       ]
     },
     "tone": {
