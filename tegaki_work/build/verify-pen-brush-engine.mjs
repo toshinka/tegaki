@@ -473,8 +473,9 @@ const near = (actual, expected, epsilon, message) => {
     for (const key of ['penTipShape', 'penTipAspect', 'penTipAngle', 'penPressureSizeStrength']) assert.ok(BRUSH_PRESET_KEYS.pen.includes(key), `pen preset keys include ${key}`);
     for (const key of ['eraserTipShape', 'eraserTipAspect', 'eraserTipAngle']) assert.ok(BRUSH_PRESET_KEYS.eraser.includes(key), `eraser preset keys include ${key}`);
     const square = BUILTIN_BRUSH_PRESETS.pen.find(p => p.id === 'builtin-pen-square');
-    assert.equal(square.values.penCapShape, 'square', 'square pen squares only the entry / exit');
-    assert.equal(square.values.penTipShape, 'round', 'the body of the stroke is an ordinary round line');
+    assert.equal(square.values.penCapShape, 'round', 'square pen no longer adds entry / exit caps (the nib itself is square)');
+    assert.equal(square.values.penTipShape, 'square', 'the nib is a square stamp at a fixed angle');
+    assert.equal(square.values.penTipAngle, 0, 'fixed nib angle defaults to 0 degrees');
     assert.ok(square.values.penPressureSizeStrength <= 0.2, 'square pen keeps a nearly constant width under pressure');
     // 筆圧が径に効く強さ: 1=従来、0=一定径
     const r = new AirbrushDabRenderer({ calculateWidth: (p, size) => size * p });

@@ -38,7 +38,6 @@ import {
 import { generateAdaptiveInterpolationPoints } from './realtime-stroke-sampling.js';
 import { CurveInterpolator } from './curve-interpolator.js';
 import { AirbrushDabRenderer } from './airbrush-dab-renderer.js';
-import { computeStrokeEndCuts } from './pen-end-cut.js';
 
 const AIRBRUSH_BUILDUP_POLL_MS = 8;
 
@@ -1188,8 +1187,7 @@ export class BrushCore {
         if (this.strokeInputProfile) {
             this.strokeInputProfile.hookTrim = { start: hookTrim.trimmedStart || 0, end: hookTrim.trimmedEnd || 0 };
         }
-        const squareCaps = window.TegakiSettingsManager?.get?.('penCapShape') === 'square' && this.airbrushState?.mode === 'pen';
-        if (!state?.maskTexture || state.dabMode !== 'pen' || !(taperIn > 0 || taperOut > 0 || hookTrim.trimmed || squareCaps)) return false;
+        if (!state?.maskTexture || state.dabMode !== 'pen' || !(taperIn > 0 || taperOut > 0 || hookTrim.trimmed)) return false;
         if (strokeData?.isSingleDot === true || points.length < 2) return false;
         const renderer = this.layerManager.app?.renderer;
         if (!renderer) return false;
@@ -1219,27 +1217,7 @@ export class BrushCore {
         } finally {
             if (ownsBatch) this._flushAirbrushBatch();
         }
-        // 角ペン: 入り/抜きの丸い端を、水平または垂直の線で切り落とす(足さずに切るので斜めでも角がはみ出さない)
-        if (squareCaps) this._cutPenStrokeEnds(points, state.maskTexture, renderer);
         return true;
-    }
-
-    _cutPenStrokeEnds(points, maskTexture, renderer) {
-        const maskSettings = this._buildDabMaskSettings();
-        const width = this.strokeRenderer.airbrushDabRenderer._getPenDabWidth(1, maskSettings);
-        const cuts = computeStrokeEndCuts(points, width);
-        if (!cuts.length) return;
-        const eraser = new Graphics();
-        cuts.forEach(cut => eraser.rect(cut.x, cut.y, cut.width, cut.height));
-        eraser.fill(0xffffff);
-        eraser.blendMode = 'erase';
-        // 根のContainer自身のblendModeは使われないので、子として渡す
-        const root = new Container();
-        root.addChild(eraser);
-        // dabと同じく、Layerのraster原点ぶんをmask座標へずらす
-        this._applyLayerRasterRenderOffset(this.airbrushState.targetLayer, root);
-        renderer.render({ container: root, target: maskTexture, clear: false });
-        root.destroy({ children: true });
     }
 
     _isPenDabEnabled(mode) {
@@ -2028,7 +2006,6 @@ export class BrushCore {
             // ペン先の形(角ペン/角消しゴム): 丸は従来のfalloff dab、角は硬い四角のdabをnibの向きに回して置く
             const tipPrefix = isEraserDab ? 'eraserTip' : 'penTip';
             if (!isEraserDab) {
-                maskSettings.penCapShape = userSetting('penCapShape', 'round') === 'square' ? 'square' : 'round';
                 const sizeStrength = Number(userSetting('penPressureSizeStrength', 1));
                 maskSettings.penPressureSizeStrength = Number.isFinite(sizeStrength) ? sizeStrength : 1;
             }
