@@ -8,11 +8,11 @@
 const AXIS_DEADZONE_DEG = 4; // 軸からこの角度以内は0°のまま
 const FOLLOW_RAMP_DEG = 10; // デッドゾーンを越えてから追従が全開になるまでの幅
 const END_WINDOW_FACTOR = 2.5; // 端付近の判定範囲(太さ倍)
-const MID_WINDOW_FACTOR = 1.0; // 中間の判定範囲(太さ倍)
+const MID_WINDOW_FACTOR = 1.5; // 中間の判定範囲(太さ倍)
 const END_ZONE_FACTOR = 2.0;
 const STRAIGHT_MIN = 0.8; // 判定範囲の直線度(弦/経路)がこれ未満なら折れ曲がり扱いでペン先を回さない
 const STRAIGHT_RAMP = 0.1; // この長さ(太さ倍)以内を端とみなす
-const SMOOTH_FACTOR = 1.4; // 角度を距離方向に均す範囲(太さ倍)
+const SMOOTH_FACTOR = 2.6; // 角度を距離方向に均す範囲(太さ倍)
 
 function pointAt(points, travel, distance) {
     const d = Math.max(0, Math.min(travel[travel.length - 1], distance));
