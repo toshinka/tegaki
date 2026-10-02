@@ -56,6 +56,10 @@
 - 確定時に通常Raster Layerを選択Layerへクリップして追加（Undo 1回）。`再編集`→`更新`、Projectは`layerData.tone`(optional)で往復。
 - 検証: `development-harness.mjs test tone` + Chromium（クリップ内のみ描画・Undo/Redo・更新・保存往復）。実機(液タブ)は未確認。
 
+### SQUARE TIP — 角ペン・角消しゴム（2026-10-02, WP-017）
+
+- 筆プリセットに**ペン先の形**（`penTip*` / `eraserTip*`）を追加。組み込みに「角ペン」「角消しゴム」。QTP二行目に消しゴムのプリセット行。古いプリセットは丸に戻る。ミリペン風の完全な固定幅は未実装。詳細は[WP-017](work/WP-017-square-tip.md)。Owner実機は未確認。
+
 ### AUTO SELECT / GRADIENT — 自動選択・グラデーション（2026-10-02, WP-016）
 
 - QTPの図形・範囲グループに**自動選択**（クリックで同色領域をマスク選択。許容値・ALL・隣接）と**グラデーション**（ドラッグで線形/放射、→サブ/→透明）を追加。`Shift+L`の送りに入る。選択ツールの入力経路を共有し、確定時に画素を一度だけ書く（Undo 1件）。マスク選択は描画の制約とDeleteに効き、移動・コピーは非対応（矩形選択で）。詳細は[WP-016](work/WP-016-auto-select-gradient.md)。Owner実機は未確認。

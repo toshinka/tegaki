@@ -384,6 +384,12 @@ export class SettingsPopup {
                 </div>
 
                 <div class="setting-group">
+                    <div class="setting-label">消しゴムのプリセット</div>
+                    <div class="pressure-curve-selection brush-preset-list" data-preset-tool="eraser"></div>
+                    <div class="setting-description">消しゴムの形（丸・角）。「QTPに出す」で二行目に並べるものを選びます。</div>
+                </div>
+
+                <div class="setting-group">
                     <div class="setting-label">消しゴムの柔らかさ</div>
                     <div class="slider-container">
                         <div class="slider" id="eraser-dab-softness-slider">
@@ -1360,7 +1366,7 @@ export class SettingsPopup {
             input.type = 'checkbox';
             input.checked = shown.has(preset.id);
             input.addEventListener('change', () => {
-                const current = this.settingsManager.get('qtpBrushPresetIds') || { pen: null, airbrush: null };
+                const current = this.settingsManager.get('qtpBrushPresetIds') || { pen: null, airbrush: null, eraser: null };
                 const next = presets.map(p => p.id).filter(id => (id === preset.id ? input.checked : shown.has(id)));
                 this.settingsManager.set('qtpBrushPresetIds', { ...current, [tool]: next });
                 this._renderBrushPresets();
@@ -1385,7 +1391,7 @@ export class SettingsPopup {
 
     _saveBrushPreset(tool) {
         if (!this.settingsManager) return;
-        const all = this.settingsManager.get('brushPresets') || { pen: [], airbrush: [] };
+        const all = this.settingsManager.get('brushPresets') || { pen: [], airbrush: [], eraser: [] };
         const list = Array.isArray(all[tool]) ? [...all[tool]] : [];
         if (list.length >= MAX_USER_BRUSH_PRESETS) {
             window.alert?.(`保存できるプリセットは${MAX_USER_BRUSH_PRESETS}件までです。不要なものを削除してください。`);
@@ -1409,7 +1415,7 @@ export class SettingsPopup {
         const active = this._getActiveBrushPreset(tool);
         if (!active || active.builtin || !this.settingsManager) return;
         if (typeof window.confirm === 'function' && !window.confirm(`プリセット「${active.name}」を削除しますか？`)) return;
-        const all = this.settingsManager.get('brushPresets') || { pen: [], airbrush: [] };
+        const all = this.settingsManager.get('brushPresets') || { pen: [], airbrush: [], eraser: [] };
         const list = (all[tool] || []).filter(preset => preset.id !== active.id);
         this.settingsManager.set('brushPresets', { ...all, [tool]: list });
         this._renderBrushPresets();

@@ -24,7 +24,16 @@ export const BRUSH_PRESET_KEYS = {
         'stabilizerMode',
         'penTaperIn',
         'penTaperOut',
-        'smoothing'
+        'smoothing',
+        'penTipShape',
+        'penTipAspect',
+        'penTipAngle'
+    ],
+    eraser: [
+        'eraserDabSoftness',
+        'eraserTipShape',
+        'eraserTipAspect',
+        'eraserTipAngle'
     ],
     airbrush: [
         'airbrushFlow',
@@ -36,6 +45,17 @@ export const BRUSH_PRESET_KEYS = {
 };
 
 export const MAX_USER_BRUSH_PRESETS = 12;
+
+/** presetに入っていないキーの既定値。古い(ペン先形状を知らない)presetを当てても丸ペン先に戻る。 */
+export const BRUSH_PRESET_DEFAULTS = Object.freeze({
+    penTipShape: 'round',
+    penTipAspect: 1,
+    penTipAngle: 0,
+    eraserTipShape: 'round',
+    eraserTipAspect: 1,
+    eraserTipAngle: 0,
+    eraserDabSoftness: 0
+});
 
 /** 組み込みpreset(削除不可)。「標準」は既定値へ戻す用途も兼ねる。 */
 export const BUILTIN_BRUSH_PRESETS = {
@@ -101,6 +121,29 @@ export const BUILTIN_BRUSH_PRESETS = {
             }
         },
         {
+            id: 'builtin-pen-square',
+            name: '角ペン',
+            values: {
+                pressureCorrection: 1.0,
+                pressureCurve: 'ease-out',
+                pressureCurvePoints: null,
+                pressureOpacityEnabled: false,
+                pressureOpacityStrength: 0.65,
+                penPressureSmoothing: 0.6,
+                penVelocityThinning: 0,
+                penTiltStrength: 0,
+                penDabSoftness: 0,
+                penEdgeAA: 1,
+                stabilizerMode: 'follow',
+                penTaperIn: 0,
+                penTaperOut: 0,
+                smoothing: 0.5,
+                penTipShape: 'square',
+                penTipAspect: 0.4,
+                penTipAngle: 35
+            }
+        },
+        {
             id: 'builtin-pen-pencil',
             name: '鉛筆風',
             values: {
@@ -119,6 +162,18 @@ export const BUILTIN_BRUSH_PRESETS = {
                 penTaperOut: 0,
                 smoothing: 0.3
             }
+        }
+    ],
+    eraser: [
+        {
+            id: 'builtin-eraser-standard',
+            name: '標準',
+            values: { eraserDabSoftness: 0, eraserTipShape: 'round', eraserTipAspect: 1, eraserTipAngle: 0 }
+        },
+        {
+            id: 'builtin-eraser-square',
+            name: '角消しゴム',
+            values: { eraserDabSoftness: 0, eraserTipShape: 'square', eraserTipAspect: 1, eraserTipAngle: 0 }
         }
     ],
     airbrush: [
@@ -159,6 +214,16 @@ export const BUILTIN_BRUSH_PRESETS = {
 };
 
 /** 組み込み + ユーザー保存のpreset一覧(builtinフラグ付き)。 */
+// ペン先の形を持たない組み込みペンは丸ペン先(全キーを定義する契約を保つ)
+for (const preset of BUILTIN_BRUSH_PRESETS.pen) {
+    preset.values = {
+        penTipShape: BRUSH_PRESET_DEFAULTS.penTipShape,
+        penTipAspect: BRUSH_PRESET_DEFAULTS.penTipAspect,
+        penTipAngle: BRUSH_PRESET_DEFAULTS.penTipAngle,
+        ...preset.values
+    };
+}
+
 export function listBrushPresets(tool, userPresets) {
     const user = userPresets?.[tool] || [];
     return [
@@ -186,11 +251,13 @@ export function applyBrushPresetValues(tool, preset, settingsManager) {
         .sort((a, b) => (a === 'pressureCurvePoints' ? -1 : b === 'pressureCurvePoints' ? 1 : 0));
     keys.forEach(key => {
         if (key in values) settingsManager.set(key, values[key]);
+        else if (key in BRUSH_PRESET_DEFAULTS) settingsManager.set(key, BRUSH_PRESET_DEFAULTS[key]);
     });
     return true;
 }
 
 export function getBrushPresetTool(mode) {
+    if (mode === 'eraser') return 'eraser';
     if (mode === 'airbrush' || mode === 'airbrush-erase' || mode === 'blur') return 'airbrush';
     if (mode === 'pen') return 'pen';
     return null;
@@ -222,7 +289,8 @@ export function brushPresetMatches(preset, tool, getSetting) {
     const values = preset?.values || {};
     return keys.every(key => {
         if (key === 'pressureCurvePoints' && values.pressureCurve !== 'custom') return true;
-        return valuesEqual(values[key], getSetting(key));
+        const expected = key in values ? values[key] : BRUSH_PRESET_DEFAULTS[key];
+        return valuesEqual(expected, getSetting(key));
     });
 }
 
@@ -232,7 +300,7 @@ export function brushPresetMatches(preset, tool, getSetting) {
  * @param {(key: string, value: *) => *} validateValue
  */
 export function normalizeUserBrushPresets(value, validateValue) {
-    const result = { pen: [], airbrush: [] };
+    const result = { pen: [], airbrush: [], eraser: [] };
     if (!value || typeof value !== 'object') return result;
     Object.keys(result).forEach(tool => {
         const list = Array.isArray(value[tool]) ? value[tool] : [];

@@ -46,8 +46,8 @@ export class SettingsManager {
             pressureCurvePoints: null,
             stabilizerMode: 'follow',
             stabilizerCatchUp: true,
-            brushPresets: { pen: [], airbrush: [] },
-            qtpBrushPresetIds: { pen: null, airbrush: null }, // QTPの二行目に出すpreset id(null=全て)
+            brushPresets: { pen: [], airbrush: [], eraser: [] },
+            qtpBrushPresetIds: { pen: null, airbrush: null, eraser: null }, // QTPの二行目に出すpreset id(null=全て)
             pressureOpacityEnabled: this.config?.userSettings?.pressureOpacityEnabled !== false,
             pressureOpacityStrength: this.config?.userSettings?.pressureOpacityStrength ?? 0.65,
             airbrushFlow: this.config?.BRUSH_DEFAULTS?.airbrushFlow ?? 0.08,
@@ -62,6 +62,13 @@ export class SettingsManager {
             penTaperIn: this.config?.brushEngine?.penTaperIn ?? 0,
             penTaperOut: this.config?.brushEngine?.penTaperOut ?? 0,
             eraserDabSoftness: this.config?.brushEngine?.eraserDabSoftness ?? 0,
+            // ペン先の形(筆プリセット): round=丸 / square=角(アスペクト=厚み比、角度=nibの向き)
+            penTipShape: 'round',
+            penTipAspect: 1,
+            penTipAngle: 0,
+            eraserTipShape: 'round',
+            eraserTipAspect: 1,
+            eraserTipAngle: 0,
             eraserPressureStrength: 0,
             penTiltStrength: this.config?.brushEngine?.penTiltStrength ?? 0,
             statusPanelVisible: this.config?.ui?.statusPanelVisible !== undefined 
@@ -166,7 +173,7 @@ export class SettingsManager {
                 const clean = (list) => (Array.isArray(list)
                     ? list.filter(id => typeof id === 'string' && id.length <= 64).slice(0, 24)
                     : null);
-                return { pen: clean(v?.pen), airbrush: clean(v?.airbrush) };
+                return { pen: clean(v?.pen), airbrush: clean(v?.airbrush), eraser: clean(v?.eraser) };
             },
             pressureOpacityEnabled: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
@@ -223,6 +230,12 @@ export class SettingsManager {
                 const num = parseFloat(v);
                 return isNaN(num) ? undefined : Math.round(Math.max(0, Math.min(300, num)));
             },
+            penTipShape: (v) => (['round', 'square'].includes(v) ? v : undefined),
+            eraserTipShape: (v) => (['round', 'square'].includes(v) ? v : undefined),
+            penTipAspect: (v) => { const n = parseFloat(v); return isNaN(n) ? undefined : Math.max(0.15, Math.min(1, n)); },
+            eraserTipAspect: (v) => { const n = parseFloat(v); return isNaN(n) ? undefined : Math.max(0.15, Math.min(1, n)); },
+            penTipAngle: (v) => { const n = parseFloat(v); return isNaN(n) ? undefined : Math.round(((n % 180) + 180) % 180); },
+            eraserTipAngle: (v) => { const n = parseFloat(v); return isNaN(n) ? undefined : Math.round(((n % 180) + 180) % 180); },
             eraserDabSoftness: (v) => {
                 const num = parseFloat(v);
                 return isNaN(num) ? undefined : Math.max(0.0, Math.min(1.0, num));
@@ -341,6 +354,8 @@ export class SettingsManager {
             'penTaperOut',
             'eraserDabSoftness',
             'eraserPressureStrength',
+            'penTipShape', 'penTipAspect', 'penTipAngle',
+            'eraserTipShape', 'eraserTipAspect', 'eraserTipAngle',
             'statusPanelVisible',
             'exportResolution',
             'bucketGapClose',
