@@ -182,6 +182,15 @@ export class QuickAccessPopup {
 
         this._ensurePanelExists();
         this._injectStyles();
+
+        // Qボタンの右クリック: QTPを既定位置(Qの隣)へ戻して開く
+        this._qButtonContextHandler = (event) => {
+            if (!event.target?.closest?.('#quick-access-tool')) return;
+            event.preventDefault();
+            if (!this.isVisible) this.show();
+            this.resetToDefaultPosition();
+        };
+        document.addEventListener('contextmenu', this._qButtonContextHandler);
     }
 
     get MAX_SIZE() {
@@ -3404,7 +3413,26 @@ export class QuickAccessPopup {
             }
         } catch (error) {}
 
+        return this._getDefaultPosition();
+    }
+
+    /** 既定位置: 左サイドバーの「Q」ボタンのすぐ右(上端をそろえる)。取れなければ従来の固定位置。 */
+    _getDefaultPosition() {
+        const anchor = document.getElementById('quick-access-tool');
+        const rect = anchor?.getBoundingClientRect?.();
+        if (rect && rect.width > 0) {
+            return { x: Math.round(rect.right + 12), y: Math.max(0, Math.round(rect.top)) };
+        }
         return { x: 70, y: 60 };
+    }
+
+    /** 位置を既定(Qの隣)へ戻す。Qボタンの右クリックから呼ぶ。 */
+    resetToDefaultPosition() {
+        if (!this.panel) return;
+        const pos = this._getDefaultPosition();
+        this.panel.style.left = `${pos.x}px`;
+        this.panel.style.top = `${pos.y}px`;
+        this._clampCurrentPanelPosition({ save: true });
     }
 
     // ─── 公開API ──────────────────────────────────────────────────────

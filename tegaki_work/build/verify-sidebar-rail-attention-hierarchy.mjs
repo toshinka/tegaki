@@ -62,12 +62,13 @@ assert.match(uiPanels, /setSidebarModePressed\(buttonId, pressed\)[\s\S]*?classL
 assert.match(uiPanels, /updateToolUI\(tool\)[\s\S]*?classList\.remove\('active', 'erase-mode'\)[\s\S]*?classList\.add\('active'\)/u,
     'existing Animation Table active projection remains unchanged');
 
+// 2026-10: Qはレールの上に浮かぶ独立ボタン(先頭)、上段=保存/取り込み/書き出し、下段=ツール、設定は最下段。
 const expectedToolOrder = [
+    'quick-access-tool',
     'library-tool',
     'image-import-tool',
     'export-tool',
     'resize-tool',
-    'quick-access-tool',
     'gif-animation-tool',
     'settings-tool'
 ];
