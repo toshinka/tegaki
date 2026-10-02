@@ -16,6 +16,10 @@ export const RULER_TYPE_LABELS = { parallel: '平行線定規', radial: '放射�
 export const RULER_CENTER_HANDLE_SCREEN_PX = 14;
 export const RULER_ROTATION_RING_SCREEN_PX = 70;
 export const RULER_ANGLE_SNAP_DEG = 15;
+// 遠近ハンドル: オレンジの回転点と反対側の中心線上に置く丸。中心に近いほど強く絞り、リング上で0（平行）、外側では反対側が絞られる。
+export const RULER_PERSPECTIVE_NEAR_SCREEN_PX = 22;   // これより中心に近づいても最大のまま（中心ハンドルと重ならないため）
+export const RULER_PERSPECTIVE_SNAP_SCREEN_PX = 5;    // リング(RULER_ROTATION_RING_SCREEN_PX)の近くでは吸着して0にする
+export const RULER_PERSPECTIVE_HANDLE_HIT_SCREEN_PX = 11;
 export const RULER_PARALLEL_SPACING_SCREEN_PX = 48;
 export const RULER_RADIAL_SPOKES = 48;
 
@@ -63,6 +67,27 @@ export function clampRulerAngle(angle) {
 export function snapRulerAngle(angle, stepDeg = RULER_ANGLE_SNAP_DEG) {
     const step = (stepDeg * Math.PI) / 180;
     return clampRulerAngle(Math.round(angle / step) * step);
+}
+
+/** 遠近(%) → ハンドルの中心からの距離(画面px)。逆写像は perspectiveFromHandleDistance。 */
+export function perspectiveHandleDistance(perspective) {
+    const max = RULER_OPTION_LIMITS.perspective.max;
+    const R = RULER_ROTATION_RING_SCREEN_PX;
+    const near = RULER_PERSPECTIVE_NEAR_SCREEN_PX;
+    const p = Math.max(-max, Math.min(max, Number(perspective) || 0));
+    return p >= 0 ? R - (p / max) * (R - near) : R + (-p / max) * R;
+}
+
+/** ハンドルの中心からの距離(画面px) → 遠近(%)。リング付近は0へ吸着。 */
+export function perspectiveFromHandleDistance(distance) {
+    const max = RULER_OPTION_LIMITS.perspective.max;
+    const R = RULER_ROTATION_RING_SCREEN_PX;
+    const near = RULER_PERSPECTIVE_NEAR_SCREEN_PX;
+    const d = Math.max(0, distance);
+    if (Math.abs(d - R) <= RULER_PERSPECTIVE_SNAP_SCREEN_PX) return 0;
+    if (d <= near) return max;
+    const p = d < R ? ((R - d) / (R - near)) * max : -((d - R) / R) * max;
+    return Math.round(Math.max(-max, Math.min(max, p)));
 }
 
 /**
@@ -122,6 +147,15 @@ export function snapPointToRuler(state, anchor, point, canvas = null) {
 export function resolveRulerGrab(state, world, screenScale = 1, centerHandlePx = RULER_CENTER_HANDLE_SCREEN_PX) {
     const dx = world.x - state.center.x;
     const dy = world.y - state.center.y;
+    if (state.type !== 'radial') {
+        // 遠近ハンドル（回転点の反対側、中心線上）
+        const d = perspectiveHandleDistance(state.perspective) / (screenScale > 0 ? screenScale : 1);
+        const hx = state.center.x - Math.cos(state.angle) * d;
+        const hy = state.center.y - Math.sin(state.angle) * d;
+        if (Math.hypot(world.x - hx, world.y - hy) * screenScale <= RULER_PERSPECTIVE_HANDLE_HIT_SCREEN_PX) {
+            return { kind: 'perspective', screenScale };
+        }
+    }
     if (state.type === 'radial' || Math.hypot(dx, dy) * screenScale <= centerHandlePx) {
         return { kind: 'move', offsetX: -dx, offsetY: -dy };
     }
@@ -130,6 +164,12 @@ export function resolveRulerGrab(state, world, screenScale = 1, centerHandlePx =
 
 /** つかみ(resolveRulerGrab)とポインタ位置から、新しい中心または角度を返す。 */
 export function applyRulerDrag(state, grab, world, { snapAngle = false } = {}) {
+    if (grab.kind === 'perspective') {
+        // 反対側の中心線上の位置（中心からの画面距離）→ 遠近
+        const scale = grab.screenScale > 0 ? grab.screenScale : 1;
+        const along = ((state.center.x - world.x) * Math.cos(state.angle) + (state.center.y - world.y) * Math.sin(state.angle)) * scale;
+        return { ...state, perspective: perspectiveFromHandleDistance(along) };
+    }
     if (grab.kind === 'move') {
         return { ...state, center: { x: world.x + grab.offsetX, y: world.y + grab.offsetY } };
     }

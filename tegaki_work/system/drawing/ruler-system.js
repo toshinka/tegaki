@@ -18,6 +18,7 @@ import {
     RULER_ROTATION_RING_SCREEN_PX,
     applyRulerDrag,
     buildRulerGuideSegments,
+    perspectiveHandleDistance,
     resolveRulerGrab,
     sanitizeRulerOptions,
     sanitizeRulerState,
@@ -193,6 +194,7 @@ export class RulerSystem {
         const next = applyRulerDrag(this.state, this.drag, world, { snapAngle: event?.ctrlKey || event?.metaKey });
         this.state.center = next.center;
         this.state.angle = next.angle;
+        if (this.drag.kind === 'perspective') this.state.perspective = next.perspective;
         if (this.drag.kind === 'move') this._hasStoredCenter = true;
         this.redraw();
         // ミニパネルの数値をドラッグ中も追従させる(popup側でrAFに合体される)
@@ -259,6 +261,16 @@ export class RulerSystem {
                 const hy = cy + Math.sin(this.state.angle) * px(RULER_ROTATION_RING_SCREEN_PX);
                 g.circle(hx, hy, px(6));
                 g.fill({ color: ROTATE_COLOR, alpha: 1 });
+                // 遠近ハンドル（反対側の中心線上）と、リング上の吸着位置の目印
+                const ux = -Math.cos(this.state.angle);
+                const uy = -Math.sin(this.state.angle);
+                const R = px(RULER_ROTATION_RING_SCREEN_PX);
+                g.circle(cx + ux * R, cy + uy * R, px(3));
+                g.stroke({ width: px(1.5), color: GUIDE_COLOR, alpha: 0.7 });
+                const hd = px(perspectiveHandleDistance(this.state.perspective));
+                g.circle(cx + ux * hd, cy + uy * hd, px(6));
+                g.fill({ color: GUIDE_SUB_COLOR, alpha: 1 });
+                g.stroke({ width: px(1.5), color: GUIDE_COLOR, alpha: 1 });
             }
         }
     }
