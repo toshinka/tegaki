@@ -18,6 +18,7 @@ import { UI_ICONS } from './ui-icons.js';
 import { createPillTabs } from './pill-tabs.js';
 import { TonePanel } from './tone-panel.js';
 import { TOOL_GROUP_MEMBERS, getToolGroupState, isToolGroupMember, onToolGroupChange, setToolGroupCurrent } from './tool-group.js';
+import { getBrushPresetIcon } from './brush-preset-icons.js';
 import { applyBrushPresetValues, brushPresetMatches, getBrushPresetTool, listQtpBrushPresets } from '../system/drawing/brush-presets.js';
 
 const QA_STORAGE_KEYS = {
@@ -191,6 +192,70 @@ export class QuickAccessPopup {
             this.resetToDefaultPosition();
         };
         document.addEventListener('contextmenu', this._qButtonContextHandler);
+        this._setupQButtonDrag();
+    }
+
+    /**
+     * Qボタンを押したままドラッグすると、QTPがついてくる(キーボード無しでキャンバスの近くへ置ける)。
+     * しきい値未満はふつうのクリック(開閉)。ドラッグした後のclickは握りつぶす。
+     */
+    _setupQButtonDrag() {
+        const THRESHOLD = 6;
+        let drag = null;
+        const onMove = (e) => {
+            if (!drag || e.pointerId !== drag.pointerId) return;
+            const dx = e.clientX - drag.startX;
+            const dy = e.clientY - drag.startY;
+            if (!drag.active) {
+                if (Math.hypot(dx, dy) < THRESHOLD) return;
+                drag.active = true;
+                if (!this.isVisible) this.show();
+                if (!this.panel) return;
+                const rect = this.panel.getBoundingClientRect();
+                drag.panelX = rect.left;
+                drag.panelY = rect.top;
+                // 押した点がパネルの左上付近に来るよう、開いた直後はポインタへ寄せる
+                if (drag.justOpened) {
+                    drag.panelX = e.clientX - 20;
+                    drag.panelY = e.clientY - 12;
+                    drag.startX = e.clientX;
+                    drag.startY = e.clientY;
+                }
+            }
+            if (!this.panel) return;
+            e.preventDefault();
+            const rect = this.panel.getBoundingClientRect();
+            const clamped = this._clampPanelPosition(
+                drag.panelX + (e.clientX - drag.startX),
+                drag.panelY + (e.clientY - drag.startY),
+                rect
+            );
+            this.panel.style.left = `${clamped.x}px`;
+            this.panel.style.top = `${clamped.y}px`;
+        };
+        const onUp = (e) => {
+            if (!drag || e.pointerId !== drag.pointerId) return;
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
+            if (drag.active && this.panel) {
+                const rect = this.panel.getBoundingClientRect();
+                this._savePosition(rect.left, rect.top);
+                // この後に来るclickは開閉に使わせない
+                const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+                document.addEventListener('click', swallow, { capture: true, once: true });
+                setTimeout(() => document.removeEventListener('click', swallow, true), 60);
+            }
+            drag = null;
+        };
+        this._qButtonPointerDownHandler = (e) => {
+            if (e.button !== 0 || !e.target?.closest?.('#quick-access-tool')) return;
+            drag = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, active: false, justOpened: !this.isVisible };
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
+            window.addEventListener('pointercancel', onUp);
+        };
+        document.addEventListener('pointerdown', this._qButtonPointerDownHandler, true);
     }
 
     get MAX_SIZE() {
@@ -2664,12 +2729,17 @@ export class QuickAccessPopup {
         toolSubPresets.textContent = '';
         if (!presets.length) return;
         const getSetting = (key) => manager.get(key);
+        let userIndex = 0;
         presets.forEach((preset) => {
+            if (!preset.builtin) userIndex += 1;
+            const icon = getBrushPresetIcon(brushTool, preset, preset.builtin ? 0 : userIndex);
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'qa-sub-button qa-sub-button--text';
-            button.textContent = preset.name;
+            button.className = 'qa-sub-button qa-sub-button--icon';
+            button.dataset.tone = icon.tone;
+            button.innerHTML = `${icon.svg}${icon.badge ? `<span class="qa-sub-badge">${icon.badge}</span>` : ''}`;
             button.title = `${preset.name}（筆の性格プリセット）`;
+            button.setAttribute('aria-label', preset.name);
             button.classList.toggle('active', brushPresetMatches(preset, brushTool, getSetting));
             this._bindPointerAction(button, () => {
                 applyBrushPresetValues(brushTool, preset, manager);
