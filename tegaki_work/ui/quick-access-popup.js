@@ -1344,7 +1344,8 @@ export class QuickAccessPopup {
                     </button>
                     <button class="qa-tool-button ui-help-tooltip" id="qa-fill-tool" type="button"
                         aria-label="バケツ" ${shortcutHints.fill}>
-                        ${UI_ICONS.fill}
+                        <span class="qa-slot-mod" id="qa-fill-ref-all-toggle" role="switch" aria-checked="false" aria-label="全レイヤー参照" title="全レイヤー参照（オレンジが点灯で有効）"></span>
+                        <span class="qa-slot-icon">${UI_ICONS.fill}</span>
                     </button>
                     <button class="qa-tool-button ui-help-tooltip" id="qa-lasso-fill-tool" type="button"
                         aria-label="図形塗り" ${shortcutHints.lassoFill}>
@@ -1352,7 +1353,8 @@ export class QuickAccessPopup {
                     </button>
                     <button class="qa-tool-button ui-help-tooltip" id="qa-selection-tool" type="button"
                         aria-label="選択" ${shortcutHints.selection}>
-                        ${UI_ICONS.rectangleSelect || '<span class="qa-tool-text-icon">選</span>'}
+                        <span class="qa-slot-mod" id="qa-select-ref-all-toggle" role="switch" aria-checked="false" aria-label="全レイヤー参照（自動選択）" title="自動選択で全レイヤーを参照（オレンジが点灯で有効）"></span>
+                        <span class="qa-slot-icon">${UI_ICONS.rectangleSelect || '<span class="qa-tool-text-icon">選</span>'}</span>
                     </button>
                 </div>
                 <div class="qa-slot-members" id="qa-slot-members" role="group" aria-label="ツールの仲間（ドラッグで並べ替え）"></div>
@@ -1777,6 +1779,28 @@ export class QuickAccessPopup {
             });
         }
         registerSlotActivator((slotId, options = {}) => this._activateSlot(slotId, options));
+        // スロット上の小さな■=ALL(全レイヤー参照)。親ボタンの切替とは独立に押せる。
+        const bindMod = (el, toggle) => {
+            if (!el) return;
+            el.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggle();
+                this._updateFillRefAllToggle();
+                this._renderSlotRows();
+            });
+        };
+        bindMod(this.elements.fillRefAllToggleBtn, () => {
+            if (!window.FillTool) return;
+            const next = !window.FillTool.settings.referenceAllLayers;
+            window.FillTool.settings.referenceAllLayers = next;
+            window.TegakiSettingsManager?.set?.('bucketReferenceAllLayers', next);
+        });
+        bindMod(document.getElementById('qa-select-ref-all-toggle'), () => {
+            const api = window.CoreRuntime?.api?.selection;
+            const on = api?.getAreaToolOptions?.()?.auto?.referenceAll === true;
+            api?.setAreaToolOptions?.({ auto: { referenceAll: !on } });
+        });
         this._settingsUpdatedListener = () => this._renderSlotRows();
         // SettingsManager.set は 'settings:<kebab-key>' を発火する(updated は update() のとき)
         ['settings:updated', 'settings:qtp-brush-preset-ids', 'settings:brush-presets'].forEach(name => this.eventBus?.on?.(name, this._settingsUpdatedListener));
@@ -1785,15 +1809,6 @@ export class QuickAccessPopup {
 
         this._bindPointerAction(this.elements.colorCircleToggleBtn, () => {
             this._toggleColorCircle();
-        });
-
-        this._bindPointerAction(this.elements.fillRefAllToggleBtn, () => {
-            if (window.FillTool) {
-                const nextValue = !window.FillTool.settings.referenceAllLayers;
-                window.FillTool.settings.referenceAllLayers = nextValue;
-                window.TegakiSettingsManager?.set?.('bucketReferenceAllLayers', nextValue);
-                this._updateFillRefAllToggle();
-            }
         });
     }
 
@@ -1873,11 +1888,18 @@ export class QuickAccessPopup {
         return true;
     }
 
+    /** スロット上の■(ALL)の点灯を、バケツ/自動選択それぞれの現在値に合わせる。 */
     _updateFillRefAllToggle() {
-        if (!this.elements.fillRefAllToggleBtn || !window.FillTool) return;
-        const isActive = window.FillTool.settings.referenceAllLayers;
-        this.elements.fillRefAllToggleBtn.classList.toggle('active', isActive);
-        this.elements.fillToolBtn?.classList.toggle('ref-all', isActive);
+        const fillOn = window.FillTool?.settings?.referenceAllLayers === true;
+        const selectOn = window.CoreRuntime?.api?.selection?.getAreaToolOptions?.()?.auto?.referenceAll === true;
+        const apply = (el, on) => {
+            if (!el) return;
+            el.classList.toggle('active', on);
+            el.setAttribute('aria-checked', String(on));
+        };
+        apply(this.elements.fillRefAllToggleBtn, fillOn);
+        apply(document.getElementById('qa-select-ref-all-toggle'), selectOn);
+        this.elements.fillToolBtn?.classList.toggle('ref-all', fillOn);
     }
 
     _toggleColorCircle() {
@@ -2761,10 +2783,10 @@ export class QuickAccessPopup {
             const members = this._getSlotMembers(slot.id);
             const last = members.find(m => m.id === getLastMember(slot.id, members.map(x => x.id))) || members[0];
             if (slot.kind === 'tools' && last) {
-                button.innerHTML = last.svg;
+                const holder = button.querySelector('.qa-slot-icon');
+                if (holder) holder.innerHTML = last.svg; else button.innerHTML = last.svg;
                 button.dataset.erase = last.erase ? 'true' : 'false';
             }
-            button.title = last ? `${slot.label}：${last.label}（もう一度で次へ）` : slot.label;
         }
         this._currentSlotForRender = currentSlot;
     }
@@ -2818,20 +2840,6 @@ export class QuickAccessPopup {
         container.textContent = '';
         const api = window.CoreRuntime?.api?.selection;
         const opts = api?.getAreaToolOptions?.();
-        const dot = (label, title, active, onClick, id = null) => {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'qa-opt-dot';
-            if (id) b.id = id;
-            b.title = title;
-            b.setAttribute('aria-label', label);
-            b.setAttribute('aria-pressed', String(active));
-            b.classList.toggle('active', active);
-            b.innerHTML = '<span class="qa-opt-dot-mark" aria-hidden="true"></span>';
-            this._bindPointerAction(b, () => { onClick(); this._renderSlotRows(); });
-            container.appendChild(b);
-            return b;
-        };
         const chip = (label, title, active, onClick) => {
             const b = document.createElement('button');
             b.type = 'button';
@@ -2842,18 +2850,8 @@ export class QuickAccessPopup {
             this._bindPointerAction(b, () => { onClick(); this._renderSlotRows(); });
             container.appendChild(b);
         };
-        if (tool === 'fill' || tool === 'eraser-fill') {
-            const on = window.FillTool?.settings?.referenceAllLayers === true;
-            const b = dot('ALL', '全レイヤー参照（●が点灯）', on, () => {
-                if (!window.FillTool) return;
-                const next = !window.FillTool.settings.referenceAllLayers;
-                window.FillTool.settings.referenceAllLayers = next;
-                window.TegakiSettingsManager?.set?.('bucketReferenceAllLayers', next);
-            }, 'qa-fill-ref-all-toggle');
-            this.elements.fillRefAllToggleBtn = b;
-        } else if (tool === 'auto-select' && opts) {
+        if (tool === 'auto-select' && opts) {
             const a = opts.auto;
-            dot('ALL', '全レイヤー参照（●が点灯）', a.referenceAll, () => api.setAreaToolOptions({ auto: { referenceAll: !a.referenceAll } }));
             chip('隣接', '隣り合う領域だけ（外すと同じ色を全て）', a.contiguous, () => api.setAreaToolOptions({ auto: { contiguous: !a.contiguous } }));
             const range = document.createElement('input');
             range.type = 'range';
@@ -2878,7 +2876,7 @@ export class QuickAccessPopup {
             chip('→透明', 'メイン色から透明へ', g.fade === 'transparent', () => api.setAreaToolOptions({ gradient: { fade: 'transparent' } }));
         }
         container.hidden = container.childElementCount === 0;
-        if (tool === 'fill' || tool === 'eraser-fill') this._updateFillRefAllToggle();
+        this._updateFillRefAllToggle();
     }
 
     _switchTool(tool) {

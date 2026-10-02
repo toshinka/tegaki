@@ -60,12 +60,19 @@ export class AirbrushDabRenderer {
 
         const start = points[0];
         const end = points[points.length - 1];
+        // 入り抜きの四角(角ペン): 描き直し時に始点/終点の印(cap)が付いた点へ、水平・垂直の四角を置く
+        const squareCaps = isPenDab && settings.penCapShape === 'square';
+        if (squareCaps && start.cap && !state.capStartDone) {
+            this._addSquareCap(container, start, settings);
+            state.capStartDone = true;
+        }
         const dx = end.x - start.x;
         const dy = end.y - start.y;
         const distance = Math.hypot(dx, dy);
 
         if (distance <= 0) {
             addDab.call(this, container, texture, end.x, end.y, end.pressure ?? 1, settings, end.widthScale ?? 1);
+            if (squareCaps && end.cap) this._addSquareCap(container, end, settings);
             return container.children.length > 0 ? container : null;
         }
 
@@ -93,7 +100,22 @@ export class AirbrushDabRenderer {
         }
 
         state.nextDistance = nextDistance - distance;
+        if (squareCaps && end.cap) this._addSquareCap(container, end, settings);
         return container.children.length > 0 ? container : null;
+    }
+
+    /** 線幅と同じ辺の、軸に平行な四角を点へ置く(線の入り/抜きを四角く整える)。 */
+    _addSquareCap(container, point, settings) {
+        const width = Math.max(0.5, this._getPenDabWidth(point.pressure ?? 1, settings) * (point.widthScale ?? 1));
+        const sprite = this._acquireSprite(container, this._getSquareTexture());
+        sprite.position.set(point.x, point.y);
+        sprite.rotation = 0;
+        sprite.width = width * SQUARE_TEXTURE_SCALE;
+        sprite.height = width * SQUARE_TEXTURE_SCALE;
+        sprite.tint = 0xffffff;
+        sprite.alpha = Math.max(0.001, this.calculateOpacity(point.pressure ?? 1, 1.0, settings));
+        sprite.blendMode = 'max';
+        container.addChild(sprite);
     }
 
     getSpacing(settings, start = null, end = null) {

@@ -315,7 +315,7 @@
 }
 
 #quick-access-popup.qa-popup .qa-sub-range {
-    flex: 1 1 100%;
+    flex: 1 1 auto;
     min-width: 0;
     margin: 2px 0 0;
     accent-color: var(--futaba-maroon);
@@ -442,7 +442,7 @@
 
 #quick-access-popup.qa-popup .qa-slot-options {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 3px;
     margin-top: 3px;
@@ -480,4 +480,57 @@
 #quick-access-popup.qa-popup .qa-opt-dot.active .qa-opt-dot-mark {
     background: var(--active-border);
     box-shadow: 0 0 6px 1px color-mix(in srgb, var(--active-border) 70%, transparent);
+}
+
+/* ツールチップが二行目の下に潜らないよう、一行目を前面に */
+#quick-access-popup.qa-popup .qa-slot-grid,
+#quick-access-popup.qa-popup [data-role="qa-slot-grid"] {
+    position: relative;
+    z-index: 5;
+}
+
+#quick-access-popup.qa-popup .qa-slot-members {
+    position: relative;
+    z-index: 0;
+}
+
+/* ALL(全レイヤー参照)は、バケツ/選択のボタンの上に載る小さなオレンジの■。点灯=有効 */
+#quick-access-popup.qa-popup .qa-slot-mod {
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    width: 9px;
+    height: 7px;
+    transform: translateX(-50%);
+    border: 1px solid var(--futaba-medium);
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--futaba-medium) 30%, var(--futaba-cream));
+    cursor: pointer;
+    z-index: 6;
+}
+
+#quick-access-popup.qa-popup .qa-slot-mod:hover {
+    border-color: var(--active-border);
+}
+
+#quick-access-popup.qa-popup .qa-slot-mod.active {
+    border-color: var(--active-border);
+    background: var(--active-border);
+    box-shadow: 0 0 5px 1px color-mix(in srgb, var(--active-border) 70%, transparent);
+}
+
+#quick-access-popup.qa-popup .qa-slot-icon {
+    display: inline-flex;
+    pointer-events: none;
+}
+
+#quick-access-popup.qa-popup .qa-slot-icon svg {
+    width: var(--ui-qa-tool-icon-size);
+    height: var(--ui-qa-tool-icon-size);
+}
+
+#quick-access-popup.qa-popup .qa-slot-options .qa-sub-button {
+    flex: none;
+    white-space: nowrap;
+    padding: 0 8px;
 }
