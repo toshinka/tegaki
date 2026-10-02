@@ -386,6 +386,13 @@ export class CameraSystem {
 
     _setupMouseEvents(canvas) {
         canvas.addEventListener('pointerdown', (e) => {
+            // 移動/回転ドラッグの終了(pointerup)を取りこぼして残った「手のひら」状態は、次の押下で必ず解消する。
+            // 残ったままだと描画エンジンが移動モードと判断してペンが描けなくなる。
+            if (this.canvasMoveMode || this.isDragging || this.isScaleRotateDragging) {
+                const stale = this.dragTrigger === 'space' ? !this.spacePressed
+                    : (this.dragTrigger === 'rightButton' ? e.button !== 2 : true);
+                if (stale || e.pointerId !== this.dragPointerId) this._stopDragging();
+            }
             if (this.vKeyPressed) return;
 
             // [修正] ペン入力でもSpaceキーが押されている場合はカメラ移動を許可する。
@@ -399,6 +406,7 @@ export class CameraSystem {
                 this.canvasMoveMode = true;
                 this.dragTrigger = this.spacePressed ? 'space' : 'rightButton';
                 this.dragPointerId = e.pointerId;
+                this._capturePointer(canvas, e.pointerId);
                 this.lastPoint = { x: e.clientX, y: e.clientY };
                 this._emitCursorChange('move');
                 this._emitCanvasMoveMode(true);
@@ -408,6 +416,7 @@ export class CameraSystem {
                 this.canvasMoveMode = true;
                 this.dragTrigger = this.spacePressed ? 'space' : 'rightButton';
                 this.dragPointerId = e.pointerId;
+                this._capturePointer(canvas, e.pointerId);
                 this.lastPoint = { x: e.clientX, y: e.clientY };
                 this._emitCursorChange('grab');
                 this._emitCanvasMoveMode(true);
@@ -430,6 +439,11 @@ export class CameraSystem {
             // (ペン入力の場合は pressure が 0 になっても pointerup が来るまで継続させたいケースもあるが、
             //  基本的には e.buttons === 0 で判定して安全に中断する)
             if (this.dragTrigger === 'space' && e.buttons === 0) {
+                this._stopDragging();
+                return;
+            }
+            // 右ボタンの移動も、ボタンが離れているのに終了を取りこぼしていたら中断する
+            if (this.dragTrigger === 'rightButton' && (this.isDragging || this.isScaleRotateDragging) && e.buttons === 0) {
                 this._stopDragging();
                 return;
             }
@@ -507,7 +521,15 @@ export class CameraSystem {
         });
     }
 
+    _capturePointer(canvas, pointerId) {
+        try { canvas.setPointerCapture?.(pointerId); } catch { /* 任意 */ }
+        this._capturedCanvas = canvas;
+    }
+
     _stopDragging() {
+        if (this._capturedCanvas && this.dragPointerId !== null) {
+            try { this._capturedCanvas.releasePointerCapture?.(this.dragPointerId); } catch { /* 任意 */ }
+        }
         this.isDragging = false;
         this.isScaleRotateDragging = false;
         this.canvasMoveMode = false;
