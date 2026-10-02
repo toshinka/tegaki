@@ -36,7 +36,8 @@ export const BRUSH_PRESET_KEYS = {
         'eraserDabSoftness',
         'eraserTipShape',
         'eraserTipAspect',
-        'eraserTipAngle'
+        'eraserTipAngle',
+        'eraserTipFollow'
     ],
     airbrush: [
         'airbrushFlow',
@@ -60,6 +61,7 @@ export const BRUSH_PRESET_DEFAULTS = Object.freeze({
     eraserTipShape: 'round',
     eraserTipAspect: 1,
     eraserTipAngle: 0,
+    eraserTipFollow: 'fixed',
     eraserDabSoftness: 0
 });
 
@@ -203,12 +205,17 @@ export const BUILTIN_BRUSH_PRESETS = {
         {
             id: 'builtin-eraser-standard',
             name: '標準',
-            values: { eraserDabSoftness: 0, eraserTipShape: 'round', eraserTipAspect: 1, eraserTipAngle: 0 }
+            values: { eraserDabSoftness: 0, eraserTipShape: 'round', eraserTipAspect: 1, eraserTipAngle: 0, eraserTipFollow: 'fixed' }
         },
         {
             id: 'builtin-eraser-square',
             name: '角消しゴム',
-            values: { eraserDabSoftness: 0, eraserTipShape: 'square', eraserTipAspect: 1, eraserTipAngle: 0 }
+            values: { eraserDabSoftness: 0, eraserTipShape: 'square', eraserTipAspect: 1, eraserTipAngle: 0, eraserTipFollow: 'fixed' }
+        },
+        {
+            id: 'builtin-eraser-square-follow',
+            name: '角消しゴム(追従)',
+            values: { eraserDabSoftness: 0, eraserTipShape: 'square', eraserTipAspect: 1, eraserTipAngle: 0, eraserTipFollow: 'follow' }
         }
     ],
     airbrush: [
