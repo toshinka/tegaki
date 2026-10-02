@@ -15,6 +15,8 @@
 import { TEGAKI_KEYMAP } from '../config.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { UI_ICONS } from './ui-icons.js';
+import { createPillTabs } from './pill-tabs.js';
+import { TonePanel } from './tone-panel.js';
 
 const QA_STORAGE_KEYS = {
     position: 'quick-access-position',
@@ -122,6 +124,8 @@ export class QuickAccessPopup {
         this.eventBus = TegakiEventBus;
         this.brushSettings = dependencies.brushSettings || window.brushSettings;
         this.textRasterService = dependencies.textRasterService || null;
+        this.layerSystem = dependencies.layerSystem || null;
+        this.tonePanel = null;
 
         this.panel = null;
         this.isVisible = false;
@@ -1240,6 +1244,8 @@ export class QuickAccessPopup {
                 </div>
             </div>
 
+            <div class="qa-tabs-host" data-role="qa-tabs"></div>
+            <div class="qa-view qa-view--pen" data-qa-view="pen">
             <!-- 1. カラーパレット (カラースロット付き) -->
             <section class="qa-section" aria-label="色パレット">
                 <div class="qa-palette-header-row">
@@ -1414,7 +1420,45 @@ export class QuickAccessPopup {
                     </div>
                 </div>
             </section>
+            </div>
+            <div class="qa-view qa-view--tone" data-qa-view="tone" hidden></div>
         `;
+        this._mountTonePanel();
+    }
+
+    _mountTonePanel() {
+        const host = this.panel.querySelector('[data-role="qa-tabs"]');
+        const view = this.panel.querySelector('[data-qa-view="tone"]');
+        if (!host || !view) return;
+        this.tonePanel = new TonePanel({ layerSystem: this.layerSystem, eventBus: this.eventBus });
+        this.tonePanel.mount(view);
+        let active = 'pen';
+        try { active = localStorage.getItem('tegaki-qa-tab') === 'tone' ? 'tone' : 'pen'; } catch (error) { /* 既定 */ }
+        const tabs = createPillTabs({
+            tabs: [{ id: 'pen', label: 'ペン' }, { id: 'tone', label: 'トーン' }],
+            active,
+            ariaLabel: 'Quickパネル',
+            onSelect: (id) => this._switchTab(id)
+        });
+        host.appendChild(tabs);
+        this._tabs = tabs;
+        this._switchTab(active, true);
+    }
+
+    _switchTab(id, initial = false) {
+        if (!this.panel) return;
+        const tone = id === 'tone';
+        this.panel.querySelector('[data-qa-view="pen"]').hidden = tone;
+        this.panel.querySelector('[data-qa-view="tone"]').hidden = !tone;
+        this.panel.classList.toggle('qa-popup--tone', tone);
+        this._tabs?.setActive(id);
+        if (tone) this.tonePanel?.refresh();
+        if (initial) return;
+        try { localStorage.setItem('tegaki-qa-tab', id); } catch (error) { /* 保存不可でも動作する */ }
+        const rect = this.panel.getBoundingClientRect();
+        const clamped = this._clampPanelPosition(rect.left, rect.top, rect);
+        this.panel.style.left = `${clamped.x}px`;
+        this.panel.style.top = `${clamped.y}px`;
     }
 
     _buildPaletteHtml(slotIndex) {
@@ -2450,7 +2494,8 @@ export class QuickAccessPopup {
                 target.closest('.qa-slider') ||
                 target.closest('.qa-preset-slot') ||
                 target.closest('.qa-palette-grid') ||
-                target.closest('.qa-color-circle-container');
+                target.closest('.qa-color-circle-container') ||
+                target.closest('.qa-tone-view');
 
             if (isInteractive) return;
 

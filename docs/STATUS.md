@@ -48,6 +48,14 @@
 状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。サイドバーは「漫画ツール」1アイコン（旧: コマ割り/集中線の2アイコン）。窓の上端に長丸タブ（`コマ | 集中線`、今後`吹き出し`/`トーン`を追加）。
 - 部品: `ui/pill-tabs.js` + `styles/components/pill-tabs.css`（LAYER/TRANSFORM/RIGと同じtoken・寸法の長丸タブ。右ワークスペースのタブをこの部品へ寄せる統一は別カード）。切替は`ui/manga-tabs.js`（各ツールは従来どおり別popup。タブ切替で同じ位置に入れ替え、最後に使ったタブを記録）。ショートカット(Shift+K/Shift+F)は従来どおり直接開く。新しいツールは`MANGA_TABS`へ1行足してpopupを登録するだけ。
 
+### TONE — トーン（2026-10-02, WP-014）
+
+状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING（Ownerは最終受入・pushの権限をClaudeにも付与済み）。設計・操作・制約は[WP-014](work/WP-014-tone.md)。
+
+- QTPに長丸タブ（ペン | トーン）。トーンタブ: 網点/ひし形/線、間隔・角度・濃度、グラデーション、くっきり、色、プリセット6枠。
+- 確定時に通常Raster Layerを選択Layerへクリップして追加（Undo 1回）。`再編集`→`更新`、Projectは`layerData.tone`(optional)で往復。
+- 検証: `development-harness.mjs test tone` + Chromium（クリップ内のみ描画・Undo/Redo・更新・保存往復）。実機(液タブ)は未確認。
+
 ### BALLOON — 吹き出し（縦書き・フォント管理つき）（2026-10-02, WP-013）
 
 状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING（Ownerは最終受入・pushの権限をClaudeにも付与済み）。設計・操作・制約は[WP-013](work/WP-013-balloon.md)。

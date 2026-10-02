@@ -61,6 +61,17 @@
         "^verify-focus-lines"
       ]
     },
+    "tone": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": [
+        "tegaki_work/system/tone-geometry.js",
+        "tegaki_work/system/tone-raster.js",
+        "tegaki_work/ui/tone-panel.js"
+      ],
+      "patterns": [
+        "^verify-tone"
+      ]
+    },
     "ruler": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [
