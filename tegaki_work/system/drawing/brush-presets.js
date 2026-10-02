@@ -28,7 +28,8 @@ export const BRUSH_PRESET_KEYS = {
         'penTipShape',
         'penTipAspect',
         'penTipAngle',
-        'penPressureSizeStrength'
+        'penPressureSizeStrength',
+        'penCapShape'
     ],
     eraser: [
         'eraserDabSoftness',
@@ -49,6 +50,7 @@ export const MAX_USER_BRUSH_PRESETS = 12;
 
 /** presetに入っていないキーの既定値。古い(ペン先形状を知らない)presetを当てても丸ペン先に戻る。 */
 export const BRUSH_PRESET_DEFAULTS = Object.freeze({
+    penCapShape: 'round',
     penPressureSizeStrength: 1,
     penTipShape: 'round',
     penTipAspect: 1,
@@ -117,8 +119,8 @@ export const BUILTIN_BRUSH_PRESETS = {
                 penDabSoftness: 0,
                 penEdgeAA: 1,
                 stabilizerMode: 'follow',
-                penTaperIn: 3,
-                penTaperOut: 10,
+                penTaperIn: 0,
+                penTaperOut: 0,
                 smoothing: 0.75,
                 penPressureSizeStrength: 0.35
             }
@@ -139,12 +141,13 @@ export const BUILTIN_BRUSH_PRESETS = {
                 penEdgeAA: 1,
                 stabilizerMode: 'follow',
                 penTaperIn: 0,
-                penTaperOut: 6,
+                penTaperOut: 0,
                 smoothing: 0.8,
-                penTipShape: 'square',
-                penTipAspect: 0.4,
-                penTipAngle: 35,
-                penPressureSizeStrength: 0.12
+                penTipShape: 'round',
+                penTipAspect: 1,
+                penTipAngle: 0,
+                penPressureSizeStrength: 0,
+                penCapShape: 'square'
             }
         },
         {
@@ -225,6 +228,7 @@ for (const preset of BUILTIN_BRUSH_PRESETS.pen) {
         penTipAspect: BRUSH_PRESET_DEFAULTS.penTipAspect,
         penTipAngle: BRUSH_PRESET_DEFAULTS.penTipAngle,
         penPressureSizeStrength: BRUSH_PRESET_DEFAULTS.penPressureSizeStrength,
+        penCapShape: BRUSH_PRESET_DEFAULTS.penCapShape,
         ...preset.values
     };
 }

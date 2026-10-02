@@ -1839,6 +1839,35 @@ export class PixelSelectionSystem {
         if (this.state?.mask && this.overlayPolygon) this.overlayPolygon.removeAttribute('points');
         if (!this.areaTools) return;
         this.areaTools.renderMask(this.state?.mask ? this._getSelectionContext() : null);
+        this._watchMaskOverlay();
+    }
+
+    /**
+     * マスク選択の表示がキャンバスからずれないよう、選択がある間だけ毎フレーム「画面上の位置」を見て、変わっていたら描き直す。
+     * (ウィンドウやパネルの配置変更など、カメラのイベントが飛ばない移動にも追従する)
+     */
+    _watchMaskOverlay() {
+        if (!this.state?.mask) {
+            this._maskWatchSignature = null;
+            return;
+        }
+        if (this._maskWatchFrame || typeof requestAnimationFrame !== 'function') return;
+        const tick = () => {
+            this._maskWatchFrame = null;
+            if (!this.state?.mask) return;
+            const context = this._getSelectionContext();
+            if (context) {
+                const p0 = this._layerPointToScreen(context.layer, 0, 0);
+                const p1 = this._layerPointToScreen(context.layer, 100, 100);
+                const signature = [p0?.clientX, p0?.clientY, p1?.clientX, p1?.clientY].map(v => Math.round((v ?? 0) * 10)).join(',');
+                if (signature !== this._maskWatchSignature) {
+                    this._maskWatchSignature = signature;
+                    this.areaTools?.renderMask(context);
+                }
+            }
+            this._maskWatchFrame = requestAnimationFrame(tick);
+        };
+        this._maskWatchFrame = requestAnimationFrame(tick);
     }
 
     _updateOverlayBase() {

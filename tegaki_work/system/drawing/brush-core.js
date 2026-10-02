@@ -1187,7 +1187,8 @@ export class BrushCore {
         if (this.strokeInputProfile) {
             this.strokeInputProfile.hookTrim = { start: hookTrim.trimmedStart || 0, end: hookTrim.trimmedEnd || 0 };
         }
-        if (!state?.maskTexture || state.dabMode !== 'pen' || !(taperIn > 0 || taperOut > 0 || hookTrim.trimmed)) return false;
+        const squareCaps = window.TegakiSettingsManager?.get?.('penCapShape') === 'square' && this.airbrushState?.mode === 'pen';
+        if (!state?.maskTexture || state.dabMode !== 'pen' || !(taperIn > 0 || taperOut > 0 || hookTrim.trimmed || squareCaps)) return false;
         if (strokeData?.isSingleDot === true || points.length < 2) return false;
         const renderer = this.layerManager.app?.renderer;
         if (!renderer) return false;
@@ -1201,7 +1202,8 @@ export class BrushCore {
             x: point.x,
             y: point.y,
             pressure: point.pressure,
-            widthScale: this._getPenTaperScale(travel[i], total - travel[i])
+            widthScale: this._getPenTaperScale(travel[i], total - travel[i]),
+            cap: squareCaps && (i === 0 || i === points.length - 1)
         }));
 
         const empty = new Container();
@@ -2006,6 +2008,7 @@ export class BrushCore {
             // ペン先の形(角ペン/角消しゴム): 丸は従来のfalloff dab、角は硬い四角のdabをnibの向きに回して置く
             const tipPrefix = isEraserDab ? 'eraserTip' : 'penTip';
             if (!isEraserDab) {
+                maskSettings.penCapShape = userSetting('penCapShape', 'round') === 'square' ? 'square' : 'round';
                 const sizeStrength = Number(userSetting('penPressureSizeStrength', 1));
                 maskSettings.penPressureSizeStrength = Number.isFinite(sizeStrength) ? sizeStrength : 1;
             }

@@ -145,7 +145,7 @@ const near = (actual, expected, epsilon, message) => {
         pressureCorrection: 1, pressureCurve: 'custom', pressureCurvePoints: [[0, 0], [0.5, 0.2], [1, 1]],
         pressureOpacityEnabled: true, pressureOpacityStrength: 0.65, penVelocityThinning: 0.3,
         penTiltStrength: 0, penDabSoftness: 0, penEdgeAA: 0, stabilizerMode: 'follow', penTaperIn: 0, penTaperOut: 0, penPressureSmoothing: 0.5, smoothing: 0.5,
-        penTipShape: 'round', penTipAspect: 1, penTipAngle: 0, penPressureSizeStrength: 1
+        penTipShape: 'round', penTipAspect: 1, penTipAngle: 0, penPressureSizeStrength: 1, penCapShape: 'round'
     };
     const get = key => store[key];
     const captured = captureBrushPresetValues('pen', get);
@@ -473,7 +473,8 @@ const near = (actual, expected, epsilon, message) => {
     for (const key of ['penTipShape', 'penTipAspect', 'penTipAngle', 'penPressureSizeStrength']) assert.ok(BRUSH_PRESET_KEYS.pen.includes(key), `pen preset keys include ${key}`);
     for (const key of ['eraserTipShape', 'eraserTipAspect', 'eraserTipAngle']) assert.ok(BRUSH_PRESET_KEYS.eraser.includes(key), `eraser preset keys include ${key}`);
     const square = BUILTIN_BRUSH_PRESETS.pen.find(p => p.id === 'builtin-pen-square');
-    assert.equal(square.values.penTipShape, 'square');
+    assert.equal(square.values.penCapShape, 'square', 'square pen squares only the entry / exit');
+    assert.equal(square.values.penTipShape, 'round', 'the body of the stroke is an ordinary round line');
     assert.ok(square.values.penPressureSizeStrength <= 0.2, 'square pen keeps a nearly constant width under pressure');
     // 筆圧が径に効く強さ: 1=従来、0=一定径
     const r = new AirbrushDabRenderer({ calculateWidth: (p, size) => size * p });
