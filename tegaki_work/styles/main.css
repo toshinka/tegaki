@@ -8533,3 +8533,20 @@ button.anim-motion-graph-legend-item.is-primary {
 }
 .global-shortcut-help-row:nth-child(even) { background: color-mix(in srgb, var(--futaba-cream) 55%, transparent); }
 .global-shortcut-help-key { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* 設定: 環境スナップショット */
+#env-snapshot-section .env-row { display: flex; gap: 4px; margin: 4px 0; align-items: center; }
+#env-snapshot-section .env-name {
+    flex: 1; min-width: 0; height: 24px; padding: 0 6px; box-sizing: border-box;
+    border: 1px solid var(--futaba-medium); border-radius: 5px;
+    color: var(--futaba-maroon); background: var(--futaba-background); font: inherit; font-size: 11px;
+}
+#env-snapshot-section .env-list { display: flex; flex-direction: column; gap: 3px; margin: 4px 0; max-height: 160px; overflow-y: auto; }
+#env-snapshot-section .env-item {
+    display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 3px 6px;
+    border: 1px solid var(--futaba-light-medium); border-radius: 6px; background: color-mix(in srgb, var(--futaba-cream) 60%, transparent);
+}
+#env-snapshot-section .env-item-main { display: flex; flex-direction: column; min-width: 0; }
+#env-snapshot-section .env-item-name { font-size: 11px; font-weight: 700; color: var(--futaba-maroon); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#env-snapshot-section .env-item-meta { font-size: 9px; color: var(--futaba-medium); }
+#env-snapshot-section .env-item-actions { display: flex; gap: 3px; flex: none; }

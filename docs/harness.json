@@ -82,6 +82,18 @@
         "^verify-canvas-size"
       ]
     },
+    "settings-snapshot": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": [
+        "tegaki_work/system/png-text-chunk.js",
+        "tegaki_work/system/settings-snapshot.js",
+        "tegaki_work/system/settings-snapshot-store.js",
+        "tegaki_work/ui/settings-snapshot-section.js"
+      ],
+      "patterns": [
+        "^verify-settings-snapshot"
+      ]
+    },
     "tool-slots": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [
