@@ -56,6 +56,11 @@
 - 確定時に通常Raster Layerを選択Layerへクリップして追加（Undo 1回）。`再編集`→`更新`、Projectは`layerData.tone`(optional)で往復。
 - 検証: `development-harness.mjs test tone` + Chromium（クリップ内のみ描画・Undo/Redo・更新・保存往復）。実機(液タブ)は未確認。
 
+### QTP PRESET ICONS v2 / Q-DRAG 整理（2026-10-02）
+
+- 筆プリセットのアイコンを**lucideの既存の絵の流用**に整理（カスタムの点群は廃止）。ペン=pen / pen-tool / pen-line / pencil、エアブラシ=ツールと同じ噴霧缶。性格は**同じ絵の濃淡・反転**で表す（ふんわり・鉛筆=薄い、くっきり=ふたば濃茶の地に明るい絵の反転）。アイコン16px。
+- Qボタンのドラッグは**QTPが閉じているときだけ**（開いてポインタについてくる）。開いている間はふつうのクリック（閉じる）。
+
 ### SHORTCUT HELP / QTP HEADER（2026-10-02）
 
 - ショートカットヘルプを**画面左上の小さな「?」**へ（`ui/shortcut-help.js`）。TEGAKI_KEYMAPの全ショートカット（QTP以外も）を読み取り専用で一覧。Escまたは外側クリックで閉じる。設定の「画面左上に「?」を表示」でON/OFF（`shortcutHelpVisible`、既定ON）。QTPヘッダーの「?」は廃止。
