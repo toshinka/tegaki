@@ -81,6 +81,26 @@ export const BUILTIN_BRUSH_PRESETS = {
             }
         },
         {
+            id: 'builtin-pen-mili',
+            name: 'ミリペン風',
+            values: {
+                pressureCorrection: 1.0,
+                pressureCurve: 'ease-out',
+                pressureCurvePoints: null,
+                pressureOpacityEnabled: false,
+                pressureOpacityStrength: 0.65,
+                penPressureSmoothing: 0.7,
+                penVelocityThinning: 0,
+                penTiltStrength: 0,
+                penDabSoftness: 0,
+                penEdgeAA: 1,
+                stabilizerMode: 'follow',
+                penTaperIn: 0,
+                penTaperOut: 0,
+                smoothing: 0.6
+            }
+        },
+        {
             id: 'builtin-pen-pencil',
             name: '鉛筆風',
             values: {
@@ -137,6 +157,38 @@ export const BUILTIN_BRUSH_PRESETS = {
         }
     ]
 };
+
+/** 組み込み + ユーザー保存のpreset一覧(builtinフラグ付き)。 */
+export function listBrushPresets(tool, userPresets) {
+    const user = userPresets?.[tool] || [];
+    return [
+        ...(BUILTIN_BRUSH_PRESETS[tool] || []).map(preset => ({ ...preset, builtin: true })),
+        ...user.map(preset => ({ ...preset, builtin: false }))
+    ];
+}
+
+/**
+ * QTPのスロット行に出すpreset。settingsの qtpBrushPresetIds[tool] が配列ならその順で、
+ * null/未設定なら全て。存在しないidは捨てる。
+ */
+export function listQtpBrushPresets(tool, userPresets, qtpIds) {
+    const all = listBrushPresets(tool, userPresets);
+    const ids = qtpIds?.[tool];
+    if (!Array.isArray(ids)) return all;
+    return ids.map(id => all.find(preset => preset.id === id)).filter(Boolean);
+}
+
+/** presetの値を設定へ書き込む(customカーブは制御点を先に入れてから種類を切り替える)。 */
+export function applyBrushPresetValues(tool, preset, settingsManager) {
+    if (!preset || !settingsManager) return false;
+    const values = preset.values || {};
+    const keys = [...(BRUSH_PRESET_KEYS[tool] || [])]
+        .sort((a, b) => (a === 'pressureCurvePoints' ? -1 : b === 'pressureCurvePoints' ? 1 : 0));
+    keys.forEach(key => {
+        if (key in values) settingsManager.set(key, values[key]);
+    });
+    return true;
+}
 
 export function getBrushPresetTool(mode) {
     if (mode === 'airbrush' || mode === 'airbrush-erase' || mode === 'blur') return 'airbrush';

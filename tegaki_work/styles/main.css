@@ -8399,3 +8399,17 @@ button.anim-motion-graph-legend-item.is-primary {
     min-height: 60px;
     cursor: default;
 }
+
+/* 設定: 筆プリセットを「QTPに出す」選択 */
+.brush-preset-qtp {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    margin: 4px 0 6px;
+    font-size: 11px;
+    color: var(--futaba-maroon);
+}
+.brush-preset-qtp-label { font-weight: 700; }
+.brush-preset-qtp-item { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+.brush-preset-qtp-item input { margin: 0; accent-color: var(--futaba-maroon); }
