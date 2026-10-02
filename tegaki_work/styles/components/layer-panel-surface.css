@@ -170,6 +170,7 @@
    見た目の共通部分は styles/components/pill-tabs.css（長丸タブ）。ここは配置と寸法の差分だけ。 */
 .right-workspace-frame > .right-workspace-mode-switch {
     grid-area: 1 / 1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     width: min(210px, 100%);
     justify-self: center;
     pointer-events: auto;
@@ -178,6 +179,11 @@
 .right-workspace-mode-switch > .right-workspace-mode-segment {
     padding: 3px 2px;
     font-size: 9px;
+}
+
+@media (pointer: coarse) {
+    .right-workspace-frame > .right-workspace-mode-switch { min-height: 50px; }
+    .right-workspace-mode-switch > .right-workspace-mode-segment { min-height: 42px; font-size: 9px; }
 }
 
 .right-workspace-transform-gate {
