@@ -1220,28 +1220,6 @@ export class QuickAccessPopup {
                         ${this._buildShortcutHelpDeckHtml()}
                     </div>
                 </div>
-                <button class="qa-position-toggle" id="qa-position-toggle" type="button"
-                    title="パレット位置を選択" aria-label="パレット位置を選択"
-                    aria-controls="qa-position-deck" aria-expanded="false" aria-haspopup="true">
-                    ${UI_ICONS.positionCorners}
-                </button>
-                <div class="qa-position-deck" id="qa-position-deck" hidden>
-                    <span class="qa-position-deck-title">PALETTE POSITION</span>
-                    <div class="qa-position-grid" role="group" aria-label="パレット位置Preset">
-                        <button class="qa-position-choice" type="button" data-qa-position="top-left" title="左上">
-                            <span class="qa-position-choice-mark"></span>
-                        </button>
-                        <button class="qa-position-choice" type="button" data-qa-position="top-right" title="右上">
-                            <span class="qa-position-choice-mark"></span>
-                        </button>
-                        <button class="qa-position-choice" type="button" data-qa-position="bottom-left" title="左下">
-                            <span class="qa-position-choice-mark"></span>
-                        </button>
-                        <button class="qa-position-choice" type="button" data-qa-position="bottom-right" title="右下">
-                            <span class="qa-position-choice-mark"></span>
-                        </button>
-                    </div>
-                </div>
             </div>
 
             <div class="qa-tabs-host" data-role="qa-tabs"></div>

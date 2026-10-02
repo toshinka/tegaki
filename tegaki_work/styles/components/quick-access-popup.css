@@ -155,3 +155,136 @@
 #quick-access-popup.qa-popup .qa-tone-view .pl-value {
     flex-basis: 38px;
 }
+
+/* ---- トーンタブ: 定型プリセット / 色 / レイヤー名 / スライダー ---- */
+#quick-access-popup.qa-popup .qa-tone-top {
+    margin: 0;
+}
+
+#quick-access-popup.qa-popup .qa-tone-name-input {
+    flex: 1;
+    min-width: 0;
+    height: 22px;
+    padding: 0 6px;
+    box-sizing: border-box;
+    border: 1px solid var(--futaba-medium);
+    border-radius: 5px;
+    color: var(--futaba-maroon);
+    background: var(--futaba-background);
+    font: inherit;
+    font-size: 11px;
+}
+
+#quick-access-popup.qa-popup .qa-tone-name-input:focus {
+    outline: 2px solid var(--futaba-light-maroon);
+    outline-offset: -1px;
+}
+
+#quick-access-popup.qa-popup .qa-tone-slots {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px;
+}
+
+#quick-access-popup.qa-popup .qa-tone-slot-actions {
+    margin: 0;
+}
+
+#quick-access-popup.qa-popup .qa-tone-slot-name[aria-pressed="true"] {
+    color: var(--futaba-background);
+    background: var(--futaba-light-maroon);
+}
+
+#quick-access-popup.qa-popup .qa-tone-slot-row {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+}
+
+#quick-access-popup.qa-popup .qa-tone-slot-row .qa-tone-name-input {
+    flex: 1;
+}
+
+#quick-access-popup.qa-popup .qa-tone-slot-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 6px;
+}
+
+#quick-access-popup.qa-popup .qa-tone-slot-name.is-filled {
+    border-color: var(--futaba-maroon);
+}
+
+#quick-access-popup.qa-popup .qa-tone-slot-btn {
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 0 5px;
+    font-size: 10px;
+}
+
+#quick-access-popup.qa-popup .qa-tone-slot-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+#quick-access-popup.qa-popup .qa-tone-colors {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#quick-access-popup.qa-popup .qa-tone-swatch-row {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 3px;
+}
+
+#quick-access-popup.qa-popup .qa-tone-swatch {
+    height: 20px;
+    padding: 0;
+    border: 1px solid var(--futaba-medium);
+    border-radius: 5px;
+    background: var(--swatch, transparent);
+    cursor: pointer;
+}
+
+#quick-access-popup.qa-popup .qa-tone-swatch.is-empty {
+    border-style: dashed;
+    background: transparent;
+}
+
+#quick-access-popup.qa-popup .qa-tone-swatch.is-selected {
+    outline: 2px solid var(--futaba-maroon);
+    outline-offset: 1px;
+}
+
+/* スライダーは半透明パネル越しに灰色く見えないよう、不透明のふたば色にする */
+#quick-access-popup.qa-popup .qa-tone-view input[type="range"].pl-range {
+    opacity: 1;
+    filter: none;
+}
+
+#quick-access-popup.qa-popup .qa-tone-view input[type="range"].pl-range::-webkit-slider-runnable-track {
+    border-color: var(--futaba-maroon);
+    background: linear-gradient(to right,
+        var(--futaba-maroon) var(--pl-fill, 0%),
+        var(--futaba-cream) var(--pl-fill, 0%));
+}
+
+#quick-access-popup.qa-popup .qa-tone-view input[type="range"].pl-range::-webkit-slider-thumb {
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-cream);
+}
+
+#quick-access-popup.qa-popup .qa-tone-view input[type="range"].pl-range::-moz-range-track {
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-cream);
+}
+
+#quick-access-popup.qa-popup .qa-tone-view input[type="range"].pl-range::-moz-range-progress {
+    background: var(--futaba-maroon);
+}

@@ -77,6 +77,10 @@ export function rasterizeTone(rawParams, options = {}) {
     });
     if (cells === 0) return { ok: false, reason: '濃度が0です' };
 
+    // 範囲の外にはみ出すセルは描かない(別のトーンを重ねてもクリップ元の外に画素が残らない)
+    ctx.beginPath();
+    ctx.rect(Math.floor(fill.x), Math.floor(fill.y), Math.ceil(fill.w), Math.ceil(fill.h));
+    ctx.clip();
     ctx.fillStyle = p.color;
 
     // 1) 面(濃度>0.5): セルを塗る

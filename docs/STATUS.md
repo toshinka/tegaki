@@ -52,7 +52,7 @@
 
 状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING（Ownerは最終受入・pushの権限をClaudeにも付与済み）。設計・操作・制約は[WP-014](work/WP-014-tone.md)。
 
-- QTPに長丸タブ（ペン | トーン）。トーンタブ: 網点/ひし形/線、間隔・角度・濃度、グラデーション、くっきり、色、プリセット6枠。
+- QTPに長丸タブ（ペン | トーン）。トーンタブ: 網点/ひし形/線、間隔・角度・濃度、グラデーション、くっきり、色、定型プリセット10枠（改名・上書き・枠ごとに初期化）、ふたば6色+フリー色6枠、レイヤー名反映。QTPの「パレット位置」ボタンは廃止。
 - 確定時に通常Raster Layerを選択Layerへクリップして追加（Undo 1回）。`再編集`→`更新`、Projectは`layerData.tone`(optional)で往復。
 - 検証: `development-harness.mjs test tone` + Chromium（クリップ内のみ描画・Undo/Redo・更新・保存往復）。実機(液タブ)は未確認。
 
