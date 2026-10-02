@@ -17,6 +17,10 @@ const PEN_TILT_WIDEN = 1.0;
 // falloff(σ=0.3)で被覆50%になる位置は減衰帯の外端から約0.65帯幅。AA時の径補正に使う。
 const PEN_AA_HALF_COVERAGE_OFFSET = 0.65;
 const DAB_FALLOFF_SIGMA = 0.3;
+// 角dab: 外周1texelを透明にした白い四角(縁のAA用)。spriteは(全体/中身)倍して中身が指定径になるようにする。
+const SQUARE_TEXTURE_CORE = 32;
+const SQUARE_TEXTURE_SIZE = SQUARE_TEXTURE_CORE + 2;
+const SQUARE_TEXTURE_SCALE = SQUARE_TEXTURE_SIZE / SQUARE_TEXTURE_CORE;
 
 export class AirbrushDabRenderer {
     constructor(options = {}) {
@@ -39,9 +43,11 @@ export class AirbrushDabRenderer {
 
         const container = target || this._acquireContainer();
         const isPenDab = settings.dabMode === 'pen';
-        const texture = this._getTexture(isPenDab
-            ? this._getPenDabEffectiveSoftness(points, settings)
-            : settings.airbrushSoftness);
+        const texture = isPenDab && settings.penTipShape === 'square'
+            ? this._getSquareTexture()
+            : this._getTexture(isPenDab
+                ? this._getPenDabEffectiveSoftness(points, settings)
+                : settings.airbrushSoftness);
         const addDab = isPenDab ? this._addPenDab : this._addDab;
 
         if (points.length === 1) {
@@ -241,10 +247,19 @@ export class AirbrushDabRenderer {
         const width = Math.max(0.5, this._getPenDabWidth(pressure, settings) * widthScale)
             + 2 * aaPx * PEN_AA_HALF_COVERAGE_OFFSET;
         const sprite = this._acquireSprite(container, texture);
-        sprite.rotation = 0;
         sprite.position.set(x, y);
-        sprite.width = width;
-        sprite.height = width;
+        if (settings.penTipShape === 'square') {
+            // 角: 幅=指定径、高さ=径×アスペクト、向き=nibの角度。縁のAAはtextureの外周1texelに任せる。
+            const aspect = Math.max(0.15, Math.min(1, Number(settings.penTipAspect) || 1));
+            const squareWidth = Math.max(0.5, this._getPenDabWidth(pressure, settings) * widthScale);
+            sprite.rotation = ((Number(settings.penTipAngle) || 0) * Math.PI) / 180;
+            sprite.width = squareWidth * SQUARE_TEXTURE_SCALE;
+            sprite.height = squareWidth * aspect * SQUARE_TEXTURE_SCALE;
+        } else {
+            sprite.rotation = 0;
+            sprite.width = width;
+            sprite.height = width;
+        }
         sprite.tint = 0xffffff;
         sprite.alpha = Math.max(0.001, this.calculateOpacity(pressure, 1.0, settings));
         sprite.blendMode = 'max';
@@ -256,6 +271,20 @@ export class AirbrushDabRenderer {
         const spacingRatio = Math.max(0.01, settings.airbrushSpacingRatio ?? 0.1);
         const exponent = spacingRatio / AIRBRUSH_FLOW_REFERENCE_SPACING_RATIO;
         return 1 - Math.pow(1 - flow, exponent);
+    }
+
+    _getSquareTexture() {
+        const cached = this.textures.get('square');
+        if (cached && !cached.destroyed) return cached;
+        const canvas = document.createElement('canvas');
+        canvas.width = SQUARE_TEXTURE_SIZE;
+        canvas.height = SQUARE_TEXTURE_SIZE;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(1, 1, SQUARE_TEXTURE_CORE, SQUARE_TEXTURE_CORE);
+        const texture = Texture.from({ resource: canvas, autoGenerateMipmaps: true }, true);
+        this.textures.set('square', texture);
+        return texture;
     }
 
     _getTexture(providedSoftness = 0.8) {

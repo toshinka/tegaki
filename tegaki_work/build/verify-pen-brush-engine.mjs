@@ -125,7 +125,7 @@ const near = (actual, expected, epsilon, message) => {
 {
     assert.equal(getBrushPresetTool('pen'), 'pen');
     assert.equal(getBrushPresetTool('airbrush-erase'), 'airbrush');
-    assert.equal(getBrushPresetTool('eraser'), null, 'eraser has no brush preset');
+    assert.equal(getBrushPresetTool('eraser'), 'eraser', 'eraser has tip-shape presets (round / square)');
 
     for (const tool of Object.keys(BUILTIN_BRUSH_PRESETS)) {
         const ids = new Set();
@@ -144,7 +144,8 @@ const near = (actual, expected, epsilon, message) => {
     const store = {
         pressureCorrection: 1, pressureCurve: 'custom', pressureCurvePoints: [[0, 0], [0.5, 0.2], [1, 1]],
         pressureOpacityEnabled: true, pressureOpacityStrength: 0.65, penVelocityThinning: 0.3,
-        penTiltStrength: 0, penDabSoftness: 0, penEdgeAA: 0, stabilizerMode: 'follow', penTaperIn: 0, penTaperOut: 0, penPressureSmoothing: 0.5, smoothing: 0.5
+        penTiltStrength: 0, penDabSoftness: 0, penEdgeAA: 0, stabilizerMode: 'follow', penTaperIn: 0, penTaperOut: 0, penPressureSmoothing: 0.5, smoothing: 0.5,
+        penTipShape: 'round', penTipAspect: 1, penTipAngle: 0
     };
     const get = key => store[key];
     const captured = captureBrushPresetValues('pen', get);
@@ -179,7 +180,7 @@ const near = (actual, expected, epsilon, message) => {
     assert.ok(!('pressureCurve' in normalized.pen[0].values), 'invalid values are dropped');
     assert.equal(normalized.pen[1].name.length, 24, 'long names are cut');
     assert.equal(normalized.airbrush.length, MAX_USER_BRUSH_PRESETS, 'user presets are capped per tool');
-    assert.deepEqual(normalizeUserBrushPresets('nope', validate), { pen: [], airbrush: [] }, 'garbage becomes empty lists');
+    assert.deepEqual(normalizeUserBrushPresets('nope', validate), { pen: [], airbrush: [], eraser: [] }, 'garbage becomes empty lists');
 }
 
 // ============================================================================
@@ -463,6 +464,35 @@ const near = (actual, expected, epsilon, message) => {
     const second = renderer.renderSegment([{ x: 3, y: 0, pressure: 1 }, { x: 6, y: 0, pressure: 1 }], { ...penSettings, size: 20, penDabSpacingRatio: 0.1 }, state);
     assert.equal(firstCount + second.children.length, 4, 'spacing carries across segments (0, 2, 4, 6)');
     renderer.releaseSegment(second);
+}
+
+// ---- ペン先の形(角ペン / 角消しゴム)
+{
+    const presets = await import('../system/drawing/brush-presets.js');
+    const { BRUSH_PRESET_KEYS, BRUSH_PRESET_DEFAULTS, BUILTIN_BRUSH_PRESETS, applyBrushPresetValues, brushPresetMatches } = presets;
+    for (const key of ['penTipShape', 'penTipAspect', 'penTipAngle']) assert.ok(BRUSH_PRESET_KEYS.pen.includes(key), `pen preset keys include ${key}`);
+    for (const key of ['eraserTipShape', 'eraserTipAspect', 'eraserTipAngle']) assert.ok(BRUSH_PRESET_KEYS.eraser.includes(key), `eraser preset keys include ${key}`);
+    const square = BUILTIN_BRUSH_PRESETS.pen.find(p => p.id === 'builtin-pen-square');
+    assert.equal(square.values.penTipShape, 'square');
+    const squareEraser = BUILTIN_BRUSH_PRESETS.eraser.find(p => p.id === 'builtin-eraser-square');
+    assert.equal(squareEraser.values.eraserTipShape, 'square');
+    // 古い(ペン先の形を持たない)presetを当てると丸に戻る
+    const store = { penTipShape: 'square', penTipAspect: 0.4, penTipAngle: 35 };
+    const manager = { set: (k, v) => { store[k] = v; }, get: (k) => store[k] };
+    const legacy = { values: { smoothing: 0.5 } };
+    applyBrushPresetValues('pen', legacy, manager);
+    assert.equal(store.penTipShape, BRUSH_PRESET_DEFAULTS.penTipShape);
+    assert.equal(store.penTipAspect, 1);
+    // 一致判定も既定値で比較する
+    assert.equal(brushPresetMatches({ values: {} }, 'eraser', (k) => ({ eraserDabSoftness: 0, eraserTipShape: 'round', eraserTipAspect: 1, eraserTipAngle: 0 })[k]), true);
+    assert.equal(brushPresetMatches(squareEraser, 'eraser', (k) => ({ eraserDabSoftness: 0, eraserTipShape: 'round', eraserTipAspect: 1, eraserTipAngle: 0 })[k]), false);
+    // 全presetに専用アイコンがある
+    const { getBrushPresetIcon } = await import('../ui/brush-preset-icons.js').catch(() => ({}));
+    if (getBrushPresetIcon) {
+        for (const tool of Object.keys(BUILTIN_BRUSH_PRESETS)) for (const p of BUILTIN_BRUSH_PRESETS[tool]) {
+            assert.ok(getBrushPresetIcon(tool, p).svg.includes('<svg'), `${p.id} has an icon`);
+        }
+    }
 }
 
 console.log('verify-pen-brush-engine: ALL CHECKS PASSED');
