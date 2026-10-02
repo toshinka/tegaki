@@ -140,8 +140,6 @@
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 0, 0, 0.25) transparent;
     box-sizing: border-box;
     grid-column: auto;
     grid-row: auto;
@@ -474,8 +472,6 @@
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 0, 0, 0.25) transparent;
     pointer-events: auto;
 }
 .right-workspace-rig-lens-region {
@@ -985,15 +981,11 @@
     max-height: min(28dvh, 240px);
     overflow: auto;
     overscroll-behavior: contain;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 0, 0, 0.25) transparent;
 }
 .right-workspace-rig-bone-tree--flat {
     max-height: min(30dvh, 260px);
     overflow: auto;
     overscroll-behavior: contain;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 0, 0, 0.25) transparent;
 }
 .right-workspace-rig-bone-selection-list {
     display: grid;
@@ -1059,8 +1051,6 @@
     max-height: min(52dvh, 480px);
     overflow: auto;
     overscroll-behavior: contain;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 0, 0, 0.25) transparent;
 }
 .right-workspace-rig-bone-tree-group,
 .right-workspace-rig-bone-tree-item {
@@ -1270,8 +1260,6 @@
     min-height: 0;
     overflow: auto;
     overscroll-behavior: contain;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 0, 0, 0.25) transparent;
     background: color-mix(in srgb, var(--futaba-cream) 30%, transparent);
 }
 .right-workspace-rig-hierarchy-board {
