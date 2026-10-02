@@ -2635,14 +2635,14 @@ export class QuickAccessPopup {
             if (tool) this._setCurrentToolFromExternal(tool);
         });
 
-        const selectionToolName = () => ({ auto: 'auto-select', gradient: 'gradient' }[window.pixelSelectionSystem?.getToolMode?.()] || 'selection');
+        const selectionToolName = () => ({ auto: 'auto-select', gradient: 'gradient', 'shape-rect': 'shape-rect', 'shape-ellipse': 'shape-ellipse' }[window.pixelSelectionSystem?.getToolMode?.()] || 'selection');
         this.eventBus.on('selection:tool-changed', ({ active } = {}) => {
             if (active === true) {
                 this._setCurrentToolFromExternal(selectionToolName());
                 return;
             }
 
-            if (['selection', 'auto-select', 'gradient'].includes(this.currentTool)) {
+            if (['selection', 'auto-select', 'gradient', 'shape-rect', 'shape-ellipse'].includes(this.currentTool)) {
                 this._setCurrentToolFromExternal(this.brushSettings?.getMode?.() || 'pen');
             }
         });
@@ -2934,6 +2934,8 @@ export class QuickAccessPopup {
         if (tool === 'selection') return 'selection';
         if (tool === 'auto-select') return 'auto-select';
         if (tool === 'gradient') return 'gradient';
+        if (tool === 'shape-rect') return 'shape-rect';
+        if (tool === 'shape-ellipse') return 'shape-ellipse';
         return 'pen';
     }
 
@@ -3066,7 +3068,7 @@ export class QuickAccessPopup {
 
         const selectionApi = window.CoreRuntime?.api?.selection || window.pixelSelectionSystem;
         if (selectionApi?.isToolActive?.() === true) {
-            this.currentTool = ({ auto: 'auto-select', gradient: 'gradient' }[window.pixelSelectionSystem?.getToolMode?.()]) || 'selection';
+            this.currentTool = ({ auto: 'auto-select', gradient: 'gradient', 'shape-rect': 'shape-rect', 'shape-ellipse': 'shape-ellipse' }[window.pixelSelectionSystem?.getToolMode?.()]) || 'selection';
         } else if (this.brushSettings.getMode) {
             this.currentTool = this._normalizeTool(this.brushSettings.getMode());
         }
@@ -3129,6 +3131,8 @@ export class QuickAccessPopup {
                 'lasso-fill': 'lasso fill',
                 'auto-select': 'auto select',
                 gradient: 'gradient',
+                'shape-rect': 'line rectangle',
+                'shape-ellipse': 'line ellipse',
                 selection: 'selection',
                 eyedropper: 'eyedropper'
             };

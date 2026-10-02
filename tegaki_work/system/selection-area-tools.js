@@ -15,6 +15,7 @@
 
 import { floodSelectRegion, traceMaskOutline, AUTO_SELECT_LIMITS } from './auto-select.js';
 import { applyGradientToPixels } from './gradient-fill.js';
+import { ShapeEditor } from './shape-tool.js';
 import { normalizeRasterBounds } from './raster-bounds.js';
 import { estimateRasterHistoryPairBytes } from './raster-snapshot-memory.js';
 import { showFeedbackToast } from '../ui/feedback-toast.js';
@@ -22,9 +23,12 @@ import { showFeedbackToast } from '../ui/feedback-toast.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const STORAGE_KEY = 'tegaki-area-tools-v1';
 
-export const SELECTION_TOOL_MODES = Object.freeze(['rect', 'auto', 'gradient']);
+export const SELECTION_TOOL_MODES = Object.freeze(['rect', 'auto', 'gradient', 'shape-rect', 'shape-ellipse']);
 
-const TOOL_TO_MODE = Object.freeze({ selection: 'rect', 'auto-select': 'auto', gradient: 'gradient' });
+const TOOL_TO_MODE = Object.freeze({
+    selection: 'rect', 'auto-select': 'auto', gradient: 'gradient',
+    'shape-rect': 'shape-rect', 'shape-ellipse': 'shape-ellipse'
+});
 export function toolNameToSelectionMode(tool) {
     return TOOL_TO_MODE[tool] || null;
 }
@@ -42,6 +46,7 @@ export class AreaToolController {
             gradient: { kind: 'linear', fade: 'sub' } // fade: 'sub'=メイン→サブ色 / 'transparent'=メイン→透明
         };
         this.gradientDrag = null;
+        this.shape = new ShapeEditor(this);
         this.maskImage = null;
         this.guideLine = null;
         this._restore();
@@ -92,8 +97,16 @@ export class AreaToolController {
 
     // ------------------------------------------------------------ 入力(selection systemから呼ばれる)
 
+    /** ドラッグ中の操作があるか（グラデーションの範囲指定 / 図形の作成・編集） */
+    hasActiveDrag() {
+        return !!this.gradientDrag || this.shape.hasActiveDrag();
+    }
+
     pointerDown(event, target, point) {
         const mode = this.system.toolMode;
+        if (mode === 'shape-rect' || mode === 'shape-ellipse') {
+            return this.shape.pointerDown(event, target);
+        }
         if (target.kind !== 'layer') {
             showFeedbackToast('フォルダでは使えません。Raster Layerを選んでください');
             return false;
@@ -112,6 +125,7 @@ export class AreaToolController {
     }
 
     pointerMove(event) {
+        if (this.shape.hasActiveDrag()) return this.shape.pointerMove(event);
         const drag = this.gradientDrag;
         if (!drag || event.pointerId !== drag.pointerId) return false;
         const point = this.system._clientToLayerPoint(event.clientX, event.clientY, drag.layer);
@@ -121,6 +135,7 @@ export class AreaToolController {
     }
 
     pointerUp(event) {
+        if (this.shape.hasActiveDrag()) return this.shape.pointerUp(event);
         const drag = this.gradientDrag;
         if (!drag || event.pointerId !== drag.pointerId) return false;
         this.gradientDrag = null;
@@ -133,6 +148,7 @@ export class AreaToolController {
     }
 
     pointerCancel(event) {
+        if (this.shape.hasActiveDrag() && this.shape.pointerCancel(event)) return true;
         const drag = this.gradientDrag;
         if (!drag || event.pointerId !== drag.pointerId) return false;
         this.gradientDrag = null;
