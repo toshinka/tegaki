@@ -22,6 +22,7 @@ import {
     evaluatePressureCurve
 } from '../system/drawing/pressure-curve.js';
 import { computeDabFalloff } from '../system/drawing/airbrush-dab-renderer.js';
+import { mountSettingsSnapshotSection } from './settings-snapshot-section.js';
 import {
     BRUSH_PRESET_KEYS,
     BUILTIN_BRUSH_PRESETS,
@@ -156,6 +157,7 @@ export class SettingsPopup {
                         <span id="status-panel-state">表示中</span>
                     </div>
                 </div>
+                <div class="setting-group" id="env-snapshot-section"></div>
                 <div class="setting-group">
                     <div class="setting-label">ショートカットヘルプ</div>
                     <label class="history-setting-auto">
@@ -722,6 +724,7 @@ export class SettingsPopup {
     initialize() {
         if (this.initialized) return;
         this._cacheElements();
+        mountSettingsSnapshotSection(this.popup?.querySelector('#env-snapshot-section'));
         this._setupSliders();
         this._setupPopupDrag();
         this._setupButtons();
