@@ -368,6 +368,16 @@ const near = (actual, expected, epsilon, message) => {
     const shortStroke = [...line(0, 0, 20, 0, 20), ...line(20, 0, 16, 6, 6).slice(1)];
     assert.equal(trimStrokeHooks(shortStroke, 10).trimmed, false, 'short strokes are never trimmed');
     assert.equal(trimStrokeHooks(endHook, 0).trimmed, false, 'hook length 0 disables trimming');
+
+    // 小さな円（なめらかなカーブ）の閉じ際は、ヒゲとして切らない
+    for (const radius of [12, 15, 20, 30]) {
+        const circle = Array.from({ length: 200 }, (_, i) => {
+            const t = 0.3 + (i / 199) * Math.PI * 2 * 0.95;
+            return { x: Math.cos(t) * radius, y: Math.sin(t) * radius };
+        });
+        const circleResult = trimStrokeHooks(circle, 10);
+        assert.equal(circleResult.trimmed, false, `a small circle (r=${radius}) is not trimmed`);
+    }
 }
 
 // ============================================================================

@@ -76,9 +76,19 @@ function angleBetweenDeg(ax, ay, bx, by) {
     return (Math.acos(cos) * 180) / Math.PI;
 }
 
+function signedAngleDeg(ax, ay, bx, by) {
+    return (Math.atan2(ax * by - ay * bx, ax * bx + ay * by) * 180) / Math.PI;
+}
+
+/** 手前の区間も同じ向きに同程度曲がっている(なめらかなカーブ)か。小さな円の閉じ際をヒゲと誤判定しないため。 */
+function isSmoothCurve(turnBefore, turnHook) {
+    return Math.sign(turnBefore) === Math.sign(turnHook) && Math.abs(turnBefore) >= Math.abs(turnHook) * 0.5;
+}
+
 /**
  * 線端のヒゲ除去。終端(または始端)からhookLength以内の短い区間が、その手前2×hookLengthの
  * 進行方向から PEN_HOOK_MIN_ANGLE_DEG 以上折れていれば、その区間を切り落とす。
+ * ただし手前の区間も同じ向きに同程度曲がっている(小さな円などのなめらかなカーブ)ときは切らない。
  * 線全体がヒゲ判定に必要な長さ(4×hookLength)に満たない短い線は変更しない。
  * @returns {{points: Array, trimmed: boolean, trimmedStart: number, trimmedEnd: number}}
  */
@@ -105,7 +115,11 @@ export function trimStrokeHooks(points, hookLength) {
             ref.x - points[refStartEnd].x, ref.y - points[refStartEnd].y,
             points[endIndex].x - ref.x, points[endIndex].y - ref.y
         );
-        if (angle >= PEN_HOOK_MIN_ANGLE_DEG) {
+        const midIndex = indexAtLength(total - hookLength * 2);
+        const mid = points[midIndex];
+        const turnBefore = signedAngleDeg(mid.x - points[refStartEnd].x, mid.y - points[refStartEnd].y, ref.x - mid.x, ref.y - mid.y);
+        const turnHook = signedAngleDeg(ref.x - mid.x, ref.y - mid.y, points[endIndex].x - ref.x, points[endIndex].y - ref.y);
+        if (angle >= PEN_HOOK_MIN_ANGLE_DEG && !isSmoothCurve(turnBefore, turnHook)) {
             result.trimmedEnd = lengths[endIndex] - lengths[tailStart];
             endIndex = tailStart;
         }
@@ -121,7 +135,11 @@ export function trimStrokeHooks(points, hookLength) {
             ref.x - points[0].x, ref.y - points[0].y,
             points[refEndStart].x - ref.x, points[refEndStart].y - ref.y
         );
-        if (angle >= PEN_HOOK_MIN_ANGLE_DEG) {
+        const midIndex = indexAtLength(hookLength * 2);
+        const mid = points[midIndex];
+        const turnHook = signedAngleDeg(ref.x - points[0].x, ref.y - points[0].y, mid.x - ref.x, mid.y - ref.y);
+        const turnAfter = signedAngleDeg(mid.x - ref.x, mid.y - ref.y, points[refEndStart].x - mid.x, points[refEndStart].y - mid.y);
+        if (angle >= PEN_HOOK_MIN_ANGLE_DEG && !isSmoothCurve(turnAfter, turnHook)) {
             result.trimmedStart = lengths[headEnd];
             startIndex = headEnd;
         }
