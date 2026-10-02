@@ -166,66 +166,18 @@
 }
 
 /* Primary Layer / Transform / Rig navigation. The selected capsule projects
-   the existing edit sessions and RIG lens; it never owns their edit state. */
+   the existing edit sessions and RIG lens; it never owns their edit state.
+   見た目の共通部分は styles/components/pill-tabs.css（長丸タブ）。ここは配置と寸法の差分だけ。 */
 .right-workspace-frame > .right-workspace-mode-switch {
     grid-area: 1 / 1;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 2px;
-    box-sizing: border-box;
     width: min(210px, 100%);
-    min-width: 0;
-    min-height: 32px;
-    padding: 2px;
     justify-self: center;
     pointer-events: auto;
-    border: 1px solid var(--ui-panel-glass-border);
-    border-radius: 999px;
-    color: var(--futaba-maroon);
-    background: color-mix(in srgb, var(--futaba-background) 58%, transparent);
-    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
-    backdrop-filter: var(--ui-panel-glass-backdrop);
 }
 
-.right-workspace-mode-segment {
-    min-width: 0;
-    min-height: 26px;
+.right-workspace-mode-switch > .right-workspace-mode-segment {
     padding: 3px 2px;
-    overflow: hidden;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    color: var(--text-secondary);
-    background: transparent;
     font-size: 9px;
-    font-weight: 700;
-    line-height: 1;
-    letter-spacing: 0;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    cursor: pointer;
-}
-
-.right-workspace-mode-segment:hover:not(.is-selected):not(:disabled) {
-    color: var(--futaba-maroon);
-    background: color-mix(in srgb, var(--futaba-cream) 42%, transparent);
-}
-
-.right-workspace-mode-segment:disabled {
-    color: var(--futaba-medium);
-    cursor: not-allowed;
-}
-
-.right-workspace-mode-segment.is-selected,
-.right-workspace-mode-segment[aria-pressed="true"] {
-    color: var(--futaba-background);
-    background: color-mix(in srgb, var(--futaba-maroon) 68%, transparent);
-    -webkit-backdrop-filter: var(--ui-panel-glass-backdrop);
-    backdrop-filter: var(--ui-panel-glass-backdrop);
-}
-
-.right-workspace-mode-segment:focus-visible {
-    outline: 2px solid var(--active-border);
-    outline-offset: -1px;
 }
 
 .right-workspace-transform-gate {
@@ -241,16 +193,6 @@
     overflow-wrap: anywhere;
 }
 .right-workspace-transform-gate[hidden] { display: none; }
-
-@media (pointer: coarse) {
-    .right-workspace-frame > .right-workspace-mode-switch {
-        min-height: 50px;
-    }
-
-    .right-workspace-mode-segment {
-        min-height: 42px;
-    }
-}
 
 /* Short layer lists should not carry the full trailing shell reservation;
    scrollable lists keep their existing room for the scrollbar gutter. */
