@@ -5,8 +5,8 @@
  * 描き始め/描き終わりは動きが遅く点が密なので、進行方向の判定に長い範囲を使う。
  */
 
-const AXIS_DEADZONE_DEG = 12; // 軸からこの角度以内は0°のまま
-const FOLLOW_RAMP_DEG = 14; // デッドゾーンを越えてから追従が全開になるまでの幅
+const AXIS_DEADZONE_DEG = 4; // 軸からこの角度以内は0°のまま
+const FOLLOW_RAMP_DEG = 10; // デッドゾーンを越えてから追従が全開になるまでの幅
 const END_WINDOW_FACTOR = 2.5; // 端付近の判定範囲(太さ倍)
 const MID_WINDOW_FACTOR = 1.0; // 中間の判定範囲(太さ倍)
 const END_ZONE_FACTOR = 2.0;
