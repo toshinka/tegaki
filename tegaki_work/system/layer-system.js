@@ -1217,7 +1217,7 @@ export class LayerSystem {
         } else if (typeof state.activeLayerIndex === 'number') {
             this.activeLayerIndex = Math.max(0, Math.min(state.activeLayerIndex, restoredLayers.length - 1));
         }
-        this.refreshClippingMasks();
+        this.refreshClippingMasks({ reuseMasks: true, source: 'layer-placement-restore' });
         return true;
     }
 
@@ -1389,7 +1389,8 @@ export class LayerSystem {
             .filter(l => l.layerData?.isFolder)
             .map(l => l.layerData.id);
         folderIds.forEach(id => this._compactFolderChildren(id));
-        this.refreshClippingMasks();
+        // 並べ替え・出し入れでは画素は変わらないので、元が同じマスクは作り直さず再利用する
+        this.refreshClippingMasks({ reuseMasks: true, source: 'layer-reorder' });
     }
 
     _canPlaceInFolder(layer, folder) {
@@ -2456,7 +2457,21 @@ export class LayerSystem {
             return;
         }
 
+        // reuseMasks: 並べ替えなど画素が変わらない更新では、同じ元Layerの組のマスクを再利用する
+        // (マスク作成はGPU→CPU読み戻しを伴い、クリッピング枚数に比例して重い)。
+        const reusable = options.reuseMasks === true ? new Map() : null;
+        if (reusable) {
+            for (const layer of layers) {
+                const d = layer.layerData;
+                if (!d?.clippingMaskTexture || !d.effectiveClippingSourceId) continue;
+                const list = reusable.get(d.effectiveClippingSourceId) || [];
+                list.push(d.clippingMaskTexture);
+                reusable.set(d.effectiveClippingSourceId, list);
+            }
+            this._keptMaskTextures = new Set([...reusable.values()].flat());
+        }
         this.clearClippingMasks();
+        this._keptMaskTextures = null;
 
         for (const layer of layers) {
             const data = layer.layerData;
@@ -2479,7 +2494,10 @@ export class LayerSystem {
                 continue;
             }
 
-            const maskTexture = this._createBinaryClippingMaskTexture(sourceLayers);
+            const sourceKey = sourceLayers.map(source => source.layerData?.id).filter(Boolean).join(',');
+            const reused = reusable?.get(sourceKey)?.pop() || null;
+            if (reused && diagnosticSample) diagnosticSample.reusedMaskCount = (diagnosticSample.reusedMaskCount || 0) + 1;
+            const maskTexture = reused || this._createBinaryClippingMaskTexture(sourceLayers);
             if (!maskTexture) {
                 data.clippingDisplaySuppressed = true;
                 if (data.isFolder) {
@@ -2517,6 +2535,11 @@ export class LayerSystem {
             data.clippingMaskTexture = maskTexture;
             data.clippingMaskInverse = inverse;
             data.effectiveClippingSourceId = sourceLayers.map(source => source.layerData?.id).filter(Boolean).join(',') || null;
+        }
+        if (reusable) {
+            for (const list of reusable.values()) {
+                for (const texture of list) this._clippingMaskTexturePool.push(texture);
+            }
         }
         if (diagnosticsEnabled) {
             recordLayerClippingRefresh({
@@ -2578,7 +2601,9 @@ export class LayerSystem {
         }
         data.folderClippingSuppressedTargets = null;
         if (data.clippingMaskTexture) {
-            this._clippingMaskTexturePool.push(data.clippingMaskTexture);
+            if (!this._keptMaskTextures?.has(data.clippingMaskTexture)) {
+                this._clippingMaskTexturePool.push(data.clippingMaskTexture);
+            }
             data.clippingMaskTexture = null;
         }
         data.clippingMaskInverse = false;
