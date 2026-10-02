@@ -136,4 +136,33 @@ const canvas = { width: 1000, height: 800 };
     assert.equal(sanitizeRulerOptions({ perspective: 500 }).perspective, 95);
 }
 
+
+// ---- 遠近ハンドル（回転点の反対側の中心線上の丸）
+{
+    const g = await import('../system/ruler-geometry.js');
+    const R = g.RULER_ROTATION_RING_SCREEN_PX;
+    near(g.perspectiveHandleDistance(0), R, 1e-9, 'perspective 0 sits on the ring');
+    assert.ok(g.perspectiveHandleDistance(95) < g.perspectiveHandleDistance(30), 'stronger squeeze -> closer to the center');
+    assert.ok(g.perspectiveHandleDistance(-50) > R, 'negative perspective -> outside the ring');
+    near(g.perspectiveHandleDistance(95), g.RULER_PERSPECTIVE_NEAR_SCREEN_PX, 1e-9, 'max squeeze stops short of the center handle');
+    // 往復
+    for (const p of [80, 40, 20, -20, -40, -90]) near(g.perspectiveFromHandleDistance(g.perspectiveHandleDistance(p)), p, 1.5, 'round trip ' + p);
+    // 吸着: リングの近くは0
+    assert.equal(g.perspectiveFromHandleDistance(R + 4), 0); assert.equal(g.perspectiveFromHandleDistance(R - 4), 0);
+    assert.equal(g.perspectiveFromHandleDistance(0), 95); assert.equal(g.perspectiveFromHandleDistance(R * 3), -95);
+    // つかみ: 平行線の遠近ハンドルを優先して拾い、放射線では拾わない
+    const st = { type: 'parallel', center: { x: 400, y: 300 }, angle: 0, perspective: 0 };
+    const grab = g.resolveRulerGrab(st, { x: 400 - R, y: 300 }, 1);
+    assert.equal(grab.kind, 'perspective');
+    assert.equal(g.resolveRulerGrab(st, { x: 400 + R, y: 300 }, 1).kind, 'rotate', 'the orange side still rotates');
+    assert.equal(g.resolveRulerGrab(st, { x: 400, y: 300 }, 1).kind, 'move');
+    assert.notEqual(g.resolveRulerGrab({ ...st, type: 'radial' }, { x: 400 - R, y: 300 }, 1).kind, 'perspective');
+    // ドラッグ: 中心側へ寄せると+、外へ出すと-
+    const inner = g.applyRulerDrag(st, grab, { x: 400 - 30, y: 300 });
+    assert.ok(inner.perspective > 50, 'toward center -> strong squeeze');
+    const outer = g.applyRulerDrag(st, grab, { x: 400 - 120, y: 300 });
+    assert.ok(outer.perspective < -30, 'outside the ring -> opposite side squeezed');
+    assert.equal(g.applyRulerDrag(st, grab, { x: 400 - R - 3, y: 300 }).perspective, 0, 'snaps at the ring');
+}
+
 console.log('ruler verifier: snap / grab / drag / angle snap / sanitize / guide segments / futaba colors ok');
