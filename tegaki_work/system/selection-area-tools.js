@@ -43,7 +43,8 @@ export class AreaToolController {
         this.system = system;
         this.options = {
             auto: { tolerance: AUTO_SELECT_LIMITS.tolerance.default, referenceAll: false, contiguous: true },
-            gradient: { kind: 'linear', fade: 'sub' } // fade: 'sub'=メイン→サブ色 / 'transparent'=メイン→透明
+            gradient: { kind: 'linear', fade: 'sub' }, // fade: 'sub'=メイン→サブ色 / 'transparent'=メイン→透明
+            shape: { join: 'miter' } // 線の図形: 四角の角 miter=尖る / round=丸い
         };
         this.gradientDrag = null;
         this.shape = new ShapeEditor(this);
@@ -62,6 +63,7 @@ export class AreaToolController {
             if (typeof data.auto?.contiguous === 'boolean') this.options.auto.contiguous = data.auto.contiguous;
             if (['linear', 'radial'].includes(data.gradient?.kind)) this.options.gradient.kind = data.gradient.kind;
             if (['sub', 'transparent'].includes(data.gradient?.fade)) this.options.gradient.fade = data.gradient.fade;
+            if (['miter', 'round'].includes(data.shape?.join)) this.options.shape.join = data.shape.join;
         } catch (error) {
             // 壊れた設定は既定へ
         }
@@ -78,6 +80,7 @@ export class AreaToolController {
     setOptions(patch = {}) {
         if (patch.auto) Object.assign(this.options.auto, patch.auto);
         if (patch.gradient) Object.assign(this.options.gradient, patch.gradient);
+        if (patch.shape) Object.assign(this.options.shape, patch.shape);
         this._persist();
         this.system.eventBus?.emit('selection:area-options-changed', JSON.parse(JSON.stringify(this.options)));
     }
