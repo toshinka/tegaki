@@ -8,7 +8,7 @@
 
 ## 基盤
 
-- JavaScript ESM / Vite / PixiJS 8.19.0。依存versionの実値はpackage/lockが正本。
+- JavaScript ESM / Vite / PixiJS 8.22.0。依存versionの実値はpackage/lockが正本。
 - 主対象は現行Chromium系desktop＋液晶タブレット。本番描画はPixi RenderTextureへのlive raster bake。
 - rendererの現在の標準はWebGL。WebGPU既定化、SDF/MSDF/WebGPU brushの本番導入は別の明示Gateが必要。
 - DPR/resolutionは1、内部作業サイズと出力寸法を一致させる。暗黙の2倍化をしない。
