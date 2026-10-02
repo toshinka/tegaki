@@ -1091,7 +1091,7 @@ canvas {
 }
 
 .folder-thumbnail.has-folder-preview > svg {
-    /* レイヤーサムネイルの「外」バッジと同じ作り: 角の小さい濃い色の四角に、フォルダの絵を左上へ重ねる */
+    /* レイヤーサムネイルの「外」バッジと同じ作り: 角の小さい四角に、フォルダの絵を左上へ重ねる。色は中身の無いフォルダのサムネイルに合わせる */
     position: absolute;
     left: 1px;
     top: 1px;
@@ -1102,8 +1102,8 @@ canvas {
     padding: 1px;
     box-sizing: border-box;
     border-radius: 2px;
-    background: var(--futaba-maroon);
-    stroke: var(--futaba-background);
+    background: var(--ui-layer-surface-folder-thumb, var(--futaba-cream));
+    stroke: var(--ui-layer-text, var(--futaba-maroon));
 }
 
 .clip-layer-mirror-row.depth-1 {

@@ -1879,7 +1879,7 @@
     color: var(--futaba-cream);
 }
 
-/* フォルダのサムネイル: 右パネルのfolder-thumbnail svg規則(幅/高さ/色)より優先して、フォルダのバッジはレイヤーの「外」バッジと同じ見た目にする */
+/* フォルダのサムネイル: 右パネルのfolder-thumbnail svg規則(幅/高さ/色)より優先して、フォルダのバッジはレイヤーの「外」バッジと同じ作りで、色は中身の無いフォルダのサムネイルに合わせる */
 .right-panel .folder-thumbnail.has-folder-preview > svg {
     position: absolute;
     left: 1px;
@@ -1888,7 +1888,7 @@
     width: 12px;
     height: 12px;
     padding: 1px;
-    stroke: var(--futaba-background);
+    stroke: var(--ui-layer-text);
 }
 
 /* 中身のサムネイルを持つフォルダは、レイヤーのサムネイルと同じ大きさ・枠・切り抜きにする */
