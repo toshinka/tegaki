@@ -38,6 +38,7 @@ import {
 import { generateAdaptiveInterpolationPoints } from './realtime-stroke-sampling.js';
 import { CurveInterpolator } from './curve-interpolator.js';
 import { AirbrushDabRenderer } from './airbrush-dab-renderer.js';
+import { computeNibAngles } from './nib-angle.js';
 
 const AIRBRUSH_BUILDUP_POLL_MS = 8;
 
@@ -1187,7 +1188,11 @@ export class BrushCore {
         if (this.strokeInputProfile) {
             this.strokeInputProfile.hookTrim = { start: hookTrim.trimmedStart || 0, end: hookTrim.trimmedEnd || 0 };
         }
-        if (!state?.maskTexture || state.dabMode !== 'pen' || !(taperIn > 0 || taperOut > 0 || hookTrim.trimmed)) return false;
+        const settingsManager = window.TegakiSettingsManager;
+        const followNib = this.airbrushState?.mode === 'pen'
+            && settingsManager?.get?.('penTipShape') === 'square'
+            && settingsManager?.get?.('penTipFollow') === 'follow';
+        if (!state?.maskTexture || state.dabMode !== 'pen' || !(taperIn > 0 || taperOut > 0 || hookTrim.trimmed || followNib)) return false;
         if (strokeData?.isSingleDot === true || points.length < 2) return false;
         const renderer = this.layerManager.app?.renderer;
         if (!renderer) return false;
@@ -1197,11 +1202,19 @@ export class BrushCore {
             travel[i] = travel[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
         }
         const total = travel[travel.length - 1];
+        // 角ペンの方向追従: 全点列から各点のペン先角度を決める(固定角0°を基準に、斜めだけ進行方向へ)
+        let nibAngles = null;
+        if (followNib) {
+            const nibWidth = this.strokeRenderer.airbrushDabRenderer._getPenDabWidth(1, this._buildDabMaskSettings());
+            const baseAngle = Number(settingsManager.get('penTipAngle')) || 0;
+            nibAngles = computeNibAngles(points, nibWidth).map(angle => angle + baseAngle);
+        }
         const tapered = points.map((point, i) => ({
             x: point.x,
             y: point.y,
             pressure: point.pressure,
-            widthScale: this._getPenTaperScale(travel[i], total - travel[i])
+            widthScale: this._getPenTaperScale(travel[i], total - travel[i]),
+            ...(nibAngles ? { nibAngle: nibAngles[i] } : {})
         }));
 
         const empty = new Container();

@@ -3,6 +3,7 @@
  * stroke lifecycle、RenderTextureへの焼き込み、History、Layer / CAFは所有しない。
  */
 
+import { lerpNibAngle } from './nib-angle.js';
 import { Container, Sprite, Texture } from 'pixi.js';
 
 const AIRBRUSH_FLOW_REFERENCE_SPACING_RATIO = 0.18;
@@ -52,7 +53,7 @@ export class AirbrushDabRenderer {
 
         if (points.length === 1) {
             const point = points[0];
-            addDab.call(this, container, texture, point.x, point.y, point.pressure ?? 1, settings, point.widthScale ?? 1);
+            addDab.call(this, container, texture, point.x, point.y, point.pressure ?? 1, settings, point.widthScale ?? 1, point.nibAngle);
             state.initialized = true;
             state.nextDistance = this.getSpacing(settings, point, point);
             return container.children.length > 0 ? container : null;
@@ -65,7 +66,7 @@ export class AirbrushDabRenderer {
         const distance = Math.hypot(dx, dy);
 
         if (distance <= 0) {
-            addDab.call(this, container, texture, end.x, end.y, end.pressure ?? 1, settings, end.widthScale ?? 1);
+            addDab.call(this, container, texture, end.x, end.y, end.pressure ?? 1, settings, end.widthScale ?? 1, end.nibAngle);
             return container.children.length > 0 ? container : null;
         }
 
@@ -88,7 +89,10 @@ export class AirbrushDabRenderer {
             // 入り抜き(taper)の径倍率も区間内で補間する。
             const widthScale = (start.widthScale ?? 1) + (((end.widthScale ?? 1) - (start.widthScale ?? 1)) * t);
 
-            addDab.call(this, container, texture, x, y, pressure, settings, widthScale);
+            const nibAngle = Number.isFinite(start.nibAngle) && Number.isFinite(end.nibAngle)
+                ? lerpNibAngle(start.nibAngle, end.nibAngle, t)
+                : undefined;
+            addDab.call(this, container, texture, x, y, pressure, settings, widthScale, nibAngle);
             nextDistance += spacing;
         }
 
@@ -248,7 +252,7 @@ export class AirbrushDabRenderer {
      * pen dab: stroke maskへmax合成で置くため、重なってもstroke内で濃度が積み上がらない。
      * 線の不透明度はmask確定時に一括で掛ける。
      */
-    _addPenDab(container, texture, x, y, pressure, settings, widthScale = 1) {
+    _addPenDab(container, texture, x, y, pressure, settings, widthScale = 1, nibAngle = undefined) {
         // AA帯は径の内側に作られるため、その分dabを広げて50%被覆の縁を元の径に保つ(線が細らない)。
         const aaPx = Math.max(0, Number(settings.penEdgeAA) || 0);
         const width = Math.max(0.5, this._getPenDabWidth(pressure, settings) * widthScale)
@@ -259,7 +263,9 @@ export class AirbrushDabRenderer {
             // 角: 幅=指定径、高さ=径×アスペクト、向き=nibの角度。縁のAAはtextureの外周1texelに任せる。
             const aspect = Math.max(0.15, Math.min(1, Number(settings.penTipAspect) || 1));
             const squareWidth = Math.max(0.5, this._getPenDabWidth(pressure, settings) * widthScale);
-            sprite.rotation = ((Number(settings.penTipAngle) || 0) * Math.PI) / 180;
+            // 方向追従の角度(再描画時のみ付く)があればそれを使い、なければ設定の固定角
+            const angle = Number.isFinite(nibAngle) ? nibAngle : (Number(settings.penTipAngle) || 0);
+            sprite.rotation = (angle * Math.PI) / 180;
             sprite.width = squareWidth * SQUARE_TEXTURE_SCALE;
             sprite.height = squareWidth * aspect * SQUARE_TEXTURE_SCALE;
         } else {
