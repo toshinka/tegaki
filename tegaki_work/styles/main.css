@@ -1102,8 +1102,14 @@ canvas {
     padding: 1px;
     box-sizing: border-box;
     border-radius: 2px;
-    background: var(--ui-layer-surface-folder-thumb, var(--futaba-cream));
+    background: var(--futaba-background);
     stroke: var(--ui-layer-text, var(--futaba-maroon));
+}
+
+/* フォルダのアイコンは中身を塗る（透けて背景や絵が見えない）。中身のある/無いフォルダで共通 */
+.folder-thumbnail svg,
+.folder-item svg {
+    fill: var(--futaba-background);
 }
 
 .clip-layer-mirror-row.depth-1 {
