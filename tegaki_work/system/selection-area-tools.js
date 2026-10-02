@@ -45,7 +45,7 @@ export class AreaToolController {
         this.options = {
             auto: { tolerance: AUTO_SELECT_LIMITS.tolerance.default, referenceAll: false, contiguous: true },
             gradient: { kind: 'linear', fade: 'sub' }, // fade: 'sub'=メイン→サブ色 / 'transparent'=メイン→透明
-            shape: { join: 'miter' }, // 線の図形: 四角の角 miter=尖る / round=丸い
+            shape: { join: 'miter', width: null }, // 線の図形: 四角の角 miter=尖る / round=丸い / width=最後に使った太さ(null=ペンの太さ)
             border: { radius: 4, position: 'outside' } // フチ: 太さ(px) / 位置 outside=外 inside=内
         };
         this.gradientDrag = null;
@@ -67,6 +67,8 @@ export class AreaToolController {
             if (['linear', 'radial'].includes(data.gradient?.kind)) this.options.gradient.kind = data.gradient.kind;
             if (['sub', 'transparent'].includes(data.gradient?.fade)) this.options.gradient.fade = data.gradient.fade;
             if (['miter', 'round'].includes(data.shape?.join)) this.options.shape.join = data.shape.join;
+            const shapeWidth = Number(data.shape?.width);
+            if (Number.isFinite(shapeWidth) && shapeWidth >= 1) this.options.shape.width = Math.min(400, Math.round(shapeWidth * 10) / 10);
             const radius = Number(data.border?.radius);
             if (Number.isFinite(radius)) this.options.border.radius = Math.max(1, Math.min(100, Math.round(radius)));
             if (['outside', 'inside'].includes(data.border?.position)) this.options.border.position = data.border.position;
