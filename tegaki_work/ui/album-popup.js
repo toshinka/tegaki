@@ -12,6 +12,7 @@
  * ============================================================================
  */
 
+import { appendAlbumEnvTiles } from './album-env-tiles.js';
 import { Container, Graphics, RenderTexture } from 'pixi.js';
 import Sortable from 'sortablejs';
 
@@ -1362,8 +1363,19 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             gallery.appendChild(card);
         });
 
+        // 環境タイル(アルバム本体の並び替え・選択とは独立。非同期で後から追加する)
+        this._galleryRenderToken = (this._galleryRenderToken || 0) + 1;
+        const renderToken = this._galleryRenderToken;
+        appendAlbumEnvTiles(gallery, {
+            isStale: () => renderToken !== this._galleryRenderToken,
+            onChanged: () => this._renderGallery()
+        }).catch(() => {});
+
         // SortableJS の初期化 (感触改善)
         this.sortable = new Sortable(gallery, {
+            draggable: '.album-card:not(.album-card--env)',
+            filter: '.album-card--env',
+            onMove: (evt) => !evt.related?.classList?.contains('album-card--env'),
             animation: 240,
             easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)', // 弾力のある動き
             ghostClass: 'sortable-ghost',

@@ -516,7 +516,7 @@
 #quick-access-popup.qa-popup .qa-slot-mod.active {
     border-color: var(--active-border);
     background: var(--active-border);
-    box-shadow: 0 0 5px 1px color-mix(in srgb, var(--active-border) 70%, transparent);
+    box-shadow: none;
 }
 
 #quick-access-popup.qa-popup .qa-slot-icon {

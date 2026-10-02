@@ -38,6 +38,7 @@ import {
 import { generateAdaptiveInterpolationPoints } from './realtime-stroke-sampling.js';
 import { CurveInterpolator } from './curve-interpolator.js';
 import { AirbrushDabRenderer } from './airbrush-dab-renderer.js';
+import { computeStrokeEndCuts } from './pen-end-cut.js';
 
 const AIRBRUSH_BUILDUP_POLL_MS = 8;
 
@@ -1202,8 +1203,7 @@ export class BrushCore {
             x: point.x,
             y: point.y,
             pressure: point.pressure,
-            widthScale: this._getPenTaperScale(travel[i], total - travel[i]),
-            cap: squareCaps && (i === 0 || i === points.length - 1)
+            widthScale: this._getPenTaperScale(travel[i], total - travel[i])
         }));
 
         const empty = new Container();
@@ -1219,7 +1219,27 @@ export class BrushCore {
         } finally {
             if (ownsBatch) this._flushAirbrushBatch();
         }
+        // 角ペン: 入り/抜きの丸い端を、水平または垂直の線で切り落とす(足さずに切るので斜めでも角がはみ出さない)
+        if (squareCaps) this._cutPenStrokeEnds(points, state.maskTexture, renderer);
         return true;
+    }
+
+    _cutPenStrokeEnds(points, maskTexture, renderer) {
+        const maskSettings = this._buildDabMaskSettings();
+        const width = this.strokeRenderer.airbrushDabRenderer._getPenDabWidth(1, maskSettings);
+        const cuts = computeStrokeEndCuts(points, width);
+        if (!cuts.length) return;
+        const eraser = new Graphics();
+        cuts.forEach(cut => eraser.rect(cut.x, cut.y, cut.width, cut.height));
+        eraser.fill(0xffffff);
+        eraser.blendMode = 'erase';
+        // 根のContainer自身のblendModeは使われないので、子として渡す
+        const root = new Container();
+        root.addChild(eraser);
+        // dabと同じく、Layerのraster原点ぶんをmask座標へずらす
+        this._applyLayerRasterRenderOffset(this.airbrushState.targetLayer, root);
+        renderer.render({ container: root, target: maskTexture, clear: false });
+        root.destroy({ children: true });
     }
 
     _isPenDabEnabled(mode) {

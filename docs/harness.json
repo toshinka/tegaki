@@ -94,6 +94,15 @@
         "^verify-settings-snapshot"
       ]
     },
+    "pen-end-cut": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": [
+        "tegaki_work/system/drawing/pen-end-cut.js"
+      ],
+      "patterns": [
+        "^verify-pen-end-cut"
+      ]
+    },
     "tool-slots": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [
