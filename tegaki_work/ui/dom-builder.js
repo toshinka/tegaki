@@ -61,17 +61,16 @@ export const DOMBuilder = (function() {
     function buildSidebar() {
         const sidebar = createElement('div', { className: 'sidebar' });
 
+        // 並び: Q(レールの上に浮かぶ) → 上段=保存/取り込み/書き出し系 → 下段=ツール系 → 設定(最下段・別色)
         const tools = [
+            { id: 'quick-access-tool', textIcon: 'Q', title: 'Quick Tool Panel (Q)', role: 'popup-launcher', popupName: 'quickAccess', controls: 'quick-access-popup' },
             { id: 'library-tool', icon: 'library', title: 'アルバム保管', role: 'popup-launcher', popupName: 'album', controls: 'album-popup' },
             { id: 'image-import-tool', icon: 'load', title: '画像をアクティブレイヤーへ読み込み', role: 'command' },
-            { id: 'reference-preview-tool', icon: 'monitor', title: '資料 / プレビュー', role: 'popup-launcher', popupName: 'referencePreview', controls: 'reference-preview-viewer' },
             { id: 'export-tool', icon: 'export', title: '画像・アニメ出力', role: 'popup-launcher', popupName: 'export', controls: 'export-popup' },
             { separator: true },
+            { id: 'reference-preview-tool', icon: 'monitor', title: '資料 / プレビュー', role: 'popup-launcher', popupName: 'referencePreview', controls: 'reference-preview-viewer' },
             { id: 'panel-layout-tool', icon: 'panelLayout', title: '漫画ツール（コマ Shift+K / 集中線 Shift+F）', role: 'popup-launcher', popupName: 'panelLayout', controls: 'panel-layout-popup' },
             { id: 'resize-tool', icon: 'resize', title: 'リサイズ', role: 'popup-launcher', popupName: 'resize', controls: 'resize-settings' },
-            { separator: true },
-            { id: 'quick-access-tool', textIcon: 'Q', title: 'Quick Tool Panel (Q)', role: 'popup-launcher', popupName: 'quickAccess', controls: 'quick-access-popup' },
-            { separator: true },
             { id: 'gif-animation-tool', icon: 'animation', title: 'アニメテーブル (A)', role: 'popup-launcher', popupName: 'animationTable', controls: 'animation-table-popup' },
             { separator: true },
             { id: 'settings-tool', icon: 'settings', title: '設定 (S)', role: 'popup-launcher', popupName: 'settings', controls: 'settings-popup' }

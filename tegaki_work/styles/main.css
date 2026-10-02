@@ -455,6 +455,25 @@ body {
     font: inherit;
 }
 
+.sidebar #quick-access-tool {
+    /* Qはレールの上に浮かぶ独立ボタン。QTPはこの隣から開く */
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 8px);
+    width: var(--ui-rail-width);
+    height: var(--ui-rail-width);
+    flex: none;
+    background: var(--ui-surface-rail);
+    border-radius: var(--ui-radius-rail);
+    backdrop-filter: var(--ui-backdrop-rail);
+    box-shadow: var(--ui-shadow-rail);
+}
+
+/* 設定の歯車は区別のためオレンジ */
+.sidebar #settings-tool {
+    color: var(--active-border);
+}
+
 .tool-button-text-icon {
     color: currentColor;
     font-size: var(--ui-rail-text-size);
