@@ -196,7 +196,7 @@ export class QuickAccessPopup {
     }
 
     /**
-     * Qボタンを押したままドラッグすると、QTPがついてくる(キーボード無しでキャンバスの近くへ置ける)。
+     * QTPが閉じているとき、Qボタンを押したままドラッグするとQTPが開いてポインタについてくる(キーボード無しでキャンバスの近くへ置ける)。
      * しきい値未満はふつうのクリック(開閉)。ドラッグした後のclickは握りつぶす。
      */
     _setupQButtonDrag() {
@@ -250,7 +250,9 @@ export class QuickAccessPopup {
         };
         this._qButtonPointerDownHandler = (e) => {
             if (e.button !== 0 || !e.target?.closest?.('#quick-access-tool')) return;
-            drag = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, active: false, justOpened: !this.isVisible };
+            // QTPが開いている間はふつうのクリック(閉じる)。ドラッグで開くのは閉じているときだけ。
+            if (this.isVisible) return;
+            drag = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, active: false, justOpened: true };
             window.addEventListener('pointermove', onMove);
             window.addEventListener('pointerup', onUp);
             window.addEventListener('pointercancel', onUp);

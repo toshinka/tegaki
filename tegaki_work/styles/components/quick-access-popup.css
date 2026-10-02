@@ -378,12 +378,21 @@
 }
 
 #quick-access-popup.qa-popup .qa-sub-button--icon svg {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
 }
 
 #quick-access-popup.qa-popup .qa-sub-button--icon[data-tone="soft"] svg { opacity: 0.55; }
-#quick-access-popup.qa-popup .qa-sub-button--icon[data-tone="strong"] svg { stroke-width: 2; }
+#quick-access-popup.qa-popup .qa-sub-button--icon[data-tone="strong"] {
+    color: var(--futaba-background);
+    background: var(--futaba-maroon);
+    border-color: var(--futaba-maroon);
+}
+
+#quick-access-popup.qa-popup .qa-sub-button--icon[data-tone="strong"].active {
+    outline: 2px solid var(--active-border);
+    outline-offset: 1px;
+}
 
 #quick-access-popup.qa-popup .qa-sub-badge {
     position: absolute;
