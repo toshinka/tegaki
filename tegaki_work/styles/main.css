@@ -1091,18 +1091,19 @@ canvas {
 }
 
 .folder-thumbnail.has-folder-preview > svg {
+    /* レイヤーサムネイルの「外」バッジと同じ作り: 角の小さい濃い色の四角に、フォルダの絵を左上へ重ねる */
     position: absolute;
     left: 1px;
     top: 1px;
     bottom: auto;
     z-index: 1;
-    width: 11px;
-    height: 11px;
+    width: 12px;
+    height: 12px;
     padding: 1px;
-    box-sizing: content-box;
-    border-radius: 3px;
-    background: var(--futaba-cream);
-    stroke: var(--futaba-maroon);
+    box-sizing: border-box;
+    border-radius: 2px;
+    background: var(--futaba-maroon);
+    stroke: var(--futaba-background);
 }
 
 .clip-layer-mirror-row.depth-1 {
