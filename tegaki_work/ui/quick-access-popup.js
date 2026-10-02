@@ -17,6 +17,7 @@ import { TegakiEventBus } from '../system/event-bus.js';
 import { UI_ICONS } from './ui-icons.js';
 import { createPillTabs } from './pill-tabs.js';
 import { TonePanel } from './tone-panel.js';
+import { toolNameToSelectionMode } from '../system/selection-area-tools.js';
 import { TOOL_GROUP_MEMBERS, getToolGroupState, isToolGroupMember, onToolGroupChange, setToolGroupCurrent } from './tool-group.js';
 import { getBrushPresetIcon } from './brush-preset-icons.js';
 import { applyBrushPresetValues, brushPresetMatches, getBrushPresetTool, listQtpBrushPresets } from '../system/drawing/brush-presets.js';
@@ -1357,6 +1358,14 @@ export class QuickAccessPopup {
                         aria-label="投げ縄塗り" ${shortcutHints.lassoFill}>
                         ${UI_ICONS.lasso || '<span class="qa-tool-text-icon">縄</span>'}
                     </button>
+                    <button class="qa-tool-button" id="qa-auto-select-tool" type="button"
+                        aria-label="自動選択" title="自動選択（クリックで同じ色の領域を選択）">
+                        ${UI_ICONS.autoSelect}
+                    </button>
+                    <button class="qa-tool-button" id="qa-gradient-tool" type="button"
+                        aria-label="グラデーション" title="グラデーション（ドラッグで始点→終点）">
+                        ${UI_ICONS.gradient}
+                    </button>
                 </div>
                 <div class="qa-tool-sub-row" id="qa-tool-sub-row" hidden>
                     <div class="qa-tool-sub-fill" id="qa-tool-sub-fill" hidden>
@@ -1366,6 +1375,7 @@ export class QuickAccessPopup {
                             title="消しバケツ（塗った範囲を消す）" aria-label="消しバケツ">${UI_ICONS.eraser}</button>
                     </div>
                     <div class="qa-tool-sub-presets" id="qa-tool-sub-presets" hidden></div>
+                    <div class="qa-tool-sub-area" id="qa-tool-sub-area" hidden></div>
                 </div>
             </section>
 
@@ -1571,6 +1581,9 @@ export class QuickAccessPopup {
             eraserToolBtn: document.getElementById('qa-eraser-tool'),
             fillToolBtn: document.getElementById('qa-fill-tool'),
             lassoFillToolBtn: document.getElementById('qa-lasso-fill-tool'),
+            autoSelectToolBtn: document.getElementById('qa-auto-select-tool'),
+            gradientToolBtn: document.getElementById('qa-gradient-tool'),
+            toolSubArea: document.getElementById('qa-tool-sub-area'),
             toolGroupTabBtn: document.getElementById('qa-tool-group-tab'),
             toolGroupRow: document.getElementById('qa-tool-group-row'),
             toolSubRow: document.getElementById('qa-tool-sub-row'),
@@ -1792,6 +1805,8 @@ export class QuickAccessPopup {
             this._switchTool(nextMode);
         });
         this._bindPointerAction(this.elements.lassoFillToolBtn, () => this._switchTool('lasso-fill'));
+        this._bindPointerAction(this.elements.autoSelectToolBtn, () => this._switchTool('auto-select'));
+        this._bindPointerAction(this.elements.gradientToolBtn, () => this._switchTool('gradient'));
         this._bindPointerAction(this.elements.toolGroupTabBtn, () => this._switchTool(getToolGroupState().current));
         this._bindPointerAction(this.elements.fillEraseBtn, () => this._switchTool(this.currentTool === 'eraser-fill' ? 'fill' : 'eraser-fill'));
         this._settingsUpdatedListener = () => this._renderToolSubRow();
@@ -2631,15 +2646,19 @@ export class QuickAccessPopup {
             if (tool) this._setCurrentToolFromExternal(tool);
         });
 
+        const selectionToolName = () => ({ auto: 'auto-select', gradient: 'gradient' }[window.pixelSelectionSystem?.getToolMode?.()] || 'selection');
         this.eventBus.on('selection:tool-changed', ({ active } = {}) => {
             if (active === true) {
-                this._setCurrentToolFromExternal('selection');
+                this._setCurrentToolFromExternal(selectionToolName());
                 return;
             }
 
-            if (this.currentTool === 'selection') {
+            if (['selection', 'auto-select', 'gradient'].includes(this.currentTool)) {
                 this._setCurrentToolFromExternal(this.brushSettings?.getMode?.() || 'pen');
             }
+        });
+        this.eventBus.on('selection:tool-mode-changed', () => {
+            if (window.pixelSelectionSystem?.isToolActive?.()) this._setCurrentToolFromExternal(selectionToolName());
         });
 
         this.eventBus.on('brush:size-changed', (payload = {}) => {
@@ -2694,10 +2713,59 @@ export class QuickAccessPopup {
             : null;
     }
 
+    /** 自動選択(許容値 / 全レイヤー参照 / 隣接のみ)・グラデーション(線形/放射 / 終端の色)の二行目。 */
+    _renderAreaToolOptions(container, tool) {
+        const api = window.CoreRuntime?.api?.selection;
+        const opts = api?.getAreaToolOptions?.();
+        container.textContent = '';
+        if (!opts) return;
+        const button = (label, title, active, onClick) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'qa-sub-button qa-sub-button--text';
+            b.textContent = label;
+            b.title = title;
+            b.classList.toggle('active', active);
+            this._bindPointerAction(b, () => { onClick(); this._renderToolSubRow(); });
+            container.appendChild(b);
+        };
+        if (tool === 'auto-select') {
+            const a = opts.auto;
+            button('ALL', '全レイヤーを参照して領域を決める', a.referenceAll, () => api.setAreaToolOptions({ auto: { referenceAll: !a.referenceAll } }));
+            button('隣接', '隣り合う領域だけ（外すと同じ色を全て）', a.contiguous, () => api.setAreaToolOptions({ auto: { contiguous: !a.contiguous } }));
+            const range = document.createElement('input');
+            range.type = 'range';
+            range.min = '0';
+            range.max = '128';
+            range.step = '1';
+            range.value = String(a.tolerance);
+            range.className = 'qa-sub-range';
+            range.title = `許容値 ${a.tolerance}（色の違いをどこまで同じとみなすか）`;
+            range.setAttribute('aria-label', '許容値');
+            range.addEventListener('pointerdown', e => e.stopPropagation());
+            range.addEventListener('input', () => {
+                api.setAreaToolOptions({ auto: { tolerance: Number(range.value) } });
+                range.title = `許容値 ${range.value}`;
+            });
+            container.appendChild(range);
+        } else {
+            const g = opts.gradient;
+            button('線形', '線形グラデーション', g.kind === 'linear', () => api.setAreaToolOptions({ gradient: { kind: 'linear' } }));
+            button('放射', '放射グラデーション（始点が中心）', g.kind === 'radial', () => api.setAreaToolOptions({ gradient: { kind: 'radial' } }));
+            button('→サブ', 'メイン色からサブ色へ', g.fade === 'sub', () => api.setAreaToolOptions({ gradient: { fade: 'sub' } }));
+            button('→透明', 'メイン色から透明へ', g.fade === 'transparent', () => api.setAreaToolOptions({ gradient: { fade: 'transparent' } }));
+        }
+    }
+
     _renderToolSubRow() {
-        const { toolSubRow, toolSubFill, toolSubPresets, fillEraseBtn } = this.elements;
+        const { toolSubRow, toolSubFill, toolSubPresets, fillEraseBtn, toolSubArea } = this.elements;
         if (!toolSubRow) return;
         const tool = this.currentTool;
+        const isAreaTool = tool === 'auto-select' || tool === 'gradient';
+        if (toolSubArea) {
+            toolSubArea.hidden = !isAreaTool;
+            if (isAreaTool) this._renderAreaToolOptions(toolSubArea, tool);
+        }
         const isFill = tool === 'fill' || tool === 'eraser-fill';
         const brushTool = getBrushPresetTool(tool);
         const manager = this._getSettingsManager();
@@ -2707,7 +2775,7 @@ export class QuickAccessPopup {
 
         toolSubFill.hidden = !isFill;
         toolSubPresets.hidden = presets.length === 0;
-        toolSubRow.hidden = !isFill && presets.length === 0;
+        toolSubRow.hidden = !isFill && !isAreaTool && presets.length === 0;
         if (fillEraseBtn) fillEraseBtn.classList.toggle('active', tool === 'eraser-fill');
         if (isFill) this._updateFillRefAllToggle();
 
@@ -2740,10 +2808,11 @@ export class QuickAccessPopup {
         if (isToolGroupMember(normalizedTool)) setToolGroupCurrent(normalizedTool);
         this._updateToolButtons();
 
-        if (normalizedTool === 'selection') {
-            window.CoreRuntime?.api?.selection?.setToolActive?.(true);
+        if (toolNameToSelectionMode(normalizedTool)) {
+            // 選択・自動選択・グラデーションは同じ入力経路(選択ツール)を使い、モードだけ切り替える
+            window.CoreRuntime?.api?.selection?.activateTool?.(normalizedTool);
             window.CoreRuntime?.api?.layer?.exitMoveMode?.();
-            this.eventBus?.emit('tool:select', { tool: 'selection' });
+            this.eventBus?.emit('tool:select', { tool: normalizedTool });
         } else if (window.CoreRuntime?.api?.tool?.set) {
             window.CoreRuntime.api.tool.set(normalizedTool);
         }
@@ -2783,6 +2852,8 @@ export class QuickAccessPopup {
         if (tool === 'lasso-fill') return 'lasso-fill';
         if (tool === 'eyedropper') return 'eyedropper';
         if (tool === 'selection') return 'selection';
+        if (tool === 'auto-select') return 'auto-select';
+        if (tool === 'gradient') return 'gradient';
         return 'pen';
     }
 
@@ -2915,7 +2986,7 @@ export class QuickAccessPopup {
 
         const selectionApi = window.CoreRuntime?.api?.selection || window.pixelSelectionSystem;
         if (selectionApi?.isToolActive?.() === true) {
-            this.currentTool = 'selection';
+            this.currentTool = ({ auto: 'auto-select', gradient: 'gradient' }[window.pixelSelectionSystem?.getToolMode?.()]) || 'selection';
         } else if (this.brushSettings.getMode) {
             this.currentTool = this._normalizeTool(this.brushSettings.getMode());
         }
@@ -2944,6 +3015,8 @@ export class QuickAccessPopup {
             this.elements.eraserToolBtn,
             this.elements.fillToolBtn,
             this.elements.lassoFillToolBtn,
+            this.elements.autoSelectToolBtn,
+            this.elements.gradientToolBtn,
             this.elements.selectionToolBtn,
             this.elements.eyedropperBtn
         ];
@@ -2961,6 +3034,8 @@ export class QuickAccessPopup {
             fill: this.elements.fillToolBtn,
             'eraser-fill': this.elements.fillToolBtn,
             'lasso-fill': this.elements.lassoFillToolBtn,
+            'auto-select': this.elements.autoSelectToolBtn,
+            gradient: this.elements.gradientToolBtn,
             selection: this.elements.selectionToolBtn,
             eyedropper: this.elements.eyedropperBtn
         };
@@ -2982,6 +3057,8 @@ export class QuickAccessPopup {
                 fill: 'fill',
                 'eraser-fill': 'erase fill',
                 'lasso-fill': 'lasso fill',
+                'auto-select': 'auto select',
+                gradient: 'gradient',
                 selection: 'selection',
                 eyedropper: 'eyedropper'
             };

@@ -454,6 +454,7 @@ export const KeyboardHandler = (function() {
                             || 'pen';
                         syncToolUI(fallbackTool);
                     } else {
+                        api.selection.setToolMode?.('rect');
                         api.selection.setToolActive(true);
                         syncToolUI('selection');
                     }
@@ -481,15 +482,18 @@ export const KeyboardHandler = (function() {
                     break;
                 }
                 const current = window.brushSettings?.getMode?.();
-                const currentTool = api?.selection?.isToolActive?.() === true ? 'selection' : (api?.tool?.get?.() || current);
+                const selectionMode = window.pixelSelectionSystem?.getToolMode?.();
+                const currentTool = api?.selection?.isToolActive?.() === true
+                    ? ({ auto: 'auto-select', gradient: 'gradient' }[selectionMode] || 'selection')
+                    : (api?.tool?.get?.() || current);
                 const target = cycleToolGroup(currentTool);
                 if (!confirmActiveTransformsForToolSwitch(target)) {
                     event.preventDefault();
                     break;
                 }
-                if (target === 'selection') {
-                    api?.selection?.setToolActive?.(true);
-                    syncToolUI('selection');
+                if (target === 'selection' || target === 'auto-select' || target === 'gradient') {
+                    api?.selection?.activateTool?.(target);
+                    syncToolUI(target);
                 } else if (api?.tool?.set?.(target)) {
                     syncToolUI(target);
                 } else if (window.coreEngine?.switchTool) {

@@ -82,6 +82,18 @@
         "^verify-canvas-size"
       ]
     },
+    "area-tools": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": [
+        "tegaki_work/system/auto-select.js",
+        "tegaki_work/system/gradient-fill.js",
+        "tegaki_work/system/selection-area-tools.js"
+      ],
+      "patterns": [
+        "^verify-auto-select",
+        "^verify-gradient-fill"
+      ]
+    },
     "tone": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [

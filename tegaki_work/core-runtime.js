@@ -76,6 +76,10 @@ export const CoreRuntime = (function() {
                         engine.pixelSelectionSystem?.getBoundsForLayer?.(layerId) || null,
                     hasSelection: () => engine.pixelSelectionSystem?.hasSelection?.() === true,
                     setToolActive: (active) => engine.pixelSelectionSystem?.setToolActive?.(active) === true,
+                    setToolMode: (mode) => engine.pixelSelectionSystem?.setToolMode?.(mode) === true,
+                    activateTool: (tool) => engine.pixelSelectionSystem?.activateTool?.(tool) === true,
+                    getAreaToolOptions: () => engine.pixelSelectionSystem?.areaTools?.getOptions?.() || null,
+                    setAreaToolOptions: (patch) => engine.pixelSelectionSystem?.areaTools?.setOptions?.(patch),
                     selectAll: () => engine.pixelSelectionSystem?.selectAll?.() === true,
                     requestTransform: () => engine.pixelSelectionSystem?.requestTransform?.() === true,
                     confirmTransform: () =>
