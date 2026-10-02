@@ -1835,6 +1835,8 @@ export class PixelSelectionSystem {
 
     _updateOverlay() {
         this._updateOverlayBase();
+        // マスク選択は外接矩形の枠ではなく、形に沿った選択線だけを見せる
+        if (this.state?.mask && this.overlayPolygon) this.overlayPolygon.removeAttribute('points');
         if (!this.areaTools) return;
         this.areaTools.renderMask(this.state?.mask ? this._getSelectionContext() : null);
     }

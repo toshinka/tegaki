@@ -2005,6 +2005,10 @@ export class BrushCore {
             maskSettings.penDabSpacingRatio = engine.penDabSpacingRatio ?? 0.05;
             // ペン先の形(角ペン/角消しゴム): 丸は従来のfalloff dab、角は硬い四角のdabをnibの向きに回して置く
             const tipPrefix = isEraserDab ? 'eraserTip' : 'penTip';
+            if (!isEraserDab) {
+                const sizeStrength = Number(userSetting('penPressureSizeStrength', 1));
+                maskSettings.penPressureSizeStrength = Number.isFinite(sizeStrength) ? sizeStrength : 1;
+            }
             maskSettings.penTipShape = userSetting(`${tipPrefix}Shape`, 'round') === 'square' ? 'square' : 'round';
             maskSettings.penTipAspect = Number(userSetting(`${tipPrefix}Aspect`, 1)) || 1;
             maskSettings.penTipAngle = Number(userSetting(`${tipPrefix}Angle`, 0)) || 0;

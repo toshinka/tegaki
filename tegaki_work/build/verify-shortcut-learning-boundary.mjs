@@ -66,8 +66,7 @@ const qtpControls = [
     { control: 'airbrush', id: 'qa-airbrush-tool', action: 'TOOL_AIRBRUSH_BLUR_TOGGLE' },
     { control: 'fill', id: 'qa-fill-tool', action: 'TOOL_FILL' },
     { control: 'lassoFill', id: 'qa-lasso-fill-tool', action: 'TOOL_LASSO_FILL' },
-    { control: 'selection', id: 'qa-selection-tool', action: 'TOOL_RECT_SELECTION' },
-    { control: 'toolGroup', id: 'qa-tool-group-tab', action: 'TOOL_GROUP_CYCLE' }
+    { control: 'selection', id: 'qa-selection-tool', action: 'TOOL_RECT_SELECTION' }
 ];
 const qtpShortcutContext = {
     _escapeHtml: QuickAccessPopup.prototype._escapeHtml
@@ -94,6 +93,6 @@ for (const { control, id, action } of qtpControls) {
         `${id} tooltip uses the canonical description and key`);
 }
 assert.equal((qtpSource.match(/\$\{shortcutHints\.[A-Za-z]+\}/g) || []).length, qtpControls.length,
-    'Phase 8y remains limited to the eight QTP tool controls');
+    'Phase 8y remains limited to the seven QTP tool controls');
 
-console.log('verify-shortcut-learning-boundary: execution authority, canonical Settings projection and eight QTP tool hints OK');
+console.log('verify-shortcut-learning-boundary: execution authority, canonical Settings projection and seven QTP tool hints OK');

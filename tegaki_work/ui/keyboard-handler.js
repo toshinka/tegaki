@@ -13,7 +13,7 @@
  */
 
 import { TEGAKI_KEYMAP } from '../config.js';
-import { cycleToolGroup } from './tool-group.js';
+import { activateNextInCurrentSlot, activateToolSlot } from './tool-slots.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { historyManager } from '../system/history.js';
 import { Container } from 'pixi.js';
@@ -364,6 +364,11 @@ export const KeyboardHandler = (function() {
                     event.preventDefault();
                     break;
                 }
+                // 別のツールから: 前に使っていたペン / ペンの状態でもう一度: QTPの並び順で次のペンへ
+                if (activateToolSlot('pen')) {
+                    event.preventDefault();
+                    break;
+                }
                 if (api?.tool.set('pen')) {
                     syncToolUI('pen');
                 } else if (window.coreEngine?.switchTool) {
@@ -378,6 +383,10 @@ export const KeyboardHandler = (function() {
                     event.preventDefault();
                     break;
                 }
+                if (activateToolSlot('eraser')) {
+                    event.preventDefault();
+                    break;
+                }
                 if (api?.tool.set('eraser')) {
                     syncToolUI('eraser');
                 } else if (window.coreEngine?.switchTool) {
@@ -387,21 +396,18 @@ export const KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
 
-            case 'TOOL_FILL':
-                const currentMode = window.brushSettings?.getMode();
-                let targetFillMode = 'fill';
-
-                // fill <-> eraser-fill の循環
-                if (currentMode === 'fill') {
-                    targetFillMode = 'eraser-fill';
-                } else if (currentMode === 'eraser-fill') {
-                    targetFillMode = 'fill';
-                }
-
-                if (!confirmActiveTransformsForToolSwitch(targetFillMode)) {
+            case 'TOOL_FILL': {
+                // バケツ / 消しバケツ / グラデーションを、QTPの並び順で順送り(別のツールからなら最後に使ったもの)
+                if (!confirmActiveTransformsForToolSwitch('fill')) {
                     event.preventDefault();
                     break;
                 }
+                if (activateToolSlot('bucket')) {
+                    event.preventDefault();
+                    break;
+                }
+                const currentMode = window.brushSettings?.getMode();
+                const targetFillMode = currentMode === 'fill' ? 'eraser-fill' : 'fill';
                 if (api?.tool.set(targetFillMode)) {
                     syncToolUI(targetFillMode);
                 } else if (window.coreEngine?.switchTool) {
@@ -410,6 +416,7 @@ export const KeyboardHandler = (function() {
                 }
                 event.preventDefault();
                 break;
+            }
 
             case 'TOOL_RECT_SELECTION':
                 {
@@ -481,25 +488,8 @@ export const KeyboardHandler = (function() {
                     event.preventDefault();
                     break;
                 }
-                const current = window.brushSettings?.getMode?.();
-                const selectionMode = window.pixelSelectionSystem?.getToolMode?.();
-                const currentTool = api?.selection?.isToolActive?.() === true
-                    ? ({ auto: 'auto-select', gradient: 'gradient' }[selectionMode] || 'selection')
-                    : (api?.tool?.get?.() || current);
-                const target = cycleToolGroup(currentTool);
-                if (!confirmActiveTransformsForToolSwitch(target)) {
-                    event.preventDefault();
-                    break;
-                }
-                if (target === 'selection' || target === 'auto-select' || target === 'gradient') {
-                    api?.selection?.activateTool?.(target);
-                    syncToolUI(target);
-                } else if (api?.tool?.set?.(target)) {
-                    syncToolUI(target);
-                } else if (window.coreEngine?.switchTool) {
-                    window.coreEngine.switchTool(target);
-                    syncToolUI(target);
-                }
+                // 現在のツール枠の次の仲間へ(P/E/Gの再押下と同じ順送り)
+                activateNextInCurrentSlot();
                 event.preventDefault();
                 break;
             }

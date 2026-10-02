@@ -82,6 +82,17 @@
         "^verify-canvas-size"
       ]
     },
+    "tool-slots": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": [
+        "tegaki_work/ui/tool-slots.js",
+        "tegaki_work/ui/row-reorder.js",
+        "tegaki_work/ui/quick-access-popup.js"
+      ],
+      "patterns": [
+        "^verify-tool-slots"
+      ]
+    },
     "area-tools": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { floodSelectRegion, maskContains } from '../system/auto-select.js';
+import { floodSelectRegion, maskContains, traceMaskOutline } from '../system/auto-select.js';
 
 const W = 10; const H = 10;
 const make = (fn) => { const p = new Uint8ClampedArray(W * H * 4); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const c = fn(x, y); const i = (y * W + x) * 4; p[i] = c[0]; p[i + 1] = c[1]; p[i + 2] = c[2]; p[i + 3] = c[3]; } return p; };
@@ -38,4 +38,22 @@ assert.equal(maskContains({ bounds: r.bounds }, 0, 0), true, 'no mask = whole re
 // 失敗系
 assert.equal(floodSelectRegion({ pixels: framed, width: W, height: H, seedX: 50, seedY: 0 }).reason, 'seed-outside');
 assert.equal(floodSelectRegion({ pixels: null, width: W, height: H, seedX: 0, seedY: 0 }).reason, 'no-pixels');
-console.log('auto-select verifier: flood contiguous/non-contiguous / tolerance / transparent / origin offset / mask lookup ok');
+// 輪郭: 長方形は4頂点、穴あきは2輪郭(外+穴)、L字は6頂点
+{
+    const rect = new Uint8Array(12).fill(1); // 4x3
+    const o = traceMaskOutline(rect, 4, 3);
+    assert.ok(o.ok); assert.equal(o.loops.length, 1); assert.equal(o.loops[0].length, 4);
+    const holed = new Uint8Array(25).fill(1); holed[12] = 0; // 5x5の中央が穴
+    const h = traceMaskOutline(holed, 5, 5);
+    assert.equal(h.loops.length, 2, 'outer loop + hole loop');
+    const ell = new Uint8Array(9); [0, 3, 6, 7, 8].forEach(i => { ell[i] = 1; }); // 3x3のL字
+    const l = traceMaskOutline(ell, 3, 3);
+    assert.equal(l.loops.length, 1); assert.equal(l.loops[0].length, 6);
+    // 実際のflood結果(枠の内側)でも1輪郭
+    const fr = floodSelectRegion({ pixels: framed, width: W, height: H, seedX: 4, seedY: 4, tolerance: 10 });
+    assert.equal(traceMaskOutline(fr.mask, fr.bounds.width, fr.bounds.height).loops.length, 1);
+    // 複雑すぎるマスクは諦めて呼び出し側にbbox表示へ戻させる
+    const checker = new Uint8Array(100 * 100); for (let i = 0; i < checker.length; i++) checker[i] = ((i % 100) + Math.floor(i / 100)) % 2;
+    assert.equal(traceMaskOutline(checker, 100, 100, { maxVertices: 1000 }).ok, false);
+}
+console.log('auto-select verifier: outline trace / flood contiguous/non-contiguous / tolerance / transparent / origin offset / mask lookup ok');

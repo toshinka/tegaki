@@ -526,6 +526,16 @@ canvas {
 
 /* 自動選択の領域(橙の半透明)と、グラデーションのドラッグ線 */
 .pixel-selection-mask { pointer-events: none; image-rendering: pixelated; }
+.pixel-selection-ants {
+    fill: none;
+    stroke: var(--futaba-maroon);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+    vector-effect: non-scaling-stroke;
+    filter: drop-shadow(0 0 1px var(--futaba-background)) drop-shadow(0 0 1px var(--futaba-background));
+    animation: pixel-selection-march 0.7s linear infinite;
+    pointer-events: none;
+}
 .pixel-selection-gradient-guide {
     stroke: var(--active-border);
     stroke-width: 2;

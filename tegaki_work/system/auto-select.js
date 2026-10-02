@@ -113,3 +113,67 @@ export function maskContains(selection, x, y) {
     if (ix < 0 || iy < 0 || ix >= b.width || iy >= b.height) return false;
     return selection.mask[iy * b.width + ix] === 1;
 }
+
+/**
+ * マスクの境界を、画素の辺をたどった閉じた輪郭(複数)にする。形に沿った選択線(蟻の行列)の表示用。
+ * 座標はマスク左上を原点とした画素の辺の座標(整数)。同一直線上の頂点は省く。
+ * @returns {{ok:true, loops:number[][][], vertexCount:number}|{ok:false, reason:string}}
+ */
+export function traceMaskOutline(mask, width, height, options = {}) {
+    const maxVertices = options.maxVertices ?? 200000;
+    const inside = (x, y) => x >= 0 && y >= 0 && x < width && y < height && mask[y * width + x] === 1;
+    const key = (x, y) => y * (width + 1) + x;
+    // 画素の外周を時計回りの有向辺にする(内側が右手側)。
+    const next = new Map(); // start vertex key -> [{x,y,ex,ey}]
+    let edgeCount = 0;
+    const add = (sx, sy, ex, ey) => {
+        const k = key(sx, sy);
+        const list = next.get(k);
+        const edge = { ex, ey, used: false };
+        if (list) list.push(edge); else next.set(k, [edge]);
+        edgeCount += 1;
+    };
+    for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+            if (mask[y * width + x] !== 1) continue;
+            if (!inside(x, y - 1)) add(x, y, x + 1, y);
+            if (!inside(x + 1, y)) add(x + 1, y, x + 1, y + 1);
+            if (!inside(x, y + 1)) add(x + 1, y + 1, x, y + 1);
+            if (!inside(x - 1, y)) add(x, y + 1, x, y);
+            if (edgeCount > maxVertices * 4) return { ok: false, reason: 'too-complex' };
+        }
+    }
+    const loops = [];
+    let vertexCount = 0;
+    for (const [startKey, list] of next) {
+        for (const first of list) {
+            if (first.used) continue;
+            const sx = startKey % (width + 1);
+            const sy = Math.floor(startKey / (width + 1));
+            const pts = [[sx, sy]];
+            let edge = first;
+            let cx = sx; let cy = sy;
+            // eslint-disable-next-line no-constant-condition
+            while (true) {
+                edge.used = true;
+                cx = edge.ex; cy = edge.ey;
+                if (cx === sx && cy === sy) break;
+                pts.push([cx, cy]);
+                const candidates = next.get(key(cx, cy)) || [];
+                edge = candidates.find(e => !e.used);
+                if (!edge) break;
+            }
+            // 同一直線上の頂点を省く
+            const out = [];
+            for (let i = 0; i < pts.length; i += 1) {
+                const a = pts[(i + pts.length - 1) % pts.length];
+                const b = pts[i];
+                const c = pts[(i + 1) % pts.length];
+                if ((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]) !== 0) out.push(b);
+            }
+            if (out.length >= 3) { loops.push(out); vertexCount += out.length; }
+            if (vertexCount > maxVertices) return { ok: false, reason: 'too-complex' };
+        }
+    }
+    return { ok: true, loops, vertexCount };
+}
