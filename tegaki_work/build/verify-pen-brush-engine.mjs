@@ -492,8 +492,8 @@ const near = (actual, expected, epsilon, message) => {
     assert.equal(store.penTipShape, BRUSH_PRESET_DEFAULTS.penTipShape);
     assert.equal(store.penTipAspect, 1);
     // 一致判定も既定値で比較する
-    assert.equal(brushPresetMatches({ values: {} }, 'eraser', (k) => ({ eraserDabSoftness: 0, eraserTipShape: 'round', eraserTipAspect: 1, eraserTipAngle: 0 })[k]), true);
-    assert.equal(brushPresetMatches(squareEraser, 'eraser', (k) => ({ eraserDabSoftness: 0, eraserTipShape: 'round', eraserTipAspect: 1, eraserTipAngle: 0 })[k]), false);
+    assert.equal(brushPresetMatches({ values: {} }, 'eraser', (k) => ({ eraserDabSoftness: 0, eraserTipShape: 'round', eraserTipAspect: 1, eraserTipAngle: 0, eraserTipFollow: 'fixed' })[k]), true);
+    assert.equal(brushPresetMatches(squareEraser, 'eraser', (k) => ({ eraserDabSoftness: 0, eraserTipShape: 'round', eraserTipAspect: 1, eraserTipAngle: 0, eraserTipFollow: 'fixed' })[k]), false);
     // 全presetに専用アイコンがある
     const { getBrushPresetIcon } = await import('../ui/brush-preset-icons.js').catch(() => ({}));
     if (getBrushPresetIcon) {

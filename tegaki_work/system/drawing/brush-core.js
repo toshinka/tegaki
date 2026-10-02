@@ -1180,18 +1180,20 @@ export class BrushCore {
         const trace = Array.isArray(this.penRenderTrace) ? this.penRenderTrace : [];
         const sourcePoints = trace.length >= 2 ? trace : (strokeData?.points || []);
         // 線端のヒゲ(ペンを置く/離す瞬間の急な折れ返し)を除いた点列で描き直す。
-        const hookTrim = strokeData?.isSingleDot === true
+        const isEraser = this.airbrushState?.mode === 'eraser';
+        const hookTrim = strokeData?.isSingleDot === true || isEraser
             ? { points: sourcePoints, trimmed: false }
             : trimStrokeHooks(sourcePoints, this._getHookTrimLength());
         const points = hookTrim.points;
-        const { taperIn, taperOut } = this._getPenTaperLengths();
+        const { taperIn, taperOut } = isEraser ? { taperIn: 0, taperOut: 0 } : this._getPenTaperLengths();
         if (this.strokeInputProfile) {
             this.strokeInputProfile.hookTrim = { start: hookTrim.trimmedStart || 0, end: hookTrim.trimmedEnd || 0 };
         }
         const settingsManager = window.TegakiSettingsManager;
-        const followNib = this.airbrushState?.mode === 'pen'
-            && settingsManager?.get?.('penTipShape') === 'square'
-            && settingsManager?.get?.('penTipFollow') === 'follow';
+        const tipPrefix = isEraser ? 'eraserTip' : 'penTip';
+        const followNib = (this.airbrushState?.mode === 'pen' || isEraser)
+            && settingsManager?.get?.(`${tipPrefix}Shape`) === 'square'
+            && settingsManager?.get?.(`${tipPrefix}Follow`) === 'follow';
         if (!state?.maskTexture || state.dabMode !== 'pen' || !(taperIn > 0 || taperOut > 0 || hookTrim.trimmed || followNib)) return false;
         if (strokeData?.isSingleDot === true || points.length < 2) return false;
         const renderer = this.layerManager.app?.renderer;
@@ -1206,14 +1208,14 @@ export class BrushCore {
         let nibAngles = null;
         if (followNib) {
             const nibWidth = this.strokeRenderer.airbrushDabRenderer._getPenDabWidth(1, this._buildDabMaskSettings());
-            const baseAngle = Number(settingsManager.get('penTipAngle')) || 0;
+            const baseAngle = Number(settingsManager.get(`${tipPrefix}Angle`)) || 0;
             nibAngles = computeNibAngles(points, nibWidth).map(angle => angle + baseAngle);
         }
         const tapered = points.map((point, i) => ({
             x: point.x,
             y: point.y,
             pressure: point.pressure,
-            widthScale: this._getPenTaperScale(travel[i], total - travel[i]),
+            widthScale: isEraser ? 1 : this._getPenTaperScale(travel[i], total - travel[i]),
             ...(nibAngles ? { nibAngle: nibAngles[i] } : {})
         }));
 
@@ -2591,9 +2593,7 @@ export class BrushCore {
             this._commitAirbrushStroke(activeLayer);
         }
         if ((mode === 'pen' || mode === 'eraser') && this.airbrushState?.dabMode === 'pen' && hasRealtimeApplied) {
-            if (mode === 'pen') {
-                this._applyPenTaperToMask(strokeData);
-            }
+            this._applyPenTaperToMask(strokeData);
             this._commitAirbrushStroke(activeLayer);
         }
         if (mode === 'pen' && this.penOpacityState && hasRealtimeApplied) {

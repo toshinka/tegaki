@@ -34,6 +34,7 @@ const BUILTIN = {
     'builtin-pen-pencil': { svg: PENCIL, tone: 'soft' },
     'builtin-eraser-standard': { svg: UI_ICONS.eraser, tone: 'normal' },
     'builtin-eraser-square': { svg: UI_ICONS.eraser, tone: 'strong' },
+    'builtin-eraser-square-follow': { svg: UI_ICONS.eraser, tone: 'strong' },
     'builtin-airbrush-standard': { svg: SPRAY, tone: 'normal' },
     'builtin-airbrush-hard': { svg: SPRAY, tone: 'strong' },
     'builtin-airbrush-soft': { svg: SPRAY, tone: 'soft' }
