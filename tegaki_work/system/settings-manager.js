@@ -76,6 +76,7 @@ export class SettingsManager {
             emergencyRecoveryIntervalSeconds:
                 this.config?.userSettings?.emergencyRecoveryIntervalSeconds ?? 60,
             emergencyRecoveryOnHide: this.config?.userSettings?.emergencyRecoveryOnHide !== false,
+            shortcutHelpVisible: true, // 画面左上の「?」ショートカットヘルプ
             historyAutoAdjust: true,
             historyMaxEntries: historyDefaults.maxEntries,
             historyMaxMemoryMB: historyDefaults.maxMemoryMB
@@ -258,6 +259,7 @@ export class SettingsManager {
                 const num = parseInt(v, 10);
                 return [5, 10, 30, 60, 180, 300].includes(num) ? num : undefined;
             },
+            shortcutHelpVisible: (v) => (typeof v === 'boolean' ? v : undefined),
             emergencyRecoveryOnHide: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
             },
@@ -348,6 +350,7 @@ export class SettingsManager {
             'emergencyRecoveryEnabled',
             'emergencyRecoveryIntervalSeconds',
             'emergencyRecoveryOnHide',
+            'shortcutHelpVisible',
             'historyAutoAdjust',
             'historyMaxEntries',
             'historyMaxMemoryMB'

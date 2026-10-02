@@ -1269,26 +1269,8 @@ export class QuickAccessPopup {
             </button>
 
             <div class="qa-header" id="quick-access-drag-area">
-                <div class="qa-header-title">
-                    <span class="qa-header-main">Quick</span>
-                    <span class="qa-header-sub">tool presets</span>
-                </div>
-                <button class="qa-shortcut-help-toggle" id="qa-shortcut-help-toggle" type="button"
-                    title="ショートカットヘルプ" aria-label="ショートカットヘルプ"
-                    aria-controls="qa-shortcut-help-deck" aria-expanded="false" aria-haspopup="dialog">?</button>
-                <div class="qa-shortcut-help-deck" id="qa-shortcut-help-deck" role="dialog"
-                    aria-label="QTPショートカット" hidden>
-                    <div class="qa-shortcut-help-head">
-                        <span>TOOL SHORTCUTS</span>
-                        <span class="qa-shortcut-help-count">7</span>
-                    </div>
-                    <div class="qa-shortcut-help-list" id="qa-shortcut-help-list" role="list">
-                        ${this._buildShortcutHelpDeckHtml()}
-                    </div>
-                </div>
+                <div class="qa-tabs-host" data-role="qa-tabs"></div>
             </div>
-
-            <div class="qa-tabs-host" data-role="qa-tabs"></div>
             <div class="qa-view qa-view--pen" data-qa-view="pen">
             <!-- 1. カラーパレット (カラースロット付き) -->
             <section class="qa-section" aria-label="色パレット">
@@ -1811,7 +1793,8 @@ export class QuickAccessPopup {
         this._bindPointerAction(this.elements.toolGroupTabBtn, () => this._switchTool(getToolGroupState().current));
         this._bindPointerAction(this.elements.fillEraseBtn, () => this._switchTool(this.currentTool === 'eraser-fill' ? 'fill' : 'eraser-fill'));
         this._settingsUpdatedListener = () => this._renderToolSubRow();
-        this.eventBus?.on?.('settings:updated', this._settingsUpdatedListener);
+        // SettingsManager.set は 'settings:<kebab-key>' を発火する(updated は update() のとき)
+        ['settings:updated', 'settings:qtp-brush-preset-ids', 'settings:brush-presets'].forEach(name => this.eventBus?.on?.(name, this._settingsUpdatedListener));
         this._toolGroupUnsubscribe = onToolGroupChange(() => this._updateToolGroup());
         this._bindPointerAction(this.elements.selectionToolBtn, () => this._switchTool('selection'));
         this._bindPointerAction(this.elements.eyedropperBtn, () => this._switchTool('eyedropper'));
