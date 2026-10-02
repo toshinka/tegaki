@@ -56,6 +56,13 @@
 - 確定時に通常Raster Layerを選択Layerへクリップして追加（Undo 1回）。`再編集`→`更新`、Projectは`layerData.tone`(optional)で往復。
 - 検証: `development-harness.mjs test tone` + Chromium（クリップ内のみ描画・Undo/Redo・更新・保存往復）。実機(液タブ)は未確認。
 
+### SHORTCUT HELP / QTP HEADER（2026-10-02）
+
+- ショートカットヘルプを**画面左上の小さな「?」**へ（`ui/shortcut-help.js`）。TEGAKI_KEYMAPの全ショートカット（QTP以外も）を読み取り専用で一覧。Escまたは外側クリックで閉じる。設定の「画面左上に「?」を表示」でON/OFF（`shortcutHelpVisible`、既定ON）。QTPヘッダーの「?」は廃止。
+- QTPの**ペン/トーンのタブをタイトル行へ**（タイトル文字は廃止）。縦スペースを1行ぶん節約。
+- 修正: `SettingsManager.set` は `settings:<kebab-key>` を発火する（`settings:updated` は `update()` のとき）。QTP二行目の筆プリセットが設定画面の「QTPに出す」変更に追従するよう、対応するイベントを購読。
+- Owner実機は未確認。
+
 ### CANVAS SIZE — 漫画原稿サイズ（2026-10-02, WP-015）
 
 - リサイズのプリセットに 1200×1200 / 1700×2400 / **漫画原稿 4960×7016** を追加。数値入力・プリセットの上限を8192pxに（スライダー右端は2500のまま）。Rasterの安全ピクセル数をキャンバス基準に（キャンバス全面のLayer確定が大キャンバスで弾かれないように）。目安メモリ表示つき。軽量化の案（表示プロキシ・スパースRaster・Undo差分化）は[WP-015](work/WP-015-manga-canvas-size.md)。Owner実機は未確認。

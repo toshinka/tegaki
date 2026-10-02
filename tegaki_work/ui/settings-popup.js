@@ -157,6 +157,13 @@ export class SettingsPopup {
                     </div>
                 </div>
                 <div class="setting-group">
+                    <div class="setting-label">ショートカットヘルプ</div>
+                    <label class="history-setting-auto">
+                        <input id="shortcut-help-visible" type="checkbox" checked>
+                        画面左上に「?」を表示
+                    </label>
+                </div>
+                <div class="setting-group">
                     <div class="setting-label">Animation Table</div>
                     <label class="history-setting-auto">
                         <input id="animation-auto-create-next" type="checkbox" checked>
@@ -698,6 +705,7 @@ export class SettingsPopup {
             emergencyRecoveryEnabled: document.getElementById('emergency-recovery-enabled'),
             emergencyRecoveryInterval: document.getElementById('emergency-recovery-interval'),
             emergencyRecoveryOnHide: document.getElementById('emergency-recovery-on-hide'),
+            shortcutHelpVisible: document.getElementById('shortcut-help-visible'),
             emergencyRecoveryStatus: document.getElementById('emergency-recovery-status'),
 
             bucketRefToggle: document.getElementById('bucket-ref-all-toggle'),
@@ -947,6 +955,9 @@ export class SettingsPopup {
             );
             this._updateEmergencyRecoveryStatusDisplay();
         });
+        this.elements.shortcutHelpVisible?.addEventListener('change', () => {
+            this.settingsManager?.set('shortcutHelpVisible', this.elements.shortcutHelpVisible.checked);
+        });
         this.elements.emergencyRecoveryOnHide?.addEventListener('change', () => {
             this.settingsManager?.set(
                 'emergencyRecoveryOnHide',
@@ -1018,6 +1029,7 @@ export class SettingsPopup {
             emergencyRecoveryEnabled: true,
             emergencyRecoveryIntervalSeconds: 60,
             emergencyRecoveryOnHide: true,
+            shortcutHelpVisible: true,
             historyAutoAdjust: true,
             historyMaxEntries: 250,
             historyMaxMemoryMB: 512
@@ -1072,6 +1084,9 @@ export class SettingsPopup {
             this.elements.emergencyRecoveryInterval.value = String(
                 allowedIntervals.includes(interval) ? interval : 60
             );
+        }
+        if (this.elements.shortcutHelpVisible) {
+            this.elements.shortcutHelpVisible.checked = settings.shortcutHelpVisible !== false;
         }
         if (this.elements.emergencyRecoveryOnHide) {
             this.elements.emergencyRecoveryOnHide.checked = settings.emergencyRecoveryOnHide !== false;

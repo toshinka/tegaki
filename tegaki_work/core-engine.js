@@ -63,6 +63,7 @@ import { TextRasterService } from './system/text-rasterizer.js';
 // ポップアップのインポート
 import { SettingsPopup } from './ui/settings-popup.js';
 import { QuickAccessPopup } from './ui/quick-access-popup.js';
+import { ShortcutHelp } from './ui/shortcut-help.js';
 import { ResizePopup } from './ui/resize-popup.js';
 import { PanelLayoutPopup } from './ui/panel-layout-popup.js';
 import { FocusLinesPopup } from './ui/focus-lines-popup.js';
@@ -382,6 +383,8 @@ export class CoreEngine {
                 eventBus: this.eventBus
             })
         });
+        // 画面左上のショートカットヘルプ(設定でON/OFF)
+        this.shortcutHelp = new ShortcutHelp({ settingsManager: this.settingsManager, eventBus: this.eventBus });
         this.popupManager.register('resize', ResizePopup, {
             coreEngine: this,
             history: this.history

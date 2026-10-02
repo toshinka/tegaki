@@ -85,7 +85,14 @@
 }
 
 #quick-access-popup.qa-popup .qa-tabs-host {
-    margin: 2px 0 6px;
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+}
+
+#quick-access-popup.qa-popup .qa-header {
+    padding-right: 24px;
+    margin-bottom: 4px;
 }
 
 #quick-access-popup.qa-popup .qa-tabs-host .pill-tabs {
