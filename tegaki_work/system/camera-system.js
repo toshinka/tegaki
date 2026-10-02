@@ -285,7 +285,8 @@ export class CameraSystem {
     }
 
     _toggleViewFlip(direction) {
-        this._preserveViewportCenter(() => {
+        // 反転はキャンバス中心を軸にする(画面中心だとキャンバスの位置次第で反転後に画面外へ出てしまう)
+        this._preserveCanvasCenter(() => {
             if (direction === 'horizontal') {
                 this.horizontalFlipped = !this.horizontalFlipped;
             } else if (direction === 'vertical') {

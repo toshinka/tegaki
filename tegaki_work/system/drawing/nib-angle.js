@@ -5,14 +5,14 @@
  * 描き始め/描き終わりは動きが遅く点が密なので、進行方向の判定に長い範囲を使う。
  */
 
-const AXIS_DEADZONE_DEG = 16; // 軸からこの角度以内は0°のまま
+const AXIS_DEADZONE_DEG = 12; // 軸からこの角度以内は0°のまま
 const FOLLOW_RAMP_DEG = 14; // デッドゾーンを越えてから追従が全開になるまでの幅
 const END_WINDOW_FACTOR = 2.5; // 端付近の判定範囲(太さ倍)
 const MID_WINDOW_FACTOR = 1.0; // 中間の判定範囲(太さ倍)
 const END_ZONE_FACTOR = 2.0;
-const STRAIGHT_MIN = 0.9; // 判定範囲の直線度(弦/経路)がこれ未満なら折れ曲がり扱いでペン先を回さない
-const STRAIGHT_RAMP = 0.08; // この長さ(太さ倍)以内を端とみなす
-const SMOOTH_FACTOR = 1.8; // 角度を距離方向に均す範囲(太さ倍)
+const STRAIGHT_MIN = 0.8; // 判定範囲の直線度(弦/経路)がこれ未満なら折れ曲がり扱いでペン先を回さない
+const STRAIGHT_RAMP = 0.1; // この長さ(太さ倍)以内を端とみなす
+const SMOOTH_FACTOR = 1.4; // 角度を距離方向に均す範囲(太さ倍)
 
 function pointAt(points, travel, distance) {
     const d = Math.max(0, Math.min(travel[travel.length - 1], distance));
