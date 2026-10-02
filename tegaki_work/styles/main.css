@@ -8725,3 +8725,41 @@ button.anim-motion-graph-legend-item.is-primary {
     border: 2px solid var(--futaba-maroon);
     border-radius: 6px;
 }
+
+/* レイヤーパネルのドラッグ: 掴める・掴んでいる・どこへ入るかを分かりやすく（影のにじみは使わず、平らな色で示す） */
+.layer-panel-card-row {
+    cursor: grab;
+}
+body.layer-card-dragging,
+body.layer-card-dragging * {
+    cursor: grabbing !important;
+}
+.layer-panel-card-row.is-dragging {
+    opacity: 0.4;
+    outline: 2px dashed var(--active-border);
+    outline-offset: -3px;
+}
+.layer-panel-items--card-dragging {
+    outline: 2px solid rgba(255, 140, 66, 0.35);
+    outline-offset: -2px;
+    border-radius: 8px;
+}
+.layer-panel-card-row.is-dnd-before::before,
+.layer-panel-card-row.is-dnd-after::after {
+    height: 5px;
+    left: 2px;
+    right: 2px;
+    box-shadow: none;
+}
+.layer-panel-card-row.is-dnd-inside {
+    outline: 3px solid var(--active-border);
+    background: rgba(255, 140, 66, 0.22);
+    box-shadow: none;
+}
+.layer-panel-card-drag-ghost {
+    opacity: 0.92;
+    box-shadow: none;
+}
+.layer-panel-card-drag-preview {
+    border-width: 3px;
+}

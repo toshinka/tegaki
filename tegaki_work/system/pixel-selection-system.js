@@ -88,6 +88,7 @@ export class PixelSelectionSystem {
         if (this.transformSession && !this.confirmTransform()) return false;
         // 図形の編集中にツールを替えたら、その図形は確定する
         this.areaTools?.shape?.commit?.();
+        this.areaTools?.shape?.clearHover?.();
         this.toolMode = next;
         this.areaTools?.border?.sync?.();
         this.drag = null;
@@ -506,7 +507,7 @@ export class PixelSelectionSystem {
     setToolActive(active) {
         const nextActive = active === true;
         if (this.toolActive === nextActive) return true;
-        if (!nextActive) this.areaTools?.shape?.commit?.();
+        if (!nextActive) { this.areaTools?.shape?.commit?.(); this.areaTools?.shape?.clearHover?.(); }
         this.toolActive = nextActive;
         this.areaTools?.border?.sync?.();
         this.drag = null;
@@ -1410,6 +1411,9 @@ export class PixelSelectionSystem {
     }
 
     _handlePointerMove(event) {
+        if (this.toolActive && (this.toolMode === 'shape-rect' || this.toolMode === 'shape-ellipse')) {
+            this.areaTools?.shape?.hover?.(event);
+        }
         if (this.rulerPointerId === event.pointerId) {
             window.rulerSystem?.handlePointerMove?.({ clientX: event.clientX, clientY: event.clientY, rawClientX: event.clientX, rawClientY: event.clientY }, event);
             event.preventDefault();

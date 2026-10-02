@@ -127,7 +127,7 @@ export class ShapeEditor {
         const size = Number(window.brushSettings?.getSize?.());
         this.shape = {
             kind, quad: createQuadFromDrag(start, start), layer: target.layer, creating: true,
-            width: Number.isFinite(size) && size > 0 ? size : 4,
+            width: this.areaTools.options.shape.width ?? (Number.isFinite(size) && size > 0 ? size : 4),
             join: this.areaTools.options.shape.join,
             strength: 0, // 遠近（-90..90 %）。向かう先へ細く(+)/太く(-)
             target: null
@@ -156,6 +156,44 @@ export class ShapeEditor {
 
     _capture(event) {
         try { this.system.canvas?.setPointerCapture?.(event.pointerId); } catch (error) { /* 任意 */ }
+    }
+
+    /** ドラッグしていない間、触れる所に合わせてカーソルを変える（頂点=十字 / 辺=両矢印 / 内側=移動 / 回転点=掴む） */
+    hover(event) {
+        const canvas = this.system.canvas;
+        if (!canvas) return;
+        let cursor = '';
+        if (this.shape && !this.drag && !this.shape.creating) {
+            const hit = this._hitTest(event);
+            if (hit?.type === 'rotate') cursor = 'grab';
+            else if (hit?.type === 'vertex') cursor = 'crosshair';
+            else if (hit?.type === 'body') cursor = 'move';
+            else if (hit?.type === 'edge') cursor = this._edgeCursor(hit.index);
+        }
+        if (this._cursor !== cursor) {
+            this._cursor = cursor;
+            canvas.style.cursor = cursor;
+        }
+    }
+
+    _edgeCursor(index) {
+        const screen = this._screenQuad();
+        if (!screen) return 'move';
+        const a = screen[index];
+        const b = screen[(index + 1) % 4];
+        // 辺の法線方向に合わせた両矢印
+        const angle = ((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI + 90 + 360) % 180;
+        if (angle < 22.5 || angle >= 157.5) return 'ew-resize';
+        if (angle < 67.5) return 'nwse-resize';
+        if (angle < 112.5) return 'ns-resize';
+        return 'nesw-resize';
+    }
+
+    clearHover() {
+        if (this._cursor) {
+            this._cursor = '';
+            if (this.system.canvas) this.system.canvas.style.cursor = '';
+        }
     }
 
     pointerMove(event) {
@@ -434,7 +472,7 @@ export class ShapeEditor {
         const row2 = document.createElement('div');
         row2.className = 'shape-tool-row shape-tool-options';
         const width = numberField('太さ', '線の太さ(px)。ホイールで増減', { min: 1, max: 400, step: 1, unit: 'px' }, v => {
-            if (this.shape) { this.shape.width = v; this.render(); }
+            if (this.shape) { this.shape.width = v; this.areaTools.setOptions({ shape: { width: v } }); this.render(); }
         });
         const joinMiter = button('shape-tool-chip', '尖', '四角の角を尖らせる', () => this._setJoin('miter'));
         const joinRound = button('shape-tool-chip', '丸', '四角の角を丸くする', () => this._setJoin('round'));

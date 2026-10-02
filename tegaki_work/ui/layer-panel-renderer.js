@@ -788,6 +788,9 @@ export class LayerPanelRenderer {
         drag.active = true;
         drag.rowLayout = this._captureLayerPanelCardRowLayout(drag);
         drag.row?.classList.add('is-dragging');
+        // 掴んでいる間は全体を「移動中」の見た目にする（掴みカーソル・行の並び先を示す余白）
+        this.container?.classList.add('layer-panel-items--card-dragging');
+        document.body.classList.add('layer-card-dragging');
         drag.ghost = this._createLayerPanelCardDragGhost(drag);
     }
 
@@ -959,6 +962,8 @@ export class LayerPanelRenderer {
         document.removeEventListener('pointercancel', this._handleLayerPanelCardPointerUp, true);
         document.removeEventListener('lostpointercapture', this._handleLayerPanelCardPointerUp, true);
         this._clearLayerPanelCardDropTarget();
+        this.container?.classList.remove('layer-panel-items--card-dragging');
+        document.body.classList.remove('layer-card-dragging');
         if (drag?.row) drag.row.classList.remove('is-dragging');
         if (drag?.ghost?.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
         this._cardDrag = null;
