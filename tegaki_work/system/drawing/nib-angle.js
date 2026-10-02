@@ -5,12 +5,14 @@
  * 描き始め/描き終わりは動きが遅く点が密なので、進行方向の判定に長い範囲を使う。
  */
 
-const AXIS_DEADZONE_DEG = 12; // 軸からこの角度以内は0°のまま
+const AXIS_DEADZONE_DEG = 16; // 軸からこの角度以内は0°のまま
 const FOLLOW_RAMP_DEG = 14; // デッドゾーンを越えてから追従が全開になるまでの幅
 const END_WINDOW_FACTOR = 2.5; // 端付近の判定範囲(太さ倍)
 const MID_WINDOW_FACTOR = 1.0; // 中間の判定範囲(太さ倍)
-const END_ZONE_FACTOR = 2.0; // この長さ(太さ倍)以内を端とみなす
-const SMOOTH_FACTOR = 1.2; // 角度を距離方向に均す範囲(太さ倍)
+const END_ZONE_FACTOR = 2.0;
+const STRAIGHT_MIN = 0.9; // 判定範囲の直線度(弦/経路)がこれ未満なら折れ曲がり扱いでペン先を回さない
+const STRAIGHT_RAMP = 0.08; // この長さ(太さ倍)以内を端とみなす
+const SMOOTH_FACTOR = 1.8; // 角度を距離方向に均す範囲(太さ倍)
 
 function pointAt(points, travel, distance) {
     const d = Math.max(0, Math.min(travel[travel.length - 1], distance));
@@ -60,7 +62,13 @@ export function computeNibAngles(points, width) {
         const b = pointAt(points, travel, travel[i] + half);
         const dx = b.x - a.x;
         const dy = b.y - a.y;
-        if (Math.hypot(dx, dy) > width * 0.3) last = targetNibAngle((Math.atan2(dy, dx) * 180) / Math.PI);
+        const chord = Math.hypot(dx, dy);
+        if (chord > width * 0.3) {
+            // 判定範囲が折れ曲がっている(カのような短い折れ)ときは回さず、直線的に続く区間だけ追従する
+            const path = Math.min(total, travel[i] + half) - Math.max(0, travel[i] - half);
+            const straight = path > 0 ? chord / path : 1;
+            last = targetNibAngle((Math.atan2(dy, dx) * 180) / Math.PI) * smoothstep((straight - STRAIGHT_MIN) / STRAIGHT_RAMP);
+        }
         raw[i] = last;
     }
 
