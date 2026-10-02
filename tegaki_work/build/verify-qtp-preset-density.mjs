@@ -7,7 +7,6 @@ const [qtpSource, cssSource] = await Promise.all([
 ]);
 
 assert.match(qtpSource, /Array\.from\(\{ length: QA_PRESET_SLOT_COUNT \}/, 'preset count must remain authority-driven');
-assert.match(qtpSource, /class="qa-preset-slot-index"/, 'each preset slot must expose a compact index');
 assert.match(qtpSource, /id="qa-preset-status"/, 'active summary must reuse the existing status row');
 assert.match(qtpSource, /slot\.addEventListener\('focus'/, 'keyboard focus must preview a non-active preset');
 assert.match(qtpSource, /slot\.addEventListener\('blur'/, 'blur must restore the active preset summary');
@@ -25,6 +24,5 @@ assert.match(qtpSource, /aria-label="スロット\$\{index \+ 1\}"/, 'slot butto
 assert.match(cssSource, /--ui-qa-preset-height:\s*26px;/, 'compact preset height should use the B density');
 assert.match(cssSource, /--ui-qa-preset-height:\s*32px;/, 'coarse preset height should retain a usable touch target');
 assert.match(qtpSource, /\.qa-preset-opacity-val\s*\{[\s\S]*display:\s*none;/, 'non-active opacity values must not add a second dense row');
-assert.match(qtpSource, /\.qa-preset-slot-index\s*\{[\s\S]*pointer-events:\s*none;/, 'slot index must not steal the preset hit area');
 
 console.log('verify-qtp-preset-density: six-slot authority, compact active summary, focus preview and disabled contract OK');

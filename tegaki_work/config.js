@@ -244,6 +244,12 @@ export const TEGAKI_KEYMAP = {
             shift: false,
             description: '投げ縄塗りツール'
         },
+        TOOL_GROUP_CYCLE: {
+            key: 'KeyL',
+            ctrl: false,
+            shift: true,
+            description: '図形・範囲ツールを送る（ループ）'
+        },
         TOOL_EYEDROPPER: {
             key: 'KeyI',
             ctrl: false,
