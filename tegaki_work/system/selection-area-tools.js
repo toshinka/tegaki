@@ -251,7 +251,7 @@ export class AreaToolController {
 
     _ensureOverlayParts() {
         const svg = this.system.overlay;
-        if (!svg || this.maskImage) return;
+        if (!svg || this.maskImage || typeof svg.insertBefore !== 'function') return;
         const image = document.createElementNS(SVG_NS, 'image');
         image.classList.add('pixel-selection-mask');
         image.setAttribute('preserveAspectRatio', 'none');
