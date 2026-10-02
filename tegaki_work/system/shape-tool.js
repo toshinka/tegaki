@@ -21,6 +21,7 @@ import {
 import { normalizeRasterBounds } from './raster-bounds.js';
 import { estimateRasterHistoryPairBytes } from './raster-snapshot-memory.js';
 import { showFeedbackToast } from '../ui/feedback-toast.js';
+import { createInlineNumberField } from '../ui/inline-number-field.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const VERTEX_HIT = 11; // px(画面)
@@ -411,39 +412,7 @@ export class ShapeEditor {
             el.addEventListener('click', onClick);
             return el;
         };
-        // 数値入力: ホイールで増減、ダブルクリックで全選択、Enterで確定(図形の確定とは別)
-        const numberField = (label, title, { min, max, step, unit }, onInput) => {
-            const field = document.createElement('label');
-            field.className = 'shape-tool-field';
-            field.title = title;
-            const caption = document.createElement('span');
-            caption.textContent = label;
-            const input = document.createElement('input');
-            input.type = 'number';
-            input.min = String(min);
-            input.max = String(max);
-            input.step = String(step);
-            input.addEventListener('input', () => {
-                const v = Number(input.value);
-                if (Number.isFinite(v)) onInput(Math.max(min, Math.min(max, v)));
-            });
-            input.addEventListener('wheel', event => {
-                event.preventDefault();
-                const v = Number(input.value) || 0;
-                const next = Math.max(min, Math.min(max, v + (event.deltaY < 0 ? step : -step)));
-                input.value = String(Math.round(next * 100) / 100);
-                onInput(next);
-            }, { passive: false });
-            input.addEventListener('dblclick', () => input.select());
-            input.addEventListener('keydown', event => { if (event.key === 'Enter') input.blur(); });
-            field.append(caption, input);
-            if (unit) {
-                const u = document.createElement('span');
-                u.textContent = unit;
-                field.append(u);
-            }
-            return { field, input };
-        };
+        const numberField = createInlineNumberField;
 
         const row1 = document.createElement('div');
         row1.className = 'shape-tool-row';

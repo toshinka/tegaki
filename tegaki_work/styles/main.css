@@ -8705,3 +8705,17 @@ button.anim-motion-graph-legend-item.is-primary {
 .shape-tool-vertex.is-target {
     fill: var(--active-border);
 }
+
+.border-tool-title {
+    font-weight: bold;
+    font-size: 13px;
+    color: var(--futaba-maroon);
+    padding: 0 4px;
+}
+.border-tool-swatch {
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    border: 2px solid var(--futaba-maroon);
+    border-radius: 6px;
+}

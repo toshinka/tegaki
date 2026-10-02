@@ -7,12 +7,13 @@ const { TOOL_SLOTS, slotOfTool, getSlot, orderMembers, nextMember, getLastMember
 
 // 親スロットとツールの対応
 assert.deepEqual(TOOL_SLOTS.map(s => s.id), ['pen', 'eraser', 'airbrush', 'bucket', 'shape', 'select']);
-for (const [tool, slot] of Object.entries({ pen: 'pen', eraser: 'eraser', 'airbrush-erase': 'airbrush', 'eraser-fill': 'bucket', gradient: 'bucket', 'lasso-fill': 'shape', 'auto-select': 'select', selection: 'select' })) {
+for (const [tool, slot] of Object.entries({ pen: 'pen', eraser: 'eraser', 'airbrush-erase': 'airbrush', 'eraser-fill': 'bucket', gradient: 'bucket', 'lasso-fill': 'shape', 'shape-rect': 'shape', 'shape-ellipse': 'shape', border: 'bucket', 'auto-select': 'select', selection: 'select' })) {
     assert.equal(slotOfTool(tool), slot, tool);
 }
 assert.equal(slotOfTool('eyedropper'), null);
 // バケツ枠は 普通/消し/グラデ の三つ(規格違いにならない)
-assert.deepEqual(getSlot('bucket').members.map(m => m.id), ['fill', 'eraser-fill', 'gradient']);
+assert.deepEqual(getSlot('bucket').members.map(m => m.id), ['fill', 'eraser-fill', 'gradient', 'border']);
+assert.deepEqual(getSlot('shape').members.map(m => m.id), ['lasso-fill', 'shape-rect', 'shape-ellipse']);
 assert.deepEqual(getSlot('select').members.map(m => m.id), ['selection', 'auto-select']);
 
 // 並び: 保存順 + 新しい仲間は末尾 + 消えた仲間は捨てる

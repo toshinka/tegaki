@@ -30,7 +30,8 @@ export const TOOL_SLOTS = Object.freeze([
         members: Object.freeze([
             { id: 'fill', tool: 'fill', label: 'バケツ', icon: 'fill' },
             { id: 'eraser-fill', tool: 'eraser-fill', label: '消しバケツ', icon: 'fill', erase: true },
-            { id: 'gradient', tool: 'gradient', label: 'グラデーション', icon: 'gradient' }
+            { id: 'gradient', tool: 'gradient', label: 'グラデーション', icon: 'gradient' },
+            { id: 'border', tool: 'border', label: 'フチ', icon: 'borderFrame' }
         ])
     },
     {
@@ -59,6 +60,7 @@ const TOOL_TO_SLOT = Object.freeze({
     fill: 'bucket',
     'eraser-fill': 'bucket',
     gradient: 'bucket',
+    border: 'bucket',
     'lasso-fill': 'shape',
     'shape-rect': 'shape',
     'shape-ellipse': 'shape',
