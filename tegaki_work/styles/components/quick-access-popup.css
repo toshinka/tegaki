@@ -358,3 +358,32 @@
     background: var(--futaba-light-maroon);
     border-color: var(--futaba-maroon);
 }
+
+/* 筆プリセットはアイコン(名前はtitleのポップアップ)。性格は濃淡で表す */
+#quick-access-popup.qa-popup .qa-sub-button--icon {
+    position: relative;
+    width: 26px;
+    min-width: 26px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#quick-access-popup.qa-popup .qa-sub-button--icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+#quick-access-popup.qa-popup .qa-sub-button--icon[data-tone="soft"] svg { opacity: 0.55; }
+#quick-access-popup.qa-popup .qa-sub-button--icon[data-tone="strong"] svg { stroke-width: 2; }
+
+#quick-access-popup.qa-popup .qa-sub-badge {
+    position: absolute;
+    right: 1px;
+    bottom: 0;
+    font-size: 8px;
+    line-height: 1;
+    font-weight: 700;
+    pointer-events: none;
+}
