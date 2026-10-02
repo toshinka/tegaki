@@ -63,6 +63,7 @@ export class SettingsManager {
             penTaperOut: this.config?.brushEngine?.penTaperOut ?? 0,
             eraserDabSoftness: this.config?.brushEngine?.eraserDabSoftness ?? 0,
             // ペン先の形(筆プリセット): round=丸 / square=角(アスペクト=厚み比、角度=nibの向き)
+            penPressureSizeStrength: 1, // 筆圧が径に効く強さ(0=一定径)
             penTipShape: 'round',
             penTipAspect: 1,
             penTipAngle: 0,
@@ -230,6 +231,7 @@ export class SettingsManager {
                 const num = parseFloat(v);
                 return isNaN(num) ? undefined : Math.round(Math.max(0, Math.min(300, num)));
             },
+            penPressureSizeStrength: (v) => { const n = parseFloat(v); return isNaN(n) ? undefined : Math.max(0, Math.min(1, n)); },
             penTipShape: (v) => (['round', 'square'].includes(v) ? v : undefined),
             eraserTipShape: (v) => (['round', 'square'].includes(v) ? v : undefined),
             penTipAspect: (v) => { const n = parseFloat(v); return isNaN(n) ? undefined : Math.max(0.15, Math.min(1, n)); },
@@ -354,6 +356,7 @@ export class SettingsManager {
             'penTaperOut',
             'eraserDabSoftness',
             'eraserPressureStrength',
+            'penPressureSizeStrength',
             'penTipShape', 'penTipAspect', 'penTipAngle',
             'eraserTipShape', 'eraserTipAspect', 'eraserTipAngle',
             'statusPanelVisible',

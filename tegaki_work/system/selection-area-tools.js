@@ -13,7 +13,7 @@
  * ============================================================================
  */
 
-import { floodSelectRegion, AUTO_SELECT_LIMITS } from './auto-select.js';
+import { floodSelectRegion, traceMaskOutline, AUTO_SELECT_LIMITS } from './auto-select.js';
 import { applyGradientToPixels } from './gradient-fill.js';
 import { normalizeRasterBounds } from './raster-bounds.js';
 import { estimateRasterHistoryPairBytes } from './raster-snapshot-memory.js';
@@ -261,8 +261,13 @@ export class AreaToolController {
         line.classList.add('pixel-selection-gradient-guide');
         line.style.display = 'none';
         svg.appendChild(line);
+        const outline = document.createElementNS(SVG_NS, 'path');
+        outline.classList.add('pixel-selection-ants');
+        outline.style.display = 'none';
+        svg.appendChild(outline);
         this.maskImage = image;
         this.guideLine = line;
+        this.outlinePath = outline;
     }
 
     /** 選択マスクを半透明の色で重ねる。layer-local座標の3点をscreenへ写してmatrixにする。 */
@@ -273,6 +278,7 @@ export class AreaToolController {
         const state = this.system.state;
         if (!state?.mask || !context) {
             image.style.display = 'none';
+            if (this.outlinePath) this.outlinePath.style.display = 'none';
             return;
         }
         const b = state.bounds;
@@ -283,7 +289,7 @@ export class AreaToolController {
             const ctx = canvas.getContext('2d');
             const data = ctx.createImageData(b.width, b.height);
             for (let i = 0; i < state.mask.length; i += 1) {
-                if (state.mask[i] === 1) { data.data[i * 4] = 255; data.data[i * 4 + 1] = 140; data.data[i * 4 + 2] = 66; data.data[i * 4 + 3] = 90; }
+                if (state.mask[i] === 1) { data.data[i * 4] = 255; data.data[i * 4 + 1] = 140; data.data[i * 4 + 2] = 66; data.data[i * 4 + 3] = 56; }
             }
             ctx.putImageData(data, 0, 0);
             this._maskUrl = canvas.toDataURL('image/png');
@@ -301,11 +307,25 @@ export class AreaToolController {
         const bb = (p1.clientY - p0.clientY) / b.width;
         const c = (p2.clientX - p0.clientX) / b.height;
         const d = (p2.clientY - p0.clientY) / b.height;
+        const matrix = `matrix(${a} ${bb} ${c} ${d} ${p0.clientX} ${p0.clientY})`;
         image.setAttribute('href', this._maskUrl);
         image.setAttribute('width', String(b.width));
         image.setAttribute('height', String(b.height));
-        image.setAttribute('transform', `matrix(${a} ${bb} ${c} ${d} ${p0.clientX} ${p0.clientY})`);
+        image.setAttribute('transform', matrix);
         image.style.display = '';
+
+        // 形に沿った選択線(蟻の行列)。輪郭は選択ごとに一度だけ求め、カメラ移動ではmatrixだけ更新する。
+        if (this._outlineFor !== state.mask) {
+            const traced = traceMaskOutline(state.mask, b.width, b.height);
+            this._outlineD = traced.ok
+                ? traced.loops.map(loop => `M${loop.map(([x, y]) => `${x} ${y}`).join('L')}Z`).join('')
+                : `M0 0H${b.width}V${b.height}H0Z`; // 複雑すぎるときは外接矩形
+            this._outlineFor = state.mask;
+        }
+        const path = this.outlinePath;
+        path.setAttribute('d', this._outlineD);
+        path.setAttribute('transform', matrix);
+        path.style.display = '';
     }
 
     renderOverlay() {

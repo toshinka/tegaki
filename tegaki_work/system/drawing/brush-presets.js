@@ -27,7 +27,8 @@ export const BRUSH_PRESET_KEYS = {
         'smoothing',
         'penTipShape',
         'penTipAspect',
-        'penTipAngle'
+        'penTipAngle',
+        'penPressureSizeStrength'
     ],
     eraser: [
         'eraserDabSoftness',
@@ -48,6 +49,7 @@ export const MAX_USER_BRUSH_PRESETS = 12;
 
 /** presetに入っていないキーの既定値。古い(ペン先形状を知らない)presetを当てても丸ペン先に戻る。 */
 export const BRUSH_PRESET_DEFAULTS = Object.freeze({
+    penPressureSizeStrength: 1,
     penTipShape: 'round',
     penTipAspect: 1,
     penTipAngle: 0,
@@ -115,9 +117,10 @@ export const BUILTIN_BRUSH_PRESETS = {
                 penDabSoftness: 0,
                 penEdgeAA: 1,
                 stabilizerMode: 'follow',
-                penTaperIn: 0,
-                penTaperOut: 0,
-                smoothing: 0.6
+                penTaperIn: 3,
+                penTaperOut: 10,
+                smoothing: 0.75,
+                penPressureSizeStrength: 0.35
             }
         },
         {
@@ -129,18 +132,19 @@ export const BUILTIN_BRUSH_PRESETS = {
                 pressureCurvePoints: null,
                 pressureOpacityEnabled: false,
                 pressureOpacityStrength: 0.65,
-                penPressureSmoothing: 0.6,
+                penPressureSmoothing: 0.85,
                 penVelocityThinning: 0,
                 penTiltStrength: 0,
                 penDabSoftness: 0,
                 penEdgeAA: 1,
                 stabilizerMode: 'follow',
                 penTaperIn: 0,
-                penTaperOut: 0,
-                smoothing: 0.5,
+                penTaperOut: 6,
+                smoothing: 0.8,
                 penTipShape: 'square',
                 penTipAspect: 0.4,
-                penTipAngle: 35
+                penTipAngle: 35,
+                penPressureSizeStrength: 0.12
             }
         },
         {
@@ -220,6 +224,7 @@ for (const preset of BUILTIN_BRUSH_PRESETS.pen) {
         penTipShape: BRUSH_PRESET_DEFAULTS.penTipShape,
         penTipAspect: BRUSH_PRESET_DEFAULTS.penTipAspect,
         penTipAngle: BRUSH_PRESET_DEFAULTS.penTipAngle,
+        penPressureSizeStrength: BRUSH_PRESET_DEFAULTS.penPressureSizeStrength,
         ...preset.values
     };
 }

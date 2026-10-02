@@ -296,29 +296,6 @@
     background: var(--futaba-maroon);
 }
 
-/* 図形・範囲ツールグループ: 一行目のタブ(代表ツール)と二行目 */
-#quick-access-popup.qa-popup .qa-tool-group-tab::after {
-    content: "";
-    position: absolute;
-    right: 2px;
-    bottom: 2px;
-    width: 0;
-    height: 0;
-    border-left: 4px solid transparent;
-    border-top: 4px solid var(--futaba-maroon);
-    transform: rotate(-45deg) translate(1px, -1px);
-    opacity: 0.7;
-    pointer-events: none;
-}
-
-#quick-access-popup.qa-popup .qa-tool-group-row {
-    margin-top: 2px;
-}
-
-#quick-access-popup.qa-popup .qa-tool-group-row[hidden] {
-    display: none;
-}
-
 #quick-access-popup.qa-popup .qa-tool-sub-row {
     margin-top: 3px;
     padding: 2px;
@@ -414,4 +391,93 @@
     line-height: 1;
     font-weight: 700;
     pointer-events: none;
+}
+
+/* ---- ツールスロット: 二行目(仲間)は常に表示して枠を動かさない / 三行目=オプション ---- */
+#quick-access-popup.qa-popup .qa-slot-members {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 2px;
+    /* 2行ぶんを常に確保(ツールを切り替えても枠が動かない) */
+    min-height: 62px;
+    margin-top: 3px;
+    padding: 3px;
+    box-sizing: border-box;
+    border: 1.5px solid var(--active-border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--active-border) 14%, var(--futaba-cream));
+}
+
+#quick-access-popup.qa-popup .qa-slot-member {
+    cursor: grab;
+    touch-action: none;
+    background: var(--futaba-background);
+}
+
+#quick-access-popup.qa-popup .qa-slot-member.is-reordering {
+    opacity: 0.55;
+    cursor: grabbing;
+    box-shadow: 0 0 0 2px var(--active-border);
+}
+
+#quick-access-popup.qa-popup .qa-slot-members.is-reordering .qa-slot-member:not(.is-reordering) {
+    transition: transform 0.12s ease;
+}
+
+#quick-access-popup.qa-popup .qa-slot-member.active {
+    color: var(--futaba-background);
+    background: var(--futaba-light-maroon);
+    border-color: var(--futaba-maroon);
+}
+
+#quick-access-popup.qa-popup .qa-slot-member[data-tone="strong"].active {
+    background: var(--futaba-maroon);
+}
+
+/* 消しバケツ: 同じバケツの絵に斜線の地で区別 */
+#quick-access-popup.qa-popup [data-erase="true"] {
+    background-image: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--active-border) 38%, transparent) 3px 5px);
+}
+
+#quick-access-popup.qa-popup .qa-slot-options {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+    margin-top: 3px;
+}
+
+#quick-access-popup.qa-popup .qa-slot-options[hidden] {
+    display: none;
+}
+
+/* ALLなどの修飾は●。点灯(オレンジ)で有効を示す */
+#quick-access-popup.qa-popup .qa-opt-dot {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid var(--futaba-medium);
+    border-radius: 50%;
+    background: var(--futaba-background);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#quick-access-popup.qa-popup .qa-opt-dot-mark {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--futaba-medium) 55%, var(--futaba-cream));
+}
+
+#quick-access-popup.qa-popup .qa-opt-dot.active {
+    border-color: var(--active-border);
+}
+
+#quick-access-popup.qa-popup .qa-opt-dot.active .qa-opt-dot-mark {
+    background: var(--active-border);
+    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--active-border) 70%, transparent);
 }

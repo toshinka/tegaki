@@ -18,7 +18,8 @@ import { UI_ICONS } from './ui-icons.js';
 import { createPillTabs } from './pill-tabs.js';
 import { TonePanel } from './tone-panel.js';
 import { toolNameToSelectionMode } from '../system/selection-area-tools.js';
-import { TOOL_GROUP_MEMBERS, getToolGroupState, isToolGroupMember, onToolGroupChange, setToolGroupCurrent } from './tool-group.js';
+import { TOOL_SLOTS, getLastMember, getSlot, nextMember, onToolSlotsChange, orderMembers, registerSlotActivator, rememberMember, setMemberOrder, slotOfTool } from './tool-slots.js';
+import { enableRowReorder } from './row-reorder.js';
 import { getBrushPresetIcon } from './brush-preset-icons.js';
 import { applyBrushPresetValues, brushPresetMatches, getBrushPresetTool, listQtpBrushPresets } from '../system/drawing/brush-presets.js';
 
@@ -40,7 +41,6 @@ const QA_SHORTCUT_ACTIONS = Object.freeze({
     airbrush: 'TOOL_AIRBRUSH_BLUR_TOGGLE',
     fill: 'TOOL_FILL',
     lassoFill: 'TOOL_LASSO_FILL',
-    toolGroup: 'TOOL_GROUP_CYCLE',
     selection: 'TOOL_RECT_SELECTION'
 });
 const QA_DEFAULT_MAIN_COLOR = 0x800000;
@@ -1322,14 +1322,14 @@ export class QuickAccessPopup {
                 </div>
             </section>
 
-            <!-- 2. ツール選択 -->
+            <!-- 2. ツール選択: 一行目=親スロット / 二行目=選んだスロットの仲間(常に表示) / 三行目=オプション(必要な時だけ) -->
             <section class="qa-section" aria-label="ツール">
                 <div class="qa-section-label-row">
                     <div style="display: flex; align-items: center; gap: 5px;">
                     </div>
                     <div class="qa-section-value" id="qa-current-tool-label">pen</div>
                 </div>
-                <div class="qa-tool-grid">
+                <div class="qa-tool-grid" data-role="qa-slot-grid">
                     <button class="qa-tool-button ui-help-tooltip" id="qa-pen-tool" type="button"
                         aria-label="ペン" ${shortcutHints.pen}>
                         ${UI_ICONS.pen}
@@ -1343,40 +1343,20 @@ export class QuickAccessPopup {
                         ${UI_ICONS.airbrush || '<span class="qa-tool-text-icon">霧</span>'}
                     </button>
                     <button class="qa-tool-button ui-help-tooltip" id="qa-fill-tool" type="button"
-                        aria-label="塗りつぶし" ${shortcutHints.fill}>
+                        aria-label="バケツ" ${shortcutHints.fill}>
                         ${UI_ICONS.fill}
                     </button>
-                    <button class="qa-tool-button qa-tool-group-tab ui-help-tooltip" id="qa-tool-group-tab" type="button"
-                        aria-label="図形・範囲ツール" ${shortcutHints.toolGroup}></button>
-                </div>
-                <div class="qa-tool-grid qa-tool-group-row" id="qa-tool-group-row" hidden>
-                    <button class="qa-tool-button ui-help-tooltip" id="qa-selection-tool" type="button"
-                        aria-label="矩形選択" ${shortcutHints.selection}>
-                        ${UI_ICONS.rectangleSelect || '<span class="qa-tool-text-icon">選</span>'}
-                    </button>
                     <button class="qa-tool-button ui-help-tooltip" id="qa-lasso-fill-tool" type="button"
-                        aria-label="投げ縄塗り" ${shortcutHints.lassoFill}>
+                        aria-label="図形塗り" ${shortcutHints.lassoFill}>
                         ${UI_ICONS.lasso || '<span class="qa-tool-text-icon">縄</span>'}
                     </button>
-                    <button class="qa-tool-button" id="qa-auto-select-tool" type="button"
-                        aria-label="自動選択" title="自動選択（クリックで同じ色の領域を選択）">
-                        ${UI_ICONS.autoSelect}
-                    </button>
-                    <button class="qa-tool-button" id="qa-gradient-tool" type="button"
-                        aria-label="グラデーション" title="グラデーション（ドラッグで始点→終点）">
-                        ${UI_ICONS.gradient}
+                    <button class="qa-tool-button ui-help-tooltip" id="qa-selection-tool" type="button"
+                        aria-label="選択" ${shortcutHints.selection}>
+                        ${UI_ICONS.rectangleSelect || '<span class="qa-tool-text-icon">選</span>'}
                     </button>
                 </div>
-                <div class="qa-tool-sub-row" id="qa-tool-sub-row" hidden>
-                    <div class="qa-tool-sub-fill" id="qa-tool-sub-fill" hidden>
-                        <button class="qa-sub-button qa-sub-button--text" id="qa-fill-ref-all-toggle" type="button"
-                            title="表示中のレイヤーをすべて参照して塗る" aria-label="全レイヤー参照">ALL</button>
-                        <button class="qa-sub-button" id="qa-fill-erase-btn" type="button"
-                            title="消しバケツ（塗った範囲を消す）" aria-label="消しバケツ">${UI_ICONS.eraser}</button>
-                    </div>
-                    <div class="qa-tool-sub-presets" id="qa-tool-sub-presets" hidden></div>
-                    <div class="qa-tool-sub-area" id="qa-tool-sub-area" hidden></div>
-                </div>
+                <div class="qa-slot-members" id="qa-slot-members" role="group" aria-label="ツールの仲間（ドラッグで並べ替え）"></div>
+                <div class="qa-slot-options" id="qa-slot-options" hidden></div>
             </section>
 
             <!-- 3. プリセットスロット -->
@@ -1581,15 +1561,8 @@ export class QuickAccessPopup {
             eraserToolBtn: document.getElementById('qa-eraser-tool'),
             fillToolBtn: document.getElementById('qa-fill-tool'),
             lassoFillToolBtn: document.getElementById('qa-lasso-fill-tool'),
-            autoSelectToolBtn: document.getElementById('qa-auto-select-tool'),
-            gradientToolBtn: document.getElementById('qa-gradient-tool'),
-            toolSubArea: document.getElementById('qa-tool-sub-area'),
-            toolGroupTabBtn: document.getElementById('qa-tool-group-tab'),
-            toolGroupRow: document.getElementById('qa-tool-group-row'),
-            toolSubRow: document.getElementById('qa-tool-sub-row'),
-            toolSubFill: document.getElementById('qa-tool-sub-fill'),
-            toolSubPresets: document.getElementById('qa-tool-sub-presets'),
-            fillEraseBtn: document.getElementById('qa-fill-erase-btn'),
+            slotMembers: document.getElementById('qa-slot-members'),
+            slotOptions: document.getElementById('qa-slot-options'),
             selectionToolBtn: document.getElementById('qa-selection-tool'),
             textRasterToggleBtn: document.getElementById('qa-text-raster-toggle'),
             textRasterPanel: document.getElementById('qa-text-raster-panel'),
@@ -1792,28 +1765,22 @@ export class QuickAccessPopup {
     }
 
     _setupToolButtons() {
-        this._bindPointerAction(this.elements.penToolBtn, () => this._switchTool('pen'));
-        this._bindPointerAction(this.elements.eraserToolBtn, () => this._switchTool('eraser'));
-
-        this._bindPointerAction(this.elements.airbrushToolBtn, () => {
-            const nextMode = this.currentTool === 'airbrush' ? 'airbrush-erase' : 'airbrush';
-            this._switchTool(nextMode);
-        });
-
-        this._bindPointerAction(this.elements.fillToolBtn, () => {
-            const nextMode = this.currentTool === 'fill' ? 'eraser-fill' : 'fill';
-            this._switchTool(nextMode);
-        });
-        this._bindPointerAction(this.elements.lassoFillToolBtn, () => this._switchTool('lasso-fill'));
-        this._bindPointerAction(this.elements.autoSelectToolBtn, () => this._switchTool('auto-select'));
-        this._bindPointerAction(this.elements.gradientToolBtn, () => this._switchTool('gradient'));
-        this._bindPointerAction(this.elements.toolGroupTabBtn, () => this._switchTool(getToolGroupState().current));
-        this._bindPointerAction(this.elements.fillEraseBtn, () => this._switchTool(this.currentTool === 'eraser-fill' ? 'fill' : 'eraser-fill'));
-        this._settingsUpdatedListener = () => this._renderToolSubRow();
+        // 一行目=親スロット。別スロットなら最後に使った仲間、同じスロットなら順送り(エアブラシだけは従来どおり透明スプレーと往復)。
+        for (const slot of TOOL_SLOTS) {
+            const button = this.elements[{ pen: 'penToolBtn', eraser: 'eraserToolBtn', airbrush: 'airbrushToolBtn', bucket: 'fillToolBtn', shape: 'lassoFillToolBtn', select: 'selectionToolBtn' }[slot.id]];
+            this._bindPointerAction(button, () => {
+                if (slot.id === 'airbrush' && this._currentSlotId() === 'airbrush') {
+                    this._switchTool(this.currentTool === 'airbrush' ? 'airbrush-erase' : 'airbrush');
+                    return;
+                }
+                this._activateSlot(slot.id, { cycle: true });
+            });
+        }
+        registerSlotActivator((slotId, options = {}) => this._activateSlot(slotId, options));
+        this._settingsUpdatedListener = () => this._renderSlotRows();
         // SettingsManager.set は 'settings:<kebab-key>' を発火する(updated は update() のとき)
         ['settings:updated', 'settings:qtp-brush-preset-ids', 'settings:brush-presets'].forEach(name => this.eventBus?.on?.(name, this._settingsUpdatedListener));
-        this._toolGroupUnsubscribe = onToolGroupChange(() => this._updateToolGroup());
-        this._bindPointerAction(this.elements.selectionToolBtn, () => this._switchTool('selection'));
+        this._slotsUnsubscribe = onToolSlotsChange(() => this._renderSlotRows());
         this._bindPointerAction(this.elements.eyedropperBtn, () => this._switchTool('eyedropper'));
 
         this._bindPointerAction(this.elements.colorCircleToggleBtn, () => {
@@ -2694,18 +2661,7 @@ export class QuickAccessPopup {
         });
     }
 
-    _updateToolGroup() {
-        const { toolGroupTabBtn, toolGroupRow } = this.elements;
-        if (!toolGroupTabBtn) return;
-        const state = getToolGroupState();
-        const member = TOOL_GROUP_MEMBERS.find(m => m.tool === state.current) || TOOL_GROUP_MEMBERS[0];
-        toolGroupTabBtn.innerHTML = UI_ICONS[member.icon] || member.label;
-        toolGroupTabBtn.title = `${member.label}（Shift+Lで次の図形・範囲ツールへ）`;
-        toolGroupTabBtn.classList.toggle('active', isToolGroupMember(this.currentTool));
-        // 二行目: 選んだツールの派生(図形・範囲ツールは仲間、塗りは参照/消し、ペンは筆のpreset)
-        if (toolGroupRow) toolGroupRow.hidden = !isToolGroupMember(this.currentTool);
-        this._renderToolSubRow();
-    }
+    // ------------------------------------------------------------ ツールスロット(一行目=親 / 二行目=仲間 / 三行目=オプション)
 
     _getSettingsManager() {
         return window.TegakiSettingsManager && typeof window.TegakiSettingsManager.get === 'function'
@@ -2713,26 +2669,192 @@ export class QuickAccessPopup {
             : null;
     }
 
-    /** 自動選択(許容値 / 全レイヤー参照 / 隣接のみ)・グラデーション(線形/放射 / 終端の色)の二行目。 */
-    _renderAreaToolOptions(container, tool) {
+    _currentSlotId() {
+        return slotOfTool(this.currentTool);
+    }
+
+    /** スロットの仲間の一覧(表示順)。preset系は設定でQTPに出すと選んだ筆プリセット、tools系は固定。 */
+    _getSlotMembers(slotId) {
+        const slot = getSlot(slotId);
+        if (!slot) return [];
+        let members;
+        if (slot.kind === 'preset') {
+            const manager = this._getSettingsManager();
+            const presets = manager
+                ? listQtpBrushPresets(slot.presetTool, manager.get('brushPresets'), manager.get('qtpBrushPresetIds'))
+                : [];
+            let userIndex = 0;
+            members = presets.map((preset) => {
+                if (!preset.builtin) userIndex += 1;
+                const icon = getBrushPresetIcon(slot.presetTool, preset, preset.builtin ? 0 : userIndex);
+                return { id: preset.id, preset, tool: slot.tool, label: preset.name, svg: icon.svg, tone: icon.tone, badge: icon.badge };
+            });
+        } else {
+            members = slot.members.map(m => ({ id: m.id, tool: m.tool, label: m.label, svg: UI_ICONS[m.icon] || '', tone: 'normal', erase: m.erase === true }));
+        }
+        const ids = orderMembers(slotId, members.map(m => m.id));
+        return ids.map(id => members.find(m => m.id === id));
+    }
+
+    /** 現在の状態で「いま使っている仲間」のid。 */
+    _getActiveMemberId(slotId) {
+        const slot = getSlot(slotId);
+        const members = this._getSlotMembers(slotId);
+        if (!slot || !members.length) return null;
+        if (slot.kind === 'tools') {
+            const hit = members.find(m => m.tool === this.currentTool);
+            return hit ? hit.id : null;
+        }
+        const manager = this._getSettingsManager();
+        if (!manager) return null;
+        const getSetting = (key) => manager.get(key);
+        const hit = members.find(m => brushPresetMatches(m.preset, slot.presetTool, getSetting));
+        return hit ? hit.id : null;
+    }
+
+    /**
+     * スロットを有効にする。別スロット→最後に使った仲間 / 同じスロット→次の仲間(options.cycle)。
+     * slotIdがnullなら現在のスロット(Shift+Lの順送り)。
+     */
+    _activateSlot(slotId, options = {}) {
+        const id = slotId || this._currentSlotId();
+        const slot = getSlot(id);
+        if (!slot) return false;
+        const members = this._getSlotMembers(id);
+        if (!members.length) {
+            // 仲間が無い(設定でQTPに出すプリセットが空など)ときも、親ツール自体は選べる
+            this._switchTool(slot.tool);
+            return true;
+        }
+        const ids = members.map(m => m.id);
+        let targetId;
+        if (this._currentSlotId() === id && options.cycle) {
+            const current = this._getActiveMemberId(id) ?? getLastMember(id, ids);
+            targetId = nextMember(id, ids, current);
+        } else {
+            targetId = getLastMember(id, ids);
+        }
+        const member = members.find(m => m.id === targetId) || members[0];
+        this._activateMember(id, member);
+        return true;
+    }
+
+    _activateMember(slotId, member) {
+        const slot = getSlot(slotId);
+        rememberMember(slotId, member.id);
+        // 同じツールのまま仲間(筆プリセット)だけ替える時は、サイズ/不透明度のスロットを触らない
+        if (this.currentTool !== member.tool) this._switchTool(member.tool);
+        if (slot.kind === 'preset' && member.preset) {
+            const manager = this._getSettingsManager();
+            applyBrushPresetValues(slot.presetTool, member.preset, manager);
+        }
+        this._renderSlotRows();
+    }
+
+    /** 一行目のアイコンを「そのスロットの最後に使った仲間」の絵にし、選択中のスロットを強調する。 */
+    _updateSlotButtons() {
+        const currentSlot = this._currentSlotId();
+        const map = { pen: 'penToolBtn', eraser: 'eraserToolBtn', airbrush: 'airbrushToolBtn', bucket: 'fillToolBtn', shape: 'lassoFillToolBtn', select: 'selectionToolBtn' };
+        for (const slot of TOOL_SLOTS) {
+            const button = this.elements[map[slot.id]];
+            if (!button) continue;
+            const members = this._getSlotMembers(slot.id);
+            const last = members.find(m => m.id === getLastMember(slot.id, members.map(x => x.id))) || members[0];
+            if (slot.kind === 'tools' && last) {
+                button.innerHTML = last.svg;
+                button.dataset.erase = last.erase ? 'true' : 'false';
+            }
+            button.title = last ? `${slot.label}：${last.label}（もう一度で次へ）` : slot.label;
+        }
+        this._currentSlotForRender = currentSlot;
+    }
+
+    /** 二行目(仲間)と三行目(オプション)を描き直す。二行目は仲間が1つ/0でも枠を残し、レイアウトが動かないようにする。 */
+    _renderSlotRows() {
+        const { slotMembers, slotOptions } = this.elements;
+        if (!slotMembers) return;
+        this._updateSlotButtons();
+        const slotId = this._currentSlotId();
+        slotMembers.dataset.slot = slotId || '';
+        slotMembers.textContent = '';
+        if (slotId) {
+            const members = this._getSlotMembers(slotId);
+            const activeId = this._getActiveMemberId(slotId);
+            members.forEach((member) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'qa-sub-button qa-sub-button--icon qa-slot-member';
+                b.dataset.memberId = member.id;
+                b.dataset.tone = member.tone || 'normal';
+                if (member.erase) b.dataset.erase = 'true';
+                b.innerHTML = `${member.svg}${member.badge ? `<span class="qa-sub-badge">${member.badge}</span>` : ''}`;
+                b.title = `${member.label}（ドラッグで並べ替え）`;
+                b.setAttribute('aria-label', member.label);
+                b.classList.toggle('active', member.id === activeId);
+                // 選択はclickで行う(押した瞬間に再描画すると、ドラッグ中のボタンが作り直されて並べ替えが壊れる)
+                b.addEventListener('pointerdown', (e) => { if (e.button === 0) e.stopPropagation(); });
+                b.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (this._suppressMemberClick) return;
+                    this._activateMember(slotId, member);
+                });
+                slotMembers.appendChild(b);
+            });
+            enableRowReorder(slotMembers, {
+                itemSelector: '.qa-slot-member',
+                onStart: () => { this._suppressMemberClick = true; },
+                onEnd: () => { setTimeout(() => { this._suppressMemberClick = false; }, 0); },
+                onReorder: (ids) => setMemberOrder(slotId, ids.map(id => id))
+            });
+        }
+        this._renderSlotOptions(slotOptions, slotId);
+    }
+
+    /** 三行目: バケツ/自動選択のALL(●)、自動選択の許容値・隣接、グラデーションの種類。必要なツールの時だけ。 */
+    _renderSlotOptions(container, slotId) {
+        if (!container) return;
+        const tool = this.currentTool;
+        container.textContent = '';
         const api = window.CoreRuntime?.api?.selection;
         const opts = api?.getAreaToolOptions?.();
-        container.textContent = '';
-        if (!opts) return;
-        const button = (label, title, active, onClick) => {
+        const dot = (label, title, active, onClick, id = null) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'qa-opt-dot';
+            if (id) b.id = id;
+            b.title = title;
+            b.setAttribute('aria-label', label);
+            b.setAttribute('aria-pressed', String(active));
+            b.classList.toggle('active', active);
+            b.innerHTML = '<span class="qa-opt-dot-mark" aria-hidden="true"></span>';
+            this._bindPointerAction(b, () => { onClick(); this._renderSlotRows(); });
+            container.appendChild(b);
+            return b;
+        };
+        const chip = (label, title, active, onClick) => {
             const b = document.createElement('button');
             b.type = 'button';
             b.className = 'qa-sub-button qa-sub-button--text';
             b.textContent = label;
             b.title = title;
             b.classList.toggle('active', active);
-            this._bindPointerAction(b, () => { onClick(); this._renderToolSubRow(); });
+            this._bindPointerAction(b, () => { onClick(); this._renderSlotRows(); });
             container.appendChild(b);
         };
-        if (tool === 'auto-select') {
+        if (tool === 'fill' || tool === 'eraser-fill') {
+            const on = window.FillTool?.settings?.referenceAllLayers === true;
+            const b = dot('ALL', '全レイヤー参照（●が点灯）', on, () => {
+                if (!window.FillTool) return;
+                const next = !window.FillTool.settings.referenceAllLayers;
+                window.FillTool.settings.referenceAllLayers = next;
+                window.TegakiSettingsManager?.set?.('bucketReferenceAllLayers', next);
+            }, 'qa-fill-ref-all-toggle');
+            this.elements.fillRefAllToggleBtn = b;
+        } else if (tool === 'auto-select' && opts) {
             const a = opts.auto;
-            button('ALL', '全レイヤーを参照して領域を決める', a.referenceAll, () => api.setAreaToolOptions({ auto: { referenceAll: !a.referenceAll } }));
-            button('隣接', '隣り合う領域だけ（外すと同じ色を全て）', a.contiguous, () => api.setAreaToolOptions({ auto: { contiguous: !a.contiguous } }));
+            dot('ALL', '全レイヤー参照（●が点灯）', a.referenceAll, () => api.setAreaToolOptions({ auto: { referenceAll: !a.referenceAll } }));
+            chip('隣接', '隣り合う領域だけ（外すと同じ色を全て）', a.contiguous, () => api.setAreaToolOptions({ auto: { contiguous: !a.contiguous } }));
             const range = document.createElement('input');
             range.type = 'range';
             range.min = '0';
@@ -2748,64 +2870,24 @@ export class QuickAccessPopup {
                 range.title = `許容値 ${range.value}`;
             });
             container.appendChild(range);
-        } else {
+        } else if (tool === 'gradient' && opts) {
             const g = opts.gradient;
-            button('線形', '線形グラデーション', g.kind === 'linear', () => api.setAreaToolOptions({ gradient: { kind: 'linear' } }));
-            button('放射', '放射グラデーション（始点が中心）', g.kind === 'radial', () => api.setAreaToolOptions({ gradient: { kind: 'radial' } }));
-            button('→サブ', 'メイン色からサブ色へ', g.fade === 'sub', () => api.setAreaToolOptions({ gradient: { fade: 'sub' } }));
-            button('→透明', 'メイン色から透明へ', g.fade === 'transparent', () => api.setAreaToolOptions({ gradient: { fade: 'transparent' } }));
+            chip('線形', '線形グラデーション', g.kind === 'linear', () => api.setAreaToolOptions({ gradient: { kind: 'linear' } }));
+            chip('放射', '放射グラデーション（始点が中心）', g.kind === 'radial', () => api.setAreaToolOptions({ gradient: { kind: 'radial' } }));
+            chip('→サブ', 'メイン色からサブ色へ', g.fade === 'sub', () => api.setAreaToolOptions({ gradient: { fade: 'sub' } }));
+            chip('→透明', 'メイン色から透明へ', g.fade === 'transparent', () => api.setAreaToolOptions({ gradient: { fade: 'transparent' } }));
         }
-    }
-
-    _renderToolSubRow() {
-        const { toolSubRow, toolSubFill, toolSubPresets, fillEraseBtn, toolSubArea } = this.elements;
-        if (!toolSubRow) return;
-        const tool = this.currentTool;
-        const isAreaTool = tool === 'auto-select' || tool === 'gradient';
-        if (toolSubArea) {
-            toolSubArea.hidden = !isAreaTool;
-            if (isAreaTool) this._renderAreaToolOptions(toolSubArea, tool);
-        }
-        const isFill = tool === 'fill' || tool === 'eraser-fill';
-        const brushTool = getBrushPresetTool(tool);
-        const manager = this._getSettingsManager();
-        const presets = brushTool && manager
-            ? listQtpBrushPresets(brushTool, manager.get('brushPresets'), manager.get('qtpBrushPresetIds'))
-            : [];
-
-        toolSubFill.hidden = !isFill;
-        toolSubPresets.hidden = presets.length === 0;
-        toolSubRow.hidden = !isFill && !isAreaTool && presets.length === 0;
-        if (fillEraseBtn) fillEraseBtn.classList.toggle('active', tool === 'eraser-fill');
-        if (isFill) this._updateFillRefAllToggle();
-
-        toolSubPresets.textContent = '';
-        if (!presets.length) return;
-        const getSetting = (key) => manager.get(key);
-        let userIndex = 0;
-        presets.forEach((preset) => {
-            if (!preset.builtin) userIndex += 1;
-            const icon = getBrushPresetIcon(brushTool, preset, preset.builtin ? 0 : userIndex);
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'qa-sub-button qa-sub-button--icon';
-            button.dataset.tone = icon.tone;
-            button.innerHTML = `${icon.svg}${icon.badge ? `<span class="qa-sub-badge">${icon.badge}</span>` : ''}`;
-            button.title = `${preset.name}（筆の性格プリセット）`;
-            button.setAttribute('aria-label', preset.name);
-            button.classList.toggle('active', brushPresetMatches(preset, brushTool, getSetting));
-            this._bindPointerAction(button, () => {
-                applyBrushPresetValues(brushTool, preset, manager);
-                this._renderToolSubRow();
-            });
-            toolSubPresets.appendChild(button);
-        });
+        container.hidden = container.childElementCount === 0;
+        if (tool === 'fill' || tool === 'eraser-fill') this._updateFillRefAllToggle();
     }
 
     _switchTool(tool) {
         const normalizedTool = this._normalizeTool(tool);
         this.currentTool = normalizedTool;
-        if (isToolGroupMember(normalizedTool)) setToolGroupCurrent(normalizedTool);
+        {
+            const slotId = slotOfTool(normalizedTool);
+            if (slotId && getSlot(slotId)?.kind === 'tools') rememberMember(slotId, normalizedTool);
+        }
         this._updateToolButtons();
 
         if (toolNameToSelectionMode(normalizedTool)) {
@@ -3008,15 +3090,13 @@ export class QuickAccessPopup {
     }
 
     _updateToolButtons() {
-        this._updateToolGroup();
+        this._renderSlotRows();
         const buttons = [
             this.elements.penToolBtn,
             this.elements.airbrushToolBtn,
             this.elements.eraserToolBtn,
             this.elements.fillToolBtn,
             this.elements.lassoFillToolBtn,
-            this.elements.autoSelectToolBtn,
-            this.elements.gradientToolBtn,
             this.elements.selectionToolBtn,
             this.elements.eyedropperBtn
         ];
@@ -3026,19 +3106,11 @@ export class QuickAccessPopup {
             btn.classList.remove('active', 'erase-mode');
         });
 
-        const activeMap = {
-            pen: this.elements.penToolBtn,
-            airbrush: this.elements.airbrushToolBtn,
-            'airbrush-erase': this.elements.airbrushToolBtn,
-            eraser: this.elements.eraserToolBtn,
-            fill: this.elements.fillToolBtn,
-            'eraser-fill': this.elements.fillToolBtn,
-            'lasso-fill': this.elements.lassoFillToolBtn,
-            'auto-select': this.elements.autoSelectToolBtn,
-            gradient: this.elements.gradientToolBtn,
-            selection: this.elements.selectionToolBtn,
-            eyedropper: this.elements.eyedropperBtn
-        };
+        // 親スロットのボタンは、仲間のどれを使っていてもそのスロットが点灯する
+        const slotButton = { pen: this.elements.penToolBtn, eraser: this.elements.eraserToolBtn, airbrush: this.elements.airbrushToolBtn, bucket: this.elements.fillToolBtn, shape: this.elements.lassoFillToolBtn, select: this.elements.selectionToolBtn };
+        const activeMap = new Proxy({}, {
+            get: (_, tool) => (tool === 'eyedropper' ? this.elements.eyedropperBtn : slotButton[slotOfTool(tool)] || null)
+        });
 
         const activeBtn = activeMap[this.currentTool];
         if (activeBtn) {

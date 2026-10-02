@@ -249,7 +249,7 @@ export const TEGAKI_KEYMAP = {
             key: 'KeyL',
             ctrl: false,
             shift: true,
-            description: '図形・範囲ツールを送る（ループ）'
+            description: '現在のツール枠の次の仲間へ（P/E/Gの再押下と同じ）'
         },
         TOOL_EYEDROPPER: {
             key: 'KeyI',

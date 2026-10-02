@@ -145,7 +145,7 @@ const near = (actual, expected, epsilon, message) => {
         pressureCorrection: 1, pressureCurve: 'custom', pressureCurvePoints: [[0, 0], [0.5, 0.2], [1, 1]],
         pressureOpacityEnabled: true, pressureOpacityStrength: 0.65, penVelocityThinning: 0.3,
         penTiltStrength: 0, penDabSoftness: 0, penEdgeAA: 0, stabilizerMode: 'follow', penTaperIn: 0, penTaperOut: 0, penPressureSmoothing: 0.5, smoothing: 0.5,
-        penTipShape: 'round', penTipAspect: 1, penTipAngle: 0
+        penTipShape: 'round', penTipAspect: 1, penTipAngle: 0, penPressureSizeStrength: 1
     };
     const get = key => store[key];
     const captured = captureBrushPresetValues('pen', get);
@@ -470,10 +470,16 @@ const near = (actual, expected, epsilon, message) => {
 {
     const presets = await import('../system/drawing/brush-presets.js');
     const { BRUSH_PRESET_KEYS, BRUSH_PRESET_DEFAULTS, BUILTIN_BRUSH_PRESETS, applyBrushPresetValues, brushPresetMatches } = presets;
-    for (const key of ['penTipShape', 'penTipAspect', 'penTipAngle']) assert.ok(BRUSH_PRESET_KEYS.pen.includes(key), `pen preset keys include ${key}`);
+    for (const key of ['penTipShape', 'penTipAspect', 'penTipAngle', 'penPressureSizeStrength']) assert.ok(BRUSH_PRESET_KEYS.pen.includes(key), `pen preset keys include ${key}`);
     for (const key of ['eraserTipShape', 'eraserTipAspect', 'eraserTipAngle']) assert.ok(BRUSH_PRESET_KEYS.eraser.includes(key), `eraser preset keys include ${key}`);
     const square = BUILTIN_BRUSH_PRESETS.pen.find(p => p.id === 'builtin-pen-square');
     assert.equal(square.values.penTipShape, 'square');
+    assert.ok(square.values.penPressureSizeStrength <= 0.2, 'square pen keeps a nearly constant width under pressure');
+    // 筆圧が径に効く強さ: 1=従来、0=一定径
+    const r = new AirbrushDabRenderer({ calculateWidth: (p, size) => size * p });
+    assert.equal(r._getPenDabWidth(0.5, { pressureEnabled: true, size: 20 }), 10);
+    assert.equal(r._getPenDabWidth(0.5, { pressureEnabled: true, size: 20, penPressureSizeStrength: 0 }), 20);
+    assert.equal(r._getPenDabWidth(0.5, { pressureEnabled: true, size: 20, penPressureSizeStrength: 0.5 }), 15);
     const squareEraser = BUILTIN_BRUSH_PRESETS.eraser.find(p => p.id === 'builtin-eraser-square');
     assert.equal(squareEraser.values.eraserTipShape, 'square');
     // 古い(ペン先の形を持たない)presetを当てると丸に戻る

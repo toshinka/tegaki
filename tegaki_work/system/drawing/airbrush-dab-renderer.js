@@ -230,9 +230,16 @@ export class AirbrushDabRenderer {
     }
 
     _getPenDabWidth(pressure, settings) {
-        const width = settings.pressureEnabled === true
+        let width = settings.pressureEnabled === true
             ? this.calculateWidth(pressure, settings.size)
             : Math.max(1, settings.size || 1);
+        // 筆圧が径に効く強さ(1=従来どおり / 0=筆圧に依らず一定径)。角ペン・ミリペンは小さくして線幅を安定させる。
+        const sizeStrength = settings.penPressureSizeStrength;
+        if (settings.pressureEnabled === true && Number.isFinite(sizeStrength) && sizeStrength < 1) {
+            const base = Math.max(1, settings.size || 1);
+            const clamped = Math.max(0, sizeStrength);
+            width = base * (1 - clamped) + width * clamped;
+        }
         // ペンの傾き: 寝かせるほど太く(鉛筆の側面)。最大PEN_TILT_WIDEN倍。
         return width * (1 + PEN_TILT_WIDEN * (settings.dabTilt?.amount || 0));
     }
@@ -281,7 +288,11 @@ export class AirbrushDabRenderer {
         canvas.height = SQUARE_TEXTURE_SIZE;
         const ctx = canvas.getContext('2d');
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(1, 1, SQUARE_TEXTURE_CORE, SQUARE_TEXTURE_CORE);
+        // 角はごくわずかに丸め(拡大するとAAで柔らかい角になる)。
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(1, 1, SQUARE_TEXTURE_CORE, SQUARE_TEXTURE_CORE, 3);
+        else ctx.rect(1, 1, SQUARE_TEXTURE_CORE, SQUARE_TEXTURE_CORE);
+        ctx.fill();
         const texture = Texture.from({ resource: canvas, autoGenerateMipmaps: true }, true);
         this.textures.set('square', texture);
         return texture;
