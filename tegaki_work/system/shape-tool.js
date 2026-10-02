@@ -16,7 +16,7 @@
 
 import {
     createQuadFromDrag, moveVertex, moveEdge, translateQuad, rotateQuad, quadCenter,
-    outlinePoints, pointInQuad, distanceToSegment
+    pointInQuad, distanceToSegment, squareFromQuad, strokePolygons, polygonsBounds
 } from './shape-geometry.js';
 import { normalizeRasterBounds } from './raster-bounds.js';
 import { estimateRasterHistoryPairBytes } from './raster-snapshot-memory.js';
@@ -122,7 +122,14 @@ export class ShapeEditor {
         const start = this._toLocal(event, target.layer);
         if (!start) return false;
         this.drag = { type: 'create', pointerId: event.pointerId, layer: target.layer, kind, start, current: start };
-        this.shape = { kind, quad: createQuadFromDrag(start, start), layer: target.layer, creating: true };
+        const size = Number(window.brushSettings?.getSize?.());
+        this.shape = {
+            kind, quad: createQuadFromDrag(start, start), layer: target.layer, creating: true,
+            width: Number.isFinite(size) && size > 0 ? size : 4,
+            join: this.areaTools.options.shape.join,
+            strength: 0, // 遠近（-90..90 %）。向かう先へ細く(+)/太く(-)
+            target: null
+        };
         this._capture(event);
         this.render();
         return true;
@@ -130,6 +137,10 @@ export class ShapeEditor {
 
     _beginEdit(event, hit) {
         const layer = this.shape.layer;
+        if (hit.type === 'vertex' || hit.type === 'edge') {
+            // 触った頂点/辺が遠近の「向かう先」になる
+            this.shape.target = { type: hit.type, index: hit.index };
+        }
         const start = this._toLocal(event, layer);
         if (!start) return;
         this.drag = {
@@ -220,15 +231,20 @@ export class ShapeEditor {
         return this._bake(shape);
     }
 
-    _getStroke() {
+    _getStroke(shape = this.shape) {
         const colors = this.areaTools.getColors();
-        const size = Number(window.brushSettings?.getSize?.());
         const opacity = Number(window.brushSettings?.getOpacity?.());
         return {
             rgb: colors.main,
-            width: Number.isFinite(size) && size > 0 ? size : 4,
+            width: shape?.width ?? 4,
             alpha: Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1
         };
+    }
+
+    _polygons(shape) {
+        return strokePolygons(shape.kind, shape.quad, {
+            width: shape.width, join: shape.join, strength: shape.strength / 100, target: shape.target
+        });
     }
 
     _bake(shape) {
@@ -240,27 +256,18 @@ export class ShapeEditor {
             showFeedbackToast('このレイヤーには図形を描けません');
             return false;
         }
-        const stroke = this._getStroke();
-        const points = outlinePoints(shape.kind, shape.quad);
-        const margin = Math.ceil(stroke.width / 2 + 3);
-        const xs = points.map(p => p.x);
-        const ys = points.map(p => p.y);
-        // 角の尖り(miter)は線幅の数倍まで伸びうるため、余白を広めに取る
-        const pad = shape.kind === 'rect' ? margin + Math.ceil(stroke.width * 2) : margin;
+        const stroke = this._getStroke(shape);
+        const polys = this._polygons(shape);
+        const pb = polygonsBounds(polys);
         const rect = {
-            x: Math.floor(Math.min(...xs) - pad),
-            y: Math.floor(Math.min(...ys) - pad),
-            width: Math.ceil(Math.max(...xs) - Math.min(...xs) + pad * 2),
-            height: Math.ceil(Math.max(...ys) - Math.min(...ys) + pad * 2)
+            x: Math.floor(pb.x0) - 2,
+            y: Math.floor(pb.y0) - 2,
+            width: Math.ceil(pb.x1 - pb.x0) + 4,
+            height: Math.ceil(pb.y1 - pb.y0) + 4
         };
         const canvasCfg = layerSystem?.config?.canvas || window.TEGAKI_CONFIG?.canvas || {};
         // 書く範囲はキャンバス内に限る（キャンバス外へはみ出した分は捨てる）
-        const clipped = {
-            x: Math.max(0, rect.x),
-            y: Math.max(0, rect.y),
-            width: 0,
-            height: 0
-        };
+        const clipped = { x: Math.max(0, rect.x), y: Math.max(0, rect.y), width: 0, height: 0 };
         clipped.width = Math.min(Math.round(canvasCfg.width || 0), rect.x + rect.width) - clipped.x;
         clipped.height = Math.min(Math.round(canvasCfg.height || 0), rect.y + rect.height) - clipped.y;
         if (!(clipped.width > 0 && clipped.height > 0)) {
@@ -272,19 +279,18 @@ export class ShapeEditor {
         canvas.width = clipped.width;
         canvas.height = clipped.height;
         const ctx = canvas.getContext('2d');
-        ctx.lineWidth = stroke.width;
-        ctx.lineJoin = shape.kind === 'rect' ? 'miter' : 'round';
-        ctx.miterLimit = 10;
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = `rgb(${stroke.rgb[0]},${stroke.rgb[1]},${stroke.rgb[2]})`;
+        ctx.fillStyle = `rgb(${stroke.rgb[0]},${stroke.rgb[1]},${stroke.rgb[2]})`;
+        // 全多角形を1つのパスにして一度に塗る（同じ向きなのでnonzeroで継ぎ目なく1枚の線になる）
         ctx.beginPath();
-        points.forEach((p, i) => {
-            const x = p.x - clipped.x;
-            const y = p.y - clipped.y;
-            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        });
-        ctx.closePath();
-        ctx.stroke();
+        for (const poly of polys) {
+            poly.forEach((p, i) => {
+                const x = p.x - clipped.x;
+                const y = p.y - clipped.y;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+            ctx.closePath();
+        }
+        ctx.fill('nonzero');
         const drawn = ctx.getImageData(0, 0, clipped.width, clipped.height).data;
 
         // 選択があればその中だけ（グラデーションと同じ扱い）
@@ -393,24 +399,103 @@ export class ShapeEditor {
         const wrap = document.createElement('div');
         wrap.className = 'shape-tool-actions';
         wrap.style.display = 'none';
-        const ok = document.createElement('button');
-        ok.type = 'button';
-        ok.className = 'shape-tool-confirm';
-        ok.textContent = '確定';
-        ok.title = '図形を確定 (Enter)';
-        const cancel = document.createElement('button');
-        cancel.type = 'button';
-        cancel.className = 'shape-tool-cancel';
-        cancel.textContent = '×';
-        cancel.title = '取り消し (Esc)';
         const stop = event => event.stopPropagation();
         wrap.addEventListener('pointerdown', stop);
-        ok.addEventListener('click', () => this.commit());
-        cancel.addEventListener('click', () => this.cancel());
-        wrap.append(ok, cancel);
+
+        const button = (cls, text, title, onClick) => {
+            const el = document.createElement('button');
+            el.type = 'button';
+            el.className = cls;
+            el.textContent = text;
+            el.title = title;
+            el.addEventListener('click', onClick);
+            return el;
+        };
+        // 数値入力: ホイールで増減、ダブルクリックで全選択、Enterで確定(図形の確定とは別)
+        const numberField = (label, title, { min, max, step, unit }, onInput) => {
+            const field = document.createElement('label');
+            field.className = 'shape-tool-field';
+            field.title = title;
+            const caption = document.createElement('span');
+            caption.textContent = label;
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.min = String(min);
+            input.max = String(max);
+            input.step = String(step);
+            input.addEventListener('input', () => {
+                const v = Number(input.value);
+                if (Number.isFinite(v)) onInput(Math.max(min, Math.min(max, v)));
+            });
+            input.addEventListener('wheel', event => {
+                event.preventDefault();
+                const v = Number(input.value) || 0;
+                const next = Math.max(min, Math.min(max, v + (event.deltaY < 0 ? step : -step)));
+                input.value = String(Math.round(next * 100) / 100);
+                onInput(next);
+            }, { passive: false });
+            input.addEventListener('dblclick', () => input.select());
+            input.addEventListener('keydown', event => { if (event.key === 'Enter') input.blur(); });
+            field.append(caption, input);
+            if (unit) {
+                const u = document.createElement('span');
+                u.textContent = unit;
+                field.append(u);
+            }
+            return { field, input };
+        };
+
+        const row1 = document.createElement('div');
+        row1.className = 'shape-tool-row';
+        const ok = button('shape-tool-confirm', '確定', '図形を確定 (Enter)', () => this.commit());
+        const cancel = button('shape-tool-cancel', '×', '取り消し (Esc)', () => this.cancel());
+        const reset = button('shape-tool-reset', '', '正方形/正円にそろえる', () => {
+            if (!this.shape) return;
+            this.shape.quad = squareFromQuad(this.shape.quad);
+            this.render();
+        });
+        row1.append(ok, cancel, reset);
+
+        const row2 = document.createElement('div');
+        row2.className = 'shape-tool-row shape-tool-options';
+        const width = numberField('太さ', '線の太さ(px)。ホイールで増減', { min: 1, max: 400, step: 1, unit: 'px' }, v => {
+            if (this.shape) { this.shape.width = v; this.render(); }
+        });
+        const joinMiter = button('shape-tool-chip', '尖', '四角の角を尖らせる', () => this._setJoin('miter'));
+        const joinRound = button('shape-tool-chip', '丸', '四角の角を丸くする', () => this._setJoin('round'));
+        const joinGroup = document.createElement('span');
+        joinGroup.className = 'shape-tool-joins';
+        joinGroup.append(joinMiter, joinRound);
+        const perspective = numberField('遠近', '最後に触った頂点/辺に向かって線が細く(+)/太く(-)なる。ホイールで増減', { min: -90, max: 90, step: 5, unit: '%' }, v => {
+            if (this.shape) { this.shape.strength = v; this.render(); }
+        });
+        row2.append(width.field, joinGroup, perspective.field);
+
+        wrap.append(row1, row2);
         host.appendChild(wrap);
-        this.buttons = { wrap, ok, cancel };
+        this.buttons = { wrap, ok, cancel, reset, width, joinMiter, joinRound, joinGroup, perspective };
         return this.buttons;
+    }
+
+    _setJoin(join) {
+        if (!this.shape) return;
+        this.shape.join = join;
+        this.areaTools.setOptions({ shape: { join } });
+        this.render();
+    }
+
+    _syncPanel(shape) {
+        const b = this.buttons;
+        if (!b) return;
+        b.reset.textContent = shape.kind === 'ellipse' ? '正円' : '正方形';
+        const setValue = (field, value) => {
+            if (document.activeElement !== field.input) field.input.value = String(Math.round(value * 100) / 100);
+        };
+        setValue(b.width, shape.width);
+        setValue(b.perspective, shape.strength);
+        b.joinGroup.style.display = shape.kind === 'rect' ? '' : 'none';
+        b.joinMiter.classList.toggle('is-active', shape.join === 'miter');
+        b.joinRound.classList.toggle('is-active', shape.join === 'round');
     }
 
     _setHidden(hidden) {
@@ -432,17 +517,15 @@ export class ShapeEditor {
         const { layer, kind } = shape;
         const parts = this.parts;
         this._setHidden(false);
-        // 実際の線の見た目（色・太さ・不透明度）をそのまま重ねて見せる
-        const stroke = this._getStroke();
-        const a = this._toScreen(layer, { x: 0, y: 0 });
-        const b = this._toScreen(layer, { x: 100, y: 0 });
-        const scale = a && b ? Math.hypot(b.x - a.x, b.y - a.y) / 100 : 1;
-        const points = outlinePoints(kind, shape.quad).map(p => this._toScreen(layer, p)).filter(Boolean);
-        parts.preview.setAttribute('d', `M${points.map(p => `${p.x} ${p.y}`).join('L')}Z`);
-        parts.preview.style.stroke = `rgb(${stroke.rgb.join(',')})`;
-        parts.preview.style.strokeWidth = String(Math.max(1, stroke.width * scale));
-        parts.preview.style.strokeOpacity = String(stroke.alpha);
-        parts.preview.style.strokeLinejoin = kind === 'rect' ? 'miter' : 'round';
+        // 実際の線の見た目（色・太さ・不透明度・遠近）をそのまま重ねて見せる
+        const stroke = this._getStroke(shape);
+        const d = this._polygons(shape).map(poly => {
+            const pts = poly.map(p => this._toScreen(layer, p)).filter(Boolean);
+            return pts.length >= 3 ? `M${pts.map(p => `${p.x} ${p.y}`).join('L')}Z` : '';
+        }).join('');
+        parts.preview.setAttribute('d', d);
+        parts.preview.style.fill = `rgb(${stroke.rgb.join(',')})`;
+        parts.preview.style.fillOpacity = String(stroke.alpha);
         parts.guide.setAttribute('d', `M${screen.map(p => `${p.x} ${p.y}`).join('L')}Z`);
 
         const editing = !shape.creating;
@@ -451,12 +534,14 @@ export class ShapeEditor {
             c.setAttribute('cx', String(v.x));
             c.setAttribute('cy', String(v.y));
             c.style.display = editing ? '' : 'none';
+            c.classList.toggle('is-target', shape.strength !== 0 && shape.target?.type === 'vertex' && shape.target.index === i);
             const next = screen[(i + 1) % 4];
             const e = parts.edges[i];
             e.setAttribute('x', String((v.x + next.x) / 2 - 6));
             e.setAttribute('y', String((v.y + next.y) / 2 - 4));
             e.setAttribute('transform', `rotate(${(Math.atan2(next.y - v.y, next.x - v.x) * 180) / Math.PI} ${(v.x + next.x) / 2} ${(v.y + next.y) / 2})`);
             e.style.display = editing ? '' : 'none';
+            e.classList.toggle('is-target', shape.strength !== 0 && (shape.target?.type === 'edge' ? shape.target.index === i : (!shape.target && i === 0)));
         });
         const { mid, handle } = this._rotateHandle(screen);
         parts.stem.setAttribute('x1', String(mid.x));
@@ -476,8 +561,9 @@ export class ShapeEditor {
     _placeButtons(screen, editing) {
         const buttons = this._ensureButtons();
         if (!buttons) return;
-        buttons.wrap.style.display = editing ? '' : 'none';
+        buttons.wrap.style.display = editing ? 'flex' : 'none';
         if (!editing) return;
+        this._syncPanel(this.shape);
         const host = buttons.wrap.parentElement;
         const area = host?.getBoundingClientRect?.() || { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
         const minX = Math.min(...screen.map(p => p.x));

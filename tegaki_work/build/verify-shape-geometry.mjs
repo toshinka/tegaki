@@ -84,3 +84,40 @@ assert.ok(te.every(q => pointInQuad(q, trap) || trap.some((a, i) => distanceToSe
 assert.ok(pointInQuad({ x: 50, y: 40 }, rect));
 assert.ok(!pointInQuad({ x: 5, y: 40 }, rect));
 console.log('verify-shape-geometry: ok');
+
+// ---- 線の形（太さ・角・遠近）
+import { squareFromQuad, taperAnchors, taperFactor, strokePolygons, polygonsBounds } from '../system/shape-geometry.js';
+{
+    const sq2 = squareFromQuad(trap);
+    near(sq2[1].x - sq2[0].x, sq2[2].y - sq2[1].y, 'squareFromQuad is a square');
+    near(quadCenter(sq2).x, quadCenter(trap).x, 'square keeps center');
+
+    const anchors = taperAnchors(rect, { type: 'edge', index: 0 });
+    near(anchors.far.y, 20, 'edge target far = top edge'); near(anchors.near.y, 70, 'edge target near = bottom edge');
+    assert.equal(taperFactor({ x: 50, y: 70 }, anchors, 0.5), 1, 'near side keeps full width');
+    near(taperFactor({ x: 50, y: 20 }, anchors, 0.5), 0.5, 'far side is thinner by strength');
+    near(taperFactor({ x: 50, y: 20 }, anchors, -0.5), 1.5, 'negative strength thickens far side');
+    const va = taperAnchors(rect, { type: 'vertex', index: 2 });
+    assert.deepEqual(va.far, rect[2]); assert.deepEqual(va.near, rect[0]);
+
+    const o = { width: 10, join: 'miter', strength: 0, target: null };
+    const polys = strokePolygons('rect', rect, o);
+    assert.ok(polys.every(p => p.length >= 3));
+    // 同じ向き（nonzeroで穴が空かない）
+    const sign = p => { let a = 0; for (let i = 0; i < p.length; i += 1) { const q = p[(i + 1) % p.length]; a += p[i].x * q.y - q.x * p[i].y; } return Math.sign(a); };
+    assert.ok(polys.every(p => sign(p) === sign(polys[0])), 'all polygons share one orientation');
+    // miterの外接矩形は角が尖る: 太さの半分だけ外に出る
+    const b = polygonsBounds(polys);
+    near(b.x0, 10 - 5, 'miter extends half width', 1e-6); near(b.y1, 70 + 5, 'miter extends half width y', 1e-6);
+    // 丸い角は円形の角になり、外接矩形は同じ
+    const br = polygonsBounds(strokePolygons('rect', rect, { ...o, join: 'round' }));
+    near(br.x0, 5, 'round join bounds', 0.2);
+    // 遠近: 向かう先の辺が細くなる
+    const tp = strokePolygons('rect', rect, { width: 10, join: 'miter', strength: 0.6, target: { type: 'edge', index: 0 } });
+    const tb = polygonsBounds(tp);
+    near(tb.y1, 70 + 5, 'near edge keeps full width', 1e-6);
+    assert.ok(tb.y0 > 20 - 5 + 1, 'far edge is thinner');
+    // 楕円も多角形群で作れる
+    assert.ok(strokePolygons('ellipse', rect, o).length >= 48);
+}
+console.log('verify-shape-geometry (stroke): ok');

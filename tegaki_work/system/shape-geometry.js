@@ -233,3 +233,137 @@ export function pointInQuad(p, quad) {
     }
     return inside;
 }
+
+// ---------------------------------------------------------------- 線の形（太さ・角・遠近）
+
+/** 4辺形を面積が同じ軸平行の正方形にする（中心は保つ）。「正方形/正円」ボタン用。 */
+export function squareFromQuad(quad) {
+    const c = quadCenter(quad);
+    let area = 0;
+    for (let i = 0; i < 4; i += 1) {
+        const p = quad[i];
+        const q = quad[(i + 1) % 4];
+        area += p.x * q.y - q.x * p.y;
+    }
+    const side = Math.sqrt(Math.abs(area) / 2) || 1;
+    return [
+        { x: c.x - side / 2, y: c.y - side / 2 },
+        { x: c.x + side / 2, y: c.y - side / 2 },
+        { x: c.x + side / 2, y: c.y + side / 2 },
+        { x: c.x - side / 2, y: c.y + side / 2 }
+    ];
+}
+
+/** 遠近の向かう先。頂点i=その点へ向かう（基準は対角）、辺e=その辺へ向かう（基準は反対の辺）。 */
+export function taperAnchors(quad, target) {
+    const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    if (target?.type === 'vertex') {
+        return { far: quad[target.index], near: quad[(target.index + 2) % 4] };
+    }
+    const e = target?.type === 'edge' ? target.index : 0;
+    return {
+        far: mid(quad[e], quad[(e + 1) % 4]),
+        near: mid(quad[(e + 2) % 4], quad[(e + 3) % 4])
+    };
+}
+
+/** 点の太さ倍率。strength>0で向かう先へ細く、<0で太くなる（near→farを0→1に射影）。 */
+export function taperFactor(point, anchors, strength) {
+    if (!strength) return 1;
+    const dx = anchors.far.x - anchors.near.x;
+    const dy = anchors.far.y - anchors.near.y;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < EPS) return 1;
+    const t = Math.max(0, Math.min(1, ((point.x - anchors.near.x) * dx + (point.y - anchors.near.y) * dy) / len2));
+    return Math.max(0.04, 1 - strength * t);
+}
+
+const signedArea = poly => {
+    let a = 0;
+    for (let i = 0; i < poly.length; i += 1) {
+        const p = poly[i];
+        const q = poly[(i + 1) % poly.length];
+        a += p.x * q.y - q.x * p.y;
+    }
+    return a / 2;
+};
+const orient = poly => (signedArea(poly) < 0 ? poly.slice().reverse() : poly);
+
+/**
+ * 図形の線を「同じ向きの多角形の集まり」にする（nonzeroで塗れば継ぎ目なく1枚の線になる）。
+ * 線幅が一定でないとき（遠近）にもそのまま使える。canvas塗りとSVGプレビューが同じ形を共有する。
+ * @param {{width:number, join:'miter'|'round', strength:number, target:{type,index}|null}} opts
+ */
+export function strokePolygons(kind, quad, opts) {
+    const points = outlinePoints(kind, quad);
+    const n = points.length;
+    const width = Math.max(0.5, opts.width);
+    const anchors = taperAnchors(quad, opts.target);
+    const strength = Math.max(-0.95, Math.min(0.95, opts.strength || 0));
+    const half = points.map(p => (width * taperFactor(p, anchors, strength)) / 2);
+    const polys = [];
+    const normals = [];
+    for (let i = 0; i < n; i += 1) {
+        const a = points[i];
+        const b = points[(i + 1) % n];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+        normals.push({ x: nx, y: ny });
+        const ha = half[i];
+        const hb = half[(i + 1) % n];
+        polys.push(orient([
+            { x: a.x + nx * ha, y: a.y + ny * ha },
+            { x: b.x + nx * hb, y: b.y + ny * hb },
+            { x: b.x - nx * hb, y: b.y - ny * hb },
+            { x: a.x - nx * ha, y: a.y - ny * ha }
+        ]));
+    }
+    // 角の処理（頂点ごと、辺i-1と辺iの間）
+    const round = opts.join === 'round' && kind !== 'ellipse';
+    for (let i = 0; i < n; i += 1) {
+        const v = points[i];
+        const h = half[i];
+        if (round) {
+            const circle = [];
+            for (let k = 0; k < 20; k += 1) {
+                const t = (k / 20) * Math.PI * 2;
+                circle.push({ x: v.x + Math.cos(t) * h, y: v.y + Math.sin(t) * h });
+            }
+            polys.push(orient(circle));
+            continue;
+        }
+        const n1 = normals[(i + n - 1) % n];
+        const n2 = normals[i];
+        for (const sign of [1, -1]) {
+            const p1 = { x: v.x + n1.x * h * sign, y: v.y + n1.y * h * sign };
+            const p2 = { x: v.x + n2.x * h * sign, y: v.y + n2.y * h * sign };
+            const dot = n1.x * n2.x + n1.y * n2.y;
+            const k = 1 / (1 + dot);
+            const tipLen = Math.hypot((n1.x + n2.x) * k, (n1.y + n2.y) * k);
+            if (1 + dot > 1e-6 && tipLen <= 10) {
+                const tip = { x: v.x + (n1.x + n2.x) * k * h * sign, y: v.y + (n1.y + n2.y) * k * h * sign };
+                polys.push(orient([v, p1, tip, p2]));
+            } else {
+                polys.push(orient([v, p1, p2])); // 尖りすぎる角は面取り
+            }
+        }
+    }
+    return polys;
+}
+
+/** 多角形群の外接矩形 */
+export function polygonsBounds(polys) {
+    let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+    for (const poly of polys) {
+        for (const p of poly) {
+            if (p.x < x0) x0 = p.x;
+            if (p.y < y0) y0 = p.y;
+            if (p.x > x1) x1 = p.x;
+            if (p.y > y1) y1 = p.y;
+        }
+    }
+    return { x0, y0, x1, y1 };
+}
