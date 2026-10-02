@@ -19,6 +19,7 @@ import { normalizeRasterBounds } from './raster-bounds.js';
 import { estimateRasterHistoryPairBytes } from './raster-snapshot-memory.js';
 import { showFeedbackToast } from '../ui/feedback-toast.js';
 import { createInlineNumberField } from '../ui/inline-number-field.js';
+import { attachPopupDrag } from '../ui/popup-drag-helper.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -56,6 +57,12 @@ export class BorderEditor {
         this._ensurePanel();
         this.panel.style.display = 'flex';
         this._syncPanel();
+        if (this.panel.dataset.moved !== '1') {
+            // 初期位置: キャンバス領域の上部中央
+            const area = (document.querySelector('.canvas-area') || document.body).getBoundingClientRect();
+            this.panel.style.left = `${Math.max(4, area.left + (area.width - this.panel.offsetWidth) / 2)}px`;
+            this.panel.style.top = `${area.top + 12}px`;
+        }
         const bus = this.system.eventBus;
         if (bus?.on) {
             const invalidate = () => { this.source = null; this._schedule(); };
@@ -137,10 +144,11 @@ export class BorderEditor {
 
         panel.append(row1, row2);
         host.appendChild(panel);
-        panel.style.left = '50%';
-        panel.style.top = '12px';
-        panel.style.transform = 'translateX(-50%)';
         this.panel = panel;
+        this.detachDrag = attachPopupDrag(panel, {
+            interactiveSelector: 'button, input, label, select',
+            onDragEnd: () => { panel.dataset.moved = '1'; }
+        });
         this.parts = { width, outside, inside, swatch };
     }
 
@@ -358,6 +366,7 @@ export class BorderEditor {
 
     destroy() {
         this._hide();
+        this.detachDrag?.();
         this.panel?.remove?.();
         this.image?.remove?.();
         this.panel = null;

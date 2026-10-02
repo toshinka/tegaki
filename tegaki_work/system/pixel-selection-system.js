@@ -1327,6 +1327,18 @@ export class PixelSelectionSystem {
 
     _handlePointerDown(event) {
         if (!this.toolActive || event.button !== 0) return;
+        // 定規ON中のShift+押下は定規の移動・回転（描画エンジンは選択ツール中は止まっているのでここで橋渡しする）
+        const ruler = window.rulerSystem;
+        if (ruler?.isEnabled?.() && event.shiftKey) {
+            const info = { clientX: event.clientX, clientY: event.clientY, rawClientX: event.clientX, rawClientY: event.clientY };
+            if (ruler.handlePointerDown(info, event)) {
+                this.rulerPointerId = event.pointerId;
+                try { this.canvas?.setPointerCapture?.(event.pointerId); } catch { /* 任意 */ }
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
+        }
         if (this.cameraSystem?.isCanvasMoveMode?.()) return;
         if (!this.transformPreviewCaptureMode && this.layerSystem?.vKeyPressed) return;
         const target = this._getActiveSelectionTarget();
@@ -1398,6 +1410,12 @@ export class PixelSelectionSystem {
     }
 
     _handlePointerMove(event) {
+        if (this.rulerPointerId === event.pointerId) {
+            window.rulerSystem?.handlePointerMove?.({ clientX: event.clientX, clientY: event.clientY, rawClientX: event.clientX, rawClientY: event.clientY }, event);
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
         if (this.areaTools?.hasActiveDrag?.() && this.areaTools.pointerMove(event)) {
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -1462,6 +1480,14 @@ export class PixelSelectionSystem {
     }
 
     _handlePointerUp(event) {
+        if (this.rulerPointerId === event.pointerId) {
+            this.rulerPointerId = null;
+            try { this.canvas?.releasePointerCapture?.(event.pointerId); } catch { /* 任意 */ }
+            window.rulerSystem?.handlePointerUp?.();
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
         if (this.areaTools?.hasActiveDrag?.() && this.areaTools.pointerUp(event)) {
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -1510,6 +1536,11 @@ export class PixelSelectionSystem {
     }
 
     _handlePointerCancel(event) {
+        if (this.rulerPointerId === event.pointerId) {
+            this.rulerPointerId = null;
+            window.rulerSystem?.handlePointerUp?.();
+            return;
+        }
         if (this.areaTools?.hasActiveDrag?.() && this.areaTools.pointerCancel(event)) {
             event.preventDefault();
             event.stopImmediatePropagation();

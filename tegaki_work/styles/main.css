@@ -8624,9 +8624,10 @@ button.anim-motion-graph-legend-item.is-primary {
     pointer-events: none;
 }
 .shape-tool-actions {
-    position: absolute;
+    position: fixed;
     z-index: 950;
     display: flex;
+    touch-action: none;
 }
 .shape-tool-confirm,
 .shape-tool-cancel {
@@ -8656,7 +8657,12 @@ button.anim-motion-graph-legend-item.is-primary {
     padding: 8px;
     border: 2px solid var(--futaba-maroon);
     border-radius: 14px;
-    background: rgba(255, 255, 238, 0.96);
+    background: rgba(255, 255, 238, 0.62);
+    backdrop-filter: blur(8px);
+    cursor: grab;
+}
+.shape-tool-actions.popup-panel--dragging {
+    cursor: grabbing;
 }
 .shape-tool-row {
     display: flex;

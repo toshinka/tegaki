@@ -94,10 +94,10 @@ const canvas = { width: 1000, height: 800 };
 
 // ミニパネルのオプション: 既定は従来値、範囲外はclamp、間隔/本数/角度刻みが幾何へ反映される
 {
-    assert.deepEqual(sanitizeRulerOptions(null), { spacing: 48, spokes: 48, angleSnap: 15, showGuides: true });
-    assert.deepEqual(RULER_OPTION_DEFAULTS, { spacing: 48, spokes: 48, angleSnap: 15, showGuides: true });
+    assert.deepEqual(sanitizeRulerOptions(null), { spacing: 48, spokes: 48, angleSnap: 15, perspective: 0, showGuides: true });
+    assert.deepEqual(RULER_OPTION_DEFAULTS, { spacing: 48, spokes: 48, angleSnap: 15, perspective: 0, showGuides: true });
     const o = sanitizeRulerOptions({ spacing: 1, spokes: 9999.6, angleSnap: 'x', showGuides: false });
-    assert.deepEqual(o, { spacing: 12, spokes: 180, angleSnap: 15, showGuides: false });
+    assert.deepEqual(o, { spacing: 12, spokes: 180, angleSnap: 15, perspective: 0, showGuides: false });
     const base = { type: 'parallel', center: { x: 500, y: 400 }, angle: 0 };
     const wide = buildRulerGuideSegments({ ...base, spacing: 96 }, canvas, 1);
     const normal = buildRulerGuideSegments(base, canvas, 1);
@@ -106,6 +106,34 @@ const canvas = { width: 1000, height: 800 };
     const rot = resolveRulerGrab({ ...base }, { x: 600, y: 400 }, 1);
     near(applyRulerDrag({ ...base, angleSnap: 45 }, rot, { x: 600, y: 470 }, { snapAngle: true }).angle, Math.PI / 4, 1e-9, '45deg step');
     near(applyRulerDrag({ ...base }, rot, { x: 600, y: 470 }, { snapAngle: true }).angle, (30 * Math.PI) / 180, 1e-9, 'default 15deg step');
+}
+
+
+// ---- 遠近（軽いパース）: 平行線ガイドが消失点へ絞られ、吸着もそのガイドに沿う
+{
+    const { rulerVanishingPoint } = await import('../system/ruler-geometry.js');
+    const canvas = { width: 800, height: 600 };
+    const flat = { enabled: true, type: 'parallel', center: { x: 400, y: 300 }, angle: 0, spacing: 48, perspective: 0 };
+    assert.equal(rulerVanishingPoint(flat, canvas), null, 'perspective 0 = parallel');
+    const persp = { ...flat, perspective: 50 };
+    const vp = rulerVanishingPoint(persp, canvas);
+    near(vp.y, 300, 1e-9, 'vanishing point lies on the ruler axis'); assert.ok(vp.x > 400, 'positive perspective vanishes ahead');
+    near(rulerVanishingPoint({ ...flat, perspective: -50 }, canvas).x, 400 - (Math.hypot(800, 600) * 100) / 50, 1e-6, 'negative perspective vanishes behind');
+    // 全ガイドが消失点を通る
+    const { lines } = buildRulerGuideSegments(persp, canvas, 1);
+    for (const [x1, y1, x2, y2] of lines) {
+        const cross = (x2 - x1) * (vp.y - y1) - (y2 - y1) * (vp.x - x1);
+        near(cross / Math.hypot(x2 - x1, y2 - y1), 0, 1e-6, 'guide passes through the vanishing point');
+    }
+    // 吸着: 描き始めの点から消失点へ向かう直線に乗る
+    const anchor = { x: 300, y: 380 };
+    const snapped = snapPointToRuler(persp, anchor, { x: 360, y: 500 }, canvas);
+    const cross = (vp.x - anchor.x) * (snapped.y - anchor.y) - (vp.y - anchor.y) * (snapped.x - anchor.x);
+    near(cross, 0, 1e-6, 'snapped point is on the line toward the vanishing point');
+    // 0なら従来どおり向きに平行
+    const plain = snapPointToRuler(flat, anchor, { x: 360, y: 500 }, canvas);
+    near(plain.y, 380, 1e-9, 'plain parallel snap unchanged');
+    assert.equal(sanitizeRulerOptions({ perspective: 500 }).perspective, 95);
 }
 
 console.log('ruler verifier: snap / grab / drag / angle snap / sanitize / guide segments / futaba colors ok');
