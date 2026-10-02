@@ -56,6 +56,10 @@
 - 確定時に通常Raster Layerを選択Layerへクリップして追加（Undo 1回）。`再編集`→`更新`、Projectは`layerData.tone`(optional)で往復。
 - 検証: `development-harness.mjs test tone` + Chromium（クリップ内のみ描画・Undo/Redo・更新・保存往復）。実機(液タブ)は未確認。
 
+### BLEND MODES — 合成モード拡張（2026-10-02, WP-012追記）
+
+- 合成モードを4種→16種（通常+15）に拡張。Pixi描画とCanvas2D（書き出し・アニメ合成）で結果が一致することを全種で確認。オーバーレイが従来効いていなかった不具合（バックバッファ未有効）も修正。詳細は[WP-012](work/WP-012-layer-panel-compositing-investigation.md)追記。Owner実機は未確認。
+
 ### QTP TOOL SUB ROW — ツールの二行目（2026-10-02）
 
 - 二行目は「選んだツールの派生」を常に出す（チェックは廃止）。塗り: `ALL`(全レイヤー参照)・消しバケツ。ペン/エアブラシ: 筆の性格プリセット（標準・つけペン風・ミリペン風・鉛筆風・ユーザー保存）。図形・範囲ツール: 矩形選択・投げ縄塗り(`Shift+L`で送り)。消しゴムは派生なしで二行目を出さない。

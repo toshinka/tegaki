@@ -2064,6 +2064,12 @@ canvas {
     color: var(--futaba-maroon);
 }
 
+.layer-attribute-blend-select optgroup {
+    background: var(--futaba-cream);
+    color: var(--futaba-light-maroon);
+    font-weight: 700;
+}
+
 .layer-attribute-blend-select option:checked {
     background: var(--futaba-background);
     color: var(--futaba-maroon);

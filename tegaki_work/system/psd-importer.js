@@ -626,7 +626,10 @@ export class PsdImporter {
             'darken': 'darken',
             'lighten': 'lighten',
             'difference': 'difference',
-            'exclusion': 'exclusion'
+            'exclusion': 'exclusion',
+            'saturation': 'saturation',
+            'color': 'color',
+            'luminosity': 'luminosity'
         };
         return map[mode] || (isFolder ? 'normal' : 'normal');
     }

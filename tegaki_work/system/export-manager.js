@@ -541,6 +541,7 @@ export class ExportManager {
 
         // フォルダのグループ合成(乗算/不透明度)を最新にしてから描く
         this.layerSystem.flushFolderComposites?.();
+        this.layerSystem._syncAdvancedBlendBackBuffer?.();
         this.app.renderer.render({
             container,
             target: renderTexture,

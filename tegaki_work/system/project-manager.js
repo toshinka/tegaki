@@ -25,6 +25,7 @@ import { normalizeRasterBounds } from './raster-bounds.js';
 import { sanitizePanelLayoutData } from './panel-layout.js';
 import { sanitizeFocusLinesData } from './focus-lines.js';
 import { sanitizeToneData } from './tone-geometry.js';
+import { normalizeLayerBlendMode } from './layer-blend-modes.js';
 import { sanitizeBalloonData } from './balloon-geometry.js';
 import {
     RASTER_PIXEL_ENCODING_BASE64,
@@ -654,7 +655,7 @@ export class ProjectManager {
                     folderIdByKey,
                     legacyParentByChildId
                 );
-                layer.layerData.blendMode = layerInfo.blendMode || 'normal';
+                layer.layerData.blendMode = normalizeLayerBlendMode(layerInfo.blendMode);
                 applyClippingMode(
                     layer.layerData,
                     layerInfo.clippingMode || (layerInfo.clipping === true ? 'normal' : 'none')
@@ -978,6 +979,7 @@ export class ProjectManager {
         }
 
         this.layerSystem.refreshClippingMasks?.();
+        this.layerSystem._syncAdvancedBlendBackBuffer?.();
 
         layers.forEach((layer, index) => {
             if (layer.layerData?.isFolder) return;

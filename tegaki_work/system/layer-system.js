@@ -39,6 +39,7 @@ import {
     createCenteredTransformMatrix
 } from './transform-math.js';
 import { createTransformBoundsWorldCorners } from './transform-overlay-geometry.js';
+import { isAdvancedLayerBlendMode, normalizeLayerBlendMode } from './layer-blend-modes.js';
 import { createRectControlMeshDeformer } from './animation/control-mesh-deformer.js';
 import { warpRgbaWithGrid } from './animation/warp-grid-rasterizer.js';
 import { createWarpAuthoringEnvelopeBounds } from './animation/layer-warp-authoring-envelope.js';
@@ -2339,8 +2340,7 @@ export class LayerSystem {
         const layer = layers[layerIndex];
         if (layer.layerData?.isBackground) return false;
 
-        const allowedModes = new Set(['normal', 'multiply', 'add', 'overlay']);
-        const nextMode = allowedModes.has(blendMode) ? blendMode : 'normal';
+        const nextMode = normalizeLayerBlendMode(blendMode);
 
         layer.blendMode = nextMode;
         if (layer.layerData?.layerSprite) {
@@ -2349,6 +2349,7 @@ export class LayerSystem {
         if (layer.layerData) {
             layer.layerData.blendMode = nextMode;
         }
+        this._syncAdvancedBlendBackBuffer();
         // フォルダの合成モードはグループ合成の対象/解除を切り替える
         if (layer.layerData?.isFolder) this._refreshLayerEffectiveAlpha();
 
@@ -3412,7 +3413,19 @@ export class LayerSystem {
         this._folderCompositor?.flush?.();
     }
 
+    /**
+     * advanced-blend-modes(オーバーレイ等)はPixiのフィルタ経路で、バックバッファが無いと黙って無効になる。
+     * バックバッファは毎フレーム全画面の余分な描画になるので、使うLayer/フォルダがある間だけ有効にする。
+     */
+    _syncAdvancedBlendBackBuffer() {
+        const backBuffer = this.app?.renderer?.backBuffer;
+        if (!backBuffer || !('useBackBuffer' in backBuffer)) return;
+        const needed = this.getLayers().some(layer => isAdvancedLayerBlendMode(layer?.layerData?.blendMode));
+        if (backBuffer.useBackBuffer !== needed) backBuffer.useBackBuffer = needed;
+    }
+
     _refreshLayerEffectiveAlpha() {
+        this._syncAdvancedBlendBackBuffer();
         const layers = this.getLayers();
         // 合成フォルダ(自身の合成モード/不透明度がグループとして効くフォルダ)は、不透明度を子へ掛け算しない。
         const compositedFolderIds = collectCompositedFolderIds(layers);

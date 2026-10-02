@@ -374,7 +374,10 @@ window.PSDExporter = (function() {
                 'hard-light': 'hard light',
                 'soft-light': 'soft light',
                 'difference': 'difference',
-                'exclusion': 'exclusion'
+                'exclusion': 'exclusion',
+                'saturation': 'saturation',
+                'color': 'color',
+                'luminosity': 'luminosity'
             };
 
             return blendModeMap[blendMode] || (isFolder ? 'pass through' : 'normal');
