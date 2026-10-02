@@ -25,4 +25,9 @@ let maxStep = 0;
 for (let i = 1; i < bend.length; i++) { let d = Math.abs(bend[i] - bend[i - 1]); d = Math.min(d, 90 - d); maxStep = Math.max(maxStep, d); }
 assert.ok(maxStep < 12, 'angle changes gradually through a bend: ' + maxStep);
 assert.ok(Math.abs(lerpNibAngle(44, -44, 0.5) - 45) < 1e-9, 'interpolates across the 90deg symmetry seam');
+// 短い折れ(太さの2倍程度のジグザグ)ではペン先を回さない
+const zig = [];
+for (let k = 0; k < 6; k++) zig.push(...line(k * 30, k % 2 ? 40 : 0, (k + 1) * 30, k % 2 ? 0 : 40, 10).slice(k ? 1 : 0));
+const zigAngles = computeNibAngles(zig, 20);
+assert.ok(maxAbs(zigAngles) < 30, 'short zigzag does not spin the nib: ' + maxAbs(zigAngles));
 console.log('verify-nib-angle: ok');
