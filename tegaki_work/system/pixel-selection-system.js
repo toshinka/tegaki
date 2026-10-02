@@ -26,6 +26,7 @@ import { estimateRasterHistoryPairBytes } from './raster-snapshot-memory.js';
 import { showFeedbackToast } from '../ui/feedback-toast.js';
 import { layerTransformBasicOverlay } from '../ui/layer-transform-basic-overlay.js';
 import { TRANSFORM_EDIT_TRANSACTION_TARGET } from './animation/transform-edit-transaction.js';
+import { AreaToolController, toolNameToSelectionMode } from './selection-area-tools.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MIN_SELECTION_SIZE = 1;
@@ -42,6 +43,9 @@ export class PixelSelectionSystem {
         this.imageImporter = null;
         this.coordSystem = coordinateSystem;
         this.toolActive = false;
+        // 'rect'=矩形選択 / 'auto'=自動選択 / 'gradient'=グラデーション。入力経路(capture)は共通。
+        this.toolMode = 'rect';
+        this.areaTools = new AreaToolController(this);
         this.state = null;
         this.clipboard = null;
         this.drag = null;
@@ -74,6 +78,61 @@ export class PixelSelectionSystem {
         return this.toolActive;
     }
 
+    getToolMode() {
+        return this.toolMode;
+    }
+
+    setToolMode(mode) {
+        const next = ['rect', 'auto', 'gradient'].includes(mode) ? mode : 'rect';
+        if (this.toolMode === next) return true;
+        if (this.transformSession && !this.confirmTransform()) return false;
+        this.toolMode = next;
+        this.drag = null;
+        this.areaTools?.pointerCancel?.({ pointerId: this.areaTools.gradientDrag?.pointerId });
+        this.eventBus?.emit('selection:tool-mode-changed', { mode: next });
+        this._syncCursor();
+        return true;
+    }
+
+    /** QTP / キーボードの tool名('selection'|'auto-select'|'gradient')で選択系ツールを有効にする。 */
+    activateTool(toolName) {
+        const mode = toolNameToSelectionMode(toolName);
+        if (!mode) return false;
+        if (!this.setToolMode(mode)) return false;
+        return this.setToolActive(true);
+    }
+
+    /** 自動選択の結果(領域マスク)を選択として設定する。bounds/maskはlayer-local(Project)座標。 */
+    setMaskSelection(layerId, bounds, mask) {
+        this.state = {
+            active: true,
+            layerId,
+            scope: { kind: 'layer', layerId },
+            bounds: { ...bounds },
+            mask,
+            mode: 'mask',
+            transformSessionActive: false
+        };
+        this.eventBus?.emit('selection:changed', { ...this.getState(), action: 'create' });
+        this._updateOverlay();
+    }
+
+    _layerPointToScreen(layer, x, y) {
+        const transform = layer.worldTransform || layer.transform?.worldTransform;
+        if (transform?.apply) {
+            const canvasPoint = transform.apply({ x, y });
+            return this.coordSystem.canvasToScreen(canvasPoint.x, canvasPoint.y);
+        }
+        const world = this.coordSystem.localToWorld(x, y, layer);
+        return this.coordSystem.worldToScreen(world.worldX, world.worldY);
+    }
+
+    _blockMaskedOperation(label) {
+        if (!this.state?.mask) return false;
+        showFeedbackToast(`自動選択の範囲では${label}は使えません（矩形選択で）`);
+        return true;
+    }
+
     hasSelection() {
         return Boolean(this.state?.active && this.state?.bounds);
     }
@@ -89,6 +148,7 @@ export class PixelSelectionSystem {
                 layerId: this.state.layerId
             },
             mode: this.state.mode,
+            hasMask: Boolean(this.state.mask),
             transformSessionActive: this.state.transformSessionActive === true
         };
     }
@@ -124,12 +184,16 @@ export class PixelSelectionSystem {
         const x1 = Math.ceil(bounds.x + bounds.width);
         const y1 = Math.ceil(bounds.y + bounds.height);
 
+        const mask = this.state?.mask || null;
         for (let y = 0; y < afterSnapshot.height; y++) {
             const projectY = afterBounds.y + y;
             const insideY = projectY >= y0 && projectY < y1;
             for (let x = 0; x < afterSnapshot.width; x++) {
                 const projectX = afterBounds.x + x;
-                if (insideY && projectX >= x0 && projectX < x1) continue;
+                if (insideY && projectX >= x0 && projectX < x1) {
+                    // 自動選択(マスク)は矩形内でも領域外なら元の画素へ戻す
+                    if (!mask || mask[(projectY - y0) * bounds.width + (projectX - x0)] === 1) continue;
+                }
 
                 const targetIndex = (y * afterSnapshot.width + x) * 4;
                 const beforeX = projectX - beforeBounds.x;
@@ -492,6 +556,7 @@ export class PixelSelectionSystem {
 
     requestTransform() {
         if (!this.hasSelection()) return false;
+        if (this._blockMaskedOperation('移動・変形')) return false;
         if (this.state?.scope?.kind === 'folder') return false;
         if (this.transformSession) {
             return this.confirmTransform();
@@ -774,12 +839,13 @@ export class PixelSelectionSystem {
     }
 
     _deactivateSelectionToolForExternalTool(tool) {
-        if (!tool || tool === 'selection' || !this.toolActive) return;
+        if (!tool || toolNameToSelectionMode(tool) || !this.toolActive) return;
         if (this.transformSession && !this.confirmTransform()) return;
         this.setToolActive(false);
     }
 
     copySelection() {
+        if (this._blockMaskedOperation('コピー')) return false;
         if (this.state?.scope?.kind === 'folder') {
             return this._copyFolderSelection();
         }
@@ -917,7 +983,11 @@ export class PixelSelectionSystem {
             paths: [],
             pathsData: []
         };
-        this._clearRegion(after.pixels, after.width, context.bounds, after.rasterBounds);
+        if (this.state?.mask) {
+            this._clearMaskedRegion(after.pixels, after.width, context.bounds, after.rasterBounds, this.state.mask);
+        } else {
+            this._clearRegion(after.pixels, after.width, context.bounds, after.rasterBounds);
+        }
         if (!this.layerSystem.restoreLayerRasterSnapshot(after)) return false;
 
         const layerId = before.layerId;
@@ -1245,6 +1315,13 @@ export class PixelSelectionSystem {
             this.transformPreviewCaptureClipboard = null;
         }
 
+        if (this.toolMode !== 'rect' && !this.transformSession) {
+            this.areaTools.pointerDown(event, target, point);
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
+
         if (this.transformSession) {
             if (target.kind === 'folder') return;
             if (!this._pointInTransform(point, this.transformSession)) return;
@@ -1295,6 +1372,11 @@ export class PixelSelectionSystem {
     }
 
     _handlePointerMove(event) {
+        if (this.areaTools?.gradientDrag && this.areaTools.pointerMove(event)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
         if (!this.drag || event.pointerId !== this.drag.pointerId) return;
         const point = this.drag.coordinateSpace === 'canvas'
             ? this._clientToCanvasPoint(event.clientX, event.clientY)
@@ -1354,6 +1436,11 @@ export class PixelSelectionSystem {
     }
 
     _handlePointerUp(event) {
+        if (this.areaTools?.gradientDrag && this.areaTools.pointerUp(event)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
         if (!this.drag || event.pointerId !== this.drag.pointerId) return;
         const dragType = this.drag.type;
         if (dragType === 'transform-move') {
@@ -1397,6 +1484,11 @@ export class PixelSelectionSystem {
     }
 
     _handlePointerCancel(event) {
+        if (this.areaTools?.gradientDrag && this.areaTools.pointerCancel(event)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
         if (!this.drag || event.pointerId !== this.drag.pointerId) return;
         if (this.drag.type === 'transform-move') {
             this.drag = null;
@@ -1742,6 +1834,12 @@ export class PixelSelectionSystem {
     }
 
     _updateOverlay() {
+        this._updateOverlayBase();
+        if (!this.areaTools) return;
+        this.areaTools.renderMask(this.state?.mask ? this._getSelectionContext() : null);
+    }
+
+    _updateOverlayBase() {
         if (!this.overlay || !this.overlayPolygon) return;
         if (this.transformPreviewCaptureMode && this.hasSelection()) {
             const bounds = this.state.bounds;
@@ -1971,6 +2069,24 @@ export class PixelSelectionSystem {
         return { x, y };
     }
 
+    _clearMaskedRegion(pixels, snapshotWidth, bounds, rasterBoundsInput, mask) {
+        const rasterBounds = normalizeRasterBounds(rasterBoundsInput, {
+            width: snapshotWidth,
+            height: Math.floor(pixels.length / 4 / snapshotWidth)
+        });
+        const snapshotHeight = Math.floor(pixels.length / 4 / snapshotWidth);
+        for (let my = 0; my < bounds.height; my++) {
+            const y = Math.floor(bounds.y) + my - rasterBounds.y;
+            if (y < 0 || y >= snapshotHeight) continue;
+            for (let mx = 0; mx < bounds.width; mx++) {
+                if (mask[my * bounds.width + mx] !== 1) continue;
+                const x = Math.floor(bounds.x) + mx - rasterBounds.x;
+                if (x < 0 || x >= snapshotWidth) continue;
+                pixels.fill(0, (y * snapshotWidth + x) * 4, (y * snapshotWidth + x) * 4 + 4);
+            }
+        }
+    }
+
     _clearRegion(pixels, snapshotWidth, bounds, rasterBoundsInput = null) {
         const rasterBounds = normalizeRasterBounds(rasterBoundsInput, {
             width: snapshotWidth,
@@ -2025,6 +2141,8 @@ export class PixelSelectionSystem {
 
     _syncCursor() {
         this.canvas?.classList.toggle('pixel-selection-tool-active', this.toolActive);
+        this.canvas?.classList.toggle('pixel-selection-mode-auto', this.toolActive && this.toolMode === 'auto');
+        this.canvas?.classList.toggle('pixel-selection-mode-gradient', this.toolActive && this.toolMode === 'gradient');
     }
 
     _isTextInputFocused() {

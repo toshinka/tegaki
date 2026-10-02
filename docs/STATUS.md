@@ -56,6 +56,10 @@
 - 確定時に通常Raster Layerを選択Layerへクリップして追加（Undo 1回）。`再編集`→`更新`、Projectは`layerData.tone`(optional)で往復。
 - 検証: `development-harness.mjs test tone` + Chromium（クリップ内のみ描画・Undo/Redo・更新・保存往復）。実機(液タブ)は未確認。
 
+### AUTO SELECT / GRADIENT — 自動選択・グラデーション（2026-10-02, WP-016）
+
+- QTPの図形・範囲グループに**自動選択**（クリックで同色領域をマスク選択。許容値・ALL・隣接）と**グラデーション**（ドラッグで線形/放射、→サブ/→透明）を追加。`Shift+L`の送りに入る。選択ツールの入力経路を共有し、確定時に画素を一度だけ書く（Undo 1件）。マスク選択は描画の制約とDeleteに効き、移動・コピーは非対応（矩形選択で）。詳細は[WP-016](work/WP-016-auto-select-gradient.md)。Owner実機は未確認。
+
 ### QTP PRESET ICONS v2 / Q-DRAG 整理（2026-10-02）
 
 - 筆プリセットのアイコンを**lucideの既存の絵の流用**に整理（カスタムの点群は廃止）。ペン=pen / pen-tool / pen-line / pencil、エアブラシ=ツールと同じ噴霧缶。性格は**同じ絵の濃淡・反転**で表す（ふんわり・鉛筆=薄い、くっきり=ふたば濃茶の地に明るい絵の反転）。アイコン16px。

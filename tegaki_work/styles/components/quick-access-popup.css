@@ -333,7 +333,19 @@
     display: none;
 }
 
+#quick-access-popup.qa-popup .qa-tool-sub-area[hidden] {
+    display: none;
+}
+
+#quick-access-popup.qa-popup .qa-sub-range {
+    flex: 1 1 100%;
+    min-width: 0;
+    margin: 2px 0 0;
+    accent-color: var(--futaba-maroon);
+}
+
 #quick-access-popup.qa-popup .qa-tool-sub-fill,
+#quick-access-popup.qa-popup .qa-tool-sub-area,
 #quick-access-popup.qa-popup .qa-tool-sub-presets {
     display: flex;
     flex-wrap: wrap;

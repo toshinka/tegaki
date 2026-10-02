@@ -17,7 +17,9 @@ const STORAGE_KEY = 'tegaki-qa-tool-group';
 /** tool: QTP/keyboardが使うtool名 / elementId: QTPのボタンid */
 export const TOOL_GROUP_MEMBERS = Object.freeze([
     { tool: 'selection', label: '矩形選択', elementId: 'qa-selection-tool', icon: 'rectangleSelect' },
-    { tool: 'lasso-fill', label: '投げ縄塗り', elementId: 'qa-lasso-fill-tool', icon: 'lasso' }
+    { tool: 'lasso-fill', label: '投げ縄塗り', elementId: 'qa-lasso-fill-tool', icon: 'lasso' },
+    { tool: 'auto-select', label: '自動選択', elementId: 'qa-auto-select-tool', icon: 'autoSelect' },
+    { tool: 'gradient', label: 'グラデーション', elementId: 'qa-gradient-tool', icon: 'gradient' }
 ]);
 
 const state = { current: 'lasso-fill', open: true };
