@@ -445,6 +445,14 @@ export const TEGAKI_KEYMAP = {
             vMode: false,
             description: 'カメラリセット'
         },
+        WORKSPACE_HOME_RESET: {
+            key: 'Home',
+            ctrl: false,
+            shift: false,
+            alt: false,
+            vMode: false,
+            description: 'キャンバス・パネル位置をホームへ戻す'
+        },
         FRAME_PREV: {
             key: 'ArrowLeft',
             ctrl: false,
@@ -601,6 +609,7 @@ export const TEGAKI_KEYMAP = {
             'BracketLeft': '[', 'BracketRight': ']',
             'ArrowUp': '↑', 'ArrowDown': '↓',
             'ArrowLeft': '←', 'ArrowRight': '→',
+            'Home': 'Home',
             'Space': 'Space', 'Delete': 'Delete', 'Backspace': 'Backspace'
         };
         if (/^Key[A-Z]$/.test(keyCode)) return keyCode.slice(3);

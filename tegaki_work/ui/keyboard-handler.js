@@ -38,11 +38,11 @@ export const KeyboardHandler = (function() {
         );
     }
 
-    function shouldYieldSidebarButtonActivation(e) {
+    function shouldYieldNativeButtonActivation(e) {
         if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return false;
         if (e.key !== 'Enter' && e.key !== ' ' && e.code !== 'Space') return false;
         const activeElement = document.activeElement;
-        return activeElement?.matches?.('.sidebar .tool-button') === true;
+        return activeElement?.matches?.('.sidebar .tool-button, #quick-access-tool.qa-qtp-floating') === true;
     }
 
     function confirmActiveTransformsForToolSwitch(nextTool) {
@@ -86,7 +86,7 @@ export const KeyboardHandler = (function() {
         }
         // Sidebarはnative buttonがclickを一元発火する。Enter / Spaceをglobal shortcutへ
         // 横取りさせず、pointerと同じUIController actionへ到達させる。
-        if (shouldYieldSidebarButtonActivation(e)) return;
+        if (shouldYieldNativeButtonActivation(e)) return;
 
         const animationTable = window.PopupManager?.get?.('animationTable')
             || window.coreEngine?.popupManager?.get?.('animationTable');
@@ -753,6 +753,11 @@ export const KeyboardHandler = (function() {
                 if (!vKeyPressed) {
                     eventBus.emit('camera:reset');
                 }
+                event.preventDefault();
+                break;
+
+            case 'WORKSPACE_HOME_RESET':
+                eventBus.emit('ui:workspace-home-reset');
                 event.preventDefault();
                 break;
             

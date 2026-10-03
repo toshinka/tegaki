@@ -106,6 +106,10 @@ export class CameraSystem {
         this.eventBus.on('camera:reset', () => {
             this.resetCanvas();
         });
+
+        this.eventBus.on('ui:workspace-home-reset', () => {
+            this.resetCanvas();
+        });
     }
 
     _setupCheckerPattern() {

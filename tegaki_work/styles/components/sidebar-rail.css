@@ -54,6 +54,11 @@
     transition: none;
 }
 
+#quick-access-tool.qa-qtp-floating[aria-expanded="true"] {
+    visibility: hidden;
+    pointer-events: none;
+}
+
 @media (hover: hover) {
     .sidebar .tool-button:hover:not(.active):not(.is-active):not([aria-pressed="true"]):not(:disabled):not(.is-disabled):not([aria-disabled="true"]) {
         background: var(--ui-rail-control-hover);
