@@ -46,9 +46,9 @@
     --ui-radius-control: 5px;
     --ui-backdrop-rail: blur(6px);
     --ui-backdrop-float: blur(10px) saturate(1.12);
-    /* Detached Q needs its own dark surface; rail hover is only an overlay. */
-    --ui-qa-collapsed-surface: var(--futaba-light-maroon);
-    --ui-qa-collapsed-surface-hover: color-mix(in srgb, var(--futaba-light-maroon) 88%, var(--futaba-cream));
+    /* Collapsed Q stays legible while letting artwork show through its surface. */
+    --ui-qa-collapsed-surface: color-mix(in srgb, var(--futaba-medium) 50%, transparent);
+    --ui-qa-collapsed-surface-hover: color-mix(in srgb, var(--futaba-light-medium) 64%, transparent);
     /* QTP Floating Glass prototype: pale maroon / Futaba-tinted translucent frosted glass */
     --ui-qa-glass-surface-rest: linear-gradient(
         180deg,

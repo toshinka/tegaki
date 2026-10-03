@@ -38,11 +38,11 @@
     justify-content: center;
     border-radius: var(--ui-radius-rail);
     background: var(--ui-qa-collapsed-surface);
-    border-color: color-mix(in srgb, var(--futaba-cream) 36%, transparent);
-    color: var(--ui-rail-foreground);
+    border-color: color-mix(in srgb, var(--futaba-maroon) 38%, transparent);
+    color: var(--futaba-maroon);
     backdrop-filter: var(--ui-backdrop-rail);
     -webkit-backdrop-filter: var(--ui-backdrop-rail);
-    box-shadow: var(--ui-shadow-rail);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--futaba-maroon) 12%, transparent);
     cursor: grab;
     touch-action: none;
     user-select: none;
@@ -59,6 +59,11 @@
     pointer-events: none;
 }
 
+#quick-access-tool.qa-qtp-floating.qa-qtp-hidden-by-setting {
+    visibility: hidden;
+    pointer-events: none;
+}
+
 @media (hover: hover) {
     .sidebar .tool-button:hover:not(.active):not(.is-active):not([aria-pressed="true"]):not(:disabled):not(.is-disabled):not([aria-disabled="true"]) {
         background: var(--ui-rail-control-hover);
@@ -67,6 +72,7 @@
 
     #quick-access-tool.qa-qtp-floating:hover:not(.qa-qtp-dragging):not(.active):not(.is-active):not([aria-pressed="true"]):not([aria-expanded="true"]):not(:disabled):not(.is-disabled):not([aria-disabled="true"]) {
         background: var(--ui-qa-collapsed-surface-hover);
+        border-color: color-mix(in srgb, var(--futaba-maroon) 54%, transparent);
         transform: scale(1.03);
     }
 }

@@ -166,6 +166,13 @@ export class SettingsPopup {
                     </label>
                 </div>
                 <div class="setting-group">
+                    <div class="setting-label">クイックツール</div>
+                    <label class="history-setting-auto">
+                        <input id="floating-q-visible" type="checkbox" checked>
+                        フローティングQを表示
+                    </label>
+                </div>
+                <div class="setting-group">
                     <div class="setting-label">Animation Table</div>
                     <label class="history-setting-auto">
                         <input id="animation-auto-create-next" type="checkbox" checked>
@@ -717,6 +724,7 @@ export class SettingsPopup {
             emergencyRecoveryInterval: document.getElementById('emergency-recovery-interval'),
             emergencyRecoveryOnHide: document.getElementById('emergency-recovery-on-hide'),
             shortcutHelpVisible: document.getElementById('shortcut-help-visible'),
+            floatingQVisible: document.getElementById('floating-q-visible'),
             emergencyRecoveryStatus: document.getElementById('emergency-recovery-status'),
 
             bucketRefToggle: document.getElementById('bucket-ref-all-toggle'),
@@ -970,6 +978,9 @@ export class SettingsPopup {
         this.elements.shortcutHelpVisible?.addEventListener('change', () => {
             this.settingsManager?.set('shortcutHelpVisible', this.elements.shortcutHelpVisible.checked);
         });
+        this.elements.floatingQVisible?.addEventListener('change', () => {
+            this.settingsManager?.set('floatingQVisible', this.elements.floatingQVisible.checked);
+        });
         this.elements.emergencyRecoveryOnHide?.addEventListener('change', () => {
             this.settingsManager?.set(
                 'emergencyRecoveryOnHide',
@@ -1042,6 +1053,7 @@ export class SettingsPopup {
             emergencyRecoveryIntervalSeconds: 60,
             emergencyRecoveryOnHide: true,
             shortcutHelpVisible: true,
+            floatingQVisible: true,
             historyAutoAdjust: true,
             historyMaxEntries: 250,
             historyMaxMemoryMB: 512
@@ -1081,6 +1093,9 @@ export class SettingsPopup {
         this._setStatusPanelVisibility(settings.statusPanelVisible ?? defaults.statusPanelVisible);
         if (this.elements.animationAutoCreateNext) {
             this.elements.animationAutoCreateNext.checked = settings.animationAutoCreateOnNext !== false;
+        }
+        if (this.elements.floatingQVisible) {
+            this.elements.floatingQVisible.checked = settings.floatingQVisible !== false;
         }
         this._applyEmergencyRecoverySettingsUI(settings);
         this._applyHistorySettingsUI(settings);

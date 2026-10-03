@@ -88,6 +88,7 @@ export class SettingsManager {
                 this.config?.userSettings?.emergencyRecoveryIntervalSeconds ?? 60,
             emergencyRecoveryOnHide: this.config?.userSettings?.emergencyRecoveryOnHide !== false,
             shortcutHelpVisible: true, // 画面左上の「?」ショートカットヘルプ
+            floatingQVisible: true,
             historyAutoAdjust: true,
             historyMaxEntries: historyDefaults.maxEntries,
             historyMaxMemoryMB: historyDefaults.maxMemoryMB
@@ -281,6 +282,7 @@ export class SettingsManager {
                 return [5, 10, 30, 60, 180, 300].includes(num) ? num : undefined;
             },
             shortcutHelpVisible: (v) => (typeof v === 'boolean' ? v : undefined),
+            floatingQVisible: (v) => (typeof v === 'boolean' ? v : undefined),
             emergencyRecoveryOnHide: (v) => {
                 return typeof v === 'boolean' ? v : undefined;
             },
@@ -376,6 +378,7 @@ export class SettingsManager {
             'emergencyRecoveryIntervalSeconds',
             'emergencyRecoveryOnHide',
             'shortcutHelpVisible',
+            'floatingQVisible',
             'historyAutoAdjust',
             'historyMaxEntries',
             'historyMaxMemoryMB'
