@@ -2,16 +2,24 @@ module roundtrip;
 
 // ROLE: Standalone, headless WP-020 native-engine proof driver; not production code.
 // AUTHORITY: Synthetic fixture only. This file does not own Tegaki Project, History, or save state.
-// INVARIANTS: Fixed Inochi2D source SHA; no engine repairs; outputs stay in ignored cache.
+// INVARIANTS: Fixed source plus tracked A2 one-line patch only; other engine repairs are forbidden.
 // RELATED: docs/work/WP-020-rig-renewal-first-path.md and this folder's README.md.
 
 import inochi2d.core;
+import inochi2d.core.format.serde : serialize;
 import std.file : write;
-import std.json : JSONValue;
+import std.json : JSONValue, JSONType;
 import std.math : abs;
 import std.stdio : writeln;
 
 enum SOURCE_COMMIT = "66fa76834b28037db0c871c656563422f697879e";
+enum SOURCE_ARCHIVE_SHA256 = "79F1F51641380AC992B5ECCA2AB49245F111517CA4185CA832FFB0460F6CD4FB";
+enum BASE_SOURCE_FILE_SHA256 = "E424BE9DE5C8C3795FD18C91E6A5D17C2F87C2C84766E99191C5ECFF34CAF026";
+enum SOURCE_PATCH_PATH = "tegaki_work/advanced/inochi-proof/deformation-json-array.patch";
+enum SOURCE_PATCH_SHA256 = "E943091A9A362E7A14E382EBD367CFA865F1CC5CA3DD8C306F1F68E5A902C711";
+enum PATCHED_SOURCE_FILE_SHA256 = "F5FB290794F848AA75DA0486E0BA0C89C6F17F58D6F9AD08B17B85DC8DB29C8B";
+enum PRIOR_FAILURE_LOG_PATH = "tegaki_work/.cache/inochi-roundtrip/run-proof-slice-a-first-failure.log";
+enum PRIOR_FAILURE_LOG_SHA256 = "3044FED17A70DE445A196A91596E4C139D259E1583724CB93CC92C9E752CDE84";
 enum CACHE_ROOT = "tegaki_work/.cache/inochi-roundtrip";
 enum EPSILON = 0.0001f;
 
@@ -31,6 +39,13 @@ void require(bool condition, string message) {
     if (!condition) {
         throw new Exception(message);
     }
+}
+
+void verifyEmptyDeformationSerialization() {
+    Deformation emptyDeformation;
+    JSONValue serialized = serialize(emptyDeformation);
+    require(serialized.type == JSONType.array, "Empty native Deformation did not serialize as a JSON array");
+    require(serialized.array.length == 0, "Empty native Deformation serialized with unexpected values");
 }
 
 vec2[] offsetsFor(float topVertexY) {
@@ -202,6 +217,9 @@ JSONValue samplesToJson(Sample[] samples) {
 }
 
 void main() {
+    verifyEmptyDeformationSerialization();
+    writeln("PASS: native empty Deformation serializes as an empty JSON array.");
+
     ubyte[] originalBytes = makeOriginalFixture();
     write(CACHE_ROOT ~ "/fixture-original.inp", originalBytes);
 
@@ -234,6 +252,14 @@ void main() {
     result["status"] = JSONValue("PASS");
     result["sourceCommit"] = JSONValue(SOURCE_COMMIT);
     result["engineVersion"] = JSONValue("fixed-source-66fa76834b28037db0c871c656563422f697879e; nightly source snapshot, not release v0.8.7");
+    result["sourceProvenance"] = JSONValue.emptyObject;
+    result["sourceProvenance"]["archiveSHA256"] = JSONValue(SOURCE_ARCHIVE_SHA256);
+    result["sourceProvenance"]["baseSourceFileSHA256"] = JSONValue(BASE_SOURCE_FILE_SHA256);
+    result["sourceProvenance"]["patchPath"] = JSONValue(SOURCE_PATCH_PATH);
+    result["sourceProvenance"]["patchSHA256"] = JSONValue(SOURCE_PATCH_SHA256);
+    result["sourceProvenance"]["patchedSourceFileSHA256"] = JSONValue(PATCHED_SOURCE_FILE_SHA256);
+    result["sourceProvenance"]["priorFailureLogPath"] = JSONValue(PRIOR_FAILURE_LOG_PATH);
+    result["sourceProvenance"]["priorFailureLogSHA256"] = JSONValue(PRIOR_FAILURE_LOG_SHA256);
     result["container"] = JSONValue("official INP container written/read by inochi2d.core.format.inp");
     result["model"] = JSONValue.emptyObject;
     result["model"]["parts"] = JSONValue(1);
@@ -255,6 +281,7 @@ void main() {
     result["checks"]["editWithdrawalRestoredBaseline"] = JSONValue(sameSamples(capture.baseline, capture.reverted));
     result["checks"]["freshInstanceReproducedEditedOutput"] = JSONValue(sameSamples(capture.edited, afterReload));
     result["checks"]["corruptedInputRejected"] = JSONValue(corruptInputRejected);
+    result["checks"]["emptyDeformationSerializesAsEmptyArray"] = JSONValue(true);
     result["pixels"] = JSONValue("NOT MEASURED: headless native drawlist/evaluated vertices only");
     result["wasmBrowserProjectIntegration"] = JSONValue("UNKNOWN");
 

@@ -1,6 +1,6 @@
 # WP-020 — RIG刷新の最初の実行経路
 
-状態: ACTIVE。発行: 2026-10-03。
+状態: BLOCKED / A2後のnative fixture生成例外、B接点調査完了。発行: 2026-10-03。
 Owner承認: 旧系を隔離し、新しい土台で制作動線を作る方向に必要な調査/改修を進める。既存RIGとの全面整合や自動移行を初期目標にしない。
 開始: main / `386d71877bd6bd237416cca13f72c16be713e874`、worktree clean。
 READ: AGENTS → STATUS → TECHNICAL → 本Card → ARCHITECTURE「Animation評価と出力」。LUNAだけWP-019 capability reportを既知証拠として読む。
@@ -59,6 +59,18 @@ runtimeは一つのfixtureに限定。上流の全unit test、新旧RIG全面比
 compiler/linker/system SDKのsystem install、engine本体修復、二つ目のbuild platform/engine候補、production保存正本変更、別project探索、対象file追加は司令へ根拠を返す。一経路の最初のbuild失敗を診断し、依存固定修正一回後も失敗なら打ち切る。長期toolchain探索をしない。
 
 ## Completion
+
+### 司令監査・区切り（2026-10-03）
+
+SOLの接点調査はsource配線と照合済み。旧GUI内部は旧Part/Bone mutationに結合しており、新系の入口は独立させる。素材確認だけのviewを先行追加する案は採用せず、engine実行成立後に制作操作へつながる一件を切る。
+
+LUNA A2のpatchは配列初期化一行だけ。exe/patch/依存lock hashがreportと一致。司令も同exeを再実行し、native empty Deformationの空配列PASS、その後の`JSONValue is not an array`とexit 1を再現した。初期fixture/保存/再読込/三点評価は未達。次callsiteはUNKNOWNであり、同じ例外文字列だけから前件と同原因とは断定しない。
+
+停止境界によりこのsnapshotへの追加patch/診断連鎖を打ち切り、15分監視を停止する。backend採用は保留。残る自作責任はBrowser接続、編集command/gesture、Project payload/History restore、CPU出力/preview接続。旧新全面一致を初期目標に戻さない。
+
+次の一件の候補は「正式な安定版sourceと対応fixtureを固定し、既存driverでnative保存・再評価を一度通す」。full SHA/依存/fixtureの確認をCard発行時に一経路へ限定する。新たなエンジン修復や複数候補の長期比較は初期対象にしない。現nightly snapshotを正式安定版と混同せず、保存往復が成立する土台を選ぶことへ切り替える。次Cardはまだ発行/委任していない。
+
+監査HEAD: `3d7851c6986554f416b02635d6b91b4846215aa5`。Owner側のcommitと他者差分を保持。今回のproofはproductionからimportされず、製品RIG/schema/History/renderer変更なし。Browser/画素/Project統合/Owner受入は未実施。
 
 ### Slice A2 — serializer配列初期化の限定修正（司令確定、2026-10-03）
 

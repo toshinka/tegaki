@@ -4,7 +4,8 @@
  * Geometry and coarse-pointer hit dimensions remain on the shared rail tokens.
  */
 
-.sidebar .tool-button {
+.sidebar .tool-button,
+#quick-access-tool.qa-qtp-floating {
     border: 1px solid transparent;
     border-radius: var(--ui-radius-control);
     background: var(--ui-rail-control-rest);
@@ -21,8 +22,44 @@
     stroke-width: var(--ui-rail-icon-stroke-width);
 }
 
+/* The existing Q button is portaled to body so fixed coordinates use the viewport. */
+#quick-access-tool.qa-qtp-floating {
+    position: fixed;
+    top: 0;
+    right: auto;
+    bottom: auto;
+    left: 0;
+    z-index: 2000;
+    width: var(--ui-rail-width);
+    height: var(--ui-rail-width);
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--ui-radius-rail);
+    background: var(--ui-surface-rail);
+    color: var(--ui-rail-foreground);
+    backdrop-filter: var(--ui-backdrop-rail);
+    -webkit-backdrop-filter: var(--ui-backdrop-rail);
+    box-shadow: var(--ui-shadow-rail);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+#quick-access-tool.qa-qtp-floating.qa-qtp-dragging {
+    cursor: grabbing;
+    transform: none;
+    transition: none;
+}
+
 @media (hover: hover) {
     .sidebar .tool-button:hover:not(.active):not(.is-active):not([aria-pressed="true"]):not(:disabled):not(.is-disabled):not([aria-disabled="true"]) {
+        background: var(--ui-rail-control-hover);
+        transform: scale(1.03);
+    }
+
+    #quick-access-tool.qa-qtp-floating:hover:not(.active):not(.is-active):not([aria-pressed="true"]):not([aria-expanded="true"]):not(:disabled):not(.is-disabled):not([aria-disabled="true"]) {
         background: var(--ui-rail-control-hover);
         transform: scale(1.03);
     }
@@ -35,10 +72,20 @@
     background: var(--ui-rail-control-hover);
 }
 
+#quick-access-tool.qa-qtp-floating:focus-visible {
+    border-color: var(--active-border);
+    outline: 2px solid var(--active-border);
+    outline-offset: 1px;
+    background: var(--ui-rail-control-hover);
+}
+
 .sidebar .tool-button.active,
 .sidebar .tool-button.is-active,
 .sidebar .tool-button[aria-pressed="true"],
-.sidebar .tool-button[aria-expanded="true"] {
+.sidebar .tool-button[aria-expanded="true"],
+#quick-access-tool.qa-qtp-floating.active,
+#quick-access-tool.qa-qtp-floating.is-active,
+#quick-access-tool.qa-qtp-floating[aria-expanded="true"] {
     border: 1px solid var(--ui-border-active);
     background: var(--ui-rail-control-active);
     color: var(--ui-rail-control-active-foreground);
@@ -54,7 +101,10 @@
 
 .sidebar .tool-button:disabled,
 .sidebar .tool-button.is-disabled,
-.sidebar .tool-button[aria-disabled="true"] {
+.sidebar .tool-button[aria-disabled="true"],
+#quick-access-tool.qa-qtp-floating:disabled,
+#quick-access-tool.qa-qtp-floating.is-disabled,
+#quick-access-tool.qa-qtp-floating[aria-disabled="true"] {
     opacity: var(--ui-opacity-disabled);
     cursor: not-allowed;
     transform: none;

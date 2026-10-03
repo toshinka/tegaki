@@ -29,6 +29,7 @@ const QA_STORAGE_KEYS = {
     colorSlots: 'tegaki-quick-access-color-slots-v1',
     mainSubColors: 'tegaki-quick-access-main-sub-colors-v1'
 };
+const QA_COLLAPSED_Q_PANEL_GAP = 12;
 
 const QA_PRESET_TOOLS = ['pen', 'eraser', 'airbrush'];
 const QA_PRESET_SLOT_COUNT = 6;
@@ -136,6 +137,17 @@ export class QuickAccessPopup {
         this.isVisible = false;
         this.initialized = false;
 
+        const qButton = document.getElementById('quick-access-tool');
+        this.qButtonOriginalParent = qButton?.parentNode || null;
+        this.qButtonOriginalNextSibling = qButton?.nextSibling || null;
+        this.qButtonOriginalInlinePosition = qButton
+            ? { left: qButton.style.left, top: qButton.style.top }
+            : null;
+        this.qButtonHomePosition = this._measureQButtonHomePosition();
+        this._qButtonPointerDownHandler = null;
+        this._qButtonDragCleanup = null;
+        this._qPositionResizeHandler = null;
+
         this.isDraggingSize = false;
         this.isDraggingOpacity = false;
         this.isDraggingPanel = false;
@@ -193,11 +205,25 @@ export class QuickAccessPopup {
             this.resetToDefaultPosition();
         };
         document.addEventListener('contextmenu', this._qButtonContextHandler);
+        this._attachQButtonToViewport();
         this._setupQButtonDrag();
+        this._qPositionResizeHandler = () => {
+            if (!this.panel) return;
+            if (this.isVisible) {
+                this._clampCurrentPanelPosition({ save: true });
+                return;
+            }
+            const current = this._readQButtonPosition();
+            const clamped = this._clampQButtonPosition(current.x, current.y);
+            if (clamped.x === current.x && clamped.y === current.y) return;
+            const position = this._applySharedPosition(clamped.x, clamped.y, { source: 'q' });
+            this._savePosition(position.x, position.y);
+        };
+        window.addEventListener('resize', this._qPositionResizeHandler);
     }
 
     /**
-     * QTPが閉じているとき、Qボタンを押したままドラッグするとQTPが開いてポインタについてくる(キーボード無しでキャンバスの近くへ置ける)。
+     * QTPが閉じているときのQドラッグは、collapsed Qだけを移動する。
      * しきい値未満はふつうのクリック(開閉)。ドラッグした後のclickは握りつぶす。
      */
     _setupQButtonDrag() {
@@ -210,53 +236,61 @@ export class QuickAccessPopup {
             if (!drag.active) {
                 if (Math.hypot(dx, dy) < THRESHOLD) return;
                 drag.active = true;
-                if (!this.isVisible) this.show();
-                if (!this.panel) return;
-                const rect = this.panel.getBoundingClientRect();
-                drag.panelX = rect.left;
-                drag.panelY = rect.top;
-                // 押した点がパネルの左上付近に来るよう、開いた直後はポインタへ寄せる
-                if (drag.justOpened) {
-                    drag.panelX = e.clientX - 20;
-                    drag.panelY = e.clientY - 12;
-                    drag.startX = e.clientX;
-                    drag.startY = e.clientY;
-                }
+                drag.button.classList.add('qa-qtp-dragging');
             }
-            if (!this.panel) return;
             e.preventDefault();
-            const rect = this.panel.getBoundingClientRect();
-            const clamped = this._clampPanelPosition(
-                drag.panelX + (e.clientX - drag.startX),
-                drag.panelY + (e.clientY - drag.startY),
-                rect
-            );
-            this.panel.style.left = `${clamped.x}px`;
-            this.panel.style.top = `${clamped.y}px`;
+            this._applySharedPosition(drag.qX + dx, drag.qY + dy, { source: 'q' });
         };
         const onUp = (e) => {
             if (!drag || e.pointerId !== drag.pointerId) return;
-            window.removeEventListener('pointermove', onMove);
-            window.removeEventListener('pointerup', onUp);
-            window.removeEventListener('pointercancel', onUp);
-            if (drag.active && this.panel) {
-                const rect = this.panel.getBoundingClientRect();
-                this._savePosition(rect.left, rect.top);
-                // この後に来るclickは開閉に使わせない
-                const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
-                document.addEventListener('click', swallow, { capture: true, once: true });
-                setTimeout(() => document.removeEventListener('click', swallow, true), 60);
-            }
+            const completedDrag = drag;
             drag = null;
+            this._qButtonDragCleanup?.();
+            completedDrag.button.classList.remove('qa-qtp-dragging');
+            if (completedDrag.active) {
+                const qPosition = this._readQButtonPosition();
+                this._applySharedPosition(qPosition.x, qPosition.y, { source: 'q', persist: true });
+
+                if (e.type === 'pointerup') {
+                    const swallow = (ev) => {
+                        if (ev.target?.closest?.('#quick-access-tool') !== completedDrag.button) return;
+                        ev.stopPropagation();
+                        ev.preventDefault();
+                        document.removeEventListener('click', swallow, true);
+                    };
+                    document.addEventListener('click', swallow, true);
+                    setTimeout(() => document.removeEventListener('click', swallow, true), 120);
+                }
+            }
         };
         this._qButtonPointerDownHandler = (e) => {
-            if (e.button !== 0 || !e.target?.closest?.('#quick-access-tool')) return;
-            // QTPが開いている間はふつうのクリック(閉じる)。ドラッグで開くのは閉じているときだけ。
+            const button = e.target?.closest?.('#quick-access-tool');
+            if (e.button !== 0 || !button || button !== document.getElementById('quick-access-tool')) return;
+            // 展開中はパネルが同じ位置に重なり、既存のclose / click経路を使う。
             if (this.isVisible) return;
-            drag = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, active: false, justOpened: true };
-            window.addEventListener('pointermove', onMove);
+            const qPosition = this._readQButtonPosition();
+            drag = {
+                pointerId: e.pointerId,
+                startX: e.clientX,
+                startY: e.clientY,
+                qX: qPosition.x,
+                qY: qPosition.y,
+                button,
+                active: false
+            };
+            try { button.setPointerCapture?.(e.pointerId); } catch (error) { /* window listeners remain available */ }
+            window.addEventListener('pointermove', onMove, { passive: false });
             window.addEventListener('pointerup', onUp);
             window.addEventListener('pointercancel', onUp);
+            this._qButtonDragCleanup = () => {
+                window.removeEventListener('pointermove', onMove);
+                window.removeEventListener('pointerup', onUp);
+                window.removeEventListener('pointercancel', onUp);
+                try {
+                    if (button.hasPointerCapture?.(e.pointerId)) button.releasePointerCapture(e.pointerId);
+                } catch (error) { /* capture may already be released */ }
+                this._qButtonDragCleanup = null;
+            };
         };
         document.addEventListener('pointerdown', this._qButtonPointerDownHandler, true);
     }
@@ -1239,10 +1273,6 @@ export class QuickAccessPopup {
             this.panel = document.createElement('div');
             this.panel.id = 'quick-access-popup';
 
-            const savedPos = this._loadPosition();
-            this.panel.style.left = `${savedPos.x}px`;
-            this.panel.style.top = `${savedPos.y}px`;
-
             popupRoot.appendChild(this.panel);
         } else if (this.panel.parentElement !== document.body) {
             document.body.appendChild(this.panel);
@@ -1254,6 +1284,9 @@ export class QuickAccessPopup {
         if (!this.panel.children.length) {
             this._populateContent();
         }
+
+        const savedPosition = this._loadPosition();
+        this._applySharedPosition(savedPosition.x, savedPosition.y, { source: 'stored' });
     }
 
     _populateContent() {
@@ -1486,10 +1519,7 @@ export class QuickAccessPopup {
         if (tone) this.tonePanel?.refresh();
         if (initial) return;
         try { localStorage.setItem('tegaki-qa-tab', id); } catch (error) { /* 保存不可でも動作する */ }
-        const rect = this.panel.getBoundingClientRect();
-        const clamped = this._clampPanelPosition(rect.left, rect.top, rect);
-        this.panel.style.left = `${clamped.x}px`;
-        this.panel.style.top = `${clamped.y}px`;
+        this._clampCurrentPanelPosition({ save: true });
     }
 
     _buildPaletteHtml(slotIndex) {
@@ -1759,11 +1789,7 @@ export class QuickAccessPopup {
         const maxY = Math.max(0, window.innerHeight - panelRect.height);
         const x = preset?.endsWith('right') ? Math.max(0, maxX - inset) : Math.min(inset, maxX);
         const y = preset?.startsWith('bottom') ? Math.max(0, maxY - inset) : Math.min(inset, maxY);
-        const clamped = this._clampPanelPosition(x, y, panelRect);
-
-        this.panel.style.left = `${clamped.x}px`;
-        this.panel.style.top = `${clamped.y}px`;
-        this._savePosition(clamped.x, clamped.y);
+        this._applySharedPosition(x, y, { source: 'panel', persist: true, panelRect });
     }
 
     _setupToolButtons() {
@@ -2589,12 +2615,7 @@ export class QuickAccessPopup {
             let newY = this.panelStartY + deltaY;
 
             const panelRect = this.panel.getBoundingClientRect();
-            const clamped = this._clampPanelPosition(newX, newY, panelRect);
-            newX = clamped.x;
-            newY = clamped.y;
-
-            this.panel.style.left = `${newX}px`;
-            this.panel.style.top = `${newY}px`;
+            this._applySharedPosition(newX, newY, { source: 'panel', panelRect });
         };
 
         this.dragUpHandler = () => {
@@ -2610,8 +2631,8 @@ export class QuickAccessPopup {
             this.activeDragPointerId = null;
             this.panel.style.cursor = 'default';
 
-            const rect = this.panel.getBoundingClientRect();
-            this._savePosition(rect.left, rect.top);
+            const position = this._readPanelPosition();
+            this._applySharedPosition(position.x, position.y, { source: 'panel', persist: true });
         };
 
         document.addEventListener('pointermove', this.dragMoveHandler, { passive: false, capture: true });
@@ -3570,9 +3591,94 @@ export class QuickAccessPopup {
     }
 
     // ─── 位置 ロード/セーブ ────────────────────────────────────────────
+    _measureQButtonHomePosition() {
+        const button = document.getElementById('quick-access-tool');
+        const rect = button?.getBoundingClientRect?.();
+        if (!rect || rect.width <= 0) return null;
+        return { x: Math.round(rect.left), y: Math.max(0, Math.round(rect.top)) };
+    }
+
+    _attachQButtonToViewport() {
+        const button = document.getElementById('quick-access-tool');
+        if (!button || !document.body) return null;
+        if (!this.qButtonOriginalParent) {
+            this.qButtonOriginalParent = button.parentNode;
+            this.qButtonOriginalNextSibling = button.nextSibling;
+            this.qButtonOriginalInlinePosition = { left: button.style.left, top: button.style.top };
+            this.qButtonHomePosition ||= this._measureQButtonHomePosition();
+        }
+
+        // .sidebar has transform: translateY(-50%), which would make a fixed child
+        // use the rail as its containing block. Keep the same button, portaled to
+        // body, so its left/top remain viewport coordinates.
+        if (button.parentNode !== document.body) document.body.appendChild(button);
+        button.classList.add('qa-qtp-floating');
+        return button;
+    }
+
+    _restoreQButtonToOriginalParent() {
+        const button = document.getElementById('quick-access-tool');
+        const parent = this.qButtonOriginalParent;
+        if (!button || !parent) return;
+        button.classList.remove('qa-qtp-floating', 'qa-qtp-dragging');
+        const nextSibling = this.qButtonOriginalNextSibling?.parentNode === parent
+            ? this.qButtonOriginalNextSibling
+            : null;
+        parent.insertBefore(button, nextSibling);
+        button.style.left = this.qButtonOriginalInlinePosition?.left || '';
+        button.style.top = this.qButtonOriginalInlinePosition?.top || '';
+    }
+
+    _getQButtonPanelOffset() {
+        const button = document.getElementById('quick-access-tool');
+        const rect = button?.getBoundingClientRect?.();
+        const width = Number(button?.offsetWidth) || Number(rect?.width) || 0;
+        return width + QA_COLLAPSED_Q_PANEL_GAP;
+    }
+
+    _readQButtonPosition() {
+        const button = document.getElementById('quick-access-tool');
+        const rect = button?.getBoundingClientRect?.();
+        const left = Number.parseFloat(button?.style.left);
+        const top = Number.parseFloat(button?.style.top);
+        return {
+            x: Number.isFinite(left) ? left : (Number(rect?.left) || 0),
+            y: Number.isFinite(top) ? top : (Number(rect?.top) || 0)
+        };
+    }
+
+    _readPanelPosition() {
+        const rect = this.panel?.getBoundingClientRect?.();
+        const left = Number.parseFloat(this.panel?.style.left);
+        const top = Number.parseFloat(this.panel?.style.top);
+        return {
+            x: Number.isFinite(left) ? left : (Number(rect?.left) || 0),
+            y: Number.isFinite(top) ? top : (Number(rect?.top) || 0)
+        };
+    }
+
+    _clampViewportPosition(x, y, width, height, minX = 0) {
+        const safeWidth = Math.max(0, Number(width) || 0);
+        const safeHeight = Math.max(0, Number(height) || 0);
+        const maxX = Math.max(0, window.innerWidth - safeWidth);
+        const maxY = Math.max(0, window.innerHeight - safeHeight);
+        const lowerX = Math.min(Math.max(0, Number(minX) || 0), maxX);
+        return {
+            x: Math.max(lowerX, Math.min(Number.isFinite(x) ? x : 0, maxX)),
+            y: Math.max(0, Math.min(Number.isFinite(y) ? y : 0, maxY))
+        };
+    }
+
+    _clampQButtonPosition(x, y) {
+        const button = document.getElementById('quick-access-tool');
+        const rect = button?.getBoundingClientRect?.();
+        const width = Number(button?.offsetWidth) || Number(rect?.width) || 0;
+        const height = Number(button?.offsetHeight) || Number(rect?.height) || 0;
+        return this._clampViewportPosition(x, y, width, height);
+    }
+
     _clampPanelPosition(x, y, panelRect = this.panel?.getBoundingClientRect()) {
-        // popup-panel.showのfadeInはtransform: scale()を使う。表示直後の
-        // getBoundingClientRect()は縮小中なので、最終layout寸法でclampする。
+        // popup-panel.showのfadeInはtransform: scale()を使うため、最終layout寸法でclampする。
         const layoutWidth = Number(this.panel?.offsetWidth);
         const layoutHeight = Number(this.panel?.offsetHeight);
         const width = layoutWidth > 0
@@ -3581,27 +3687,59 @@ export class QuickAccessPopup {
         const height = layoutHeight > 0
             ? layoutHeight
             : (Number.isFinite(panelRect?.height) ? panelRect.height : 0);
-        const maxX = Math.max(0, window.innerWidth - width);
-        const maxY = Math.max(0, window.innerHeight - height);
-        return {
-            x: Math.max(0, Math.min(Number.isFinite(x) ? x : 0, maxX)),
-            y: Math.max(0, Math.min(Number.isFinite(y) ? y : 0, maxY))
-        };
+        return this._clampViewportPosition(x, y, width, height, this._getQButtonPanelOffset());
+    }
+
+    _projectQFromSharedPosition(position) {
+        const button = this._attachQButtonToViewport();
+        if (!button) return null;
+        const offset = this.isVisible ? 0 : this._getQButtonPanelOffset();
+        const qPosition = this._clampQButtonPosition(
+            position.x - offset,
+            position.y
+        );
+        button.style.left = `${qPosition.x}px`;
+        button.style.top = `${qPosition.y}px`;
+        return qPosition;
+    }
+
+    _applySharedPosition(x, y, { source = 'panel', persist = false, panelRect } = {}) {
+        const requestedX = Number.isFinite(x) ? x : 0;
+        const requestedY = Number.isFinite(y) ? y : 0;
+        let position;
+
+        if (source === 'q') {
+            const qPosition = this._clampQButtonPosition(requestedX, requestedY);
+            position = {
+                x: qPosition.x + this._getQButtonPanelOffset(),
+                y: qPosition.y
+            };
+        } else if (source === 'stored') {
+            position = { x: requestedX, y: requestedY };
+        } else {
+            position = this._clampPanelPosition(requestedX, requestedY, panelRect);
+        }
+
+        if (this.panel) {
+            this.panel.style.left = `${position.x}px`;
+            this.panel.style.top = `${position.y}px`;
+        }
+        this._projectQFromSharedPosition(position);
+
+        const changedByClamp = position.x !== requestedX || position.y !== requestedY;
+        if (persist === true || (persist === 'if-changed' && changedByClamp)) {
+            this._savePosition(position.x, position.y);
+        }
+        return position;
     }
 
     _clampCurrentPanelPosition({ save = false } = {}) {
         if (!this.panel) return;
-        const rect = this.panel.getBoundingClientRect();
-        const layoutLeft = Number(this.panel.offsetLeft);
-        const layoutTop = Number(this.panel.offsetTop);
-        const currentX = Number.isFinite(layoutLeft) ? layoutLeft : rect.left;
-        const currentY = Number.isFinite(layoutTop) ? layoutTop : rect.top;
-        const clamped = this._clampPanelPosition(currentX, currentY, rect);
-        this.panel.style.left = `${clamped.x}px`;
-        this.panel.style.top = `${clamped.y}px`;
-        if (save && (clamped.x !== currentX || clamped.y !== currentY)) {
-            this._savePosition(clamped.x, clamped.y);
-        }
+        const position = this._readPanelPosition();
+        this._applySharedPosition(position.x, position.y, {
+            source: 'panel',
+            persist: save ? 'if-changed' : false
+        });
     }
 
     _savePosition(x, y) {
@@ -3624,12 +3762,13 @@ export class QuickAccessPopup {
         return this._getDefaultPosition();
     }
 
-    /** 既定位置: 左サイドバーの「Q」ボタンのすぐ右(上端をそろえる)。取れなければ従来の固定位置。 */
+    /** 保存値は従来どおり展開パネル左上。Qは既定ホームの右にある12px gapで投影する。 */
     _getDefaultPosition() {
-        const anchor = document.getElementById('quick-access-tool');
-        const rect = anchor?.getBoundingClientRect?.();
-        if (rect && rect.width > 0) {
-            return { x: Math.round(rect.right + 12), y: Math.max(0, Math.round(rect.top)) };
+        if (this.qButtonHomePosition) {
+            return {
+                x: Math.round(this.qButtonHomePosition.x + this._getQButtonPanelOffset()),
+                y: Math.max(0, this.qButtonHomePosition.y)
+            };
         }
         return { x: 70, y: 60 };
     }
@@ -3638,9 +3777,10 @@ export class QuickAccessPopup {
     resetToDefaultPosition() {
         if (!this.panel) return;
         const pos = this._getDefaultPosition();
-        this.panel.style.left = `${pos.x}px`;
-        this.panel.style.top = `${pos.y}px`;
-        this._clampCurrentPanelPosition({ save: true });
+        this._applySharedPosition(pos.x, pos.y, {
+            source: this.isVisible ? 'panel' : 'stored',
+            persist: true
+        });
     }
 
     // ─── 公開API ──────────────────────────────────────────────────────
@@ -3669,12 +3809,15 @@ export class QuickAccessPopup {
     hide() {
         if (!this.panel) return;
 
+        const position = this._readPanelPosition();
+
         this._closeColorSubPopup();
         this._setShortcutHelpOpen(false);
         this._setPositionDeckOpen(false);
         this._setTextRasterPanelOpen(false);
         this.panel.classList.remove('show');
         this.isVisible = false;
+        this._applySharedPosition(position.x, position.y, { source: 'stored' });
 
         if (this.eventBus) {
             this.eventBus.emit('popup:hidden', { name: 'quickAccess' });
@@ -3690,6 +3833,20 @@ export class QuickAccessPopup {
     }
 
     destroy() {
+        this._qButtonDragCleanup?.();
+        if (this._qButtonPointerDownHandler) {
+            document.removeEventListener('pointerdown', this._qButtonPointerDownHandler, true);
+            this._qButtonPointerDownHandler = null;
+        }
+        if (this._qButtonContextHandler) {
+            document.removeEventListener('contextmenu', this._qButtonContextHandler);
+            this._qButtonContextHandler = null;
+        }
+        if (this._qPositionResizeHandler) {
+            window.removeEventListener('resize', this._qPositionResizeHandler);
+            this._qPositionResizeHandler = null;
+        }
+
         if (this.sliderMoveHandler) {
             document.removeEventListener('pointermove', this.sliderMoveHandler);
             document.removeEventListener('pointerup', this.sliderUpHandler);
@@ -3740,6 +3897,7 @@ export class QuickAccessPopup {
             this.panel.parentNode.removeChild(this.panel);
         }
 
+        this._restoreQButtonToOriginalParent();
         this.panel = null;
         this.isVisible = false;
     }

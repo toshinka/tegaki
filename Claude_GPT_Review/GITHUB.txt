@@ -260,6 +260,7 @@ WP-019はローカル発行。公開確認前はOwnerの貼付/添付で渡す�
 現在の限定実行: docs/work/WP-020-rig-renewal-first-path.md [WORK PACKAGE / 旧系隔離・新系の制作動線、backend採用未決定]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-020-rig-renewal-first-path.md
 WP-020も公開確認前はOwnerの貼付/添付で渡す。worker reportはCard指定時だけ参照する。
+WP-020はBLOCKED。固定nightly sourceの一行serializer修正後もfixture生成が別例外で停止。司令が再現確認し追加patchを打切り。新入口接点調査は完了、保存往復/Browser/製品統合は未実証。次の候補と残る責任はCardのCompletionを読む。
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/ai/2026-10-03-rig-backend-implementation-proposal.md
 この提案も公開確認前はOwnerの貼付/添付で渡す。既定の必読に追加せず、現在地・技術契約の第二正本にしない。
 START WITH:

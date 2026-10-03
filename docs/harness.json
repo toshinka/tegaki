@@ -223,6 +223,6 @@
     {"id":"WP-009","document":"docs/work/WP-009-layer-transform-key-management.md","status":"ACTIVE","dependsOn":["WP-003","WP-007"]},
     {"id":"WP-008","document":"docs/work/WP-008-layer-transform-progressive-controls.md","status":"ACTIVE","dependsOn":["WP-003","WP-007"]},
     {"id":"WP-019","document":"docs/work/WP-019-inochi-edit-roundtrip-proof.md","status":"BLOCKED","dependsOn":[]},
-    {"id":"WP-020","document":"docs/work/WP-020-rig-renewal-first-path.md","status":"ACTIVE","dependsOn":[]}
+    {"id":"WP-020","document":"docs/work/WP-020-rig-renewal-first-path.md","status":"BLOCKED","dependsOn":[]}
   ]
 }
