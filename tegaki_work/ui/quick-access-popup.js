@@ -1446,12 +1446,10 @@ export class QuickAccessPopup {
 
             <!-- 3. プリセットスロット -->
             <section class="qa-section" id="qa-preset-section" aria-label="プリセットスロット">
-                <div class="qa-section-label-row">
-                    <div class="qa-section-value" id="qa-preset-status">tool independent</div>
-                </div>
+                <span class="qa-preset-status" id="qa-preset-status" role="status" aria-live="polite" aria-atomic="true"></span>
                 <div class="qa-preset-grid" id="qa-preset-grid">
                     ${Array.from({ length: QA_PRESET_SLOT_COUNT }, (_, index) => `
-                        <button class="qa-preset-slot" data-slot="${index}" type="button" title="スロット${index + 1}" aria-label="スロット${index + 1}">
+                        <button class="qa-preset-slot is-empty" data-slot="${index}" type="button" title="スロット${index + 1}" aria-label="スロット${index + 1}">
                             <span class="qa-preset-ring">
                                 <span class="qa-preset-dot"></span>
                             </span>
@@ -3285,21 +3283,26 @@ export class QuickAccessPopup {
         const activePreset = isPresetEnabled ? this.toolPresets[presetKey]?.[activeIndex] : null;
 
         if (this.elements.presetSection) {
-            this.elements.presetSection.hidden = !isPresetEnabled;
-            this.elements.presetSection.setAttribute('aria-hidden', String(!isPresetEnabled));
+            this.elements.presetSection.hidden = false;
+            this.elements.presetSection.removeAttribute('aria-hidden');
         }
 
         if (this.elements.presetStatus) {
             this.elements.presetStatus.textContent = activePreset
-                ? `${presetKey.toUpperCase()} · S${activeIndex + 1} · ${this._roundSize(activePreset.size)}px / ${Math.round(activePreset.opacity)}%`
-                : 'not used';
+                ? `${presetKey} preset slot ${activeIndex + 1}: ${this._roundSize(activePreset.size)}px / ${Math.round(activePreset.opacity)}%`
+                : isPresetEnabled
+                    ? `${presetKey} preset slot ${activeIndex + 1} is empty.`
+                    : 'Quick presets are unavailable for the current tool.';
             this.elements.presetStatus.title = activePreset
                 ? `${presetKey} preset slot ${activeIndex + 1}: ${this._roundSize(activePreset.size)}px / ${Math.round(activePreset.opacity)}%`
-                : 'プリセット非対応ツール';
+                : isPresetEnabled
+                    ? `${presetKey} preset slot ${activeIndex + 1} is empty.`
+                    : 'Quick presets are unavailable for the current tool.';
         }
 
         presetSlots.forEach((slot, index) => {
             slot.classList.toggle('active', isPresetEnabled && activeIndex === index);
+            slot.classList.toggle('is-unsupported', !isPresetEnabled);
             slot.disabled = !isPresetEnabled;
 
             const dot = slot.querySelector('.qa-preset-dot');
@@ -3307,6 +3310,7 @@ export class QuickAccessPopup {
             const opacityValEl = slot.querySelector('.qa-preset-opacity-val');
 
             const preset = isPresetEnabled ? this.toolPresets[presetKey]?.[index] : null;
+            slot.classList.toggle('is-empty', !preset);
             const size = preset?.size ?? 0;
             const opacity = preset?.opacity ?? 100;
             const dotSize = this._dotSizeForBrushSize(size);
@@ -3321,18 +3325,21 @@ export class QuickAccessPopup {
 
             // サイズ値と不透明度テキストを表示
             if (sizeValEl) {
-                sizeValEl.textContent = preset ? `${this._roundSize(size)}` : '-';
+                sizeValEl.textContent = preset ? `${this._roundSize(size)}` : '—';
             }
             if (opacityValEl) {
-                opacityValEl.textContent = preset ? `${Math.round(opacity)}%` : '-';
+                opacityValEl.textContent = preset ? `${Math.round(opacity)}%` : '—';
             }
 
             if (preset) {
                 slot.title = `スロット${index + 1}: ${this._roundSize(size)}px / ${Math.round(opacity)}%`;
                 slot.setAttribute('aria-label', `${presetKey} preset slot ${index + 1}: ${this._roundSize(size)}px / ${Math.round(opacity)}%`);
+            } else if (isPresetEnabled) {
+                slot.title = `${presetKey} preset slot ${index + 1}: empty`;
+                slot.setAttribute('aria-label', `${presetKey} preset slot ${index + 1}, empty`);
             } else {
-                slot.title = '塗りつぶしではサイズスロットを使用しません';
-                slot.setAttribute('aria-label', 'プリセット非対応ツール');
+                slot.title = `Preset slot ${index + 1} unavailable for the current tool`;
+                slot.setAttribute('aria-label', `Preset slot ${index + 1}, unavailable for the current tool`);
             }
         });
     }
@@ -3343,10 +3350,11 @@ export class QuickAccessPopup {
 
         const index = this._clampSlotIndex(slot?.dataset?.slot);
         const preset = this.toolPresets[presetKey]?.[index];
-        if (!preset) return;
-
-        this.elements.presetStatus.textContent = `${presetKey.toUpperCase()} · S${index + 1} · ${this._roundSize(preset.size)}px / ${Math.round(preset.opacity)}%`;
-        this.elements.presetStatus.title = `${presetKey} preset slot ${index + 1}: ${this._roundSize(preset.size)}px / ${Math.round(preset.opacity)}%`;
+        const summary = preset
+            ? `${presetKey} preset slot ${index + 1}: ${this._roundSize(preset.size)}px / ${Math.round(preset.opacity)}%`
+            : `${presetKey} preset slot ${index + 1} is empty.`;
+        this.elements.presetStatus.textContent = summary;
+        this.elements.presetStatus.title = summary;
     }
 
     _restorePresetSummary() {

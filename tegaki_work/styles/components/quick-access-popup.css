@@ -438,8 +438,8 @@
     border-color: transparent;
     border-bottom-color: transparent;
     border-radius: 6px 6px 0 0;
-    background: color-mix(in srgb, var(--futaba-medium) 54%, var(--futaba-background));
-    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--futaba-light-maroon) 80%, var(--futaba-medium));
+    color: var(--futaba-background);
     box-shadow: none;
     transform: none;
 }
@@ -553,6 +553,116 @@
     pointer-events: none;
 }
 
+/* Third level: a fixed six-cell preset shelf beneath the connected tool tabs. */
+#quick-access-popup.qa-popup #qa-preset-section {
+    margin-top: 5px;
+}
+
+#quick-access-popup.qa-popup .qa-preset-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+#quick-access-popup.qa-popup .qa-preset-grid {
+    display: grid;
+    grid-template-columns: repeat(6, var(--ui-qa-grid-size));
+    gap: 1px;
+    justify-content: center;
+    width: var(--ui-qa-inner-width);
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 1px;
+    box-sizing: border-box;
+    border: 1px solid color-mix(in srgb, var(--futaba-light-maroon) 12%, var(--futaba-background));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--futaba-medium) 14%, var(--futaba-background));
+}
+
+#quick-access-popup.qa-popup .qa-preset-slot {
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--futaba-maroon);
+    opacity: 1;
+    transform: none;
+}
+
+#quick-access-popup.qa-popup .qa-preset-slot:hover:not(:disabled) {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--futaba-medium) 12%, var(--futaba-background));
+    transform: none;
+}
+
+#quick-access-popup.qa-popup .qa-preset-slot.active {
+    border-color: var(--active-border);
+    background: var(--active-border);
+    box-shadow: none;
+    color: var(--futaba-maroon);
+    gap: 1px;
+    padding: 0;
+}
+
+#quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-ring {
+    width: 10px;
+    height: 10px;
+    border-color: color-mix(in srgb, var(--futaba-maroon) 56%, transparent);
+    background: transparent;
+}
+
+#quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-dot {
+    background: var(--futaba-maroon);
+}
+
+#quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-size-val,
+#quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-opacity-val {
+    color: var(--futaba-maroon);
+    background: transparent;
+}
+
+#quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-size-val {
+    font-size: 6px;
+    line-height: 1;
+}
+
+#quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-opacity-val {
+    display: block;
+    font-size: 5px;
+    line-height: 1;
+}
+
+#quick-access-popup.qa-popup .qa-preset-slot.is-empty .qa-preset-ring {
+    display: none;
+}
+
+#quick-access-popup.qa-popup .qa-preset-slot.is-empty .qa-preset-size-val {
+    color: color-mix(in srgb, var(--futaba-maroon) 42%, var(--futaba-background));
+    font-size: 10px;
+    line-height: 1;
+}
+
+#quick-access-popup.qa-popup .qa-preset-slot.active.is-empty .qa-preset-size-val {
+    color: var(--futaba-maroon);
+}
+
+#quick-access-popup.qa-popup .qa-preset-slot.is-unsupported {
+    cursor: default;
+    color: color-mix(in srgb, var(--futaba-maroon) 38%, var(--futaba-background));
+}
+
+#quick-access-popup.qa-popup .qa-preset-slot.is-unsupported:hover {
+    border-color: transparent;
+    background: transparent;
+    transform: none;
+}
+
 body > .qa-slot-drag-ghost {
     position: fixed;
     z-index: 2700;
@@ -606,6 +716,19 @@ body > .qa-slot-drag-ghost svg {
     #quick-access-popup.qa-popup .qa-slot-placeholder {
         width: 100%;
         height: var(--ui-qa-grid-size);
+    }
+
+    #quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-ring {
+        width: 12px;
+        height: 12px;
+    }
+
+    #quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-size-val {
+        font-size: 7px;
+    }
+
+    #quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-opacity-val {
+        font-size: 6px;
     }
 }
 
