@@ -130,33 +130,8 @@ export const BUILTIN_BRUSH_PRESETS = {
             }
         },
         {
-            id: 'builtin-pen-square',
-            name: '角ペン',
-            values: {
-                pressureCorrection: 1.0,
-                pressureCurve: 'ease-out',
-                pressureCurvePoints: null,
-                pressureOpacityEnabled: false,
-                pressureOpacityStrength: 0.65,
-                penPressureSmoothing: 0.85,
-                penVelocityThinning: 0,
-                penTiltStrength: 0,
-                penDabSoftness: 0,
-                penEdgeAA: 1,
-                stabilizerMode: 'follow',
-                penTaperIn: 0,
-                penTaperOut: 0,
-                smoothing: 0.8,
-                penTipShape: 'square',
-                penTipAspect: 1,
-                penTipAngle: 0,
-                penPressureSizeStrength: 0,
-                penCapShape: 'round'
-            }
-        },
-        {
             id: 'builtin-pen-square-follow',
-            name: '角ペン(追従)',
+            name: '角ペン',
             values: {
                 pressureCorrection: 1.0,
                 pressureCurve: 'ease-out',
@@ -277,6 +252,11 @@ export function listBrushPresets(tool, userPresets) {
     ];
 }
 
+/** Old fixed-angle square-pen IDs point to the surviving follow preset. */
+export function canonicalizeBrushPresetId(id) {
+    return id === 'builtin-pen-square' ? 'builtin-pen-square-follow' : id;
+}
+
 /**
  * QTPのスロット行に出すpreset。settingsの qtpBrushPresetIds[tool] が配列ならその順で、
  * null/未設定なら全て。存在しないidは捨てる。
@@ -285,7 +265,17 @@ export function listQtpBrushPresets(tool, userPresets, qtpIds) {
     const all = listBrushPresets(tool, userPresets);
     const ids = qtpIds?.[tool];
     if (!Array.isArray(ids)) return all;
-    return ids.map(id => all.find(preset => preset.id === id)).filter(Boolean);
+    const byId = new Map(all.map(preset => [preset.id, preset]));
+    const result = [];
+    const seen = new Set();
+    ids.forEach((id) => {
+        const canonicalId = canonicalizeBrushPresetId(id);
+        const preset = byId.get(canonicalId);
+        if (!preset || seen.has(canonicalId)) return;
+        seen.add(canonicalId);
+        result.push(preset);
+    });
+    return result;
 }
 
 /** presetの値を設定へ書き込む(customカーブは制御点を先に入れてから種類を切り替える)。 */

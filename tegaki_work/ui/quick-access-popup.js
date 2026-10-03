@@ -32,7 +32,8 @@ const QA_STORAGE_KEYS = {
 const QA_PRESET_TOOLS = ['pen', 'eraser', 'airbrush'];
 const QA_PRESET_SLOT_COUNT = 6;
 const QA_COLOR_SLOT_COUNT = 5;
-const QA_SLOT_MEMBER_LIMIT = 5;
+const QA_SLOT_MEMBER_COLUMN_COUNT = 6;
+const QA_SLOT_MEMBER_LIMIT = QA_SLOT_MEMBER_COLUMN_COUNT - 1;
 const SIZE_SLIDER_BREAKPOINTS = [10, 100];
 const QA_SHORTCUT_ACTIONS = Object.freeze({
     eyedropper: 'TOOL_EYEDROPPER',
@@ -2863,7 +2864,7 @@ export class QuickAccessPopup {
         this._currentSlotForRender = currentSlot;
     }
 
-    /** 二行目(仲間)と三行目(オプション)を描き直す。仲間は5件を上限に一行表示し、残りは展開時だけ見せる。 */
+    /** 二行目(仲間)と三行目(オプション)を描き直す。6列を使い、7件以上は5件+展開セルで一行表示する。 */
     _renderSlotRows() {
         const { slotMembers, slotOptions } = this.elements;
         if (!slotMembers) return;
@@ -2879,11 +2880,12 @@ export class QuickAccessPopup {
         if (slotId) {
             const members = this._getSlotMembers(slotId);
             const activeId = this._getActiveMemberId(slotId);
-            const hasOverflow = members.length > QA_SLOT_MEMBER_LIMIT;
+            const hasOverflow = members.length > QA_SLOT_MEMBER_COLUMN_COUNT;
             const expanded = hasOverflow && this._slotMembersExpanded;
-            const projection = projectSlotMemberWindow(members, activeId, QA_SLOT_MEMBER_LIMIT);
-            const visibleMembers = expanded ? members : projection.members;
-            const visibleStart = expanded ? 0 : projection.start;
+            const projectionLimit = hasOverflow ? QA_SLOT_MEMBER_LIMIT : QA_SLOT_MEMBER_COLUMN_COUNT;
+            const projection = projectSlotMemberWindow(members, activeId, projectionLimit);
+            const visibleMembers = expanded ? members : (hasOverflow ? projection.members : members);
+            const visibleStart = expanded || !hasOverflow ? 0 : projection.start;
             const memberGrid = document.createElement('div');
             memberGrid.className = 'qa-slot-member-grid';
             memberGrid.id = 'qa-slot-member-grid';
@@ -2943,7 +2945,7 @@ export class QuickAccessPopup {
                     this._slotMembersExpanded = !expanded;
                     this._renderSlotRows();
                 });
-                slotMembers.appendChild(disclosure);
+                memberGrid.appendChild(disclosure);
             }
         }
         this._renderSlotOptions(slotOptions, slotId);

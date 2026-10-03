@@ -27,6 +27,7 @@ import {
     BRUSH_PRESET_KEYS,
     BUILTIN_BRUSH_PRESETS,
     MAX_USER_BRUSH_PRESETS,
+    canonicalizeBrushPresetId,
     brushPresetMatches,
     captureBrushPresetValues,
     applyBrushPresetValues
@@ -1378,7 +1379,7 @@ export class SettingsPopup {
         }
         const presets = this._getBrushPresetList(tool);
         const ids = this.settingsManager?.get?.('qtpBrushPresetIds')?.[tool];
-        const shown = Array.isArray(ids) ? new Set(ids) : new Set(presets.map(p => p.id));
+        const shown = Array.isArray(ids) ? new Set(ids.map(canonicalizeBrushPresetId)) : new Set(presets.map(p => p.id));
         box.innerHTML = '<span class="brush-preset-qtp-label">QTPに出す</span>';
         presets.forEach(preset => {
             const label = document.createElement('label');

@@ -16,6 +16,13 @@
  */
 
 const STORAGE_KEY = 'tegaki-qa-tool-slots-v1';
+const MEMBER_ID_ALIASES = Object.freeze({
+    'builtin-pen-square': 'builtin-pen-square-follow'
+});
+
+function canonicalMemberId(id) {
+    return MEMBER_ID_ALIASES[id] || id;
+}
 
 /**
  * kind 'preset': 仲間は筆プリセット(presetTool のプリセット一覧が仲間になる)
@@ -108,26 +115,36 @@ function save() {
 /** 保存済みの並びを適用する。保存に無い仲間(新しく増えたもの)は末尾へ、無くなったものは捨てる。 */
 export function orderMembers(slotId, availableIds) {
     const stored = load().order[slotId] || [];
-    const ordered = stored.filter(id => availableIds.includes(id));
+    const ordered = [];
+    for (const savedId of stored) {
+        const id = canonicalMemberId(savedId);
+        if (availableIds.includes(id) && !ordered.includes(id)) ordered.push(id);
+    }
     for (const id of availableIds) if (!ordered.includes(id)) ordered.push(id);
     return ordered;
 }
 
 export function getLastMember(slotId, availableIds) {
-    const last = load().last[slotId];
+    const last = canonicalMemberId(load().last[slotId]);
     const ordered = orderMembers(slotId, availableIds);
     return ordered.includes(last) ? last : (ordered[0] ?? null);
 }
 
 export function rememberMember(slotId, memberId) {
     const s = load();
-    if (s.last[slotId] === memberId) return;
-    s.last[slotId] = memberId;
+    const id = canonicalMemberId(memberId);
+    if (s.last[slotId] === id) return;
+    s.last[slotId] = id;
     save();
 }
 
 export function setMemberOrder(slotId, ids) {
-    load().order[slotId] = ids.filter(id => typeof id === 'string');
+    const unique = [];
+    ids.filter(id => typeof id === 'string').forEach((id) => {
+        const canonical = canonicalMemberId(id);
+        if (!unique.includes(canonical)) unique.push(canonical);
+    });
+    load().order[slotId] = unique;
     save();
 }
 

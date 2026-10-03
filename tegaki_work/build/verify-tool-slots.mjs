@@ -38,6 +38,25 @@ assert.deepEqual(saved.order.pen, ['c', 'a', 'zzz']);
 assert.equal(saved.last.pen, 'b');
 slots.__resetToolSlotsForTest();
 assert.equal(getLastMember('pen', ids), 'b', 'reloaded from storage');
+// Square-pen migration: historical order and last-member values resolve to the follow preset.
+const squareIds = ['builtin-pen-standard', 'builtin-pen-square-follow', 'builtin-pen-pencil'];
+for (const savedSquareIds of [
+    ['builtin-pen-square'],
+    ['builtin-pen-square-follow'],
+    ['builtin-pen-square', 'builtin-pen-square-follow']
+]) {
+    store.set('tegaki-qa-tool-slots-v1', JSON.stringify({
+        order: { pen: ['builtin-pen-standard', ...savedSquareIds, 'builtin-pen-pencil'] },
+        last: { pen: savedSquareIds[0] }
+    }));
+    slots.__resetToolSlotsForTest();
+    assert.deepEqual(orderMembers('pen', squareIds), squareIds, `historical order resolves once: ${savedSquareIds.join(',')}`);
+    assert.equal(getLastMember('pen', squareIds), 'builtin-pen-square-follow', `historical last member resolves: ${savedSquareIds[0]}`);
+}
+setMemberOrder('pen', ['builtin-pen-standard', 'builtin-pen-square', 'builtin-pen-square-follow', 'builtin-pen-pencil']);
+assert.deepEqual(JSON.parse(store.get('tegaki-qa-tool-slots-v1')).order.pen, squareIds, 'writes canonicalize and deduplicate the square pen');
+rememberMember('pen', 'builtin-pen-square');
+assert.equal(JSON.parse(store.get('tegaki-qa-tool-slots-v1')).last.pen, 'builtin-pen-square-follow');
 // 壊れた保存は既定へ
 store.set('tegaki-qa-tool-slots-v1', '{broken');
 slots.__resetToolSlotsForTest();
@@ -59,13 +78,18 @@ const [toolSlotsSource, qtpSource, qtpCss, reorderSource] = await Promise.all([
     readFile(new URL('../ui/row-reorder.js', import.meta.url), 'utf8')
 ]);
 assert.match(toolSlotsSource, /const STORAGE_KEY = 'tegaki-qa-tool-slots-v1'/, 'slot storage key remains unchanged');
-assert.match(qtpSource, /const QA_SLOT_MEMBER_LIMIT = 5/, 'the collapsed member shelf caps its visible window at five');
-assert.match(qtpSource, /projectSlotMemberWindow\(members, activeId, QA_SLOT_MEMBER_LIMIT\)/, 'collapsed projection includes the active member when needed');
+assert.match(qtpSource, /const QA_SLOT_MEMBER_COLUMN_COUNT = 6/);
+assert.match(qtpSource, /const QA_SLOT_MEMBER_LIMIT = QA_SLOT_MEMBER_COLUMN_COUNT - 1/, 'overflow reserves one of the six columns for disclosure');
+assert.match(qtpSource, /members\.length > QA_SLOT_MEMBER_COLUMN_COUNT/, 'disclosure appears only above six members');
+assert.match(qtpSource, /projectSlotMemberWindow\(members, activeId, projectionLimit\)/, 'collapsed projection includes the active member when needed');
+assert.match(qtpSource, /const projectionLimit = hasOverflow \? QA_SLOT_MEMBER_LIMIT : QA_SLOT_MEMBER_COLUMN_COUNT/);
 assert.match(qtpSource, /aria-expanded/);
 assert.match(qtpSource, /aria-controls/);
 assert.match(qtpSource, /nextOrder\.splice\(visibleStart, ids\.length, \.\.\.ids\)/, 'collapsed D&D only replaces the visible canonical slice');
-assert.match(qtpCss, /grid-template-columns:\s*repeat\(5, 22px\)/, 'fine-pointer shelf uses five columns');
-assert.match(qtpCss, /grid-template-columns:\s*repeat\(5, 26px\)/, 'coarse-pointer shelf keeps the existing 26px target width');
+assert.match(qtpCss, /grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\)/, 'the secondary shelf shares six equal tracks');
+assert.match(qtpCss, /#quick-access-popup\.qa-popup \.qa-tool-grid\s*\{[^}]*width:\s*var\(--ui-qa-inner-width\)/s, 'the primary row uses the shared content width');
+assert.match(qtpCss, /#quick-access-popup\.qa-popup \.qa-slot-members\s*\{[^}]*border:\s*0/s, 'the colored secondary shelf has no outer frame');
+assert.match(qtpSource, /memberGrid\.appendChild\(disclosure\)/, 'overflow occupies a track inside the six-column shelf');
 assert.doesNotMatch(qtpCss, /\.qa-slot-members\s*\{[^}]*min-height:\s*62px/, 'the permanent two-row reservation is removed');
 assert.match(reorderSource, /const THRESHOLD = 7/);
 assert.match(reorderSource, /qa-slot-drag-ghost/);

@@ -405,29 +405,41 @@
 #quick-access-popup.qa-popup .qa-tool-grid {
     position: relative;
     z-index: 5;
-    margin-bottom: -1px;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 2px;
+    justify-content: stretch;
+    width: var(--ui-qa-inner-width);
+    max-width: 100%;
+    margin: 0 auto -1px;
 }
 
 #quick-access-popup.qa-popup .qa-tool-button {
+    width: 100%;
+    min-width: 0;
+    height: var(--ui-qa-grid-size);
+    box-sizing: border-box;
     border-color: transparent;
-    border-radius: 6px 6px 3px 3px;
+    border-radius: 6px 6px 0 0;
     background: transparent;
     color: var(--futaba-maroon);
+    box-shadow: none;
 }
 
 #quick-access-popup.qa-popup .qa-tool-button:hover:not(.active) {
     border-color: transparent;
-    background: color-mix(in srgb, var(--futaba-light-maroon) 18%, transparent);
+    background: color-mix(in srgb, var(--futaba-medium) 15%, var(--futaba-background));
+    transform: none;
 }
 
 #quick-access-popup.qa-popup .qa-tool-button.active {
     position: relative;
     z-index: 6;
-    border-color: var(--futaba-maroon);
+    border-color: transparent;
     border-bottom-color: transparent;
-    border-radius: 6px 6px 2px 2px;
-    background: var(--futaba-maroon);
-    color: var(--futaba-background);
+    border-radius: 6px 6px 0 0;
+    background: color-mix(in srgb, var(--futaba-medium) 54%, var(--futaba-background));
+    color: var(--futaba-maroon);
     box-shadow: none;
     transform: none;
 }
@@ -435,37 +447,47 @@
 #quick-access-popup.qa-popup .qa-slot-members {
     position: relative;
     z-index: 0;
-    display: flex;
-    flex: none;
-    align-items: flex-start;
-    gap: 1px;
-    width: max-content;
+    display: block;
+    width: var(--ui-qa-inner-width);
     max-width: 100%;
     margin: 0 auto;
-    padding: 2px;
+    padding: 0;
     box-sizing: border-box;
-    border: 1px solid color-mix(in srgb, var(--futaba-maroon) 38%, var(--futaba-medium));
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--futaba-cream) 64%, var(--futaba-background));
+    border: 0;
+    border-radius: 0 0 8px 8px;
+    background: color-mix(in srgb, var(--futaba-medium) 36%, var(--futaba-background));
 }
 
 #quick-access-popup.qa-popup .qa-slot-member-grid {
     display: grid;
-    grid-template-columns: repeat(5, 22px);
-    grid-auto-rows: 26px;
-    gap: 1px;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-auto-rows: var(--ui-qa-grid-size);
+    gap: 2px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 #quick-access-popup.qa-popup .qa-slot-member {
-    width: 22px;
-    min-width: 22px;
-    height: 26px;
-    min-height: 26px;
+    width: var(--ui-qa-grid-size);
+    min-width: var(--ui-qa-grid-size);
+    height: var(--ui-qa-grid-size);
+    min-height: var(--ui-qa-grid-size);
     padding: 0;
     box-sizing: border-box;
     cursor: grab;
     touch-action: none;
-    background: var(--futaba-background);
+    border-color: transparent;
+    background: transparent;
+}
+
+#quick-access-popup.qa-popup .qa-slot-member:hover:not(.active) {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--futaba-light-maroon) 12%, var(--futaba-background));
+}
+
+#quick-access-popup.qa-popup .qa-slot-member svg {
+    width: var(--ui-qa-tool-icon-size);
+    height: var(--ui-qa-tool-icon-size);
 }
 
 #quick-access-popup.qa-popup .qa-slot-member-grid.is-reordering > .qa-slot-member,
@@ -475,23 +497,8 @@
 }
 
 #quick-access-popup.qa-popup .qa-slot-member.active {
-    color: var(--futaba-maroon);
-    background: color-mix(in srgb, var(--futaba-light-maroon) 25%, var(--futaba-background));
-    border-color: transparent;
-    box-shadow: inset 0 -2px 0 var(--futaba-maroon);
-}
-
-#quick-access-popup.qa-popup .qa-slot-member[data-tone="strong"].active {
-    color: var(--futaba-background);
-    background: var(--futaba-maroon);
-    border-color: var(--futaba-maroon);
-    outline: none;
-    box-shadow: inset 0 -2px 0 var(--futaba-background);
-}
-
-#quick-access-popup.qa-popup .qa-slot-member[data-tone="strong"].active:focus-visible {
-    outline: 2px solid var(--active-border);
-    outline-offset: 1px;
+    border-color: var(--active-border);
+    box-shadow: none;
 }
 
 #quick-access-popup.qa-popup .qa-slot-member:focus-visible,
@@ -502,20 +509,24 @@
     outline-offset: 1px;
 }
 
+#quick-access-popup.qa-popup .qa-slot-member.active:focus-visible {
+    outline: 1px solid var(--futaba-maroon);
+}
+
 #quick-access-popup.qa-popup .qa-slot-overflow {
     display: inline-flex;
-    flex: none;
     align-items: center;
     justify-content: center;
     gap: 1px;
-    width: 22px;
-    min-width: 22px;
-    height: 26px;
-    min-height: 26px;
+    width: var(--ui-qa-grid-size);
+    min-width: var(--ui-qa-grid-size);
+    height: var(--ui-qa-grid-size);
+    min-height: var(--ui-qa-grid-size);
     padding: 0;
-    border: 1px solid color-mix(in srgb, var(--futaba-maroon) 28%, var(--futaba-medium));
+    box-sizing: border-box;
+    border: 1px solid transparent;
     border-radius: 5px;
-    background: color-mix(in srgb, var(--futaba-background) 74%, transparent);
+    background: transparent;
     color: var(--futaba-maroon);
     font-size: 7px;
     font-weight: 700;
@@ -525,20 +536,20 @@
 }
 
 #quick-access-popup.qa-popup .qa-slot-overflow:hover {
-    background: color-mix(in srgb, var(--futaba-light-maroon) 24%, var(--futaba-background));
+    background: color-mix(in srgb, var(--futaba-light-maroon) 18%, var(--futaba-background));
 }
 
 #quick-access-popup.qa-popup .qa-slot-overflow > span:last-child {
-    font-size: 8px;
+    display: none;
 }
 
 #quick-access-popup.qa-popup .qa-slot-placeholder {
-    width: 22px;
-    height: 26px;
+    width: 100%;
+    height: var(--ui-qa-grid-size);
     box-sizing: border-box;
-    border: 1px dashed color-mix(in srgb, var(--futaba-maroon) 68%, var(--futaba-medium));
-    border-radius: 5px;
-    background: color-mix(in srgb, var(--futaba-light-maroon) 18%, var(--futaba-background));
+    border: 1px dashed color-mix(in srgb, var(--futaba-maroon) 46%, var(--futaba-medium));
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--futaba-medium) 18%, var(--futaba-background));
     pointer-events: none;
 }
 
@@ -573,28 +584,28 @@ body > .qa-slot-drag-ghost svg {
 
 @media (pointer: coarse) {
     #quick-access-popup.qa-popup .qa-slot-member-grid {
-        grid-template-columns: repeat(5, 26px);
-        grid-auto-rows: 26px;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        grid-auto-rows: var(--ui-qa-grid-size);
         gap: 2px;
     }
 
     #quick-access-popup.qa-popup .qa-slot-member {
-        width: 26px;
-        min-width: 26px;
-        height: 26px;
-        min-height: 26px;
+        width: var(--ui-qa-grid-size);
+        min-width: var(--ui-qa-grid-size);
+        height: var(--ui-qa-grid-size);
+        min-height: var(--ui-qa-grid-size);
     }
 
     #quick-access-popup.qa-popup .qa-slot-overflow {
-        width: 24px;
-        min-width: 24px;
-        height: 26px;
-        min-height: 26px;
+        width: var(--ui-qa-grid-size);
+        min-width: var(--ui-qa-grid-size);
+        height: var(--ui-qa-grid-size);
+        min-height: var(--ui-qa-grid-size);
     }
 
     #quick-access-popup.qa-popup .qa-slot-placeholder {
-        width: 26px;
-        height: 26px;
+        width: 100%;
+        height: var(--ui-qa-grid-size);
     }
 }
 

@@ -479,14 +479,28 @@ const near = (actual, expected, epsilon, message) => {
 // ---- ペン先の形(角ペン / 角消しゴム)
 {
     const presets = await import('../system/drawing/brush-presets.js');
-    const { BRUSH_PRESET_KEYS, BRUSH_PRESET_DEFAULTS, BUILTIN_BRUSH_PRESETS, applyBrushPresetValues, brushPresetMatches } = presets;
+    const { BRUSH_PRESET_KEYS, BRUSH_PRESET_DEFAULTS, BUILTIN_BRUSH_PRESETS, applyBrushPresetValues, brushPresetMatches, listQtpBrushPresets } = presets;
     for (const key of ['penTipShape', 'penTipAspect', 'penTipAngle', 'penPressureSizeStrength']) assert.ok(BRUSH_PRESET_KEYS.pen.includes(key), `pen preset keys include ${key}`);
     for (const key of ['eraserTipShape', 'eraserTipAspect', 'eraserTipAngle']) assert.ok(BRUSH_PRESET_KEYS.eraser.includes(key), `eraser preset keys include ${key}`);
-    const square = BUILTIN_BRUSH_PRESETS.pen.find(p => p.id === 'builtin-pen-square');
+    const squarePresets = BUILTIN_BRUSH_PRESETS.pen.filter(p => p.values.penTipShape === 'square');
+    assert.equal(BUILTIN_BRUSH_PRESETS.pen.length, 5, 'the redundant fixed square pen is removed from built-ins');
+    assert.equal(squarePresets.length, 1, 'one square pen remains in built-ins');
+    const square = squarePresets[0];
+    assert.equal(square.id, 'builtin-pen-square-follow');
+    assert.equal(square.name, '角ペン');
     assert.equal(square.values.penCapShape, 'round', 'square pen no longer adds entry / exit caps (the nib itself is square)');
-    assert.equal(square.values.penTipShape, 'square', 'the nib is a square stamp at a fixed angle');
-    assert.equal(square.values.penTipAngle, 0, 'fixed nib angle defaults to 0 degrees');
+    assert.equal(square.values.penTipShape, 'square');
+    assert.equal(square.values.penTipFollow, 'follow', 'the surviving square pen keeps follow behavior');
+    assert.equal(square.values.penTipAngle, 0, 'follow square nib retains its angle baseline');
     assert.ok(square.values.penPressureSizeStrength <= 0.2, 'square pen keeps a nearly constant width under pressure');
+    for (const legacyIds of [
+        ['builtin-pen-square'],
+        ['builtin-pen-square-follow'],
+        ['builtin-pen-square', 'builtin-pen-square-follow']
+    ]) {
+        const shown = listQtpBrushPresets('pen', {}, { pen: legacyIds });
+        assert.deepEqual(shown.map(p => p.id), ['builtin-pen-square-follow'], `QTP aliases resolve once: ${legacyIds.join(',')}`);
+    }
     // 筆圧が径に効く強さ: 1=従来、0=一定径
     const r = new AirbrushDabRenderer({ calculateWidth: (p, size) => size * p });
     assert.equal(r._getPenDabWidth(0.5, { pressureEnabled: true, size: 20 }), 10);
