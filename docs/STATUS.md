@@ -1,5 +1,7 @@
 # Tegaki — 再開checkpoint
 
+QTP追加Card（2026-10-03）: Primary / Secondaryの6列端合わせ、Secondary inactive strong反転撤去、Secondary / Third active配色統一を限定CSS修正。Browser全列左右delta 0px、normal / soft / strong選択往復、Primary端列を確認。Secondary第6列activeは製品CSSの一時fixtureで補足、実製品経路・keyboard focus・coarse実機は未検証。build / 関連verifier PASS、Owner受入待ち / 未commit・未push。[検証記録](ai/2026-10-03-qtp-grid-inversion.md)。RIG次Cardへは進めない。
+
 状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。WP-009 ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。WP-008 ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW。
 更新日: 2026-10-03。導線整備の開始HEAD: `2165a6010f2d64a100ee33efc927637af83c8cc1` / branch `main`。開始時はAGENTS.md、TECHNICAL.md、GITHUB.txtに既存差分あり。既存差分を保持。
 過去WP検証のbaseline `6f05663cce200c1fe9ab1e1410fe9b1e531b5cbc`と当時のclean状態は、その検証時点の記録であり現在のcheckout状態ではない。

@@ -7,6 +7,10 @@
  */
 
 #quick-access-popup.qa-popup {
+    --qa-slot-gap: 2px;
+    --qa-value-active-surface: var(--futaba-maroon);
+    --qa-value-active-keyline: var(--active-border);
+    --qa-value-active-foreground: var(--futaba-cream);
     border: 1px solid var(--ui-qa-glass-border-rest, var(--ui-border-float));
     border-radius: var(--ui-radius-panel);
     background: var(--ui-qa-glass-surface-rest, var(--ui-surface-float));
@@ -363,7 +367,7 @@
     border-color: var(--futaba-maroon);
 }
 
-/* 筆プリセットはアイコン(名前はtitleのポップアップ)。性格は濃淡で表す */
+/* 筆プリセットは既存アイコンとtitleで識別。toneは非反転の濃淡だけ。 */
 #quick-access-popup.qa-popup .qa-sub-button--icon {
     position: relative;
     width: 26px;
@@ -379,17 +383,7 @@
     height: 16px;
 }
 
-#quick-access-popup.qa-popup .qa-sub-button--icon[data-tone="soft"] svg { opacity: 0.55; }
-#quick-access-popup.qa-popup .qa-sub-button--icon[data-tone="strong"] {
-    color: var(--futaba-background);
-    background: var(--futaba-maroon);
-    border-color: var(--futaba-maroon);
-}
-
-#quick-access-popup.qa-popup .qa-sub-button--icon[data-tone="strong"].active {
-    outline: 2px solid var(--active-border);
-    outline-offset: 1px;
-}
+#quick-access-popup.qa-popup .qa-sub-button--icon[data-tone="soft"]:not(.active) svg { opacity: 0.55; }
 
 #quick-access-popup.qa-popup .qa-sub-badge {
     position: absolute;
@@ -407,7 +401,7 @@
     z-index: 5;
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 2px;
+    gap: var(--qa-slot-gap);
     justify-content: stretch;
     width: var(--ui-qa-inner-width);
     max-width: 100%;
@@ -424,6 +418,7 @@
     background: transparent;
     color: var(--futaba-maroon);
     box-shadow: none;
+    outline-offset: -2px;
 }
 
 #quick-access-popup.qa-popup .qa-tool-button:hover:not(.active) {
@@ -444,6 +439,11 @@
     transform: none;
 }
 
+#quick-access-popup.qa-popup .qa-tool-button:focus-visible,
+#quick-access-popup.qa-popup .qa-preset-slot:focus-visible {
+    outline-offset: -2px;
+}
+
 #quick-access-popup.qa-popup .qa-slot-members {
     position: relative;
     z-index: 0;
@@ -462,14 +462,14 @@
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
     grid-auto-rows: var(--ui-qa-grid-size);
-    gap: 2px;
+    gap: var(--qa-slot-gap);
     width: 100%;
     box-sizing: border-box;
 }
 
 #quick-access-popup.qa-popup .qa-slot-member {
-    width: var(--ui-qa-grid-size);
-    min-width: var(--ui-qa-grid-size);
+    width: 100%;
+    min-width: 0;
     height: var(--ui-qa-grid-size);
     min-height: var(--ui-qa-grid-size);
     padding: 0;
@@ -478,6 +478,7 @@
     touch-action: none;
     border-color: transparent;
     background: transparent;
+    color: var(--futaba-maroon);
 }
 
 #quick-access-popup.qa-popup .qa-slot-member:hover:not(.active) {
@@ -497,8 +498,11 @@
 }
 
 #quick-access-popup.qa-popup .qa-slot-member.active {
-    border-color: var(--active-border);
+    border-color: var(--qa-value-active-keyline);
+    background: var(--qa-value-active-surface);
+    color: var(--qa-value-active-foreground);
     box-shadow: none;
+    transform: none;
 }
 
 #quick-access-popup.qa-popup .qa-slot-member:focus-visible,
@@ -506,7 +510,7 @@
     position: relative;
     z-index: 1;
     outline: 2px solid var(--active-border);
-    outline-offset: 1px;
+    outline-offset: -2px;
 }
 
 #quick-access-popup.qa-popup .qa-slot-member.active:focus-visible {
@@ -518,8 +522,8 @@
     align-items: center;
     justify-content: center;
     gap: 1px;
-    width: var(--ui-qa-grid-size);
-    min-width: var(--ui-qa-grid-size);
+    width: 100%;
+    min-width: 0;
     height: var(--ui-qa-grid-size);
     min-height: var(--ui-qa-grid-size);
     padding: 0;
@@ -593,6 +597,7 @@
     color: var(--futaba-maroon);
     opacity: 1;
     transform: none;
+    outline-offset: -2px;
 }
 
 #quick-access-popup.qa-popup .qa-preset-slot:hover:not(:disabled) {
@@ -602,10 +607,10 @@
 }
 
 #quick-access-popup.qa-popup .qa-preset-slot.active {
-    border-color: var(--active-border);
-    background: var(--active-border);
+    border-color: var(--qa-value-active-keyline);
+    background: var(--qa-value-active-surface);
     box-shadow: none;
-    color: var(--futaba-maroon);
+    color: var(--qa-value-active-foreground);
     gap: 1px;
     padding: 0;
 }
@@ -613,17 +618,17 @@
 #quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-ring {
     width: 10px;
     height: 10px;
-    border-color: color-mix(in srgb, var(--futaba-maroon) 56%, transparent);
+    border-color: var(--qa-value-active-foreground);
     background: transparent;
 }
 
 #quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-dot {
-    background: var(--futaba-maroon);
+    background: var(--qa-value-active-foreground);
 }
 
 #quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-size-val,
 #quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-opacity-val {
-    color: var(--futaba-maroon);
+    color: var(--qa-value-active-foreground);
     background: transparent;
 }
 
@@ -649,7 +654,7 @@
 }
 
 #quick-access-popup.qa-popup .qa-preset-slot.active.is-empty .qa-preset-size-val {
-    color: var(--futaba-maroon);
+    color: var(--qa-value-active-foreground);
 }
 
 #quick-access-popup.qa-popup .qa-preset-slot.is-unsupported {
@@ -696,19 +701,19 @@ body > .qa-slot-drag-ghost svg {
     #quick-access-popup.qa-popup .qa-slot-member-grid {
         grid-template-columns: repeat(6, minmax(0, 1fr));
         grid-auto-rows: var(--ui-qa-grid-size);
-        gap: 2px;
+        gap: var(--qa-slot-gap);
     }
 
     #quick-access-popup.qa-popup .qa-slot-member {
-        width: var(--ui-qa-grid-size);
-        min-width: var(--ui-qa-grid-size);
+        width: 100%;
+        min-width: 0;
         height: var(--ui-qa-grid-size);
         min-height: var(--ui-qa-grid-size);
     }
 
     #quick-access-popup.qa-popup .qa-slot-overflow {
-        width: var(--ui-qa-grid-size);
-        min-width: var(--ui-qa-grid-size);
+        width: 100%;
+        min-width: 0;
         height: var(--ui-qa-grid-size);
         min-height: var(--ui-qa-grid-size);
     }
