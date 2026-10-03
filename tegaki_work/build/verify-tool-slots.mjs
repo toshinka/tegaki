@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 const store = new Map();
 globalThis.localStorage = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k) };
@@ -50,4 +51,26 @@ assert.equal(activateToolSlot('pen'), true);
 assert.equal(activateNextInCurrentSlot(), true);
 assert.deepEqual(calls[0], ['pen', { cycle: true }]);
 assert.deepEqual(calls[1], [null, { cycle: true, current: true }]);
+
+const [toolSlotsSource, qtpSource, qtpCss, reorderSource] = await Promise.all([
+    readFile(new URL('../ui/tool-slots.js', import.meta.url), 'utf8'),
+    readFile(new URL('../ui/quick-access-popup.js', import.meta.url), 'utf8'),
+    readFile(new URL('../styles/components/quick-access-popup.css', import.meta.url), 'utf8'),
+    readFile(new URL('../ui/row-reorder.js', import.meta.url), 'utf8')
+]);
+assert.match(toolSlotsSource, /const STORAGE_KEY = 'tegaki-qa-tool-slots-v1'/, 'slot storage key remains unchanged');
+assert.match(qtpSource, /const QA_SLOT_MEMBER_LIMIT = 5/, 'the collapsed member shelf caps its visible window at five');
+assert.match(qtpSource, /projectSlotMemberWindow\(members, activeId, QA_SLOT_MEMBER_LIMIT\)/, 'collapsed projection includes the active member when needed');
+assert.match(qtpSource, /aria-expanded/);
+assert.match(qtpSource, /aria-controls/);
+assert.match(qtpSource, /nextOrder\.splice\(visibleStart, ids\.length, \.\.\.ids\)/, 'collapsed D&D only replaces the visible canonical slice');
+assert.match(qtpCss, /grid-template-columns:\s*repeat\(5, 22px\)/, 'fine-pointer shelf uses five columns');
+assert.match(qtpCss, /grid-template-columns:\s*repeat\(5, 26px\)/, 'coarse-pointer shelf keeps the existing 26px target width');
+assert.doesNotMatch(qtpCss, /\.qa-slot-members\s*\{[^}]*min-height:\s*62px/, 'the permanent two-row reservation is removed');
+assert.match(reorderSource, /const THRESHOLD = 7/);
+assert.match(reorderSource, /qa-slot-drag-ghost/);
+assert.match(reorderSource, /qa-slot-placeholder/);
+assert.match(reorderSource, /window\.addEventListener\('pointercancel', pointerCancel\)/);
+assert.match(reorderSource, /container\.replaceChildren\(\.\.\.originalChildren\)/, 'cancel restores the original children');
+assert.match(reorderSource, /onReorder\?\.\(nextOrder\)/, 'only a changed drop order is committed');
 console.log('tool slots verifier: slots / mapping / order+cycle / last member / persistence / activator ok');

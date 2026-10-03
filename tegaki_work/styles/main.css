@@ -173,7 +173,7 @@
     --ui-anim-timeline-header-height: 20px;
     --ui-anim-lane-row-height: 26px;
     --ui-anim-cel-height: 18px;
-    --ui-qa-popup-width: 136px;
+    --ui-qa-popup-width: 157px;
     --ui-qa-popup-padding: 6px;
     --ui-qa-inner-width: 124px;
     --ui-qa-grid-size: 19px;
@@ -1712,7 +1712,7 @@ canvas {
         --ui-anim-timeline-header-height: 24px;
         --ui-anim-lane-row-height: 26px;
         --ui-anim-cel-height: 18px;
-        --ui-qa-popup-width: 170px;
+        --ui-qa-popup-width: 186px;
         --ui-qa-popup-padding: 7px;
         --ui-qa-inner-width: 154px;
         --ui-qa-grid-size: 24px;

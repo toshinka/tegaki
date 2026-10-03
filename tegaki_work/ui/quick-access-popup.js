@@ -32,6 +32,7 @@ const QA_STORAGE_KEYS = {
 const QA_PRESET_TOOLS = ['pen', 'eraser', 'airbrush'];
 const QA_PRESET_SLOT_COUNT = 6;
 const QA_COLOR_SLOT_COUNT = 5;
+const QA_SLOT_MEMBER_LIMIT = 5;
 const SIZE_SLIDER_BREAKPOINTS = [10, 100];
 const QA_SHORTCUT_ACTIONS = Object.freeze({
     eyedropper: 'TOOL_EYEDROPPER',
@@ -45,6 +46,15 @@ const QA_SHORTCUT_ACTIONS = Object.freeze({
 const QA_DEFAULT_MAIN_COLOR = 0x800000;
 const QA_DEFAULT_SUB_COLOR = 0xf0e0d6;
 const QA_LEGACY_SUB_COLOR = 0xffffff;
+
+function projectSlotMemberWindow(members, activeId, limit = QA_SLOT_MEMBER_LIMIT) {
+    if (members.length <= limit) return { members, start: 0 };
+    const activeIndex = members.findIndex(member => member.id === activeId);
+    const start = activeIndex >= limit
+        ? Math.min(activeIndex - (limit - 1), members.length - limit)
+        : 0;
+    return { members: members.slice(start, start + limit), start };
+}
 
 const QA_DEFAULT_PRESETS = {
     pen: [
@@ -191,6 +201,8 @@ export class QuickAccessPopup {
         this.currentSize = 3;
         this.currentOpacity = 100;
         this.currentTool = 'pen';
+        this._slotMembersExpanded = false;
+        this._slotMembersRenderSlot = null;
 
         // カラースロット状態
         this.activeColorSlotIndex = 0; // 0〜4
@@ -2851,18 +2863,36 @@ export class QuickAccessPopup {
         this._currentSlotForRender = currentSlot;
     }
 
-    /** 二行目(仲間)と三行目(オプション)を描き直す。二行目は仲間が1つ/0でも枠を残し、レイアウトが動かないようにする。 */
+    /** 二行目(仲間)と三行目(オプション)を描き直す。仲間は5件を上限に一行表示し、残りは展開時だけ見せる。 */
     _renderSlotRows() {
         const { slotMembers, slotOptions } = this.elements;
         if (!slotMembers) return;
         this._updateSlotButtons();
         const slotId = this._currentSlotId();
+        if (slotId !== this._slotMembersRenderSlot) {
+            this._slotMembersRenderSlot = slotId;
+            this._slotMembersExpanded = false;
+        }
         slotMembers.dataset.slot = slotId || '';
+        slotMembers.classList.remove('is-expanded');
         slotMembers.textContent = '';
         if (slotId) {
             const members = this._getSlotMembers(slotId);
             const activeId = this._getActiveMemberId(slotId);
-            members.forEach((member) => {
+            const hasOverflow = members.length > QA_SLOT_MEMBER_LIMIT;
+            const expanded = hasOverflow && this._slotMembersExpanded;
+            const projection = projectSlotMemberWindow(members, activeId, QA_SLOT_MEMBER_LIMIT);
+            const visibleMembers = expanded ? members : projection.members;
+            const visibleStart = expanded ? 0 : projection.start;
+            const memberGrid = document.createElement('div');
+            memberGrid.className = 'qa-slot-member-grid';
+            memberGrid.id = 'qa-slot-member-grid';
+            memberGrid.setAttribute('role', 'group');
+            memberGrid.setAttribute('aria-label', `${getSlot(slotId)?.label || 'ツール'}のメンバー`);
+            slotMembers.classList.toggle('is-expanded', expanded);
+            slotMembers.dataset.visibleStart = String(visibleStart);
+            slotMembers.appendChild(memberGrid);
+            visibleMembers.forEach((member) => {
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'qa-sub-button qa-sub-button--icon qa-slot-member';
@@ -2881,14 +2911,40 @@ export class QuickAccessPopup {
                     if (this._suppressMemberClick) return;
                     this._activateMember(slotId, member);
                 });
-                slotMembers.appendChild(b);
+                memberGrid.appendChild(b);
             });
-            enableRowReorder(slotMembers, {
+            enableRowReorder(memberGrid, {
                 itemSelector: '.qa-slot-member',
                 onStart: () => { this._suppressMemberClick = true; },
                 onEnd: () => { setTimeout(() => { this._suppressMemberClick = false; }, 0); },
-                onReorder: (ids) => setMemberOrder(slotId, ids.map(id => id))
+                onReorder: (ids) => {
+                    // The collapsed window is a contiguous slice of canonical order;
+                    // replace only that slice so hidden members keep their relative positions.
+                    const nextOrder = members.map(member => member.id);
+                    nextOrder.splice(visibleStart, ids.length, ...ids);
+                    setMemberOrder(slotId, nextOrder);
+                }
             });
+            if (hasOverflow) {
+                const hiddenCount = members.length - QA_SLOT_MEMBER_LIMIT;
+                const disclosure = document.createElement('button');
+                disclosure.type = 'button';
+                disclosure.className = 'qa-slot-overflow';
+                disclosure.setAttribute('aria-expanded', String(expanded));
+                disclosure.setAttribute('aria-controls', memberGrid.id);
+                disclosure.setAttribute('aria-label', expanded
+                    ? `${members.length}件のメンバーを折りたたむ`
+                    : `残り${hiddenCount}件を含む全${members.length}件のメンバーを表示`);
+                disclosure.title = expanded ? 'メンバーを折りたたむ' : `ほか${hiddenCount}件のメンバーを表示`;
+                disclosure.innerHTML = `<span>${expanded ? '−' : `+${hiddenCount}`}</span><span aria-hidden="true">${expanded ? '⌃' : '⌄'}</span>`;
+                disclosure.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this._slotMembersExpanded = !expanded;
+                    this._renderSlotRows();
+                });
+                slotMembers.appendChild(disclosure);
+            }
         }
         this._renderSlotOptions(slotOptions, slotId);
     }
@@ -3180,6 +3236,21 @@ export class QuickAccessPopup {
                 activeBtn.classList.add('erase-mode');
             }
         }
+
+        const currentSlotId = this._currentSlotId();
+        const slotButtons = {
+            pen: this.elements.penToolBtn,
+            eraser: this.elements.eraserToolBtn,
+            airbrush: this.elements.airbrushToolBtn,
+            bucket: this.elements.fillToolBtn,
+            shape: this.elements.lassoFillToolBtn,
+            select: this.elements.selectionToolBtn
+        };
+        Object.entries(slotButtons).forEach(([slotId, button]) => {
+            if (!button) return;
+            if (slotId === currentSlotId) button.setAttribute('aria-current', 'true');
+            else button.removeAttribute('aria-current');
+        });
 
         if (this.elements.currentToolLabel) {
             const labels = {

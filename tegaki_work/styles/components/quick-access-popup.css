@@ -401,46 +401,201 @@
     pointer-events: none;
 }
 
-/* ---- ツールスロット: 二行目(仲間)は常に表示して枠を動かさない / 三行目=オプション ---- */
+/* ---- QTP tool slots: primary category tabs and a compact secondary shelf ---- */
+#quick-access-popup.qa-popup .qa-tool-grid {
+    position: relative;
+    z-index: 5;
+    margin-bottom: -1px;
+}
+
+#quick-access-popup.qa-popup .qa-tool-button {
+    border-color: transparent;
+    border-radius: 6px 6px 3px 3px;
+    background: transparent;
+    color: var(--futaba-maroon);
+}
+
+#quick-access-popup.qa-popup .qa-tool-button:hover:not(.active) {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--futaba-light-maroon) 18%, transparent);
+}
+
+#quick-access-popup.qa-popup .qa-tool-button.active {
+    position: relative;
+    z-index: 6;
+    border-color: var(--futaba-maroon);
+    border-bottom-color: transparent;
+    border-radius: 6px 6px 2px 2px;
+    background: var(--futaba-maroon);
+    color: var(--futaba-background);
+    box-shadow: none;
+    transform: none;
+}
+
 #quick-access-popup.qa-popup .qa-slot-members {
+    position: relative;
+    z-index: 0;
     display: flex;
-    flex-wrap: wrap;
-    align-content: flex-start;
-    gap: 2px;
-    /* 2行ぶんを常に確保(ツールを切り替えても枠が動かない) */
-    min-height: 62px;
-    margin-top: 3px;
-    padding: 3px;
+    flex: none;
+    align-items: flex-start;
+    gap: 1px;
+    width: max-content;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 2px;
     box-sizing: border-box;
-    border: 1.5px solid var(--active-border);
+    border: 1px solid color-mix(in srgb, var(--futaba-maroon) 38%, var(--futaba-medium));
     border-radius: 8px;
-    background: color-mix(in srgb, var(--active-border) 14%, var(--futaba-cream));
+    background: color-mix(in srgb, var(--futaba-cream) 64%, var(--futaba-background));
+}
+
+#quick-access-popup.qa-popup .qa-slot-member-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 22px);
+    grid-auto-rows: 26px;
+    gap: 1px;
 }
 
 #quick-access-popup.qa-popup .qa-slot-member {
+    width: 22px;
+    min-width: 22px;
+    height: 26px;
+    min-height: 26px;
+    padding: 0;
+    box-sizing: border-box;
     cursor: grab;
     touch-action: none;
     background: var(--futaba-background);
 }
 
-#quick-access-popup.qa-popup .qa-slot-member.is-reordering {
-    opacity: 0.55;
-    cursor: grabbing;
-    box-shadow: 0 0 0 2px var(--active-border);
-}
-
-#quick-access-popup.qa-popup .qa-slot-members.is-reordering .qa-slot-member:not(.is-reordering) {
-    transition: transform 0.12s ease;
+#quick-access-popup.qa-popup .qa-slot-member-grid.is-reordering > .qa-slot-member,
+#quick-access-popup.qa-popup .qa-slot-member-grid.is-reordering > .qa-slot-placeholder {
+    will-change: transform;
+    transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 #quick-access-popup.qa-popup .qa-slot-member.active {
-    color: var(--futaba-background);
-    background: var(--futaba-light-maroon);
-    border-color: var(--futaba-maroon);
+    color: var(--futaba-maroon);
+    background: color-mix(in srgb, var(--futaba-light-maroon) 25%, var(--futaba-background));
+    border-color: transparent;
+    box-shadow: inset 0 -2px 0 var(--futaba-maroon);
 }
 
 #quick-access-popup.qa-popup .qa-slot-member[data-tone="strong"].active {
+    color: var(--futaba-background);
     background: var(--futaba-maroon);
+    border-color: var(--futaba-maroon);
+    outline: none;
+    box-shadow: inset 0 -2px 0 var(--futaba-background);
+}
+
+#quick-access-popup.qa-popup .qa-slot-member[data-tone="strong"].active:focus-visible {
+    outline: 2px solid var(--active-border);
+    outline-offset: 1px;
+}
+
+#quick-access-popup.qa-popup .qa-slot-member:focus-visible,
+#quick-access-popup.qa-popup .qa-slot-overflow:focus-visible {
+    position: relative;
+    z-index: 1;
+    outline: 2px solid var(--active-border);
+    outline-offset: 1px;
+}
+
+#quick-access-popup.qa-popup .qa-slot-overflow {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    width: 22px;
+    min-width: 22px;
+    height: 26px;
+    min-height: 26px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--futaba-maroon) 28%, var(--futaba-medium));
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--futaba-background) 74%, transparent);
+    color: var(--futaba-maroon);
+    font-size: 7px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+#quick-access-popup.qa-popup .qa-slot-overflow:hover {
+    background: color-mix(in srgb, var(--futaba-light-maroon) 24%, var(--futaba-background));
+}
+
+#quick-access-popup.qa-popup .qa-slot-overflow > span:last-child {
+    font-size: 8px;
+}
+
+#quick-access-popup.qa-popup .qa-slot-placeholder {
+    width: 22px;
+    height: 26px;
+    box-sizing: border-box;
+    border: 1px dashed color-mix(in srgb, var(--futaba-maroon) 68%, var(--futaba-medium));
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--futaba-light-maroon) 18%, var(--futaba-background));
+    pointer-events: none;
+}
+
+body > .qa-slot-drag-ghost {
+    position: fixed;
+    z-index: 2700;
+    top: 0;
+    left: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--futaba-maroon);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--futaba-background) 88%, var(--futaba-cream));
+    color: var(--futaba-maroon);
+    opacity: 0.96;
+    box-shadow: 0 6px 14px rgba(50, 18, 18, 0.24);
+    pointer-events: none;
+    transform-origin: top left;
+    transition: none;
+    will-change: transform;
+}
+
+body > .qa-slot-drag-ghost svg {
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+}
+
+@media (pointer: coarse) {
+    #quick-access-popup.qa-popup .qa-slot-member-grid {
+        grid-template-columns: repeat(5, 26px);
+        grid-auto-rows: 26px;
+        gap: 2px;
+    }
+
+    #quick-access-popup.qa-popup .qa-slot-member {
+        width: 26px;
+        min-width: 26px;
+        height: 26px;
+        min-height: 26px;
+    }
+
+    #quick-access-popup.qa-popup .qa-slot-overflow {
+        width: 24px;
+        min-width: 24px;
+        height: 26px;
+        min-height: 26px;
+    }
+
+    #quick-access-popup.qa-popup .qa-slot-placeholder {
+        width: 26px;
+        height: 26px;
+    }
 }
 
 /* 消しバケツ: 同じバケツの絵に斜線の地で区別 */
