@@ -61,24 +61,31 @@ export const DOMBuilder = (function() {
     function buildSidebar() {
         const sidebar = createElement('div', { className: 'sidebar' });
 
-        // 並び: Q(レールの上に浮かぶ) → 上段=保存/取り込み/書き出し系 → 下段=ツール系 → 設定(最下段・別色)
+        // 並び: Q(レールの上に浮かぶ) → PREPARE(Album/Resize/Import/Preview) → CREATE(Manga/Anime) → OUTPUT(Export) → SYSTEM(Settings)
         const tools = [
             { id: 'quick-access-tool', textIcon: 'Q', title: 'Quick Tool Panel (Q)', role: 'popup-launcher', popupName: 'quickAccess', controls: 'quick-access-popup' },
+            // PREPARE
             { id: 'library-tool', icon: 'library', title: 'アルバム保管', role: 'popup-launcher', popupName: 'album', controls: 'album-popup' },
-            { id: 'image-import-tool', icon: 'load', title: '画像をアクティブレイヤーへ読み込み', role: 'command' },
-            { id: 'export-tool', icon: 'export', title: '画像・アニメ出力', role: 'popup-launcher', popupName: 'export', controls: 'export-popup' },
-            { separator: true },
-            { id: 'reference-preview-tool', icon: 'monitor', title: '資料 / プレビュー', role: 'popup-launcher', popupName: 'referencePreview', controls: 'reference-preview-viewer' },
-            { id: 'panel-layout-tool', icon: 'panelLayout', title: '漫画ツール（コマ Shift+K / 集中線 Shift+F）', role: 'popup-launcher', popupName: 'panelLayout', controls: 'panel-layout-popup' },
             { id: 'resize-tool', icon: 'resize', title: 'リサイズ', role: 'popup-launcher', popupName: 'resize', controls: 'resize-settings' },
+            { id: 'image-import-tool', icon: 'imageImport', title: '画像をアクティブレイヤーへ読み込み', role: 'command' },
+            { id: 'reference-preview-tool', icon: 'monitor', title: '資料 / プレビュー', role: 'popup-launcher', popupName: 'referencePreview', controls: 'reference-preview-viewer' },
+            { separator: true },
+            // CREATE
+            { id: 'panel-layout-tool', icon: 'panelLayout', title: '漫画ツール（コマ Shift+K / 集中線 Shift+F）', role: 'popup-launcher', popupName: 'panelLayout', controls: 'panel-layout-popup' },
             { id: 'gif-animation-tool', icon: 'animation', title: 'アニメテーブル (A)', role: 'popup-launcher', popupName: 'animationTable', controls: 'animation-table-popup' },
             { separator: true },
+            // OUTPUT
+            { id: 'export-tool', icon: 'export', title: '画像・アニメ出力', role: 'popup-launcher', popupName: 'export', controls: 'export-popup' },
+            { separator: true, group: true },
+            // SYSTEM
             { id: 'settings-tool', icon: 'settings', title: '設定 (S)', role: 'popup-launcher', popupName: 'settings', controls: 'settings-popup' }
         ];
 
         tools.forEach(tool => {
             if (tool.separator) {
-                sidebar.appendChild(createElement('div', { className: 'tool-separator' }));
+                sidebar.appendChild(createElement('div', {
+                    className: ['tool-separator', tool.group ? 'tool-separator--group' : ''].filter(Boolean).join(' ')
+                }));
             } else {
                 const iconHtml = tool.textIcon
                     ? `<span class="tool-button-text-icon">${tool.textIcon}</span>`

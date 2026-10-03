@@ -469,8 +469,8 @@ body {
     box-shadow: var(--ui-shadow-rail);
 }
 
-/* 設定の歯車は区別のためオレンジ */
-.sidebar #settings-tool {
+/* 設定の歯車は非active時に区別のためオレンジ、active時は反転してコントラスト確保 */
+.sidebar #settings-tool:not(.active):not(.is-active):not([aria-pressed="true"]):not([aria-expanded="true"]) {
     color: var(--active-border);
 }
 
@@ -488,6 +488,11 @@ body {
     flex: 0 0 8px;
     background: transparent; 
     margin: 0; 
+}
+
+.tool-separator--group {
+    height: 14px;
+    flex: 0 0 14px;
 }
 
 .canvas-area {

@@ -22,6 +22,7 @@
 - `docs/ai/WEB_SUBCOMMANDER_CARD.md`: CURRENT REFERENCE。新規Webサブコマンダーの就任・読む順序・返却契約。役割権限はDEVELOPMENT、現在地はSTATUSが所有する。
 - `docs/ai/2026-10-03-navigation-audit.md`: REFERENCE。就任カード発行時の導線検査・修正範囲・残る文書課題。現在の実装指示ではない。
 - `docs/ai/INOCHI2D_EDIT_ROUNDTRIP_CAPABILITY.md`: REFERENCE。WP-019限定調査のSDK/API/runtime証拠。現在の実行契約はWP-019。
+- `docs/ai/2026-10-03-rig-backend-implementation-proposal.md`: REFERENCE。限定追加調査後のbackend導入・保存境界・次の一件の設計提案。採用/schema変更/実装の承認ではない。
 - `docs/handoffs/2026-09-06-wp002-to-wp003.md`: HANDOFF SNAPSHOT。新チャット用の読み順・最初のSlice・除外範囲。現在地の正本はSTATUSのまま。
 - `docs/handoffs/2026-10-02-pen-ruler-to-next.md`: HANDOFF SNAPSHOT。ペン刷新・DPR・定規の完了点、Ownerの好み、次の候補（集中線ほか）、環境メモ。現在地の正本はSTATUSのまま。
 - `docs/legacy/PROGRESS.md / ARCHITECTURE.md / PHASE4Z_BOUNDARY.md / NEXT_CHAT_HANDOFF.md / CODEX_MULTI_MODEL_WORKFLOW.md`: SUPERSEDED ROUTING。

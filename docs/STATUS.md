@@ -6,6 +6,7 @@
 現在地はこの文書だけが所有する。旧Phaseの自動継続指示より優先する。
 今回の現在地: [WP-019 Inochi2D編集・保存・再読込proof](work/WP-019-inochi-edit-roundtrip-proof.md) BLOCKED / Slice A技術調査・司令監査完了。現配布WASMはinstantiate/initのみ実測PASS。公開mesh setter/native保存APIがなく、対応main sourceのbinding復元/保存経路も未接続。nativeモデルload/評価/編集/保存/reloadは未実測、最終proof未達。根拠は[capability report](ai/INOCHI2D_EDIT_ROUNDTRIP_CAPABILITY.md)。旧v0.8系一致buildの確保かupstream修復/buildが必要で、現Cardのtoolchain/大幅patch禁止境界によりSlice BはHOLD。旧系source/build固定からbridge量を確かめる次契約を推奨。製品統合・backend採用は未決定。製品231 filesの開始aggregate SHA256、AGENTS/TECHNICAL hash、HEADは同一。15分監視を停止し、他Cardへ自動継続しない。
 前件のWeb Subcommander就任カードと文書導線の整備は文書検証完了 / LOCAL ONLY。役割は[DEVELOPMENT](DEVELOPMENT.md)、就任入口は[カード](ai/WEB_SUBCOMMANDER_CARD.md)、修正根拠と残る穴は[導線監査](ai/2026-10-03-navigation-audit.md)。下部の過去WP目的/Slice/旧NEXTは自動実行指示ではない。
+最新の検討（2026-10-03、main / `7765fde4573492478d5dede545c295116592f63a`、開始時clean）: Owner依頼により追加source調査を旧系の保存/binding/DrawList境界で区切り、[実装方針の提案](ai/2026-10-03-rig-backend-implementation-proposal.md)を作成。推奨は既存Native維持、新規Advancedの評価器候補としてInochi2Dを限定導入。次候補は旧系固定buildでの一件のheadless roundtrip。WP-019 BLOCKEDは維持し、次Card・schema変更・製品実装は未着手。
 検証: harness checkは49 documents / 182 local links / 25 proposals / 9 packagesでPASS。GITHUB.txtのraw URL 85件はローカル対応fileあり。git diff --check PASS。最終HEADは開始時と同じ。差分は開始時の既存AGENTS/TECHNICAL/GITHUBと、今回のGITHUB/DEVELOPMENT/README/STATUS/登録簿/harness/work索引、新規就任カード/監査報告。remoteは接続失敗で未確認、commit/push・製品build・Browser検証は実施していない。
 引き継ぎ（2026-10-02、ペン刷新・定規の完了点と次の候補）: [handoffs/2026-10-02-pen-ruler-to-next.md](handoffs/2026-10-02-pen-ruler-to-next.md)。
 
