@@ -145,7 +145,9 @@ export class QuickAccessPopup {
             : null;
         this.qButtonHomePosition = this._measureQButtonHomePosition();
         this._qButtonPointerDownHandler = null;
+        this._qButtonKeydownHandler = null;
         this._qButtonDragCleanup = null;
+        this._qButtonClickCleanup = null;
         this._qPositionResizeHandler = null;
 
         this.isDraggingSize = false;
@@ -207,6 +209,7 @@ export class QuickAccessPopup {
         document.addEventListener('contextmenu', this._qButtonContextHandler);
         this._attachQButtonToViewport();
         this._setupQButtonDrag();
+        this._setupQButtonKeyboardActivation();
         this._qPositionResizeHandler = () => {
             if (!this.panel) return;
             if (this.isVisible) {
@@ -220,6 +223,20 @@ export class QuickAccessPopup {
             this._savePosition(position.x, position.y);
         };
         window.addEventListener('resize', this._qPositionResizeHandler);
+    }
+
+    _setupQButtonKeyboardActivation() {
+        // Portaling leaves the sidebar keydown boundary. Preserve its Enter / Space
+        // handling so Canvas shortcuts cannot consume the native button activation.
+        this._qButtonKeydownHandler = (event) => {
+            const button = event.target?.closest?.('#quick-access-tool');
+            if (!button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+            if (event.key !== 'Enter' && event.key !== ' ' && event.code !== 'Space') return;
+            event.preventDefault();
+            event.stopPropagation();
+            button.click();
+        };
+        document.addEventListener('keydown', this._qButtonKeydownHandler, true);
     }
 
     /**
@@ -252,14 +269,21 @@ export class QuickAccessPopup {
                 this._applySharedPosition(qPosition.x, qPosition.y, { source: 'q', persist: true });
 
                 if (e.type === 'pointerup') {
+                    this._qButtonClickCleanup?.();
+                    const clearSwallow = () => {
+                        document.removeEventListener('click', swallow, true);
+                        clearTimeout(timeout);
+                        this._qButtonClickCleanup = null;
+                    };
                     const swallow = (ev) => {
                         if (ev.target?.closest?.('#quick-access-tool') !== completedDrag.button) return;
                         ev.stopPropagation();
                         ev.preventDefault();
-                        document.removeEventListener('click', swallow, true);
+                        clearSwallow();
                     };
                     document.addEventListener('click', swallow, true);
-                    setTimeout(() => document.removeEventListener('click', swallow, true), 120);
+                    const timeout = setTimeout(clearSwallow, 120);
+                    this._qButtonClickCleanup = clearSwallow;
                 }
             }
         };
@@ -3833,10 +3857,17 @@ export class QuickAccessPopup {
     }
 
     destroy() {
+        // Use the existing visibility route to clear the launcher's ARIA / active state.
+        if (this.isVisible) this.hide();
         this._qButtonDragCleanup?.();
+        this._qButtonClickCleanup?.();
         if (this._qButtonPointerDownHandler) {
             document.removeEventListener('pointerdown', this._qButtonPointerDownHandler, true);
             this._qButtonPointerDownHandler = null;
+        }
+        if (this._qButtonKeydownHandler) {
+            document.removeEventListener('keydown', this._qButtonKeydownHandler, true);
+            this._qButtonKeydownHandler = null;
         }
         if (this._qButtonContextHandler) {
             document.removeEventListener('contextmenu', this._qButtonContextHandler);
@@ -3848,17 +3879,17 @@ export class QuickAccessPopup {
         }
 
         if (this.sliderMoveHandler) {
-            document.removeEventListener('pointermove', this.sliderMoveHandler);
-            document.removeEventListener('pointerup', this.sliderUpHandler);
-            document.removeEventListener('pointercancel', this.sliderUpHandler);
+            document.removeEventListener('pointermove', this.sliderMoveHandler, true);
+            document.removeEventListener('pointerup', this.sliderUpHandler, true);
+            document.removeEventListener('pointercancel', this.sliderUpHandler, true);
             this.sliderMoveHandler = null;
             this.sliderUpHandler = null;
         }
 
         if (this.dragMoveHandler) {
-            document.removeEventListener('pointermove', this.dragMoveHandler);
-            document.removeEventListener('pointerup', this.dragUpHandler);
-            document.removeEventListener('pointercancel', this.dragUpHandler);
+            document.removeEventListener('pointermove', this.dragMoveHandler, true);
+            document.removeEventListener('pointerup', this.dragUpHandler, true);
+            document.removeEventListener('pointercancel', this.dragUpHandler, true);
             this.dragMoveHandler = null;
             this.dragUpHandler = null;
         }
