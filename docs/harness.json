@@ -23,6 +23,9 @@
     "docs/work/WP-016-auto-select-gradient.md",
     "docs/work/WP-017-square-tip.md",
     "docs/work/WP-018-settings-snapshot.md",
+    "docs/work/WP-021-curated-font-library.md",
+    "docs/work/WP-022-font-organization.md",
+    "docs/ai/2026-10-04-font-organization-result.md",
     "docs/work/WP-007-export-terminal-guard.md",
     "docs/work/WP-003-key-continuation.md",
     "docs/work/WP-005-simple-warp.md",
@@ -42,6 +45,11 @@
     "docs/handoffs/2026-10-02-pen-ruler-to-next.md"
   ],
   "domains": {
+    "fonts": {
+      "architecture":"docs/ARCHITECTURE.md",
+      "entrypoints":["tegaki_work/system/font-library.js","tegaki_work/system/font-organization.js","tegaki_work/ui/font-tree.js"],
+      "patterns":["^verify-curated-font-library","^verify-font-organization","^verify-font-publication"]
+    },
     "folder-composite": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [
@@ -223,6 +231,8 @@
     {"id":"WP-009","document":"docs/work/WP-009-layer-transform-key-management.md","status":"ACTIVE","dependsOn":["WP-003","WP-007"]},
     {"id":"WP-008","document":"docs/work/WP-008-layer-transform-progressive-controls.md","status":"ACTIVE","dependsOn":["WP-003","WP-007"]},
     {"id":"WP-019","document":"docs/work/WP-019-inochi-edit-roundtrip-proof.md","status":"BLOCKED","dependsOn":[]},
-    {"id":"WP-020","document":"docs/work/WP-020-rig-renewal-first-path.md","status":"BLOCKED","dependsOn":[]}
+    {"id":"WP-020","document":"docs/work/WP-020-rig-renewal-first-path.md","status":"BLOCKED","dependsOn":[]},
+    {"id":"WP-021","document":"docs/work/WP-021-curated-font-library.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-022","document":"docs/work/WP-022-font-organization.md","status":"ACTIVE","dependsOn":[]}
   ]
 }

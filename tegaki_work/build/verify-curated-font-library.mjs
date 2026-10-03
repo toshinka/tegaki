@@ -70,9 +70,9 @@ assert.equal(library.getBundledAssetUrl(beforeLoad[2], 'licenseFile'), '', 'pare
 
 library.setFavorite('font-c', true);
 const favoriteOrder = await library.listBundledFonts();
-assert.deepEqual(favoriteOrder.map(font => font.id), ['font-c', 'font-a', 'font-b'], 'favorites sort first with stable nonfavorite order');
-assert.equal(favoriteOrder[0].favorite, true);
-assert.equal(favoriteOrder[2].primary, true, 'catalog primary is exposed until the user selects another primary');
+assert.deepEqual(favoriteOrder.map(font => font.id), ['font-a', 'font-b', 'font-c'], 'favorite does not rewrite manual catalog order');
+assert.equal(favoriteOrder[2].favorite, true);
+assert.equal(favoriteOrder[1].primary, true, 'catalog primary is exposed until the user selects another primary');
 
 const concurrent = await Promise.all([library.ensureLoaded('font-a'), library.ensureLoaded('font-a'), library.ensureLoaded('font-a')]);
 assert.ok(concurrent[0]);

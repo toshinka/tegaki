@@ -46,6 +46,31 @@
     "bundled-yuji":"brush",
     "bundled-chalk":"hand"
   },
+  "usageTags": {
+    "bundled-genei-antique":["通常会話"],
+    "bundled-f910-comic":["通常会話"],
+    "bundled-genei-nu":["叫び","怒り","威圧","擬音"],
+    "bundled-genei-latego":["放送","電話","機械声"],
+    "bundled-genei-pople":["喜び","おどけ","擬音"],
+    "bundled-genei-koburi":["モノローグ","回想","静かな声"],
+    "bundled-851-yowaku":["ためらい","震え","弱い声"],
+    "bundled-851-dzuyoku":["叫び","ツッコミ","擬音"],
+    "bundled-mushin":["キャラ声","手紙","余白"],
+    "bundled-kurobara":["恐怖","不穏","ゴシック装飾"],
+    "bundled-senobi":["モノローグ","静かな声","間のある声"],
+    "bundled-851-kakutto":["キャラ声","手紙"],
+    "bundled-851-zatsu":["キャラ声","落書き","余白"],
+    "bundled-tanuki":["手紙","手書き擬音","マーカー"],
+    "bundled-dotgothic":["機械声","ゲーム","MV"],
+    "bundled-rocknroll":["喜び","キャラ声","MV"],
+    "bundled-reggae":["強調","怒り","クール","MV"],
+    "bundled-yomogi":["弱い声","モノローグ","手紙"],
+    "bundled-hachimarupop":["キャラ声","レトロ","手紙"],
+    "bundled-stick":["おどけ","疑問","幼い声"],
+    "bundled-dela":["威圧","悪役","強調","MV"],
+    "bundled-yuji":["和風","儀礼","筆文字擬音"],
+    "bundled-chalk":["板書","手紙","余白"]
+  },
   "orders": {},
   "favoriteFirst":false
 }

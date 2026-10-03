@@ -1,5 +1,7 @@
 # Tegaki — 再開checkpoint
 
+フォント案A（2026-10-04）: [WP-022](work/WP-022-font-organization.md) ACTIVE。Ownerが外部実体＋一軸表示ツリーを承認。漫画の場面別分類、wheelジョグ、手動順/収納先、外部root接続を限定実装中。27実体/作者資料83ファイルと取得archive101ファイルはEへ複製・hash一致。公開側除去は外部参照検証後。追加DLは保留。[分類と検証記録](ai/2026-10-04-font-organization-result.md)。既存QTP差分保持、未commit/未push。Project/History保存契約を維持。
+
 選定フォント導入（2026-10-03）: [WP-021](work/WP-021-curated-font-library.md) TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。先行8＋追加上位19＝27書体、Primaryは源暎アンチック。吹き出しタブに形の分類・選択見本・短評・自分用メモ・favorite優先・Primary・ライセンスリンク、同梱fontの遅延読み込みを追加。Project schema変更なし。公式条件と元LICENSE/readme/版/hashを保持。500枚OCR済み、全500/851の公式監査完了ではない。[取得・保留リスト/検証記録](ai/2026-10-03-curated-font-audit.md)。コーポレート・ロゴ/ようじょは元実体のBrowser decode NGで保留。構文/関連verifier/harness/buildとChromiumで27実体ロード、縦横確定/再編集/UndoRedo、実Project export/load、本人import/folder、favorite/Primary/メモ保持、失敗表示/retryを確認。Owner液タブ/全字形の制作受入は未実施。文字タブ移設・曲線/WARP/スロットは後段。main / 開始HEAD `b7d7fddf`、既存QTP差分を保持、未commit・未push。RIGの中断点・次Card未発行は維持。
 
 QTP ALL判定分離（2026-10-03）: バケツ / 選択の修飾を高さ4pxへ薄型化し、タブ上端とのgap約2.1pxを確保。Browserで判定非重複、ツール選択によるALL不変と直接修飾clickによるtoggleを確認。build / 関連検証PASS。液タブ操作感はOwner確認待ち、前件差分を保持。

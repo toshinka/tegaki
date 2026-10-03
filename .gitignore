@@ -45,3 +45,8 @@
 # ComfyUIPortable is maintained in the standalone repository:
 # https://github.com/toshinka/ComfyUIPortable
 /ComfyUIPortable/
+# WP-022: public catalog is metadata only; personal font originals belong outside Git.
+/tegaki_work/public/fonts/*
+!/tegaki_work/public/fonts/catalog.json
+!/tegaki_work/public/fonts/inspection.json
+/tegaki_work/build/__pycache__/

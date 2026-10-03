@@ -1,10 +1,11 @@
 """Assemble WP-021 catalog from reviewed metadata and original asset inspection.
 No font conversion; acquisition manifests and source licenses remain reproducible.
 """
-import html.parser, importlib.util, json, pathlib
+import argparse, html.parser, importlib.util, json, pathlib, sys
+sys.dont_write_bytecode=True
 spec=importlib.util.spec_from_file_location('acquire',pathlib.Path(__file__).with_name('acquire-curated-fonts.py'))
 acquire=importlib.util.module_from_spec(spec); spec.loader.exec_module(acquire)
-DEST, CACHE, inspect_font, page=acquire.DEST, acquire.CACHE, acquire.inspect_font, acquire.page
+inspect_font, page=acquire.inspect_font, acquire.page
 
 class Text(html.parser.HTMLParser):
     def __init__(self): super().__init__(); self.parts=[]; self.skip=0
@@ -22,6 +23,11 @@ def license_snapshot(url, target):
     target.write_text('Source: '+url+'\nRetrieved: 2026-10-03\n\n'+text+'\n',encoding='utf-8')
 
 def main():
+    parser=argparse.ArgumentParser(); parser.add_argument('--external-root',required=True); args=parser.parse_args()
+    external=pathlib.Path(args.external_root).resolve()
+    if external == acquire.ROOT or acquire.ROOT in external.parents: parser.error('external root must be outside product checkout')
+    DEST, CACHE=external/'Library', external/'Archive'
+    public=acquire.ROOT/'public'/'fonts'; public.mkdir(parents=True,exist_ok=True)
     metadata=json.loads(pathlib.Path(__file__).with_name('curated-font-selection.json').read_text(encoding='utf-8'))
     acquisitions=[]; rows=[]
     for meta in metadata:
@@ -39,8 +45,8 @@ def main():
                 except UnicodeDecodeError: text=raw.decode('cp932')
                 lic.write_text(text,encoding='utf-8')
         row={k:v for k,v in meta.items() if k not in ('originalLicense','snapshotLicense','licenseFileName','acquisition','licenseNotice')}
-        row.update(file=font.relative_to(DEST).as_posix(),ext=font.suffix[1:],
-            family='Tegaki_'+meta['id'].replace('-','_'),licenseFile=lic.relative_to(DEST).as_posix(),
+        row.update(external=True,file=font.relative_to(external).as_posix(),ext=font.suffix[1:],
+            family='Tegaki_'+meta['id'].replace('-','_'),licenseFile=lic.relative_to(external).as_posix(),
             sha256=info['sha256'],size=info['size'],version=info['names'].get('5','unknown'))
         row['coverage']=meta.get('coverage',f"漢字{info['kanjiCount']:,}字 / ひらがな{info['hiraganaCount']} / カタカナ{info['katakanaCount']}")
         row['dakuten']=meta.get('dakuten',('結合濁点U+3099あり・組版未検証' if info['combiningDakuten'] else '結合濁点U+3099なし・漫画外字未確認'))
@@ -49,8 +55,13 @@ def main():
         sourceHash=acquire.hashlib.sha256(archive.read_bytes()).hexdigest() if archive.exists() else None
         rows.append(row); acquisitions.append({'id':meta['id'],'downloadUrl':meta['downloadUrl'],'archiveSha256':sourceHash,
             'selectedOriginal':package.get('select'), 'licenseNotice':meta.get('licenseNotice',''), 'inspection':info})
-    (DEST/'catalog.json').write_text(json.dumps({'version':1,'primaryId':'bundled-genei-antique','fonts':rows},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-    (DEST/'inspection.json').write_text(json.dumps({'inspectedAt':'2026-10-03','fonts':acquisitions},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    defaults=json.loads(pathlib.Path(__file__).with_name('font-organization-defaults.json').read_text(encoding='utf-8'))
+    usage=defaults.pop('usageTags',{})
+    for row in rows: row['tags']=list(dict.fromkeys(row.get('tags',[])+usage.get(row['id'],[])))
+    defaults['orders']['root']=['font:bundled-genei-antique','font:bundled-f910-comic','folder:manga','folder:display']
+    for destination in (public, external):
+        (destination/'catalog.json').write_text(json.dumps({'version':1,'primaryId':'bundled-genei-antique','organization':defaults,'fonts':rows},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+        (destination/'inspection.json').write_text(json.dumps({'inspectedAt':'2026-10-03','fonts':acquisitions},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     print(f'Catalog: {len(rows)} fonts, {sum(r["size"] for r in rows)/1048576:.1f} MiB')
 
 if __name__=='__main__': main()

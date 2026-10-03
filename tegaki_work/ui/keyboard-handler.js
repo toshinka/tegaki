@@ -34,7 +34,8 @@ export const KeyboardHandler = (function() {
             activeElement.tagName === 'INPUT' ||
             activeElement.tagName === 'TEXTAREA' ||
             activeElement.tagName === 'SELECT' ||
-            activeElement.isContentEditable
+            activeElement.isContentEditable ||
+            Boolean(activeElement.closest?.('#balloon-font-tree, #balloon-popup [data-role="font-picker"]'))
         );
     }
 

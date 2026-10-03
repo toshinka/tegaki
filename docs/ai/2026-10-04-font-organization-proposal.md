@@ -1,6 +1,6 @@
 # フォントのジョグ選択・外部保管・一軸整理案
 
-状態: REFERENCE / 検討案。2026-10-04。製品実装・27書体の移設は未実施、追加DLは保留。
+状態: REFERENCE / 検討当時の比較案。2026-10-04にOwnerが案A実装を承認。以降の実装範囲は[WP-022](../work/WP-022-font-organization.md)、現在地はSTATUS。以下の「未実施」は提案時点の記録。追加DLは移設/整理検証後。
 基準: 現行WP-021、STATUS/TECHNICAL、font-library.js、balloon-popup.js。既存差分を保持。
 
 ## 推奨

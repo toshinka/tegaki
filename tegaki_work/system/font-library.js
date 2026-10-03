@@ -7,11 +7,13 @@
  * 被依存: system/lettering-raster.js, ui/balloon-popup.js
  * 公開API: FontLibrary, fontLibrary, COMMON_JP_FONT_FAMILIES, FONT_SAMPLE_OPTIONS, isFontAvailable,
  *   fontFamilyCss, buildFontFaceCss, sanitizeFontLabel, sanitizeFontPreferences, sortBundledFonts,
- *   FONT_FILE_ACCEPT
+ *   FONT_FILE_ACCEPT, connectExternalDirectory, getExternalStatus, readExternalFile,
+ *   initializeOrganization, getOrganization, setFontFolder, createOrganizationFolder,
+ *   renameOrganizationFolder, deleteOrganizationFolder, moveOrganizationNode, setFavoriteFirst
  * 保存: 取り込んだフォント実体とフォルダはブラウザ内ローカル(IndexedDB)。Project/History/書き出しへは関与しない。
  *   Layerに残るのは確定した画素と、再編集用のフォント参照(family名 or 取り込みフォントid)だけ。
  * ライセンス: 同梱フォントはcatalogのsource/license情報と親Cardの取得物を正本とする。ユーザー取り込みも維持。
- * 実装状態: ✅実装（WP-021）
+ * 実装状態: ✅実装（WP-021 / WP-022 backend slice）
  * ============================================================================
  */
 
@@ -109,6 +111,7 @@ function normalizeCatalogRow(raw, index) {
         label: sanitizeFontLabel(raw.label || id),
         family,
         file,
+        external: raw.external === true,
         ext: String(raw.ext || extOf(file)).toLowerCase(),
         category: cleanText(raw.category || '選定フォント', 40),
         tags: cleanTags(raw.tags),
@@ -132,11 +135,16 @@ function normalizeCatalog(raw) {
         ? raw.fonts.map(normalizeCatalogRow).filter(Boolean)
         : [];
     const primaryId = rows.some(row => row.id === raw?.primaryId) ? raw.primaryId : (rows[0]?.id || null);
-    return { version: Number(raw?.version) === 1 ? 1 : 1, primaryId, fonts: rows };
+    return {
+        version: Number(raw?.version) === 1 ? 1 : 1,
+        primaryId,
+        fonts: rows,
+        organization: raw?.organization && typeof raw.organization === 'object' ? raw.organization : null
+    };
 }
 
 function emptyCatalog() {
-    return { version: 1, primaryId: null, fonts: [] };
+    return { version: 1, primaryId: null, fonts: [], organization: null };
 }
 
 function baseUrlWithSlash(baseUrl) {
@@ -215,7 +223,7 @@ function newId(prefix) {
 export class FontLibrary {
     constructor(options = {}) {
         this.dbName = options.dbName || 'TegakiFontLibrary';
-        this.version = 1;
+        this.version = 2;
         this.db = null;
         this._initPromise = null;
         this.available = true;
@@ -226,11 +234,21 @@ export class FontLibrary {
         this.baseUrl = options.baseUrl || (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/';
         this.catalogUrl = options.catalogUrl || catalogUrlFor(this.baseUrl);
         this.fetch = options.fetch || globalThis.fetch?.bind(globalThis);
+        this.indexedDB = options.indexedDB || globalThis.indexedDB;
+        this.directoryPicker = options.directoryPicker || globalThis.showDirectoryPicker;
+        this.crypto = options.crypto || globalThis.crypto;
         this.storage = options.storage || (() => {
             try { return globalThis.localStorage; } catch (error) { return null; }
         })();
         this.FontFace = options.FontFace || globalThis.FontFace;
         this.document = options.document || globalThis.document;
+        this._folderCache = null;
+        this._fontCache = null;
+        this._externalRecord = null;
+        this._externalRecordLoaded = false;
+        this._organization = null;
+        this._organizationInitPromise = null;
+        this._organizationFontIds = new Set();
         this._listeners = new Set();
     }
 
@@ -241,6 +259,72 @@ export class FontLibrary {
 
     _emit() {
         this._listeners.forEach(fn => { try { fn(); } catch (error) { /* listenerの失敗で保存を止めない */ } });
+    }
+
+    /**
+     * organization backendを必要時だけ読み込む。font-organization.jsからのstatic circular importは作らない。
+     * 初期化完了後はgetOrganization/CRUD/moveが同期APIとして利用できる。
+     */
+    async initializeOrganization(fontIds = []) {
+        for (const id of Array.isArray(fontIds) ? fontIds : []) {
+            const value = String(id ?? '').trim();
+            if (value) this._organizationFontIds.add(value);
+        }
+        if (!this._organizationInitPromise) {
+            this._organizationInitPromise = import('./font-organization.js')
+                .then(({ FontOrganization }) => {
+                    this._organization = new FontOrganization({
+                        library: this,
+                        storage: this.storage,
+                        autoInit: false,
+                        notifyLibrary: () => this._emit()
+                    });
+                    return this._organization.initialize([...this._organizationFontIds]);
+                })
+                .then(() => this._organization)
+                .catch(error => {
+                    this._organizationInitPromise = null;
+                    throw error;
+                });
+        }
+        const organization = await this._organizationInitPromise;
+        // 同時に到着した後続fontIdsも、初期化後の同期modelへseedする。
+        await organization.initialize([...this._organizationFontIds]);
+        return organization;
+    }
+
+    /** organization初期化後の同期snapshot。未初期化時は空の契約形を返す。 */
+    getOrganization(fontIds = []) {
+        for (const id of Array.isArray(fontIds) ? fontIds : []) {
+            const value = String(id ?? '').trim();
+            if (value) this._organizationFontIds.add(value);
+        }
+        if (this._organization) return this._organization.getOrganization(fontIds);
+        return { folders: [], placements: {}, orders: { root: [] }, favoriteFirst: false };
+    }
+
+    setFontFolder(id, folderId) {
+        return this._organization?.setFontFolder?.(id, folderId) || false;
+    }
+
+    createOrganizationFolder(label, parentId = null) {
+        return this._organization?.createOrganizationFolder?.(label, parentId) || null;
+    }
+
+    renameOrganizationFolder(id, label) {
+        return this._organization?.renameOrganizationFolder?.(id, label) || false;
+    }
+
+    deleteOrganizationFolder(id) {
+        return this._organization?.deleteOrganizationFolder?.(id) || false;
+    }
+
+    moveOrganizationNode(nodeKey, parentId = null, beforeKey = null) {
+        return this._organization?.moveOrganizationNode?.(nodeKey, parentId, beforeKey) || false;
+    }
+
+    setFavoriteFirst(value) {
+        return this._organization?.setFavoriteFirst?.(value) || false;
     }
 
     // ------------------------------------------------------------ 選定catalog / UI設定
@@ -270,7 +354,8 @@ export class FontLibrary {
     async listBundledFonts() {
         const catalog = await this.loadCatalog();
         const preferences = this.getPreferences();
-        return sortBundledFonts(catalog.fonts.map(font => ({ ...font })), preferences)
+        // catalogの並びはorganizationのmanual orderの初期値。favoriteFirstはUI表示側だけで解釈する。
+        return catalog.fonts.map(font => ({ ...font }))
             .map(font => ({
                 ...font,
                 favorite: preferences.favorites.includes(font.id),
@@ -286,6 +371,7 @@ export class FontLibrary {
 
     getBundledAssetUrl(fontOrId, field = 'file') {
         const row = typeof fontOrId === 'object' ? fontOrId : this._catalog?.fonts?.find(font => font.id === fontOrId);
+        if (row?.external) return '';
         return row ? relativeAssetUrl(this.baseUrl, row[field]) : '';
     }
 
@@ -334,13 +420,14 @@ export class FontLibrary {
         if (this.db) return true;
         if (this._initPromise) return this._initPromise;
         this._initPromise = new Promise((resolve) => {
-            const idb = globalThis.indexedDB;
+            const idb = this.indexedDB;
             if (!idb) { this.available = false; resolve(false); return; }
             const req = idb.open(this.dbName, this.version);
             req.onupgradeneeded = () => {
                 const db = req.result;
                 if (!db.objectStoreNames.contains('fonts')) db.createObjectStore('fonts', { keyPath: 'id' });
                 if (!db.objectStoreNames.contains('folders')) db.createObjectStore('folders', { keyPath: 'id' });
+                if (!db.objectStoreNames.contains('external')) db.createObjectStore('external', { keyPath: 'id' });
             };
             req.onsuccess = () => { this.db = req.result; resolve(true); };
             req.onerror = () => { this.available = false; resolve(false); };
@@ -356,22 +443,132 @@ export class FontLibrary {
             const os = tx.objectStore(store);
             let result;
             try { result = fn(os); } catch (error) { reject(error); return; }
-            tx.oncomplete = () => resolve(result?.result !== undefined ? result.result : result);
+            // Native IDBRequest.result is an inherited WebIDL accessor, not an own property.
+            tx.oncomplete = () => resolve(result && typeof result === 'object' && 'result' in result ? result.result : result);
             tx.onerror = () => reject(tx.error);
             tx.onabort = () => reject(tx.error);
         });
+    }
+
+    /** 外部ディレクトリの保存済みhandleを遅延して読む。requestPermissionはここでも呼ばない。 */
+    async _getExternalRecord() {
+        if (this._externalRecordLoaded) return this._externalRecord;
+        try {
+            this._externalRecord = await this._tx('external', 'readonly', os => os.get('root')) || null;
+            this._externalRecordLoaded = true;
+        } catch (error) {
+            this._externalRecord = null;
+            this._externalRecordLoaded = false;
+        }
+        return this._externalRecord;
+    }
+
+    /**
+     * クリックイベントから同期的にpickerを呼び出してから、結果をIndexedDBへ保存する。
+     * pickerの呼び出しより前にawaitを置かないことがユーザー操作権限の契約になる。
+     */
+    connectExternalDirectory() {
+        const picker = this.directoryPicker || globalThis.showDirectoryPicker;
+        if (typeof picker !== 'function') return Promise.resolve({ ok: false, reason: 'unsupported' });
+        let picked;
+        try {
+            picked = picker({ mode: 'read' });
+        } catch (error) {
+            return Promise.resolve({ ok: false, reason: 'picker-failed' });
+        }
+        return Promise.resolve(picked).then(async (handle) => {
+            if (!handle) return { ok: false, reason: 'cancelled' };
+            const record = { id: 'root', handle, name: String(handle.name || '') };
+            try {
+                await this._tx('external', 'readwrite', os => os.put(record));
+            } catch (error) {
+                return { ok: false, reason: 'save-failed' };
+            }
+            this._externalRecord = record;
+            this._externalRecordLoaded = true;
+            const status = await this.getExternalStatus();
+            this._emit();
+            return { ok: true, status };
+        });
+    }
+
+    /** 保存handleの存在とqueryPermissionの結果だけを返す。自動requestPermissionは行わない。 */
+    async getExternalStatus() {
+        const picker = this.directoryPicker || globalThis.showDirectoryPicker;
+        const record = await this._getExternalRecord();
+        const handle = record?.handle || null;
+        const supported = typeof picker === 'function' || typeof handle?.getDirectoryHandle === 'function';
+        let permission = handle ? 'unknown' : (supported ? 'prompt' : 'unsupported');
+        if (handle && typeof handle.queryPermission === 'function') {
+            try {
+                permission = await handle.queryPermission({ mode: 'read' });
+            } catch (error) {
+                permission = 'denied';
+            }
+        }
+        return {
+            connected: !!handle,
+            supported,
+            name: String(handle?.name || record?.name || ''),
+            permission
+        };
+    }
+
+    /** 保存済みroot handleから、Library/ID/file.ttfのような相対pathを読む。 */
+    async readExternalFile(path) {
+        const record = await this._getExternalRecord();
+        const handle = record?.handle;
+        if (!handle || typeof handle.getFileHandle !== 'function') return null;
+        const parts = String(path ?? '').replace(/\\/g, '/').split('/');
+        if (!parts.length || parts.some(part => !part || part === '.' || part === '..' || part.includes('\u0000'))) return null;
+        if (typeof handle.queryPermission === 'function') {
+            try {
+                if (await handle.queryPermission({ mode: 'read' }) !== 'granted') return null;
+            } catch (error) {
+                return null;
+            }
+        }
+        try {
+            let directory = handle;
+            for (const segment of parts.slice(0, -1)) {
+                if (typeof directory.getDirectoryHandle !== 'function') return null;
+                directory = await directory.getDirectoryHandle(segment);
+            }
+            const fileHandle = await directory.getFileHandle(parts.at(-1));
+            return typeof fileHandle?.getFile === 'function' ? await fileHandle.getFile() : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    async _sha256(data) {
+        const subtle = this.crypto?.subtle;
+        if (!subtle || typeof subtle.digest !== 'function') return '';
+        try {
+            const digest = await subtle.digest('SHA-256', data);
+            return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+        } catch (error) {
+            return '';
+        }
     }
 
     // ---------------------------------------------------------------- フォルダ
 
     async listFolders() {
         const rows = await this._tx('folders', 'readonly', os => os.getAll());
-        return (rows || []).sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.createdAt - b.createdAt);
+        this._folderCache = (rows || []).sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.createdAt - b.createdAt);
+        return this._folderCache.map(folder => ({ ...folder }));
+    }
+
+    /** organizationの同期seed用。非同期listFoldersの成功結果だけを返す。 */
+    getCachedFolders() {
+        return this._folderCache ? this._folderCache.map(folder => ({ ...folder })) : [];
     }
 
     async createFolder(name) {
         const folder = { id: newId('ff'), name: sanitizeFontLabel(name), order: Date.now(), createdAt: Date.now() };
         await this._tx('folders', 'readwrite', os => os.put(folder));
+        this._folderCache = [...(this._folderCache || []), folder].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.createdAt - b.createdAt);
         this._emit();
         return folder;
     }
@@ -380,7 +577,9 @@ export class FontLibrary {
         const rows = await this.listFolders();
         const folder = rows.find(f => f.id === id);
         if (!folder) return false;
-        await this._tx('folders', 'readwrite', os => os.put({ ...folder, name: sanitizeFontLabel(name) }));
+        const next = { ...folder, name: sanitizeFontLabel(name) };
+        await this._tx('folders', 'readwrite', os => os.put(next));
+        this._folderCache = (this._folderCache || []).map(item => item.id === id ? next : item);
         this._emit();
         return true;
     }
@@ -390,6 +589,7 @@ export class FontLibrary {
         const fonts = await this.listFonts();
         for (const font of fonts.filter(f => f.folderId === id)) await this.moveFont(font.id, null, { silent: true });
         await this._tx('folders', 'readwrite', os => os.delete(id));
+        this._folderCache = (this._folderCache || []).filter(folder => folder.id !== id);
         this._emit();
     }
 
@@ -398,9 +598,15 @@ export class FontLibrary {
     /** メタデータ一覧(実体のArrayBufferは含めない)。 */
     async listFonts() {
         const rows = await this._tx('fonts', 'readonly', os => os.getAll());
-        return (rows || [])
+        this._fontCache = (rows || [])
             .map(({ data, ...meta }) => meta)
             .sort((a, b) => a.label.localeCompare(b.label, 'ja'));
+        return this._fontCache.map(font => ({ ...font }));
+    }
+
+    /** organizationの同期seed用。ArrayBufferなどの実体は含まない。 */
+    getCachedFonts() {
+        return this._fontCache ? this._fontCache.map(font => ({ ...font })) : [];
     }
 
     /**
@@ -431,6 +637,7 @@ export class FontLibrary {
             addedAt: Date.now()
         };
         await this._tx('fonts', 'readwrite', os => os.put({ ...font, data }));
+        this._fontCache = [...(this._fontCache || []), font].sort((a, b) => a.label.localeCompare(b.label, 'ja'));
         this._loaded.set(id, { family, ext: font.ext, base64: null, data });
         this._emit();
         return { ok: true, font };
@@ -440,7 +647,10 @@ export class FontLibrary {
         if (await this.getBundledFont(id)) return false;
         const row = await this._tx('fonts', 'readonly', os => os.get(id));
         if (!row) return false;
-        await this._tx('fonts', 'readwrite', os => os.put({ ...row, label: sanitizeFontLabel(label) }));
+        const next = { ...row, label: sanitizeFontLabel(label) };
+        await this._tx('fonts', 'readwrite', os => os.put(next));
+        this._fontCache = (this._fontCache || []).map(font => font.id === id ? (({ data, ...meta }) => meta)(next) : font)
+            .sort((a, b) => a.label.localeCompare(b.label, 'ja'));
         this._emit();
         return true;
     }
@@ -449,7 +659,9 @@ export class FontLibrary {
         if (await this.getBundledFont(id)) return false;
         const row = await this._tx('fonts', 'readonly', os => os.get(id));
         if (!row) return false;
-        await this._tx('fonts', 'readwrite', os => os.put({ ...row, folderId: folderId || null }));
+        const next = { ...row, folderId: folderId || null };
+        await this._tx('fonts', 'readwrite', os => os.put(next));
+        this._fontCache = (this._fontCache || []).map(font => font.id === id ? (({ data, ...meta }) => meta)(next) : font);
         if (!silent) this._emit();
         return true;
     }
@@ -457,6 +669,7 @@ export class FontLibrary {
     async deleteFont(id) {
         if (await this.getBundledFont(id)) return false;
         await this._tx('fonts', 'readwrite', os => os.delete(id));
+        this._fontCache = (this._fontCache || []).filter(font => font.id !== id);
         this._loaded.delete(id);
         this._emit();
     }
@@ -479,17 +692,29 @@ export class FontLibrary {
         let row = bundled;
         let data = null;
         if (bundled) {
-            const url = this.getBundledAssetUrl(bundled, 'file');
-            if (!url || typeof this.fetch !== 'function') return null;
-            const response = await this.fetch(url);
-            if (!response || response.ok === false || typeof response.arrayBuffer !== 'function') throw new Error('font fetch failed');
-            data = await response.arrayBuffer();
+            if (bundled.external) {
+                const file = await this.readExternalFile(bundled.file);
+                if (!file || typeof file.arrayBuffer !== 'function') return null;
+                data = await file.arrayBuffer();
+            } else {
+                const url = this.getBundledAssetUrl(bundled, 'file');
+                if (!url || typeof this.fetch !== 'function') return null;
+                const response = await this.fetch(url);
+                if (!response || response.ok === false || typeof response.arrayBuffer !== 'function') throw new Error('font fetch failed');
+                data = await response.arrayBuffer();
+            }
         } else {
             row = await this._tx('fonts', 'readonly', os => os.get(id));
             if (!row) return null;
             data = row.data;
         }
         if (!data) return null;
+        if (bundled?.sha256) {
+            const actualSha256 = await this._sha256(data);
+            if (!actualSha256 || actualSha256 !== String(bundled.sha256).toLowerCase()) {
+                throw new Error('font sha256 mismatch');
+            }
+        }
         const family = row.family;
         const face = new this.FontFace(family, data.slice(0));
         await face.load();

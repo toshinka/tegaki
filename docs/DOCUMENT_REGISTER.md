@@ -26,7 +26,9 @@
 - `docs/ai/INOCHI2D_EDIT_ROUNDTRIP_CAPABILITY.md`: REFERENCE。WP-019限定調査のSDK/API/runtime証拠。現在の実行契約はWP-019。
 - `docs/ai/2026-10-03-rig-backend-implementation-proposal.md`: REFERENCE。限定追加調査後のbackend導入・保存境界・次の一件の設計提案。採用/schema変更/実装の承認ではない。
 - `docs/ai/2026-10-03-curated-font-audit.md`: REFERENCE。WP-021の27書体取得・追加監査/保留リスト・Browser検証。実装契約はWP-021、現在地はSTATUS。
-- `docs/ai/2026-10-04-font-organization-proposal.md`: REFERENCE。ホイール選択・一軸ツリー・Eドライブ保管の比較案。空のInbox/URL置き場作成済み。製品実装・27実体の移設・追加DLは未実施。
+- `docs/ai/2026-10-04-font-organization-proposal.md`: REFERENCE。ホイール選択・一軸ツリー・Eドライブ保管の比較案。Owner案A承認後の実装範囲はWP-022、現在地はSTATUS。
+- `docs/work/WP-022-font-organization.md`: CURRENT。外部実体・場面別一軸ツリー・wheel/手動順の限定実装カード。
+- `docs/ai/2026-10-04-font-organization-result.md`: REFERENCE。初期場面分類の根拠、外部保管、検証記録。
 - `docs/ai/2026-10-03-manga-font-feasibility.md / 2026-10-03-manga-font-conditions.md`: REFERENCE。漫画用文字タブの事前検討と一次12候補の取得前調査。後続の取得・実装はWP-021と監査記録を参照。
 - `docs/handoffs/2026-09-06-wp002-to-wp003.md`: HANDOFF SNAPSHOT。新チャット用の読み順・最初のSlice・除外範囲。現在地の正本はSTATUSのまま。
 - `docs/handoffs/2026-10-02-pen-ruler-to-next.md`: HANDOFF SNAPSHOT。ペン刷新・DPR・定規の完了点、Ownerの好み、次の候補（集中線ほか）、環境メモ。現在地の正本はSTATUSのまま。

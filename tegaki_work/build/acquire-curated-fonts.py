@@ -1,11 +1,11 @@
 """WP-021 font acquisition helper. Explicit manifest URLs; no system install.
-Archives stay in ignored .cache; originals and licenses are copied only explicitly.
+WP-022: acquisition requires an explicit external root; never publish original font bytes.
 """
 import argparse, gzip, hashlib, html.parser, json, pathlib, re, shutil, struct, subprocess, urllib.request, zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CACHE = ROOT / '.cache' / 'font-acquisition'
-DEST = ROOT / 'public' / 'fonts'
+DEST = None
 
 class Links(html.parser.HTMLParser):
     def __init__(self):
@@ -150,13 +150,18 @@ def acquire(item):
     return result
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('action',choices=['links','acquire','inspect']); parser.add_argument('input'); args=parser.parse_args()
+    global DEST, CACHE
+    parser=argparse.ArgumentParser(); parser.add_argument('action',choices=['links','acquire','inspect']); parser.add_argument('input'); parser.add_argument('--external-root'); args=parser.parse_args()
     if args.action=='links':
         from urllib.parse import urljoin
         links=Links(); links.feed(page(args.input))
         print(json.dumps([{'text':re.sub(r'\s+',' ',text).strip(),'url':urljoin(args.input,url)} for url,text in links.links if re.search(r'\.(zip|ttf|otf)(\?|$)|download|dl=|851ch',url,re.I)],ensure_ascii=False,indent=2))
     elif args.action=='inspect': print(json.dumps(inspect_font(pathlib.Path(args.input)),ensure_ascii=False,indent=2))
     else:
+        if not args.external_root: parser.error('acquire requires --external-root outside the checkout')
+        external=pathlib.Path(args.external_root).resolve()
+        if external == ROOT or ROOT in external.parents: parser.error('external root must be outside product checkout')
+        DEST=external/'Library'; CACHE=external/'Archive'
         manifest=json.loads(pathlib.Path(args.input).read_text(encoding='utf-8'))
         results=[]
         for item in manifest:

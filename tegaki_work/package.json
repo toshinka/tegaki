@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node build/verify-font-publication.mjs --public-only",
     "build": "vite build",
     "preview": "vite preview",
     "check:harness": "node build/development-harness.mjs check",
