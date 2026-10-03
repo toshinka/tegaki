@@ -144,6 +144,9 @@ export class QuickAccessPopup {
         this.qButtonOriginalTabIndex = qButton?.getAttribute('tabindex') ?? null;
         this.qButtonOriginalAriaHidden = qButton?.getAttribute('aria-hidden') ?? null;
         this.qButtonHomePosition = this._measureQButtonHomePosition();
+        // Home is durably represented by an absent quick-access-position key.
+        // Keep this runtime flag so layout clamps while opening do not save a move.
+        this.isAtHomePosition = true;
         this._panelLayoutSizeCache = null;
         this._qButtonPointerDownHandler = null;
         this._qButtonDragCleanup = null;
@@ -224,6 +227,11 @@ export class QuickAccessPopup {
         this._qPositionResizeHandler = () => {
             if (!this.panel) return;
             this._panelLayoutSizeCache = null;
+            if (this.isAtHomePosition) {
+                const homePosition = this._getDefaultPosition();
+                this._applySharedPosition(homePosition.x, homePosition.y, { source: 'home' });
+                return;
+            }
             if (this.isVisible) {
                 this._clampCurrentPanelPosition({ save: true });
                 return;
@@ -251,6 +259,7 @@ export class QuickAccessPopup {
             if (!drag.active) {
                 if (Math.hypot(dx, dy) < THRESHOLD) return;
                 drag.active = true;
+                this.isAtHomePosition = false;
                 drag.button.classList.add('qa-qtp-dragging');
             }
             e.preventDefault();
@@ -1312,7 +1321,7 @@ export class QuickAccessPopup {
 
         const savedPosition = this._loadPosition();
         this._applySharedPosition(savedPosition.x, savedPosition.y, {
-            source: 'stored',
+            source: this.isAtHomePosition ? 'home' : 'stored',
             persist: 'if-changed'
         });
     }
@@ -2642,6 +2651,7 @@ export class QuickAccessPopup {
 
             let newX = this.panelStartX + deltaX;
             let newY = this.panelStartY + deltaY;
+            if (deltaX !== 0 || deltaY !== 0) this.isAtHomePosition = false;
 
             const panelRect = this.panel.getBoundingClientRect();
             this._applySharedPosition(newX, newY, { source: 'panel', panelRect });
@@ -3808,7 +3818,9 @@ export class QuickAccessPopup {
         const requestedY = Number.isFinite(y) ? y : 0;
         let position;
 
-        if (source === 'q') {
+        if (source === 'home') {
+            position = this._clampPanelPosition(requestedX, requestedY, panelRect);
+        } else if (source === 'q') {
             const qPosition = this._clampQButtonPosition(requestedX, requestedY);
             const qSize = this._getQButtonLayoutSize();
             const panelSize = this._getPanelLayoutSize(panelRect);
@@ -3827,10 +3839,20 @@ export class QuickAccessPopup {
             this.panel.style.left = `${position.x}px`;
             this.panel.style.top = `${position.y}px`;
         }
-        this._projectQFromSharedPosition(position);
+        if (source === 'home') {
+            const button = this._attachQButtonToViewport();
+            const home = this.qButtonHomePosition || { x: 70, y: 60 };
+            const qPosition = this._clampQButtonPosition(home.x, home.y);
+            if (button) {
+                button.style.left = `${qPosition.x}px`;
+                button.style.top = `${qPosition.y}px`;
+            }
+        } else {
+            this._projectQFromSharedPosition(position);
+        }
 
         const changedByClamp = position.x !== requestedX || position.y !== requestedY;
-        if (persist === true || (persist === 'if-changed' && changedByClamp)) {
+        if (source !== 'home' && (persist === true || (persist === 'if-changed' && changedByClamp))) {
             this._savePosition(position.x, position.y);
         }
         return position;
@@ -3838,6 +3860,11 @@ export class QuickAccessPopup {
 
     _clampCurrentPanelPosition({ save = false } = {}) {
         if (!this.panel) return;
+        if (this.isAtHomePosition) {
+            const homePosition = this._getDefaultPosition();
+            this._applySharedPosition(homePosition.x, homePosition.y, { source: 'home' });
+            return;
+        }
         const position = this._readPanelPosition();
         this._applySharedPosition(position.x, position.y, {
             source: 'panel',
@@ -3846,6 +3873,7 @@ export class QuickAccessPopup {
     }
 
     _savePosition(x, y) {
+        this.isAtHomePosition = false;
         try {
             localStorage.setItem(QA_STORAGE_KEYS.position, JSON.stringify({ x, y }));
         } catch (error) {}
@@ -3857,15 +3885,18 @@ export class QuickAccessPopup {
             if (saved) {
                 const parsed = JSON.parse(saved);
                 if (Number.isFinite(parsed?.x) && Number.isFinite(parsed?.y)) {
+                    this.isAtHomePosition = false;
                     return parsed;
                 }
+                localStorage.removeItem(QA_STORAGE_KEYS.position);
             }
         } catch (error) {}
 
+        this.isAtHomePosition = true;
         return this._getDefaultPosition();
     }
 
-    /** 保存値は展開パネル左上。Homeは元のrail Q中心からpanel homeを導出する。 */
+    /** 保存値は展開パネル左上。Homeでは元のrail Qを保ち、Panelだけをviewportへ収める。 */
     _getDefaultPosition() {
         const panelSize = this._getPanelLayoutSize();
         const qSize = this._getQButtonLayoutSize();
@@ -3876,13 +3907,16 @@ export class QuickAccessPopup {
         return this._clampPanelPosition(panelX, home.y, panelSize);
     }
 
-    /** 位置を既定のcenter projectionへ戻す。Qボタンの右クリックから呼ぶ。 */
+    /** 明示位置を解除し、collapsed Qを元のSidebar homeへ戻す。 */
     resetToDefaultPosition() {
         if (!this.panel) return;
+        this.isAtHomePosition = true;
+        try {
+            localStorage.removeItem(QA_STORAGE_KEYS.position);
+        } catch (error) {}
         const pos = this._getDefaultPosition();
         this._applySharedPosition(pos.x, pos.y, {
-            source: this.isVisible ? 'panel' : 'stored',
-            persist: true
+            source: 'home'
         });
     }
 
@@ -3920,7 +3954,12 @@ export class QuickAccessPopup {
         this._setTextRasterPanelOpen(false);
         this.panel.classList.remove('show');
         this.isVisible = false;
-        this._applySharedPosition(position.x, position.y, { source: 'stored' });
+        if (this.isAtHomePosition) {
+            const homePosition = this._getDefaultPosition();
+            this._applySharedPosition(homePosition.x, homePosition.y, { source: 'home' });
+        } else {
+            this._applySharedPosition(position.x, position.y, { source: 'stored' });
+        }
 
         if (this.eventBus) {
             this.eventBus.emit('popup:hidden', { name: 'quickAccess' });
