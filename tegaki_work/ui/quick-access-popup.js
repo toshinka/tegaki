@@ -250,6 +250,7 @@ export class QuickAccessPopup {
             drag = null;
             this._qButtonDragCleanup?.();
             completedDrag.button.classList.remove('qa-qtp-dragging');
+            completedDrag.button.blur?.();
             if (completedDrag.active) {
                 const qPosition = this._readQButtonPosition();
                 this._applySharedPosition(qPosition.x, qPosition.y, { source: 'q', persist: true });

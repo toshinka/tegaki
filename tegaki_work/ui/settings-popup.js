@@ -556,7 +556,10 @@ export class SettingsPopup {
                     || action.startsWith('SELECTION_')
                     || action.startsWith('LAYER_')
             },
-            { title: '表示・操作', matches: action => action.startsWith('CAMERA_') },
+            {
+                title: '表示・操作',
+                matches: action => action.startsWith('CAMERA_') || action === 'WORKSPACE_HOME_RESET'
+            },
             {
                 title: 'アニメーション',
                 matches: action => action.startsWith('CLIP_')

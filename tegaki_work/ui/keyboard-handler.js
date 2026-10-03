@@ -84,8 +84,8 @@ export const KeyboardHandler = (function() {
             }
             return;
         }
-        // Sidebarはnative buttonがclickを一元発火する。Enter / Spaceをglobal shortcutへ
-        // 横取りさせず、pointerと同じUIController actionへ到達させる。
+        // Sidebarとfloating Qのnative button activationはglobal shortcutで横取りしない。
+        // Spaceはこのreturn後もCameraSystemへ届き、Canvasのpan入力を維持する。
         if (shouldYieldNativeButtonActivation(e)) return;
 
         const animationTable = window.PopupManager?.get?.('animationTable')
