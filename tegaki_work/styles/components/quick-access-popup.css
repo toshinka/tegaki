@@ -8,9 +8,9 @@
 
 #quick-access-popup.qa-popup {
     --qa-slot-gap: 2px;
-    --qa-value-active-surface: var(--futaba-maroon);
+    --qa-value-active-surface: color-mix(in srgb, var(--futaba-medium) 20%, var(--futaba-background));
     --qa-value-active-keyline: var(--active-border);
-    --qa-value-active-foreground: var(--futaba-cream);
+    --qa-value-active-foreground: var(--futaba-maroon);
     border: 1px solid var(--ui-qa-glass-border-rest, var(--ui-border-float));
     border-radius: var(--ui-radius-panel);
     background: var(--ui-qa-glass-surface-rest, var(--ui-surface-float));
@@ -405,7 +405,7 @@
     justify-content: stretch;
     width: var(--ui-qa-inner-width);
     max-width: 100%;
-    margin: 0 auto -1px;
+    margin: 0 auto;
 }
 
 #quick-access-popup.qa-popup .qa-tool-button {
@@ -454,8 +454,17 @@
     padding: 0;
     box-sizing: border-box;
     border: 0;
-    border-radius: 0 0 8px 8px;
+    border-radius: 8px;
     background: color-mix(in srgb, var(--futaba-medium) 36%, var(--futaba-background));
+}
+
+/* Only an active edge tab joins the shelf with a square upper corner. */
+#quick-access-popup.qa-popup:has(.qa-tool-grid > .qa-tool-button:first-child.active) .qa-slot-members {
+    border-top-left-radius: 0;
+}
+
+#quick-access-popup.qa-popup:has(.qa-tool-grid > .qa-tool-button:last-child.active) .qa-slot-members {
+    border-top-right-radius: 0;
 }
 
 #quick-access-popup.qa-popup .qa-slot-member-grid {
@@ -576,20 +585,24 @@
 
 #quick-access-popup.qa-popup .qa-preset-grid {
     display: grid;
-    grid-template-columns: repeat(6, var(--ui-qa-grid-size));
-    gap: 1px;
-    justify-content: center;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--qa-slot-gap);
+    justify-content: stretch;
     width: var(--ui-qa-inner-width);
     max-width: 100%;
     margin: 0 auto;
-    padding: 1px;
+    padding: 0;
     box-sizing: border-box;
-    border: 1px solid color-mix(in srgb, var(--futaba-light-maroon) 12%, var(--futaba-background));
+    border: 0;
     border-radius: 8px;
-    background: color-mix(in srgb, var(--futaba-medium) 14%, var(--futaba-background));
+    background: color-mix(in srgb, var(--futaba-medium) 24%, var(--futaba-background));
 }
 
 #quick-access-popup.qa-popup .qa-preset-slot {
+    width: 100%;
+    min-width: 0;
+    height: max(var(--ui-qa-preset-height), 36px);
+    padding: 2px 0;
     border: 1px solid transparent;
     border-radius: 4px;
     background: transparent;
@@ -600,7 +613,7 @@
     outline-offset: -2px;
 }
 
-#quick-access-popup.qa-popup .qa-preset-slot:hover:not(:disabled) {
+#quick-access-popup.qa-popup .qa-preset-slot:hover:not(.active):not(:disabled) {
     border-color: transparent;
     background: color-mix(in srgb, var(--futaba-medium) 12%, var(--futaba-background));
     transform: none;
@@ -612,34 +625,38 @@
     box-shadow: none;
     color: var(--qa-value-active-foreground);
     gap: 1px;
-    padding: 0;
+    padding: 2px 0;
 }
 
-#quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-ring {
+#quick-access-popup.qa-popup .qa-preset-ring {
     width: 10px;
     height: 10px;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
     border-color: var(--qa-value-active-foreground);
     background: transparent;
 }
 
-#quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-dot {
+#quick-access-popup.qa-popup .qa-preset-dot {
     background: var(--qa-value-active-foreground);
+    flex: 0 0 auto;
 }
 
-#quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-size-val,
-#quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-opacity-val {
+#quick-access-popup.qa-popup .qa-preset-size-val,
+#quick-access-popup.qa-popup .qa-preset-opacity-val {
     color: var(--qa-value-active-foreground);
     background: transparent;
 }
 
-#quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-size-val {
-    font-size: 6px;
+#quick-access-popup.qa-popup .qa-preset-size-val {
+    font-size: 7px;
     line-height: 1;
 }
 
-#quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-opacity-val {
+#quick-access-popup.qa-popup .qa-preset-opacity-val {
     display: block;
-    font-size: 5px;
+    font-size: 6px;
     line-height: 1;
 }
 
@@ -723,17 +740,17 @@ body > .qa-slot-drag-ghost svg {
         height: var(--ui-qa-grid-size);
     }
 
-    #quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-ring {
+    #quick-access-popup.qa-popup .qa-preset-ring {
         width: 12px;
         height: 12px;
     }
 
-    #quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-size-val {
-        font-size: 7px;
+    #quick-access-popup.qa-popup .qa-preset-size-val {
+        font-size: 8px;
     }
 
-    #quick-access-popup.qa-popup .qa-preset-slot.active .qa-preset-opacity-val {
-        font-size: 6px;
+    #quick-access-popup.qa-popup .qa-preset-opacity-val {
+        font-size: 7px;
     }
 }
 

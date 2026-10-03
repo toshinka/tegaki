@@ -31,6 +31,8 @@ const QA_STORAGE_KEYS = {
 };
 const QA_PRESET_TOOLS = ['pen', 'eraser', 'airbrush'];
 const QA_PRESET_SLOT_COUNT = 6;
+// UI size cue only: larger brushes share a solid circle and retain exact labels.
+const QA_PRESET_DOT_SATURATION_SIZE = 32;
 const QA_COLOR_SLOT_COUNT = 5;
 const QA_SLOT_MEMBER_COLUMN_COUNT = 6;
 const QA_SLOT_MEMBER_LIMIT = QA_SLOT_MEMBER_COLUMN_COUNT - 1;
@@ -3314,6 +3316,7 @@ export class QuickAccessPopup {
             const size = preset?.size ?? 0;
             const opacity = preset?.opacity ?? 100;
             const dotSize = this._dotSizeForBrushSize(size);
+            slot.querySelector('.qa-preset-ring')?.classList.toggle('is-size-saturated', size >= QA_PRESET_DOT_SATURATION_SIZE);
 
             // ドットサイズ更新 (色は常に --futaba-maroon / CSS側で固定済み)
             if (dot) {
@@ -3553,9 +3556,9 @@ export class QuickAccessPopup {
     }
 
     _dotSizeForBrushSize(size) {
-        const clamped = Math.max(1, Math.min(50, Number(size) || 1));
-        const normalized = Math.min(1, (clamped - 1) / 24);
-        return Math.round(4 + normalized * 6);
+        const clamped = Math.max(1, Math.min(QA_PRESET_DOT_SATURATION_SIZE, Number(size) || 1));
+        const normalized = (clamped - 1) / (QA_PRESET_DOT_SATURATION_SIZE - 1);
+        return Math.round(1 + normalized * 7);
     }
 
     _clampSize(value, tool = null) {

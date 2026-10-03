@@ -1,6 +1,8 @@
 # Tegaki — 再開checkpoint
 
-QTP追加Card（2026-10-03）: Primary / Secondaryの6列端合わせ、Secondary inactive strong反転撤去、Secondary / Third active配色統一を限定CSS修正。Browser全列左右delta 0px、normal / soft / strong選択往復、Primary端列を確認。Secondary第6列activeは製品CSSの一時fixtureで補足、実製品経路・keyboard focus・coarse実機は未検証。build / 関連verifier PASS、Owner受入待ち / 未commit・未push。[検証記録](ai/2026-10-03-qtp-grid-inversion.md)。RIG次Cardへは進めない。
+QTP角丸追加（2026-10-03）: Secondary上角は既定8px。Primary左端active時は左上だけ0、右端active時は右上だけ0で接続。Browserでpen / eraser / selectの3状態確認、build / 関連検証PASS。前件差分を保持、未commit・未push。
+
+QTP Owner画像修正（2026-10-03、開始HEAD `db0ab249`、開始clean）: 3段の6列中心を揃え、2・3行目activeを非反転（淡い下地 / maroon文字 / orange枠）へ変更。タブの2行目への縦重なりを0にし、popupのstackingは維持。全presetに透明度%、最低36px高、蛇の目中心固定、Third下地をSecondaryより淡い同系色へ。Browser全列中心delta 0px、蛇の目X/Y delta 0px、縦はみ出し0、TEXT展開確認。build / 関連7 verifier PASS。Owner実機・coarse実機は未検証、今回未commit・未push。[検証記録](ai/2026-10-03-qtp-grid-inversion.md)。RIG次Cardへは進めない。
 
 状態: WP-001 / WP-002 / WP-003 / WP-004 / WP-006 / WP-007 DONE（Owner操作感は未確認）。WP-005 ACTIVE — TECHNICALLY COMPLETE / OWNER ACCEPTANCE PENDING。WP-009 ACTIVE — TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。WP-008 ACTIVE — ROUGH PRODUCT PASS / OWNER REVIEW。
 更新日: 2026-10-03。導線整備の開始HEAD: `2165a6010f2d64a100ee33efc927637af83c8cc1` / branch `main`。開始時はAGENTS.md、TECHNICAL.md、GITHUB.txtに既存差分あり。既存差分を保持。

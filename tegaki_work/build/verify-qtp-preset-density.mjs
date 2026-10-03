@@ -23,14 +23,16 @@ assert.match(qtpSource, /class="qa-preset-opacity-val"/, 'opacity value remains 
 assert.match(qtpSource, /aria-label="スロット\$\{index \+ 1\}"/, 'slot buttons must remain accessible before hydration');
 assert.match(componentCss, /#quick-access-popup\.qa-popup #qa-preset-section\s*\{\s*margin-top:\s*5px;/, 'the third shelf keeps its intentional gap from the secondary row');
 assert.match(componentCss, /#quick-access-popup\.qa-popup \.qa-preset-status\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?clip:\s*rect\(/, 'the status remains available without reserving visible layout space');
-assert.match(componentCss, /#quick-access-popup\.qa-popup \.qa-preset-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(6, var\(--ui-qa-grid-size\)\);[\s\S]*?width:\s*var\(--ui-qa-inner-width\);[\s\S]*?border-radius:\s*8px;/, 'the six cells stay inside one rounded fixed-width shelf');
-assert.match(componentCss, /#quick-access-popup\.qa-popup \.qa-preset-slot\.active\s*\{[\s\S]*?border-color:\s*var\(--active-border\);[\s\S]*?background:\s*var\(--active-border\);[\s\S]*?box-shadow:\s*none;/, 'active third slots use orange outline and fill without a halo');
-assert.match(componentCss, /#quick-access-popup\.qa-popup \.qa-preset-slot\.active \.qa-preset-size-val,[\s\S]*?color:\s*var\(--futaba-maroon\)/, 'active slot values keep maroon foreground');
-assert.match(componentCss, /#quick-access-popup\.qa-popup \.qa-preset-slot\.active \.qa-preset-opacity-val\s*\{\s*display:\s*block;[\s\S]*?font-size:\s*5px;/, 'the active cell exposes its opacity value within the fixed cell height');
+assert.match(componentCss, /#quick-access-popup\.qa-popup \.qa-preset-grid\s*\{[^}]*grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\);[^}]*gap:\s*var\(--qa-slot-gap\);[^}]*width:\s*var\(--ui-qa-inner-width\);[^}]*padding:\s*0;[^}]*border:\s*0;/, 'third cells share the primary/secondary tracks without inset offsets');
+assert.match(componentCss, /#quick-access-popup\.qa-popup \.qa-preset-slot\.active\s*\{[^}]*border-color:\s*var\(--qa-value-active-keyline\);[^}]*background:\s*var\(--qa-value-active-surface\);[^}]*box-shadow:\s*none;/, 'selected values share a contained orange keyline');
+assert.match(componentCss, /--qa-value-active-foreground:\s*var\(--futaba-maroon\)/, 'second and third active values retain maroon foreground');
+assert.match(componentCss, /--qa-value-active-surface:\s*color-mix\(in srgb, var\(--futaba-medium\) 20%, var\(--futaba-background\)\)/, 'concrete value selection stays light rather than inverted');
+assert.match(componentCss, /#quick-access-popup\.qa-popup \.qa-preset-opacity-val\s*\{\s*display:\s*block;/, 'all slots expose opacity, not only the active slot');
+assert.match(componentCss, /height:\s*max\(var\(--ui-qa-preset-height\), 36px\)/, 'preset cells reserve space for ring, size and opacity');
+assert.match(componentCss, /\.qa-tool-grid\s*\{[^}]*margin:\s*0 auto;/, 'primary tabs have no vertical overlap into the secondary shelf');
 assert.match(componentCss, /#quick-access-popup\.qa-popup \.qa-tool-button\.active\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--futaba-light-maroon\) 80%, var\(--futaba-medium\)\);[\s\S]*?color:\s*var\(--futaba-background\)/, 'primary active is the selected inverted B color candidate');
 
 assert.match(cssSource, /--ui-qa-preset-height:\s*26px;/, 'compact preset height should use the B density');
 assert.match(cssSource, /--ui-qa-preset-height:\s*32px;/, 'coarse preset height should retain a usable touch target');
-assert.match(qtpSource, /\.qa-preset-opacity-val\s*\{[\s\S]*display:\s*none;/, 'non-active opacity values must not add a second dense row');
 
 console.log('verify-qtp-preset-density: six-slot authority, fixed shelf, accessible status, active states and focus preview OK');
