@@ -1,0 +1,8 @@
+--- a/source/inochi2d/core/math/deform.d
++++ b/source/inochi2d/core/math/deform.d
+@@ -238,4 +238,5 @@
+     void onSerialize(ref JSONValue data) {
++        data = JSONValue.emptyArray;
+         foreach(offset; vertexOffsets) {
+             data ~= offset.serialize();
+         }
