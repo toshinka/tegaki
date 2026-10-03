@@ -90,6 +90,8 @@ B: immutable原画＋永続effect。復元性が高いが保存容量、描画�
 
 ## 旧計画への対応
 
+RIG刷新の進め方（2026-10-03、Owner承認）: 旧系を既存作品用の経路として隔離し、新しい土台で制作動線を作る。旧・旧々RIGの全機能一致/自動移植を初期目標にしない。最初は[WP-020](work/WP-020-rig-renewal-first-path.md)でengine実行proofとGUI接点を絞る。これはHD-001のAnimation全体移行判断とは別のRIG限定方向。backend採用とproduction保存schemaの変更は未決定。
+
 旧9qはcloseせずPAUSED。A〜Dの資産はWP-005へ継承し、Task Eを再実装済み扱いしない。
 旧proposal 09/10/15/16/17、Transform追補は候補/根拠として残す。現在の順序は本書だけが所有する。
 Archiveの失敗事例は[AUDIT](AUDIT.md)に短く抽出し、採用しなかった案も原文から追跡できる。

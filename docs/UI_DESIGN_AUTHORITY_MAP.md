@@ -119,3 +119,66 @@ runtime注入が後になる間、抽出selectorはcomponent rootでscopeし、�
 3. 見た目変更でmodel / History / saveを増やさない。
 4. wide / narrow / coarse相当、hover / focus / disabled / active、close / reopenを確認する。
 5. 概念fixtureは情報階層を検査し、特定skinの色・枠だけを恒久契約にしない。
+
+## 10. Future shared UI foundation — DEFERRED
+
+STATUS: DEFERRED / BACKLOG（非アクティブ実装パッケージ。新規の外観SSOTではない）。
+目的: 実装・レビュー余力がある際に、重複しているUI文法を監査し段階的に統合・集約するための足場。
+
+### 候補領域
+
+#### A. ICON GRAMMAR
+- 標準viewBox規約（`0 0 24 24` 等）
+- 光学的アイコンサイズ（rail icon 19px, layer action 16px 等）
+- stroke-width系統（rail標準 `1.5`、`--ui-rail-icon-stroke-width` の消費拡大）
+- fill vs stroke（原則 `fill="none"`、`stroke="currentColor"`）
+- linecap / linejoin（`round` / `round` の統一）
+- 状態・セマンティック色（active/accent橙、destructive/danger警告橙、setup青、motion橙）
+- レールアイコン vs コンテンツ内アイコン（階層別の扱い）
+- 全体共有アイコン（`UI_ICONS`）の変更時は全消費者監査を必須とし、局所解決を優先
+
+#### B. TYPOGRAPHY
+- 役割別タイポグラフィ（label / metadata / numeric / heading）
+- font-sizeスケール（9px, 10px, 11px, 12px, 14px 等の階層整理）
+- font-weight（400 / 600 / 700 / 800）
+- line-height
+- 数値の等幅・位置揃え（tabular-nums）
+- 既存の共有役割が存在する箇所での場当たり的な個別フォントサイズ新設の回避
+
+#### C. PANEL SHELLS
+- パネル背景面（glass surface, backdrop blur）
+- ヘッダー構造と配置
+- 閉じるボタン（`ui-close-button` 共通寸法・配置）
+- タイトル表記
+- タブ（pill-tabs 等の共有）
+- padding / margin規約
+- radius（`--ui-radius-panel` 等）
+- border / separator
+- shadow / glass
+- ドラッグ移動中状態
+
+#### D. CONTROLS
+- アイコンボタン（`ui-icon-button`）
+- テキストボタン
+- セグメント / 長丸タブ（`.gui-segmented` / `.gui-control`）
+- input / select
+- 数値入力フィールド（`numeric-field.js`）
+- スライダー / range
+- 各種状態表現（hover, active, selected, focus-visible, disabled）
+
+#### E. SPACING / GEOMETRY
+- 共通コントロール高（S: 24px, M: 31px, L: 38px 等）
+- アイコンボックス寸法
+- 行間・要素間ギャップ
+- パネル内余白
+- coarse pointer（タッチ操作）時の押下領域拡大
+
+#### F. MODULE / COMPONENT EXTRACTION
+- 実消費者が2つ以上実証されてから抽象化を行う（"two or more proven consumers before abstraction"）
+- 単に重複があるという理由だけで汎用的なBasePanel / BaseButton / グローバルコマンドフレームワークを新設しない
+- 本Authority Mapに従い、static appearance / runtime geometry / behavior / ARIA / save state を厳格に分離する
+
+#### G. FUTURE REVIEW
+- 本格的な監査・共通化は独立したSOL / OpusレベルのCardで行う
+- 推奨プロセス: inventory → 実際の重複文法の特定 → 正本（Authority）の定義 → 1コンポーネント系統の移行 → Browser実機比較 → インクリメンタルな継続
+- 一括リライト（big-bang UI rewrite）は明示的に拒否する

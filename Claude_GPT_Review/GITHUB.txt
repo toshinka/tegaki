@@ -257,6 +257,9 @@ WHEN TO READ: アニメーションデータモデル、フレーム合成、フ
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-019-inochi-edit-roundtrip-proof.md
 WP-019はローカル発行。公開確認前はOwnerの貼付/添付で渡す。Slice A調査・司令監査完了、roundtrip未達/BLOCKED。現配布WASMのAPI不足とmain binding復元/保存の未接続を確認。実測はinstantiate/initのみ。詳細・次契約はWP-019とそこから指定されたcapability reportを読む。
 実装方針を相談する場合のみ: docs/ai/2026-10-03-rig-backend-implementation-proposal.md [REFERENCE / 採用・schema変更・実装は未承認]
+現在の限定実行: docs/work/WP-020-rig-renewal-first-path.md [WORK PACKAGE / 旧系隔離・新系の制作動線、backend採用未決定]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-020-rig-renewal-first-path.md
+WP-020も公開確認前はOwnerの貼付/添付で渡す。worker reportはCard指定時だけ参照する。
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/ai/2026-10-03-rig-backend-implementation-proposal.md
 この提案も公開確認前はOwnerの貼付/添付で渡す。既定の必読に追加せず、現在地・技術契約の第二正本にしない。
 START WITH:

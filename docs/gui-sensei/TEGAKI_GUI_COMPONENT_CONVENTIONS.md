@@ -48,3 +48,5 @@ DOM の既存ID・handler・`data-*` は `ui/dom-builder.js` と `ui/right-works
 ## GUI変更時のBrowser受入
 
 同一viewportで、primaryとsecondaryの階層、選択/非選択それぞれのhoverとfocus-visible、disabledの可否、coarse pointer時の押下域、狭い右列での文字欠け・横スクロールを確認する。BASIC/WARPとPOINT/BRUSHを切り替え、WARP詳細の内部スクロールと単色円形thumbを確認する。作品を各glass面の背後に置き、透過と文字の可読性を同時に見る。透明なWorkspace空白では描け、操作部品上では誤描画しないことをHistoryと画面で確認する。V/Esc、KEY、確定/取消の意味はそれぞれ既存terminalで確認し、到達できない状態は未確認と報告する。
+
+※ 広範なアイコン、タイポグラフィ、パネルシェルの将来共通化・監査バックログは、[UI_DESIGN_AUTHORITY_MAP.md](../UI_DESIGN_AUTHORITY_MAP.md) の「Future shared UI foundation — DEFERRED」節で追跡する。

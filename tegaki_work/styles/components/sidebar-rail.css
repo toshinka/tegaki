@@ -18,6 +18,7 @@
 
 .sidebar .tool-button svg {
     stroke: currentColor;
+    stroke-width: var(--ui-rail-icon-stroke-width);
 }
 
 @media (hover: hover) {

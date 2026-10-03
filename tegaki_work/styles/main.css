@@ -116,6 +116,7 @@
     --ui-rail-width: 35px;
     --ui-rail-control-size: 30px;
     --ui-rail-icon-size: 19px;
+    --ui-rail-icon-stroke-width: 1.5;
     --ui-rail-text-size: 14px;
     --ui-rail-gap: 4px;
     --ui-rail-padding-block: 4px;
@@ -8483,7 +8484,12 @@ button.anim-motion-graph-legend-item.is-primary {
 .brush-preset-qtp-item input { margin: 0; accent-color: var(--futaba-maroon); }
 
 /* ===== 画面左上のショートカットヘルプ(設定でON/OFF) ===== */
-.global-shortcut-help { position: fixed; left: 8px; top: 8px; z-index: 1100; }
+.global-shortcut-help {
+    position: fixed;
+    left: calc(var(--ui-rail-inline-inset) + (var(--ui-rail-width) - 22px) / 2);
+    top: 8px;
+    z-index: 1100;
+}
 .global-shortcut-help[hidden] { display: none; }
 .global-shortcut-help-toggle {
     width: 22px;

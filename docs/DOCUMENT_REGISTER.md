@@ -15,6 +15,8 @@
 
 ## 現行入口と互換入口
 
+- `docs/ai/WP-020-inochi-proof-result.md / WP-020-rig-entry-boundary.md`: REFERENCE。WP-020の実測結果と限定接点調査。実行契約はWP-020。
+
 - `AGENTS.md`: 入口。`docs/TECHNICAL.md`: 技術契約。
 - `docs/README.md / STATUS.md / PRODUCT.md / ARCHITECTURE.md / VOCABULARY.md / DEVELOPMENT.md / ROADMAP.md / AUDIT.md / DOCUMENT_REGISTER.md`: CURRENT。
 - `docs/work/`: Work Package。登録済みpackageの機械的状態は`docs/harness.json`。未登録のWP-010〜018は対象CardとSTATUSで確認し、未登録を未実装と解釈しない。

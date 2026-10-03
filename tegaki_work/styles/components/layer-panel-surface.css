@@ -1460,6 +1460,7 @@
 .right-panel .layer-controls-row .folder-add-button svg,
 .right-panel .layer-controls-row .layer-op-button svg {
     stroke: currentColor;
+    stroke-width: var(--ui-rail-icon-stroke-width);
 }
 
 .right-panel .caf-simple-header,

@@ -11,6 +11,8 @@
     "docs/ai/2026-10-03-navigation-audit.md",
     "docs/ai/INOCHI2D_EDIT_ROUNDTRIP_CAPABILITY.md",
     "docs/ai/2026-10-03-rig-backend-implementation-proposal.md",
+    "docs/ai/WP-020-inochi-proof-result.md",
+    "docs/ai/WP-020-rig-entry-boundary.md",
     "docs/work/README.md",
     "docs/work/WP-010-panel-layout.md",
     "docs/work/WP-011-focus-lines.md",
@@ -220,6 +222,7 @@
     {"id":"WP-005","document":"docs/work/WP-005-simple-warp.md","status":"ACTIVE","dependsOn":["WP-002","WP-003","WP-004","WP-007"]},
     {"id":"WP-009","document":"docs/work/WP-009-layer-transform-key-management.md","status":"ACTIVE","dependsOn":["WP-003","WP-007"]},
     {"id":"WP-008","document":"docs/work/WP-008-layer-transform-progressive-controls.md","status":"ACTIVE","dependsOn":["WP-003","WP-007"]},
-    {"id":"WP-019","document":"docs/work/WP-019-inochi-edit-roundtrip-proof.md","status":"BLOCKED","dependsOn":[]}
+    {"id":"WP-019","document":"docs/work/WP-019-inochi-edit-roundtrip-proof.md","status":"BLOCKED","dependsOn":[]},
+    {"id":"WP-020","document":"docs/work/WP-020-rig-renewal-first-path.md","status":"ACTIVE","dependsOn":[]}
   ]
 }
