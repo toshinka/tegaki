@@ -979,7 +979,9 @@ export class SettingsPopup {
             this.settingsManager?.set('shortcutHelpVisible', this.elements.shortcutHelpVisible.checked);
         });
         this.elements.floatingQVisible?.addEventListener('change', () => {
-            this.settingsManager?.set('floatingQVisible', this.elements.floatingQVisible.checked);
+            const value = this.elements.floatingQVisible.checked;
+            this.settingsManager?.set('floatingQVisible', value);
+            this.eventBus.emit('settings:floating-q-visible', { value });
         });
         this.elements.emergencyRecoveryOnHide?.addEventListener('change', () => {
             this.settingsManager?.set(
