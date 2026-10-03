@@ -7,13 +7,21 @@
  */
 
 #quick-access-popup.qa-popup {
-    border: 1px solid var(--ui-border-float);
+    border: 1px solid var(--ui-qa-glass-border-rest, var(--ui-border-float));
     border-radius: var(--ui-radius-panel);
-    background: var(--ui-surface-float);
-    box-shadow: var(--ui-shadow-float);
-    backdrop-filter: var(--ui-backdrop-float);
-    -webkit-backdrop-filter: var(--ui-backdrop-float);
+    background: var(--ui-qa-glass-surface-rest, var(--ui-surface-float));
+    box-shadow: var(--ui-qa-glass-shadow-rest, var(--ui-shadow-float));
+    backdrop-filter: var(--ui-qa-glass-backdrop, var(--ui-backdrop-float));
+    -webkit-backdrop-filter: var(--ui-qa-glass-backdrop, var(--ui-backdrop-float));
     color: var(--futaba-maroon);
+    transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+#quick-access-popup.qa-popup:hover,
+#quick-access-popup.qa-popup:focus-within {
+    border-color: var(--ui-qa-glass-border-engaged, var(--ui-border-float));
+    background: var(--ui-qa-glass-surface-engaged, var(--ui-surface-float));
+    box-shadow: var(--ui-qa-glass-shadow-engaged, var(--ui-shadow-float));
 }
 
 #quick-access-popup.qa-popup .qa-header {

@@ -60,4 +60,16 @@ compiler/linker/system SDKのsystem install、engine本体修復、二つ目のb
 
 ## Completion
 
+### Slice A2 — serializer配列初期化の限定修正（司令確定、2026-10-03）
+
+Slice Aはbuild/link成功、初期INPのkeyform serializeで`JSONValue is not an array`によりBLOCKED。司令も実行で同例外を再現し、`core/math/deform.d`の`onSerialize(ref JSONValue data)`に配列初期化が無いことと、generic serializerが未初期化JSONValueを渡すことを確認した。評価器・補間・binding生成/読込の変更ではないため、必要改修を進めるOwner承認内で以下の例外だけを確定する。
+
+LUNAの追加write owner: `tegaki_work/advanced/inochi-proof/deformation-json-array.patch`。既存3files/result report/cacheも引き続き担当。source archiveは保持し、cacheの固定sourceの`source/inochi2d/core/math/deform.d`の当該関数先頭に`data = JSONValue.emptyArray;`を一行だけ追加する。上流修正はこの一件のみ。修正前file SHA256: `E424BE9DE5C8C3795FD18C91E6A5D17C2F87C2C84766E99191C5ECFF34CAF026`。
+
+runnerは未修正/修正済みsource hashを照合し、不明なsourceには適用せず拒否。tracked patchと適用位置/前後hashを残し、base SHAに対するpatched buildであることをREADME/result JSON/reportに明示する。driver headerのno repairsはA2の一行例外を反映する。既知失敗の記録を上書きして消さない。
+
+固定source、依存lock、同じplatform/fixtureでbuild/runを一回再試行。native serializerの空のDeformationが空配列になることも限定確認する。編集/保存/新規instanceの再評価、撤回、破損header拒否は当初Acceptanceのまま。epsilonはdriverのfloat比較用であり製品pixel一致を意味しない。fixtureはtexture無しのPartなので、数値proofとRaster/texture/画素の実証を区別する。
+
+次のengine/source不具合が出た場合は停止して報告。評価器本体修復、patch追加、platform切替、Browser/製品統合へ自動継続しない。productionと他者CSS差分は保持。
+
 START/FINAL HEAD、変更file、commands、成功範囲/未実測、残る自作量、次の一件だけを返す。worker報告だけでcloseしない。Owner受入/採用/pushは自己承認しない。新規chat/agentを作らず、既存担当として作業する。司令の巡回は15分ごと、変化無しの通知をしない。

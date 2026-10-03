@@ -46,6 +46,22 @@
     --ui-radius-control: 5px;
     --ui-backdrop-rail: blur(6px);
     --ui-backdrop-float: blur(10px) saturate(1.12);
+    /* QTP Floating Glass prototype: pale maroon / Futaba-tinted translucent frosted glass */
+    --ui-qa-glass-surface-rest: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--futaba-background) 62%, transparent) 0%,
+        color-mix(in srgb, var(--futaba-cream) 52%, transparent) 100%
+    );
+    --ui-qa-glass-surface-engaged: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--futaba-background) 76%, transparent) 0%,
+        color-mix(in srgb, var(--futaba-cream) 66%, transparent) 100%
+    );
+    --ui-qa-glass-border-rest: color-mix(in srgb, var(--futaba-light-maroon) 24%, transparent);
+    --ui-qa-glass-border-engaged: color-mix(in srgb, var(--futaba-light-maroon) 38%, transparent);
+    --ui-qa-glass-backdrop: blur(6px) saturate(1.1);
+    --ui-qa-glass-shadow-rest: 0 8px 24px color-mix(in srgb, var(--futaba-maroon) 14%, transparent), inset 0 1px 0 rgba(255, 255, 238, 0.45);
+    --ui-qa-glass-shadow-engaged: 0 10px 28px color-mix(in srgb, var(--futaba-maroon) 18%, transparent), inset 0 1px 0 rgba(255, 255, 238, 0.55);
     /* WP-005 reversible glass prototype: surface alpha keeps controls opaque. */
     --ui-panel-glass-surface: rgba(255, 255, 238, 0.72);
     --ui-panel-glass-backdrop: blur(3px);
