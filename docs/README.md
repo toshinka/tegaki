@@ -7,10 +7,10 @@ Tegakiは、ブラウザで絵を描き、その絵を同じCanvas上で動か�
 
 ## 最短の読む順序
 
-新チャット移行用: [WP-002終了時の引き継ぎ](handoffs/2026-09-06-wp002-to-wp003.md)。最新状態は常にSTATUSを優先する。
+新規Webサブコマンダー: [就任カード](ai/WEB_SUBCOMMANDER_CARD.md)。個別作業チャットは下記の順序から始める。旧handoffは指定Cardが必要とする場合だけ読む。
 
 1. [現在地・checkpoint](STATUS.md)で作業停止点を確認する。
-2. [技術契約](TECHNICAL.md)を読み、対象Work Packageを[ロードマップ](ROADMAP.md)から選ぶ。
+2. [技術契約](TECHNICAL.md)を読み、指定されたCard / Work Packageへ進む。未指定の実装を自動で選ばない。優先順位の検討は司令が[ロードマップ](ROADMAP.md)と現在地を照合して行う。
 3. [Architecture](ARCHITECTURE.md)の対象領域と[正式語彙](VOCABULARY.md)の該当語だけを読む。
 4. 作業カードに列挙されたfileのheader、実コード、関連検証へ進む。
 

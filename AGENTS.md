@@ -10,6 +10,7 @@
 4. カードが指定する `docs/ARCHITECTURE.md` の節とlocal file header。
 
 新規参加/全体判断なら[docs/README.md](docs/README.md)から製品思想・語彙へ。
+外部Web AIがGitHub上の資料を読む場合は、[GITHUB.txt](Claude_GPT_Review/GITHUB.txt)をリンク案内として使う。現在地・技術契約の正本は上記`STATUS`・`TECHNICAL`と現行コードであり、案内を第二正本にしない。
 旧 `task-codex/phase*.md` は現在の作業指示と仮定しない。[文書登録簿](docs/DOCUMENT_REGISTER.md)で状態を確認する。
 - 調査・監査・Handoff・REFERENCE資料は既定の必読文書ではない。現在のCard/WPが明示指定した場合に限り参照する。
 - REFERENCE資料はいかなる場合も `STATUS`、`TECHNICAL`、現在のCard/WP、製品コードの正本性を上書きしない。

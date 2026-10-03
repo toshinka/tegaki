@@ -1,9 +1,10 @@
 # TEGAKI — 外部WEB AI向け GitHub読解リンク集
 
-更新日: 2026-09-30（R-71: Project保存・再読込受入の制限を記録）
+更新日: 2026-10-03（外部Web AIの入口と現行mainへの追従）
 対象: 現行コード・製品思想・技術契約・現在の計画。Archive / 過去Reviewは収録しない。
 このリンク集は外部AI向けの案内であり、仕様の第二正本ではない。
 
+正式な案内名はClaude_GPT_Review/GITHUB.txt。GITHUB.mdはこのcheckoutには無い。別名の第二案内は作らない。
 重要: URLはmainの可変参照。ローカル変更はOwnerがpushするまで外部AIには見えない。
 レビュー開始時に対象commitを確認し、必要なら refs/heads/main を対象commit SHAへ置換する。
 
@@ -14,32 +15,33 @@
 
 ---
 
-## CURRENT ROUTE（2026-09-30 / R-71受入時点）
+## CURRENT ROUTE（2026-10-03 / ローカルmain確認時点）
 
-- 現在のcheckpoint: branch `main`、HEAD `773f2c0428252c1bcea9365e9d12525116e6eade`。ローカルのorigin/main tracking refも同じSHAでahead/behind 0/0。R-69C cleanup / R-69F SSOT updateとR-70 implementationはそれぞれR-69CP / R-70CPで通常forward commit済み。R-71開始時にfetchを試みたが、`.git/FETCH_HEAD`のpermission deniedとGitHub接続不可でremoteをrefreshできず、commit/pushは行っていない。
-- 現在の主軸: 機能・製品作業。DEFORM数値Weight研究は停止、Animation Dock基盤（R-62〜R-64）は当面完了、production routeは新RIG PART基盤（R-66 PART NOTE参照）。R-69 Reset Status fixは完了。R-70 PART active-target projectionはR-70CPに含まれ、実装・verifier・Browser acceptance A〜G PASS。
-- R-71 Project save/reopen acceptance: `ClipAsset.rigDefinition.parts` / `ClipInstance.rigMotion.partTracks`をProject serializerから`TimelineModel`へ復元する既存production model verifierとRIG targeted verifiersはPASS。Browser上のProject保存は未完了。Album経由の通常保存がProjectManagerのnative save pickerへ進み、現在の自動化ではpickerを操作できなかったため、ProjectManager.loadProjectによる真の再読込、再入場、再編集、R-70 projection受入は未確認。production code変更なし。Result B（受入制限。コア永続化の欠陥は確認されていない）。
-- DEFORM Weight研究: R-61で一旦停止。R-47 topology/supportが研究baseline。AVW/APW/MSW/JBWは診断用witnessであり、production Weight生成器ではない（production未統合）。JBWはJunction過膨張を減らしたが中央の細い接続は残存。support/topology再検討は明示的に再開されるまで保留。
-- R-60/R-61の診断ファイル（tegaki_work/build/ の r60-*/r61-* 比較HTML、junction/weight-direction系 verifier・generator等）はローカル未commitのまま保持。R-62以降のCardで整理・削除しない。
-- R-62 Animation Dock timeline board alignment: 完了（下記「4. INTERACTION / TIMELINE」のDock board routeとR-62 NOTE参照）。
-- R-64 bottom Dock dynamic height: 完了（R-64 NOTE参照）。
-- NEXT ROUTE:
-  - 次の作業はCommander判断待ち。本書では次Cardを提案・設計しない。
+- 導線監査の開始snapshot: branch `main`、HEAD `2165a6010f2d64a100ee33efc927637af83c8cc1`。開始時はAGENTS.md / docs/TECHNICAL.md / 本ファイルに既存差分あり。ローカルの`origin/main` tracking refは同じSHA。2026-10-03の`git ls-remote`はGitHubへの接続失敗でremote未確認。このsnapshotを現在のworktree状態や公開済み証拠として使わない。
+- 現在地の正本は`docs/STATUS.md`、技術契約は`docs/TECHNICAL.md`、製品の現物は対象commitのソース。個別Card/WPを受けたら指定資料へ進む。本リンク集の過去noteや古いcheckpointから現在の作業順を決めない。
+- 2026-10-01〜03にmainへ加わった領域: 表示DPR（既定OFFのopt-in）、ペン刷新・定規、コマ割り、集中線、トーン、吹き出し、フォルダ合成、QTP/漫画ツール、各種描画・レイヤー操作の修正、PixiJS 8.22.0更新。各成果の技術確認とOwner受入は同義ではない。詳細と未受入事項は`STATUS`、対象WP、現行コードを確認する。
+- RIGのR-66〜R-70は下記の過去noteを入口として、現在のコードと照合する。R-71について本案内に継承された記録は「native save pickerのためProjectManager.loadProject()を通る実Project再読込は未確認」。今回STATUSにはR-71の対応記録を確認できず、当時の一次証拠も再取得していないためHISTORICAL / UNVERIFIEDとして扱う。現時点の保存欠陥や受入完了を断定しない。
 
 ---
 
 ## CURRENT REVIEW PACKET
 
-このパケットは、Web GPT / WebSOLがリポジトリ全体を読み直すことなく、現在のInteraction / GUI調査・検証文脈を最小セットで復元するための高優先案内です。
+このパケットは、外部Web AIが正本に入るための最小セットです。調査・REFERENCE資料は対象Card/WPまたは質問で必要な領域に限って読む。
 
 Do not read every URL in this file.
 The remainder is a navigation catalog.
 
-CURRENT REVIEW PACKET is a high-priority packet for resuming the current Interaction / GUI research context.
-If the user's question is specifically about another domain (e.g. History / Save, Drawing / Input, Transform / WARP), use the matching DOMAIN ROUTE below first.
-Do not preload the Interaction Research Bank for unrelated domain questions.
+Use the matching DOMAIN ROUTE below for task-specific material. Do not preload the Interaction Research Bank for unrelated questions.
 
-### 必須5文書（Core Packet）:
+### 新規Web Subcommanderの就任
+
+- docs/ai/WEB_SUBCOMMANDER_CARD.md [CURRENT REFERENCE / 就任・返却契約]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/ai/WEB_SUBCOMMANDER_CARD.md
+- 初回だけ: Core Packet → docs/README.md → docs/PRODUCT.md → docs/VOCABULARY.mdの必要語 → docs/DEVELOPMENT.md → 就任カード。以後は質問に該当するDOMAIN ROUTEだけ読む。
+- 本カードは2026-10-03にローカル作成。公開確認前はOwnerが本文を貼るか添付する。URLが読めなければ未取得と報告し、存在や内容を推測しない。推奨役割は相談・設計・反証であり、ローカル実装を独立して指揮しない。
+- 外部RIG backend検討はANIMATION / RIGから必要なsourceへ進む。Desktopの添付briefや会話の提案は、GitHubにある確定Cardや現行契約へ自動昇格させない。
+
+### 基本3文書（Core Packet）:
 1. AGENTS.md [CURRENT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/AGENTS.md
 
@@ -49,10 +51,11 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/STATUS.md
 3. docs/TECHNICAL.md [CURRENT]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/TECHNICAL.md
 
-4. docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md [REFERENCE]
+### INTERACTION / TIMELINE調査で指定された場合のみ:
+1. docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md [REFERENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md
 
-5. docs/reference/interaction/TIMELINE_POINTER_TERMINAL_EVIDENCE_2026-09-18.md [REFERENCE]
+2. docs/reference/interaction/TIMELINE_POINTER_TERMINAL_EVIDENCE_2026-09-18.md [REFERENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/reference/interaction/TIMELINE_POINTER_TERMINAL_EVIDENCE_2026-09-18.md
 
 ### OPTIONAL（コード・検証根拠が必要な場合のみ）:
@@ -106,6 +109,8 @@ START WITH:
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/PRODUCT.md
 - docs/UI_DESIGN_AUTHORITY_MAP.md [CURRENT REFERENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/UI_DESIGN_AUTHORITY_MAP.md
+- docs/gui-sensei/TEGAKI_GUI_COMPONENT_CONVENTIONS.md [CURRENT REFERENCE / 共通GUI部品]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/gui-sensei/TEGAKI_GUI_COMPONENT_CONVENTIONS.md
 
 OPTIONAL:
 - tegaki_work/styles/main.css [SOURCE EVIDENCE]
@@ -136,10 +141,38 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/co
 - tegaki_work/ui/keyboard-handler.js [SOURCE EVIDENCE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui/keyboard-handler.js
 
+### 3A. RECENT PRODUCT ROUTE（2026-10-01〜03のClaude実装など）
+WHEN TO READ: 新しい漫画・描画ツールやレイヤー機能の個別調査時。案件に該当するWPだけ読む。
+- ペン刷新・定規の引き継ぎ: docs/handoffs/2026-10-02-pen-ruler-to-next.md [HANDOFF SNAPSHOT。現在地の正本ではない]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/handoffs/2026-10-02-pen-ruler-to-next.md
+- コマ割り: docs/work/WP-010-panel-layout.md [WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-010-panel-layout.md
+- 集中線: docs/work/WP-011-focus-lines.md [WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-011-focus-lines.md
+- レイヤーパネル・フォルダ合成: docs/work/WP-012-layer-panel-compositing-investigation.md [WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-012-layer-panel-compositing-investigation.md
+- 吹き出し: docs/work/WP-013-balloon.md [WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-013-balloon.md
+- トーン: docs/work/WP-014-tone.md [WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-014-tone.md
+- 漫画原稿サイズ: docs/work/WP-015-manga-canvas-size.md [WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-015-manga-canvas-size.md
+- 自動選択・グラデーション: docs/work/WP-016-auto-select-gradient.md [WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-016-auto-select-gradient.md
+- 角ペン・角消しゴム: docs/work/WP-017-square-tip.md [WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-017-square-tip.md
+- 環境スナップショット: docs/work/WP-018-settings-snapshot.md [WORK PACKAGE]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-018-settings-snapshot.md
+各WPの状態、後続の局所修正、Owner受入は`docs/STATUS.md`と対象commitのコードで確認する。2026-10-03時点のmainにはハンドパン、クリッピングマスク、レイヤー一覧スクロール、形状ツールなどの後続修正も入っている。古いWP本文だけを現行挙動と見なさない。
+
 
 ### 4. INTERACTION / TIMELINE
-WHEN TO READ: Timeline操作、Animation Table、ポインタージェスチャー終端、D&D、Retimeの確認時。まず調査・実機証拠を理解し、コード検証・実装計画・直接のソースレビューが必要な場合のみプロダクションソースへ進む。
+WHEN TO READ: Timeline操作、Animation Table、ポインタージェスチャー終端、D&D、Retimeの確認時。Core Packet後、指定Cardと現行architectureの該当節へ進む。
 START WITH:
+- docs/ARCHITECTURE.md（Animation評価と出力 / UI節。URLはCORE参照）
+- 指定Card / WPと、以下の対象source header。
+
+OPTIONAL — Card / WPが明示指定した場合のみ:
 - docs/reference/interaction/TEGAKI_OSS_GUI_INTERACTION_RESEARCH_2026-09-18.md [REFERENCE]（URLはCURRENT REVIEW PACKET参照）
 - docs/reference/interaction/TIMELINE_POINTER_TERMINAL_EVIDENCE_2026-09-18.md [REFERENCE]（URLはCURRENT REVIEW PACKET参照）
 
@@ -182,7 +215,7 @@ R-64 NOTE（bottom Dock dynamic height）:
 - 所有: render() → _queueBottomDockLayout() → _setBottomDockHeight()（--ui-bottom-dock-open-height の唯一の書き手。app.resize / camera recenter、右Workspace下端も同変数で追従）。Lane追加/削除コードはDock/Canvasを直接触らない。
 - cap: 既存のcompact 4行 + bounds（max=min(440, viewport 52%, Canvas-safe ceiling)）。超過分はDock内縦scroll。expandedは従来どおりbounds.max。
 - manual resize: ユーザーがresizeするとその高さが固定され、Lane変更で上書きされない（解除UIは従来から無し）。
-- 検証: verify-animation-dock-dynamic-height.mjs（HEADではFAIL）、R-62 verifier、既存Timeline verifier、vite build、headless Chromiumで+1〜+6 Lane / expanded往復 / 削除 / 閉じて再表示 / manual resize。
+- 検証（R-64時点の記録）: verify-animation-dock-dynamic-height.mjs、R-62 verifier、既存Timeline verifier、vite build、headless Chromiumで+1〜+6 Lane / expanded往復 / 削除 / 閉じて再表示 / manual resize。現HEADの結果はこの過去noteから推定しない。
 - UNKNOWN: 実RIG（Bone group行）状態でのdynamic-height実測。
 
 OPTIONAL — DIAGNOSTIC EVIDENCE:
@@ -220,6 +253,9 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/ui
 
 ### 6. ANIMATION / RIG
 WHEN TO READ: アニメーションデータモデル、フレーム合成、フォルダー描画計画、リグ/ボーン変形の確認時。
+外部backendの独立proofが指定された場合: docs/work/WP-019-inochi-edit-roundtrip-proof.md [WORK PACKAGE / 採用・production統合は未決定]
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-019-inochi-edit-roundtrip-proof.md
+WP-019はローカル発行。公開確認前はOwnerの貼付/添付で渡す。Slice A調査・司令監査完了、roundtrip未達/BLOCKED。現配布WASMのAPI不足とmain binding復元/保存の未接続を確認。実測はinstantiate/initのみ。詳細・次契約はWP-019とそこから指定されたcapability reportを読む。
 START WITH:
 - docs/ARCHITECTURE.md（Animation/Rig節）
 - tegaki_work/system/animation/animation-data-model.js [SOURCE EVIDENCE]
@@ -300,7 +336,7 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/tegaki_work/sy
 
 ### 8. WORK PACKAGES / HISTORICAL REFERENCE
 WHEN TO READ: 個別Work Package仕様、過去の設計判断・監査・受渡し経緯を確認する時（既定読解対象外）。
-ACTIVE WORK PACKAGES（現在進行中・受入待ち）:
+WORK PACKAGES（状態はSTATUS / 対象Card / 登録済みharness packageで確認。本一覧は作業順を指定しない）:
 - docs/work/WP-005-simple-warp.md [ACTIVE WORK PACKAGE]
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-005-simple-warp.md
 - docs/work/WP-008-layer-transform-progressive-controls.md [ACTIVE WORK PACKAGE]

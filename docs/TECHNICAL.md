@@ -11,7 +11,7 @@
 - JavaScript ESM / Vite / PixiJS 8.22.0。依存versionの実値はpackage/lockが正本。
 - 主対象は現行Chromium系desktop＋液晶タブレット。本番描画はPixi RenderTextureへのlive raster bake。
 - rendererの現在の標準はWebGL。WebGPU既定化、SDF/MSDF/WebGPU brushの本番導入は別の明示Gateが必要。
-- DPR/resolutionは1、内部作業サイズと出力寸法を一致させる。暗黙の2倍化をしない。
+- 作品側の読み出し・History・保存・書き出しは`resolution: 1`で、内部作業サイズと出力寸法を一致させる。画面rendererのみ`displayDevicePixelRatio`で高DPR表示をopt-in可能（既定OFF、上限2x）。暗黙に作品データを2倍化しない。
 - Canvas2Dを本番strokeへ混入しない。既存CPU compositor/export/reference用途との違いを守る。
 - 消しゴムは`erase`による透明化。背景色で塗り戻さない。
 - 描画座標の意味をclient/canvas/world/localで明示する。描画変換へPixiのtoLocal/toGlobalを持ち込まない。現コードの重複計算整理は入力契約を固定してから行う。

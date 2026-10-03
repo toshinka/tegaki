@@ -5,19 +5,33 @@
 ## 担当と権限
 
 - Owner: 製品思想、優先順位、重大なUX/保存互換判断、最終制作受入、Git push。
-- Web GPT / 指定Commander: Research Bank統合、scope削減、モデルルーティング、一次監査、作業分割。
+- Local Commander（このプロジェクトでOwnerが指定する司令チャット）: live checkout照合、scope確定、作業割当、競合防止、結果統合、差分/証拠の監査。通常SOL中、重大判断の整理はSOL高を使う。
+- Web Subcommander（Ownerが指定するWeb GPT SOL）: Ownerとの会話から目的・制作条件を整理し、外部調査、設計候補、反証、依頼Card案をLocal Commanderへ返す。実装割当・live checkout判断・closeを独立して行わない。就任入口は[Web Subcommander Card](ai/WEB_SUBCOMMANDER_CARD.md)。
 - Architecture review（明示召喚時のAstra等）: live code照合、重大判断点の整理、限定された設計レビュー（常任のプロジェクトマネージャーや既定の実装者ではない）。
 - Implementer / Investigator（Luna / Gemini等）: 確定Cardの対象fileと契約内で限定された実装・調査・検証・報告。
 - Reviewer: 指定領域の調査・反証・検証。報告を根拠なしに採用しない。
 
 同一file/同じmodelを複数workerで同時変更しない。独立したread-only調査は並列化できる。
-既存`.codex/agents/tegaki-luna-worker.toml`は旧Phase読む順序を含む設定のまま。今回configは変更していない。
+既存`.codex/agents/tegaki-luna-worker.toml`は`gpt-5.6-luna` / `max`で、AGENTS → STATUS → TECHNICAL → 指定WPの順を持つ。LUNAの世代は割当時に明示し、チャット名の「LUNA MAX」だけから別世代へ切り替えない。configの変更は別の明示作業で行う。
 workerへは新しい読む順序と対象カードを明示する。利用不能なら状態を報告し、別modelへ黙って切り替えない。
 深いarchitecture判断はCommander / Architecture reviewへ戻すが、既存契約内の技術修正で逐一Owner確認を求めない。
 
+### 実行担当の使い分け
+
+- Executor（SOL6.1中〜高）: 探索を伴う実装、原因調査、adapter境界の照合、複数fileの限定Slice。未決定の契約は司令へ返す。
+- Worker（LUNA max）: Goal・対象file・契約・Acceptance・検証・Stopが確定した小さなSlice。設計権限や最終受入をmodel名から得ない。
+- Investigator（外部Gemini、Owner指定の3.8 medium等）: 必要なときだけ棚卸し・長時間read-only調査。利用可否と正確なmodel名は依頼時に確認し、候補名を製品保証にしない。
+
+ExecutorとWorkerは役割名であり、二つの常時稼働チャットを必須にしない。通常は一件を一担当へ渡す。独立read-only調査だけ必要に応じて並列化し、同じfile/modelのwrite ownerは一つにする。短い直列作業を分割しすぎず、同じ調査を複数担当へ重複依頼しない。
+急ぎの指定がない確定SliceはLUNAのロングランを既定とする。必要な思考・未決定契約はSOL/司令が整える。完了通知を優先し、進捗巡回は10〜15分間隔、短い間隔の全文log再読や同じ状態の確認を繰り返さない。失敗・完了・Owner入力は必要時に対応する。
+モデル名とreasoningはOwnerの運用希望。性能順位・料金比較を証明する記述ではない。
+個別CardにあるOwnerの明示的な権限委譲は、その担当・範囲に限って扱う。他チャットへ自動継承しない。
+
+チャット名の推奨: `TEGAKI｜司令`、`TEGAKI｜相談・設計`、`TEGAKI｜実行 SOL`、`TEGAKI｜実装 LUNA`。外部調査は`TEGAKI｜調査 <案件>`。担当model/reasoningは依頼に記し、名前から権限を推測しない。
+
 ## 仕事の状態
 
-作業カードの機械的状態は[harness.json](harness.json)のpackagesが所有する。
+登録済み作業カードの機械的状態は[harness.json](harness.json)のpackagesが所有する。未登録の追加WPを一覧に載っていないだけで未実装と扱わない。状態は対象CardとSTATUSで確認し、登録移行では実態を照合してから状態を決める。
 
 - READY: 目標、対象、禁止境界、検証、完了条件が揃っている。自動実行許可や作業中の意味ではない。
 - BLOCKED: prerequisitesまたは重大判断が未解決。blockerを解消してからREADYへ。
@@ -32,7 +46,7 @@ workerへは新しい読む順序と対象カードを明示する。利用不�
 ```text
 WORK PACKAGE: docs/work/WP-xxx.md
 ROLE: implementer / read-only reviewer
-READ: AGENTS.md → docs/TECHNICAL.md → docs/STATUS.md → このカード → 指定architecture節
+READ: AGENTS.md → docs/STATUS.md → docs/TECHNICAL.md → このカード → 指定architecture節
 WRITE: exact file list（それ以外はread-only）
 BASELINE: commit + 既存差分の扱い
 RETURN: 変更理由、file、実行した検証、失敗/未確認、既知リスク

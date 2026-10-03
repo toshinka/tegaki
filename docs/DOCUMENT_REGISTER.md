@@ -17,8 +17,11 @@
 
 - `AGENTS.md`: 入口。`docs/TECHNICAL.md`: 技術契約。
 - `docs/README.md / STATUS.md / PRODUCT.md / ARCHITECTURE.md / VOCABULARY.md / DEVELOPMENT.md / ROADMAP.md / AUDIT.md / DOCUMENT_REGISTER.md`: CURRENT。
-- `docs/work/`: Work Package。状態は`docs/harness.json`。
+- `docs/work/`: Work Package。登録済みpackageの機械的状態は`docs/harness.json`。未登録のWP-010〜018は対象CardとSTATUSで確認し、未登録を未実装と解釈しない。
 - `docs/ai/ASTRA_OPERATING_RULES.md`: CURRENT。Astra専用のworker運用規約。他workerへ自動適用しない。
+- `docs/ai/WEB_SUBCOMMANDER_CARD.md`: CURRENT REFERENCE。新規Webサブコマンダーの就任・読む順序・返却契約。役割権限はDEVELOPMENT、現在地はSTATUSが所有する。
+- `docs/ai/2026-10-03-navigation-audit.md`: REFERENCE。就任カード発行時の導線検査・修正範囲・残る文書課題。現在の実装指示ではない。
+- `docs/ai/INOCHI2D_EDIT_ROUNDTRIP_CAPABILITY.md`: REFERENCE。WP-019限定調査のSDK/API/runtime証拠。現在の実行契約はWP-019。
 - `docs/handoffs/2026-09-06-wp002-to-wp003.md`: HANDOFF SNAPSHOT。新チャット用の読み順・最初のSlice・除外範囲。現在地の正本はSTATUSのまま。
 - `docs/handoffs/2026-10-02-pen-ruler-to-next.md`: HANDOFF SNAPSHOT。ペン刷新・DPR・定規の完了点、Ownerの好み、次の候補（集中線ほか）、環境メモ。現在地の正本はSTATUSのまま。
 - `docs/legacy/PROGRESS.md / ARCHITECTURE.md / PHASE4Z_BOUNDARY.md / NEXT_CHAT_HANDOFF.md / CODEX_MULTI_MODEL_WORKFLOW.md`: SUPERSEDED ROUTING。

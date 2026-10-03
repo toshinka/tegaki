@@ -7,7 +7,19 @@
     "docs/ARCHITECTURE.md", "docs/VOCABULARY.md", "docs/DEVELOPMENT.md",
     "docs/ROADMAP.md", "docs/AUDIT.md", "docs/DOCUMENT_REGISTER.md",
     "docs/ai/ASTRA_OPERATING_RULES.md",
+    "docs/ai/WEB_SUBCOMMANDER_CARD.md",
+    "docs/ai/2026-10-03-navigation-audit.md",
+    "docs/ai/INOCHI2D_EDIT_ROUNDTRIP_CAPABILITY.md",
     "docs/work/README.md",
+    "docs/work/WP-010-panel-layout.md",
+    "docs/work/WP-011-focus-lines.md",
+    "docs/work/WP-012-layer-panel-compositing-investigation.md",
+    "docs/work/WP-013-balloon.md",
+    "docs/work/WP-014-tone.md",
+    "docs/work/WP-015-manga-canvas-size.md",
+    "docs/work/WP-016-auto-select-gradient.md",
+    "docs/work/WP-017-square-tip.md",
+    "docs/work/WP-018-settings-snapshot.md",
     "docs/work/WP-007-export-terminal-guard.md",
     "docs/work/WP-003-key-continuation.md",
     "docs/work/WP-005-simple-warp.md",
@@ -206,6 +218,7 @@
     {"id":"WP-007","document":"docs/work/WP-007-export-terminal-guard.md","status":"DONE","dependsOn":["WP-004"]},
     {"id":"WP-005","document":"docs/work/WP-005-simple-warp.md","status":"ACTIVE","dependsOn":["WP-002","WP-003","WP-004","WP-007"]},
     {"id":"WP-009","document":"docs/work/WP-009-layer-transform-key-management.md","status":"ACTIVE","dependsOn":["WP-003","WP-007"]},
-    {"id":"WP-008","document":"docs/work/WP-008-layer-transform-progressive-controls.md","status":"ACTIVE","dependsOn":["WP-003","WP-007"]}
+    {"id":"WP-008","document":"docs/work/WP-008-layer-transform-progressive-controls.md","status":"ACTIVE","dependsOn":["WP-003","WP-007"]},
+    {"id":"WP-019","document":"docs/work/WP-019-inochi-edit-roundtrip-proof.md","status":"BLOCKED","dependsOn":[]}
   ]
 }
