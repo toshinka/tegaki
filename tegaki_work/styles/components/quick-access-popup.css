@@ -632,6 +632,7 @@
     width: 10px;
     height: 10px;
     box-sizing: border-box;
+    border-width: 1px;
     align-items: center;
     justify-content: center;
     border-color: var(--qa-value-active-foreground);
@@ -641,6 +642,16 @@
 #quick-access-popup.qa-popup .qa-preset-dot {
     background: var(--qa-value-active-foreground);
     flex: 0 0 auto;
+    max-width: 100%;
+    max-height: 100%;
+}
+
+#quick-access-popup.qa-popup .qa-preset-ring.is-size-saturated {
+    background: var(--futaba-maroon);
+}
+
+#quick-access-popup.qa-popup .qa-preset-ring.is-size-saturated .qa-preset-dot {
+    display: none;
 }
 
 #quick-access-popup.qa-popup .qa-preset-size-val,
@@ -813,13 +824,14 @@ body > .qa-slot-drag-ghost svg {
     z-index: 0;
 }
 
-/* ALL(全レイヤー参照)は、バケツ/選択のボタンの上に載る小さなオレンジの■。点灯=有効 */
+/* ALL is a thin separate target above the tab, with a visible non-hit gutter. */
 #quick-access-popup.qa-popup .qa-slot-mod {
     position: absolute;
-    top: -6px;
+    top: -7px;
     left: 50%;
     width: 9px;
-    height: 7px;
+    height: 4px;
+    box-sizing: border-box;
     transform: translateX(-50%);
     border: 1px solid var(--futaba-medium);
     border-radius: 2px;

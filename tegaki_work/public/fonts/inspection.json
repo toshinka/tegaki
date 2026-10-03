@@ -1,0 +1,772 @@
+{
+  "inspectedAt": "2026-10-03",
+  "fonts": [
+    {
+      "id": "bundled-genei-antique",
+      "downloadUrl": "https://okoneya.jp/font/GenEiAntique_v6.0a.zip",
+      "archiveSha256": "e8a9df9c1ace0b5234c17a66f35729c9cc17955e8b37dc94c0fa9080f757fe03",
+      "selectedOriginal": "GenEiAntique_v6.0a/GenEiAntiqueNv6-M.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "a04b166a260e67635bff99512355a14de459620df6451d1ee72b4d072370df55",
+        "size": 5097622,
+        "names": {
+          "1": "GenEi Antique v6",
+          "2": "Regular",
+          "4": "GenEi Antique v6 Medium",
+          "5": "Version 6.0a ; Original Version 1.004",
+          "6": "GenEiAntiqueNv6-M",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This Font Software is distributed on an 'AS IS' BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the SIL Open Font License for the specific language, permissions and limitations governing your use of this Font Software.",
+          "14": "http://scripts.sil.org/OFL"
+        },
+        "cmapCount": 16566,
+        "emptyOutlineMappingCount": 10,
+        "kanjiCount": 12721,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": true,
+        "puaCount": 220,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-f910-comic",
+      "downloadUrl": "https://www.font910.jp/freefont_i6wiwk5/f910-shin-comic-2.04.zip",
+      "archiveSha256": "6212e0cdbac14358fb6647219af0f8baf8a9a4e128f838ac5db1b47a1db717fe",
+      "selectedOriginal": "f910-shin-comic-2.04/f910-shin-comic-2.04.otf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "9ef39319eda5ebaca1012aed39bc3910e4bd3f207e26a6ff1d87c25f3b9657e2",
+        "size": 2463784,
+        "names": {
+          "1": "F910-Shin-comic-tai",
+          "2": "Regular",
+          "4": "F910-Shin-comic-tai",
+          "5": "Version 2.04",
+          "6": "F910-Shin-comic-tai",
+          "13": "Cr:OTW0800141017080548A000444 Mo:OTW0840160617110540A000444"
+        },
+        "cmapCount": 9804,
+        "emptyOutlineMappingCount": 0,
+        "kanjiCount": 7919,
+        "hiraganaCount": 84,
+        "katakanaCount": 90,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-genei-nu",
+      "downloadUrl": "https://okoneya.jp/font/GenEiNuGothic-EB_v1.1.zip",
+      "archiveSha256": "ad74ca707906276d5e11e3ccb053a0cc72abafc29c5b1788715f4e2efaa21b4d",
+      "selectedOriginal": "GenEiNuGothic-EB_v1.1/GenEiNuGothic-EB.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "add26eca0ea70b8cb956788936959c048b97288b72a15c4a89591408b59d7692",
+        "size": 7422040,
+        "names": {
+          "1": "GenEi Nu Gothic EB",
+          "2": "Regular",
+          "4": "GenEi Nu Gothic EB",
+          "5": "Version 1.00",
+          "6": "GenEiNuGothic-EB",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This Font Software is distributed on an 'AS IS' BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the SIL Open Font License for the specific language, permissions and limitations governing your use of this Font Software.",
+          "14": "http://scripts.sil.org/OFL"
+        },
+        "cmapCount": 14287,
+        "emptyOutlineMappingCount": 5,
+        "kanjiCount": 12204,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": true,
+        "puaCount": 154,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-genei-latego",
+      "downloadUrl": "https://okoneya.jp/font/GenEiLatin-Separate_v2.1.zip",
+      "archiveSha256": "2e0bf6f454b10fd668fe420ef947b7e6a46284f728baa66501b7b6107ac68279",
+      "selectedOriginal": "GenEiLatin-Separate_v2.1/GenEiLateGoN_v2.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "39f4f7a7bf92586ab40df059d08f6202c0b28472c6cd4374bf3dd3a9ad2b70f7",
+        "size": 8792660,
+        "names": {
+          "1": "GenEi LateGo v2",
+          "2": "Medium",
+          "4": "GenEi LateGo v2 Medium",
+          "5": "Version 2.1;Original Version 1.004",
+          "6": "GenEiLateGo_v2",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This Font Software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the SIL Open Font License for the specific language, permissions and limitations governing your use of this Font Software.",
+          "14": "http://scripts.sil.org/OFL"
+        },
+        "cmapCount": 16440,
+        "emptyOutlineMappingCount": 8,
+        "kanjiCount": 12744,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": true,
+        "puaCount": 128,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-genei-pople",
+      "downloadUrl": "https://okoneya.jp/font/GenEiPOPle_v1.0.zip",
+      "archiveSha256": "ed10a28fc517c7f375a65590a62b740cc291844da51459ce768e5be9dc8edc65",
+      "selectedOriginal": "GenEiPOPle_v1.0/GenEiPOPle-Bk.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "61add32568520f4daaa0396afb0d34b5a7b611412c9f8c601ff3f078512addb7",
+        "size": 3393732,
+        "names": {
+          "1": "GenEi POPle Black",
+          "2": "Regular",
+          "4": "GenEi POPle Black",
+          "5": "Version 1.0",
+          "6": "GenEiPOPle-Bk",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This Font Software is distributed on an 'AS IS' BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the SIL Open Font License for the specific language, permissions and limitations governing your use of this Font Software.",
+          "14": "https://scripts.sil.org/OFL"
+        },
+        "cmapCount": 8727,
+        "emptyOutlineMappingCount": 37,
+        "kanjiCount": 6721,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": true,
+        "puaCount": 126,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-genei-koburi",
+      "downloadUrl": "https://okoneya.jp/font/GenEiKoburiMin_v6.1.zip",
+      "archiveSha256": "b17d4def22c048e704955912423c7bac8a03a3dbf1acaa722f254a7e9ece148a",
+      "selectedOriginal": "GenEiKoburiMin_v6.1a/GenEiKoburiMin6-R.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "c27fb4039ac9fae19152716992b5b9d07558e24f6cccea7b0c1abd0109235166",
+        "size": 8486332,
+        "names": {
+          "1": "GenEi Koburi Mincho v6",
+          "2": "Regular",
+          "4": "GenEi Koburi Mincho v6 Regular",
+          "5": "Version 6.1",
+          "6": "GenEiKoburiMin6-R",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This Font Software is distributed on an 'AS IS' BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the SIL Open Font License for the specific language, permissions and limitations governing your use of this Font Software.",
+          "14": "http://scripts.sil.org/OFL"
+        },
+        "cmapCount": 15833,
+        "emptyOutlineMappingCount": 0,
+        "kanjiCount": 12719,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": true,
+        "puaCount": 196,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-851-yowaku",
+      "downloadUrl": "https://pm85122.onamae.jp/851CHIKARA-YOWAKU_002.ttf",
+      "archiveSha256": "0a11074b39d9ed5af63dfd4a208b8f02a22fff9b0695195064c8ace72cb8d3ce",
+      "selectedOriginal": "851CHIKARA-YOWAKU_002.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "0a11074b39d9ed5af63dfd4a208b8f02a22fff9b0695195064c8ace72cb8d3ce",
+        "size": 1645216,
+        "names": {
+          "1": "851CHIKARA-YOWAKU",
+          "2": "Regular",
+          "4": "851CHIKARA-YOWAKU",
+          "5": "Version 0.02",
+          "6": "851CHIKARA-YOWAKU"
+        },
+        "cmapCount": 14963,
+        "emptyOutlineMappingCount": 12100,
+        "kanjiCount": 2330,
+        "hiraganaCount": 83,
+        "katakanaCount": 86,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": "髙"
+      }
+    },
+    {
+      "id": "bundled-851-dzuyoku",
+      "downloadUrl": "https://pm85122.onamae.jp/851CHIKARA-DZUYOKU_kanaA_004.ttf",
+      "archiveSha256": "8ed0a61010d19efd0b9cb59e6cb114cd1a25fe4a67c9dfb47288aeca78beec70",
+      "selectedOriginal": "851CHIKARA-DZUYOKU_kanaA_004.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "8ed0a61010d19efd0b9cb59e6cb114cd1a25fe4a67c9dfb47288aeca78beec70",
+        "size": 4205384,
+        "names": {
+          "1": "851CHIKARA-DZUYOKU-KANA-A",
+          "2": "Regular",
+          "4": "851CHIKARA-DZUYOKU-KANA-A",
+          "5": "Version 0.04",
+          "6": "851CHIKARA-DZUYOKU-KANA-A"
+        },
+        "cmapCount": 14963,
+        "emptyOutlineMappingCount": 11104,
+        "kanjiCount": 3086,
+        "hiraganaCount": 84,
+        "katakanaCount": 86,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": "髙"
+      }
+    },
+    {
+      "id": "bundled-mushin",
+      "downloadUrl": "https://modi.jpn.org/download/MODI_mushin_2021_1104.zip",
+      "archiveSha256": "700d9306dfe224e17441c9b404079d6e1564a771b5e7c94a935a1f82870cdea6",
+      "selectedOriginal": "MODI_mushin_2021_1104/mushin.otf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "7eecc7b35202fc8f5cf8f3ce959c779a453abbe37cc9103ea28605ce754e5089",
+        "size": 4055300,
+        "names": {
+          "1": "Mushin",
+          "2": "Regular",
+          "4": "Mushin",
+          "5": "Version 1.04",
+          "6": "Mushin",
+          "13": "Cr:OTW0810150126133613A000000 Mo:OTW01000211104011047A000522"
+        },
+        "cmapCount": 8207,
+        "emptyOutlineMappingCount": 0,
+        "kanjiCount": 6720,
+        "hiraganaCount": 84,
+        "katakanaCount": 90,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-kurobara",
+      "downloadUrl": "https://modi.jpn.org/download/MODI_kurobara-gothic_2018_1102.zip",
+      "archiveSha256": "97c73d3f974642818f385a6eece731d40b86a3d378d15b91ec36d2557b4360ed",
+      "selectedOriginal": "MODI_kurobara-gothic_2018_1102/kurobara-gothic-bold.ttf",
+      "licenseNotice": "M+派生・MODI公式ページでWebfont/埋込み/再配布可。元readmeも同梱。",
+      "inspection": {
+        "sha256": "d9b9e73c34d43c2a948d9ff23af28e09259530e08434a592da4c8dff46ad8ae4",
+        "size": 2680768,
+        "names": {
+          "1": "kurobara gothic bold",
+          "2": "Regular",
+          "4": "kurobara gothic bold",
+          "5": "Version 1.00.20181102",
+          "6": "kurobara-gothic-bold"
+        },
+        "cmapCount": 14963,
+        "emptyOutlineMappingCount": 8026,
+        "kanjiCount": 5265,
+        "hiraganaCount": 84,
+        "katakanaCount": 90,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-senobi",
+      "downloadUrl": "https://modi.jpn.org/download/MODI_Senobi-Gothic_2017_0702.zip",
+      "archiveSha256": "4d0f999b05f0cb0f936c7826f82feae093f71f1a03c298e6f9a694901a4f773f",
+      "selectedOriginal": "MODI_Senobi-Gothic_2017_0702/Senobi-Gothic-Regular.ttf",
+      "licenseNotice": "M+派生・MODI公式ページでWebfont/埋込み/再配布可。元readmeも同梱。",
+      "inspection": {
+        "sha256": "5221c54f92cd49654828d41fed8800c4ef48b887b7ea0bab6a672ad49d457e2a",
+        "size": 2036172,
+        "names": {
+          "1": "Senobi Gothic Regular",
+          "2": "Regular",
+          "4": "Senobi Gothic Regular",
+          "5": "Version 1.00.20170627",
+          "6": "Senobi-Gothic-Regular"
+        },
+        "cmapCount": 7002,
+        "emptyOutlineMappingCount": 10,
+        "kanjiCount": 5178,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": true,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-851-kakutto",
+      "downloadUrl": "https://pm85122.onamae.jp/851H-kktt_004.ttf",
+      "archiveSha256": "3c81e8eb8ceda41664449c949ac111de597739bf12c4f7a173f7816fb88ce9d3",
+      "selectedOriginal": "851H-kktt_004.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "3c81e8eb8ceda41664449c949ac111de597739bf12c4f7a173f7816fb88ce9d3",
+        "size": 3478108,
+        "names": {
+          "1": "851H-kktt",
+          "2": "Regular",
+          "4": "851H-kktt",
+          "5": "Version 0.04",
+          "6": "851H-kktt"
+        },
+        "cmapCount": 14963,
+        "emptyOutlineMappingCount": 9991,
+        "kanjiCount": 4349,
+        "hiraganaCount": 83,
+        "katakanaCount": 86,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": "髙"
+      }
+    },
+    {
+      "id": "bundled-851-zatsu",
+      "downloadUrl": "https://pm85122.onamae.jp/851tegaki_zatsu_normal_0883.ttf",
+      "archiveSha256": "e5290d6583e1aef725f07921aad69b9eaa83cf3408273cf840ff31842d118f0e",
+      "selectedOriginal": "851tegaki_zatsu_normal_0883.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "e5290d6583e1aef725f07921aad69b9eaa83cf3408273cf840ff31842d118f0e",
+        "size": 28588168,
+        "names": {
+          "1": "851tegakizatsu",
+          "2": "Regular",
+          "4": "851tegakizatsu",
+          "5": "Version 0.883",
+          "6": "851tegakizatsu"
+        },
+        "cmapCount": 60275,
+        "emptyOutlineMappingCount": 25996,
+        "kanjiCount": 20950,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": true,
+        "puaCount": 201,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-851-gkktt",
+      "downloadUrl": "https://pm85122.onamae.jp/851Gkktt_005.ttf",
+      "archiveSha256": "c30194deb421feb7d187d1a4197d8afbf7f3a77b2d6ed6b85018e28e78390ff8",
+      "selectedOriginal": "851Gkktt_005.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "c30194deb421feb7d187d1a4197d8afbf7f3a77b2d6ed6b85018e28e78390ff8",
+        "size": 1407252,
+        "names": {
+          "1": "851Gkktt",
+          "2": "Regular",
+          "4": "851Gkktt",
+          "5": "Version 0.05",
+          "6": "851Gkktt",
+          "13": "Cr:TTE01010181217203025A001712 Mo:TTE01080190901023057A001712"
+        },
+        "cmapCount": 15036,
+        "emptyOutlineMappingCount": 9890,
+        "kanjiCount": 4377,
+        "hiraganaCount": 83,
+        "katakanaCount": 86,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-tanuki",
+      "downloadUrl": "https://tanukifont.com/download/TanukiMagic_1_22.zip",
+      "archiveSha256": "67f9ef68b043c036dc8c64cc70c266b9547853978fcf209050a8221c91766e1f",
+      "selectedOriginal": "TanukiMagic.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "e4a1be7078036ba7482b1102e0a720f4e2848716f6a4862607a2c69d44d43278",
+        "size": 8825304,
+        "names": {
+          "1": "Tanuki Permanent Marker",
+          "2": "Regular",
+          "4": "Tanuki Permanent Marker",
+          "5": "Version 1.22",
+          "6": "Tanuki-Permanent-Marker",
+          "13": "Cr:TTE01080200916144324A000831 Mo:TTE01080200916154835A000831"
+        },
+        "cmapCount": 14964,
+        "emptyOutlineMappingCount": 7349,
+        "kanjiCount": 6687,
+        "hiraganaCount": 84,
+        "katakanaCount": 86,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-dotgothic",
+      "downloadUrl": "https://github.com/fontworks-fonts/DotGothic16/raw/refs/heads/master/fonts/ttf/DotGothic16-Regular.ttf",
+      "archiveSha256": "155da8f318553c11d9dffc2affbc7c2114c6a46f9740bcf639ed5568af92be71",
+      "selectedOriginal": "DotGothic16-Regular.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "155da8f318553c11d9dffc2affbc7c2114c6a46f9740bcf639ed5568af92be71",
+        "size": 2069236,
+        "names": {
+          "1": "DotGothic16",
+          "2": "Regular",
+          "4": "DotGothic16 Regular",
+          "5": "Version 1.101",
+          "6": "DotGothic16-Regular",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+          "14": "https://scripts.sil.org/OFL"
+        },
+        "cmapCount": 8231,
+        "emptyOutlineMappingCount": 6,
+        "kanjiCount": 6714,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-rocknroll",
+      "downloadUrl": "https://github.com/fontworks-fonts/RocknRoll/raw/refs/heads/master/fonts/ttf/RocknRollOne-Regular.ttf",
+      "archiveSha256": "dc0f5ff975851827f63f2c6bfed128ffbca14b6399a10fb5e1711215c0108526",
+      "selectedOriginal": "RocknRollOne-Regular.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "dc0f5ff975851827f63f2c6bfed128ffbca14b6399a10fb5e1711215c0108526",
+        "size": 2682824,
+        "names": {
+          "1": "RocknRoll One",
+          "2": "Regular",
+          "4": "RocknRoll One Regular",
+          "5": "Version 1.100",
+          "6": "RocknRollOne-Regular",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+          "14": "https://scripts.sil.org/OFL"
+        },
+        "cmapCount": 8230,
+        "emptyOutlineMappingCount": 6,
+        "kanjiCount": 6714,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-reggae",
+      "downloadUrl": "https://github.com/fontworks-fonts/Reggae/raw/refs/heads/master/fonts/ttf/ReggaeOne-Regular.ttf",
+      "archiveSha256": "aebe62598732d76036f30ec11bb0ec5f68938e373a06d1b4ceb6b9cf1abf3db2",
+      "selectedOriginal": "ReggaeOne-Regular.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "aebe62598732d76036f30ec11bb0ec5f68938e373a06d1b4ceb6b9cf1abf3db2",
+        "size": 2153256,
+        "names": {
+          "1": "Reggae One",
+          "2": "Regular",
+          "4": "Reggae One Regular",
+          "5": "Version 1.100",
+          "6": "ReggaeOne-Regular",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+          "14": "https://scripts.sil.org/OFL"
+        },
+        "cmapCount": 8231,
+        "emptyOutlineMappingCount": 6,
+        "kanjiCount": 6714,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-yomogi",
+      "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/yomogi/Yomogi-Regular.ttf",
+      "archiveSha256": "ec280f473a03187292905618f24fdb08a6dcbf8620b52637e3b589fe745259b9",
+      "selectedOriginal": "Yomogi-Regular.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "ec280f473a03187292905618f24fdb08a6dcbf8620b52637e3b589fe745259b9",
+        "size": 4045904,
+        "names": {
+          "1": "Yomogi",
+          "2": "Regular",
+          "4": "Yomogi Regular",
+          "5": "Version 3.206",
+          "6": "Yomogi-Regular",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://openfontlicense.org",
+          "14": "https://openfontlicense.org"
+        },
+        "cmapCount": 8039,
+        "emptyOutlineMappingCount": 6,
+        "kanjiCount": 6684,
+        "hiraganaCount": 84,
+        "katakanaCount": 90,
+        "combiningDakuten": true,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-hachimarupop",
+      "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/hachimarupop/HachiMaruPop-Regular.ttf",
+      "archiveSha256": "78408910c8f1a2f174a279cbc1484b48b71780039eba3fe1be2bfcc5d4df3f98",
+      "selectedOriginal": "HachiMaruPop-Regular.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "78408910c8f1a2f174a279cbc1484b48b71780039eba3fe1be2bfcc5d4df3f98",
+        "size": 4385624,
+        "names": {
+          "1": "Hachi Maru Pop",
+          "2": "Regular",
+          "4": "Hachi Maru Pop Regular",
+          "5": "Version 1.300",
+          "6": "HachiMaruPop-Regular",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+          "14": "https://scripts.sil.org/OFL"
+        },
+        "cmapCount": 7470,
+        "emptyOutlineMappingCount": 5,
+        "kanjiCount": 6682,
+        "hiraganaCount": 84,
+        "katakanaCount": 90,
+        "combiningDakuten": true,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-darumadrop",
+      "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/darumadropone/DarumadropOne-Regular.ttf",
+      "archiveSha256": "beef6d9031918823176ea0f9f729cb811a5f250598d7c8c684b3dee333810689",
+      "selectedOriginal": "DarumadropOne-Regular.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "beef6d9031918823176ea0f9f729cb811a5f250598d7c8c684b3dee333810689",
+        "size": 359120,
+        "names": {
+          "1": "Darumadrop One",
+          "2": "Regular",
+          "4": "Darumadrop One Regular",
+          "5": "Version 1.000",
+          "6": "DarumadropOne-Regular",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+          "14": "https://scripts.sil.org/OFL"
+        },
+        "cmapCount": 525,
+        "emptyOutlineMappingCount": 7,
+        "kanjiCount": 0,
+        "hiraganaCount": 84,
+        "katakanaCount": 90,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": "今日何描星降夜約束辻葛髙"
+      }
+    },
+    {
+      "id": "bundled-stick",
+      "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/stick/Stick-Regular.ttf",
+      "archiveSha256": "0e582d72b5125c7847d1c46b658333194f7a3f70bfa210d2f8cae1a596a17857",
+      "selectedOriginal": "Stick-Regular.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "0e582d72b5125c7847d1c46b658333194f7a3f70bfa210d2f8cae1a596a17857",
+        "size": 2215036,
+        "names": {
+          "1": "Stick",
+          "2": "Regular",
+          "4": "Stick Regular",
+          "5": "Version 1.100",
+          "6": "Stick-Regular",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+          "14": "https://scripts.sil.org/OFL"
+        },
+        "cmapCount": 8231,
+        "emptyOutlineMappingCount": 6,
+        "kanjiCount": 6714,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-train",
+      "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/trainone/TrainOne-Regular.ttf",
+      "archiveSha256": "07d67ad14231a4a41f0ee501b14bd6f9c7a9beada5ee6af2924114863a034623",
+      "selectedOriginal": "TrainOne-Regular.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "07d67ad14231a4a41f0ee501b14bd6f9c7a9beada5ee6af2924114863a034623",
+        "size": 2152516,
+        "names": {
+          "1": "Train One",
+          "2": "Regular",
+          "4": "Train One Regular",
+          "5": "Version 1.100",
+          "6": "TrainOne-Regular",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+          "14": "https://scripts.sil.org/OFL"
+        },
+        "cmapCount": 4356,
+        "emptyOutlineMappingCount": 6,
+        "kanjiCount": 2966,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": "髙"
+      }
+    },
+    {
+      "id": "bundled-rampart",
+      "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/rampartone/RampartOne-Regular.ttf",
+      "archiveSha256": "a4c60ee835175fa147eb483fac0dd8ff9007c37884ef77af86b0a868fa554d49",
+      "selectedOriginal": "RampartOne-Regular.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "a4c60ee835175fa147eb483fac0dd8ff9007c37884ef77af86b0a868fa554d49",
+        "size": 3722352,
+        "names": {
+          "1": "Rampart One",
+          "2": "Regular",
+          "4": "Rampart One Regular",
+          "5": "Version 1.100",
+          "6": "RampartOne-Regular",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+          "14": "https://scripts.sil.org/OFL"
+        },
+        "cmapCount": 8231,
+        "emptyOutlineMappingCount": 6,
+        "kanjiCount": 6714,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-dela",
+      "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/delagothicone/DelaGothicOne-Regular.ttf",
+      "archiveSha256": "4ff87a0965f1b0505e5a2c58424bc6ad3cff27e56a82f21c2fc9d6b0e3857ee2",
+      "selectedOriginal": "DelaGothicOne-Regular.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "4ff87a0965f1b0505e5a2c58424bc6ad3cff27e56a82f21c2fc9d6b0e3857ee2",
+        "size": 2508848,
+        "names": {
+          "1": "Dela Gothic One",
+          "2": "Regular",
+          "4": "Dela Gothic One Regular",
+          "5": "Version 1.005",
+          "6": "DelaGothicOne-Regular",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+          "14": "https://scripts.sil.org/OFL"
+        },
+        "cmapCount": 9030,
+        "emptyOutlineMappingCount": 20,
+        "kanjiCount": 7654,
+        "hiraganaCount": 84,
+        "katakanaCount": 90,
+        "combiningDakuten": true,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-yuji",
+      "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/yujisyuku/YujiSyuku-Regular.ttf",
+      "archiveSha256": "82728ebafc8c97391e2dab633414a806f344b8e4e2227d307179f07b548fca61",
+      "selectedOriginal": "YujiSyuku-Regular.ttf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "82728ebafc8c97391e2dab633414a806f344b8e4e2227d307179f07b548fca61",
+        "size": 8430348,
+        "names": {
+          "1": "Yuji Syuku",
+          "2": "Regular",
+          "4": "Yuji Syuku Regular",
+          "5": "Version 3.002",
+          "6": "YujiSyuku-Regular",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+          "14": "https://scripts.sil.org/OFL"
+        },
+        "cmapCount": 8013,
+        "emptyOutlineMappingCount": 4,
+        "kanjiCount": 6746,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    },
+    {
+      "id": "bundled-chalk",
+      "downloadUrl": "https://font.cutegirl.jp/wp-content/uploads/2021/04/ChalkJP_3.zip",
+      "archiveSha256": "33935424abe5c193afc17c0bc253a40c067d96c4057c35a3fe811416e030807c",
+      "selectedOriginal": "Chalk-JP.otf",
+      "licenseNotice": "",
+      "inspection": {
+        "sha256": "36024558db4ceab77c271c81e3d56d6a81fdba8a47db3c8b0533bd36a1daf972",
+        "size": 11949376,
+        "names": {
+          "1": "チョーク体",
+          "2": "Regular",
+          "4": "Chalk JP",
+          "5": "Version 1.200;FEAKit 1.0",
+          "6": "Chalk-JP",
+          "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+          "14": "https://scripts.sil.org/OFL"
+        },
+        "cmapCount": 10170,
+        "emptyOutlineMappingCount": 0,
+        "kanjiCount": 7916,
+        "hiraganaCount": 86,
+        "katakanaCount": 90,
+        "combiningDakuten": false,
+        "puaCount": 0,
+        "hasGSUB": true,
+        "missingSample": ""
+      }
+    }
+  ]
+}

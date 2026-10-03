@@ -1,0 +1,581 @@
+[
+  {
+    "id": "bundled-genei-antique",
+    "label": "源暎アンチック",
+    "category": "アンチック",
+    "tags": [
+      "漫画",
+      "セリフ"
+    ],
+    "comment": "読みやすい王道セリフ。Primary候補。",
+    "sourceUrl": "https://okoneya.jp/font/",
+    "licenseUrl": "https://okoneya.jp/font/",
+    "downloadUrl": "https://okoneya.jp/font/GenEiAntique_v6.0a.zip",
+    "originalLicense": "OFLicense.txt",
+    "acquisition": {
+      "select": "GenEiAntique_v6.0a/GenEiAntiqueNv6-M.ttf",
+      "licenses": [
+        "GenEiAntique_v6.0a/OFLicense.txt",
+        "GenEiAntique_v6.0a/readme_説明書.txt"
+      ]
+    }
+  },
+  {
+    "id": "bundled-f910-comic",
+    "label": "F910新コミック体",
+    "category": "アンチック",
+    "tags": [
+      "漫画",
+      "セリフ"
+    ],
+    "comment": "かながやや大きい、親しみのあるセリフ。",
+    "sourceUrl": "https://www.font910.jp/font-list/conposite-comic.html",
+    "licenseUrl": "https://www.font910.jp/font-list/conposite-comic.html",
+    "downloadUrl": "https://www.font910.jp/freefont_i6wiwk5/f910-shin-comic-2.04.zip",
+    "originalLicense": "Apache License 2.0.txt",
+    "acquisition": {
+      "select": "f910-shin-comic-2.04/f910-shin-comic-2.04.otf",
+      "licenses": [
+        "f910-shin-comic-2.04/Apache License 2.0.txt",
+        "f910-shin-comic-2.04/readme.txt"
+      ]
+    }
+  },
+  {
+    "id": "bundled-genei-nu",
+    "label": "源暎Nuゴシック EB",
+    "category": "極太角ゴ",
+    "tags": [
+      "漫画",
+      "感情"
+    ],
+    "comment": "力強い怒り・強調・擬音。",
+    "sourceUrl": "https://okoneya.jp/font/",
+    "licenseUrl": "https://okoneya.jp/font/",
+    "downloadUrl": "https://okoneya.jp/font/GenEiNuGothic-EB_v1.1.zip",
+    "originalLicense": "OFLicense.txt",
+    "acquisition": {
+      "select": "GenEiNuGothic-EB_v1.1/GenEiNuGothic-EB.ttf",
+      "licenses": [
+        "GenEiNuGothic-EB_v1.1/OFLicense.txt",
+        "GenEiNuGothic-EB_v1.1/readme_説明書.txt"
+      ]
+    }
+  },
+  {
+    "id": "bundled-genei-latego",
+    "label": "源暎ラテゴ Medium",
+    "category": "ラテン仮名混植",
+    "tags": [
+      "漫画",
+      "放送",
+      "電話",
+      "機械"
+    ],
+    "comment": "電話・放送越しの声。機械的な語りに。",
+    "sourceUrl": "https://okoneya.jp/font/",
+    "licenseUrl": "https://okoneya.jp/font/",
+    "downloadUrl": "https://okoneya.jp/font/GenEiLatin-Separate_v2.1.zip",
+    "originalLicense": "LICENSE.txt",
+    "acquisition": {
+      "select": "GenEiLatin-Separate_v2.1/GenEiLateGoN_v2.ttf",
+      "licenses": [
+        "GenEiLatin-Separate_v2.1/LICENSE.txt",
+        "GenEiLatin-Separate_v2.1/readme_説明書.txt"
+      ],
+      "preExtracted": true
+    }
+  },
+  {
+    "id": "bundled-genei-pople",
+    "label": "源暎ぽっぷる Black",
+    "category": "ポップ丸文字",
+    "tags": [
+      "漫画",
+      "タイトル"
+    ],
+    "comment": "丸く大きく弾むPOP。タイトル向き。",
+    "sourceUrl": "https://okoneya.jp/font/",
+    "licenseUrl": "https://okoneya.jp/font/",
+    "downloadUrl": "https://okoneya.jp/font/GenEiPOPle_v1.0.zip",
+    "originalLicense": "OFLicense.txt",
+    "acquisition": {
+      "select": "GenEiPOPle_v1.0/GenEiPOPle-Bk.ttf",
+      "licenses": [
+        "GenEiPOPle_v1.0/OFLicense.txt",
+        "GenEiPOPle_v1.0/readme_説明書.txt"
+      ]
+    }
+  },
+  {
+    "id": "bundled-genei-koburi",
+    "label": "源暎こぶり明朝 Regular",
+    "category": "明朝",
+    "tags": [
+      "漫画",
+      "心の声",
+      "地の文",
+      "静けさ"
+    ],
+    "comment": "細身で静かな声・地の文。",
+    "sourceUrl": "https://okoneya.jp/font/",
+    "licenseUrl": "https://okoneya.jp/font/",
+    "downloadUrl": "https://okoneya.jp/font/GenEiKoburiMin_v6.1.zip",
+    "originalLicense": "OFLicense.txt",
+    "acquisition": {
+      "select": "GenEiKoburiMin_v6.1a/GenEiKoburiMin6-R.ttf",
+      "licenses": [
+        "GenEiKoburiMin_v6.1a/OFLicense.txt",
+        "GenEiKoburiMin_v6.1a/readme_説明書.txt"
+      ]
+    }
+  },
+  {
+    "id": "bundled-851-yowaku",
+    "label": "851チカラヨワク",
+    "category": "手書き細字",
+    "tags": [
+      "漫画",
+      "小声",
+      "弱さ",
+      "震え"
+    ],
+    "comment": "細く弱々しい手書き。小声や繊細な役。",
+    "sourceUrl": "https://pm85122.onamae.jp/851fontpage.html",
+    "licenseUrl": "https://pm85122.onamae.jp/851fontTerm.html",
+    "downloadUrl": "https://pm85122.onamae.jp/851CHIKARA-YOWAKU_002.ttf",
+    "snapshotLicense": true,
+    "acquisition": {
+      "archive": false,
+      "filename": "851CHIKARA-YOWAKU_002.ttf",
+      "select": "851CHIKARA-YOWAKU_002.ttf"
+    }
+  },
+  {
+    "id": "bundled-851-dzuyoku",
+    "label": "851チカラヅヨク A",
+    "category": "手書き太字",
+    "tags": [
+      "漫画",
+      "擬音",
+      "強調",
+      "ツッコミ",
+      "MV"
+    ],
+    "comment": "太く勢いのある手書き。叫び・擬音。",
+    "sourceUrl": "https://pm85122.onamae.jp/851fontpage.html",
+    "licenseUrl": "https://pm85122.onamae.jp/851fontTerm.html",
+    "downloadUrl": "https://pm85122.onamae.jp/851CHIKARA-DZUYOKU_kanaA_004.ttf",
+    "snapshotLicense": true,
+    "acquisition": {
+      "archive": false,
+      "filename": "851CHIKARA-DZUYOKU_kanaA_004.ttf",
+      "select": "851CHIKARA-DZUYOKU_kanaA_004.ttf"
+    }
+  },
+  {
+    "id": "bundled-mushin",
+    "label": "無心",
+    "category": "手書きラフ",
+    "tags": [
+      "漫画",
+      "キャラの声",
+      "手紙",
+      "MV"
+    ],
+    "comment": "ザクザクした筆跡。荒い声や手紙に。",
+    "sourceUrl": "https://modi.jpn.org/font_mushin.php",
+    "licenseUrl": "https://modi.jpn.org/font_mushin.php",
+    "downloadUrl": "https://modi.jpn.org/download/MODI_mushin_2021_1104.zip",
+    "originalLicense": "readme.txt",
+    "acquisition": {
+      "archive": true,
+      "select": "MODI_mushin_2021_1104/mushin.otf",
+      "licenses": [
+        "MODI_mushin_2021_1104/readme.txt"
+      ]
+    }
+  },
+  {
+    "id": "bundled-kurobara",
+    "label": "黒薔薇ゴシック Bold",
+    "category": "棘付き角ゴ",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "comment": "棘のあるゴス文字。妖しさとクールなMV。",
+    "sourceUrl": "https://modi.jpn.org/font_kurobara-gothic.php",
+    "licenseUrl": "https://modi.jpn.org/licence.php",
+    "downloadUrl": "https://modi.jpn.org/download/MODI_kurobara-gothic_2018_1102.zip",
+    "originalLicense": "readme.txt",
+    "acquisition": {
+      "archive": true,
+      "select": "MODI_kurobara-gothic_2018_1102/kurobara-gothic-bold.ttf",
+      "licenses": [
+        "MODI_kurobara-gothic_2018_1102/readme.txt"
+      ]
+    },
+    "licenseNotice": "M+派生・MODI公式ページでWebfont/埋込み/再配布可。元readmeも同梱。"
+  },
+  {
+    "id": "bundled-senobi",
+    "label": "せのびゴシック Regular",
+    "category": "長体角ゴ",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "comment": "すらりと背の高い文字。クールな見出し。",
+    "sourceUrl": "https://modi.jpn.org/font_senobi.php",
+    "licenseUrl": "https://modi.jpn.org/licence.php",
+    "downloadUrl": "https://modi.jpn.org/download/MODI_Senobi-Gothic_2017_0702.zip",
+    "originalLicense": "readme.txt",
+    "acquisition": {
+      "archive": true,
+      "select": "MODI_Senobi-Gothic_2017_0702/Senobi-Gothic-Regular.ttf",
+      "licenses": [
+        "MODI_Senobi-Gothic_2017_0702/readme.txt"
+      ]
+    },
+    "licenseNotice": "M+派生・MODI公式ページでWebfont/埋込み/再配布可。元readmeも同梱。"
+  },
+  {
+    "id": "bundled-851-kakutto",
+    "label": "851テガキカクット",
+    "category": "手書き角字",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "comment": "斜めの角文字。SF・ロボットの声に。",
+    "sourceUrl": "https://pm85122.onamae.jp/851H_kktt.html",
+    "licenseUrl": "https://pm85122.onamae.jp/851fontTerm.html",
+    "downloadUrl": "https://pm85122.onamae.jp/851H-kktt_004.ttf",
+    "snapshotLicense": true,
+    "acquisition": {
+      "archive": false,
+      "filename": "851H-kktt_004.ttf",
+      "select": "851H-kktt_004.ttf"
+    }
+  },
+  {
+    "id": "bundled-851-zatsu",
+    "label": "851手書き雑フォント",
+    "category": "手書きラフ",
+    "tags": [
+      "漫画",
+      "キャラの声",
+      "手紙",
+      "MV"
+    ],
+    "comment": "ボールペンの生活感。自然なキャラの声。",
+    "sourceUrl": "https://pm85122.onamae.jp/851fontpage.html",
+    "licenseUrl": "https://pm85122.onamae.jp/851fontTerm.html",
+    "downloadUrl": "https://pm85122.onamae.jp/851tegaki_zatsu_normal_0883.ttf",
+    "snapshotLicense": true,
+    "acquisition": {
+      "archive": false,
+      "filename": "851tegaki_zatsu_normal_0883.ttf",
+      "select": "851tegaki_zatsu_normal_0883.ttf"
+    }
+  },
+  {
+    "id": "bundled-851-gkktt",
+    "label": "851ゴチカクット",
+    "category": "工業角字",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "comment": "電機文字風。SF見出し・MVの強いアクセント。 未完成版・使用文字の見本確認推奨。",
+    "sourceUrl": "https://pm85122.onamae.jp/851Gkktt.html",
+    "licenseUrl": "https://pm85122.onamae.jp/851fontTerm.html",
+    "downloadUrl": "https://pm85122.onamae.jp/851Gkktt_005.ttf",
+    "snapshotLicense": true,
+    "acquisition": {
+      "archive": false,
+      "filename": "851Gkktt_005.ttf",
+      "select": "851Gkktt_005.ttf"
+    }
+  },
+  {
+    "id": "bundled-tanuki",
+    "label": "たぬき油性マジック",
+    "category": "手書きマーカー",
+    "tags": [
+      "漫画",
+      "キャラの声",
+      "手紙",
+      "MV"
+    ],
+    "comment": "丸く太い油性マジック。温かいPOPや声に。",
+    "sourceUrl": "https://tanukifont.com/tanuki-permanent-marker/",
+    "licenseUrl": "https://tanukifont.com/tanuki-permanent-marker/",
+    "downloadUrl": "https://tanukifont.com/download/TanukiMagic_1_22.zip",
+    "originalLicense": "readme.txt",
+    "acquisition": {
+      "archive": true,
+      "select": "TanukiMagic.ttf",
+      "licenses": [
+        "readme.txt"
+      ]
+    }
+  },
+  {
+    "id": "bundled-dotgothic",
+    "label": "ドットゴシック16",
+    "category": "ドット",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "comment": "16ドットのゲーム文字。電子音・レトロMV。",
+    "sourceUrl": "https://github.com/fontworks-fonts/DotGothic16",
+    "licenseUrl": "https://github.com/fontworks-fonts/DotGothic16/blob/master/OFL.txt",
+    "downloadUrl": "https://github.com/fontworks-fonts/DotGothic16/raw/refs/heads/master/fonts/ttf/DotGothic16-Regular.ttf",
+    "originalLicense": "OFL.txt",
+    "acquisition": {
+      "archive": false,
+      "filename": "DotGothic16-Regular.ttf",
+      "select": "DotGothic16-Regular.ttf"
+    }
+  },
+  {
+    "id": "bundled-rocknroll",
+    "label": "ロックンロール One",
+    "category": "ポップ丸文字",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "comment": "丸い点と線の強弱。明るく軽快なMV。",
+    "sourceUrl": "https://github.com/fontworks-fonts/RocknRoll",
+    "licenseUrl": "https://github.com/fontworks-fonts/RocknRoll/blob/master/OFL.txt",
+    "downloadUrl": "https://github.com/fontworks-fonts/RocknRoll/raw/refs/heads/master/fonts/ttf/RocknRollOne-Regular.ttf",
+    "originalLicense": "OFL.txt",
+    "acquisition": {
+      "archive": false,
+      "filename": "RocknRollOne-Regular.ttf",
+      "select": "RocknRollOne-Regular.ttf"
+    }
+  },
+  {
+    "id": "bundled-reggae",
+    "label": "レゲエ One",
+    "category": "ポップ鋭角文字",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "comment": "鋭い末端が弾む。勢いのある擬音とMV。",
+    "sourceUrl": "https://github.com/fontworks-fonts/Reggae",
+    "licenseUrl": "https://github.com/fontworks-fonts/Reggae/blob/master/OFL.txt",
+    "downloadUrl": "https://github.com/fontworks-fonts/Reggae/raw/refs/heads/master/fonts/ttf/ReggaeOne-Regular.ttf",
+    "originalLicense": "OFL.txt",
+    "acquisition": {
+      "archive": false,
+      "filename": "ReggaeOne-Regular.ttf",
+      "select": "ReggaeOne-Regular.ttf"
+    }
+  },
+  {
+    "id": "bundled-yomogi",
+    "label": "よもぎ",
+    "category": "手書き細字",
+    "comment": "極細で癖のある筆跡。独白や余白の小さな声。",
+    "tags": [
+      "漫画",
+      "キャラの声",
+      "手紙",
+      "MV"
+    ],
+    "sourceUrl": "https://github.com/google/fonts/tree/main/ofl/yomogi",
+    "licenseUrl": "https://github.com/google/fonts/blob/main/ofl/yomogi/OFL.txt",
+    "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/yomogi/Yomogi-Regular.ttf",
+    "originalLicense": "OFL.txt",
+    "acquisition": {
+      "archive": false,
+      "filename": "Yomogi-Regular.ttf",
+      "select": "Yomogi-Regular.ttf",
+      "licenseDownloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/yomogi/OFL.txt"
+    }
+  },
+  {
+    "id": "bundled-hachimarupop",
+    "label": "はちまるポップ",
+    "category": "レトロ丸文字",
+    "comment": "80年代の丸文字。少女の声とレトロPOP。",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "sourceUrl": "https://github.com/google/fonts/tree/main/ofl/hachimarupop",
+    "licenseUrl": "https://github.com/google/fonts/blob/main/ofl/hachimarupop/OFL.txt",
+    "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/hachimarupop/HachiMaruPop-Regular.ttf",
+    "originalLicense": "OFL.txt",
+    "acquisition": {
+      "archive": false,
+      "filename": "HachiMaruPop-Regular.ttf",
+      "select": "HachiMaruPop-Regular.ttf",
+      "licenseDownloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/hachimarupop/OFL.txt"
+    }
+  },
+  {
+    "id": "bundled-darumadrop",
+    "label": "だるまドロップ One",
+    "category": "民芸かな文字",
+    "comment": "達磨落とし風のかな。民芸ロゴ・軽快な擬音。",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "sourceUrl": "https://github.com/google/fonts/tree/main/ofl/darumadropone",
+    "licenseUrl": "https://github.com/google/fonts/blob/main/ofl/darumadropone/OFL.txt",
+    "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/darumadropone/DarumadropOne-Regular.ttf",
+    "originalLicense": "OFL.txt",
+    "coverage": "ひらがな・カタカナ・英数字・記号／漢字なし",
+    "acquisition": {
+      "archive": false,
+      "filename": "DarumadropOne-Regular.ttf",
+      "select": "DarumadropOne-Regular.ttf",
+      "licenseDownloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/darumadropone/OFL.txt"
+    }
+  },
+  {
+    "id": "bundled-stick",
+    "label": "ステッキ",
+    "category": "直線文字",
+    "comment": "直線的で幼い形。牧歌的な声やギャグ。",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "sourceUrl": "https://github.com/google/fonts/tree/main/ofl/stick",
+    "licenseUrl": "https://github.com/google/fonts/blob/main/ofl/stick/OFL.txt",
+    "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/stick/Stick-Regular.ttf",
+    "originalLicense": "OFL.txt",
+    "acquisition": {
+      "archive": false,
+      "filename": "Stick-Regular.ttf",
+      "select": "Stick-Regular.ttf",
+      "licenseDownloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/stick/OFL.txt"
+    }
+  },
+  {
+    "id": "bundled-train",
+    "label": "トレイン One",
+    "category": "二重線文字",
+    "comment": "二重線の抜け感。速度のあるタイトルとMV。",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "sourceUrl": "https://github.com/google/fonts/tree/main/ofl/trainone",
+    "licenseUrl": "https://github.com/google/fonts/blob/main/ofl/trainone/OFL.txt",
+    "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/trainone/TrainOne-Regular.ttf",
+    "originalLicense": "OFL.txt",
+    "acquisition": {
+      "archive": false,
+      "filename": "TrainOne-Regular.ttf",
+      "select": "TrainOne-Regular.ttf",
+      "licenseDownloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/trainone/OFL.txt"
+    }
+  },
+  {
+    "id": "bundled-rampart",
+    "label": "ランパート One",
+    "category": "立体文字",
+    "comment": "影付きブロック。重量感のある立体タイトル。",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "sourceUrl": "https://github.com/google/fonts/tree/main/ofl/rampartone",
+    "licenseUrl": "https://github.com/google/fonts/blob/main/ofl/rampartone/OFL.txt",
+    "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/rampartone/RampartOne-Regular.ttf",
+    "originalLicense": "OFL.txt",
+    "acquisition": {
+      "archive": false,
+      "filename": "RampartOne-Regular.ttf",
+      "select": "RampartOne-Regular.ttf",
+      "licenseDownloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/rampartone/OFL.txt"
+    }
+  },
+  {
+    "id": "bundled-dela",
+    "label": "デラゴシック One",
+    "category": "極太角ゴ",
+    "comment": "平たい極太文字。悪役の声・力強い見出し。",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "sourceUrl": "https://github.com/google/fonts/tree/main/ofl/delagothicone",
+    "licenseUrl": "https://github.com/google/fonts/blob/main/ofl/delagothicone/OFL.txt",
+    "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/delagothicone/DelaGothicOne-Regular.ttf",
+    "originalLicense": "OFL.txt",
+    "acquisition": {
+      "archive": false,
+      "filename": "DelaGothicOne-Regular.ttf",
+      "select": "DelaGothicOne-Regular.ttf",
+      "licenseDownloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/delagothicone/OFL.txt"
+    }
+  },
+  {
+    "id": "bundled-yuji",
+    "label": "佑字 肅",
+    "category": "筆文字",
+    "comment": "端正な筆文字。和風・儀礼・筆文字の擬音。",
+    "tags": [
+      "漫画",
+      "MV",
+      "タイトル"
+    ],
+    "sourceUrl": "https://github.com/google/fonts/tree/main/ofl/yujisyuku",
+    "licenseUrl": "https://github.com/google/fonts/blob/main/ofl/yujisyuku/OFL.txt",
+    "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/yujisyuku/YujiSyuku-Regular.ttf",
+    "originalLicense": "OFL.txt",
+    "acquisition": {
+      "archive": false,
+      "filename": "YujiSyuku-Regular.ttf",
+      "select": "YujiSyuku-Regular.ttf",
+      "licenseDownloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/yujisyuku/OFL.txt"
+    }
+  },
+  {
+    "id": "bundled-chalk",
+    "label": "チョーク体",
+    "category": "手書きチョーク",
+    "tags": [
+      "漫画",
+      "MV",
+      "黒板"
+    ],
+    "comment": "ざらざらした板書。教室や思い出のMVに。",
+    "sourceUrl": "https://font.cutegirl.jp/chalk-font-free.html",
+    "licenseUrl": "https://font.cutegirl.jp/chalk-font-free.html",
+    "downloadUrl": "https://font.cutegirl.jp/wp-content/uploads/2021/04/ChalkJP_3.zip",
+    "originalLicense": "OFL.txt",
+    "acquisition": {
+      "select": "Chalk-JP.otf",
+      "licenses": [
+        "OFL.txt",
+        "readme.txt"
+      ]
+    }
+  }
+]

@@ -500,3 +500,44 @@
 #balloon-popup .pl-fontrow { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; }
 #balloon-popup .pl-fontname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #balloon-popup .pl-btn--icon { flex: 0 0 auto; }
+
+/* ===== 吹き出し: 選定フォントの見本/許諾情報（WP-021）===== */
+#balloon-popup .pl-font-card {
+    margin: 4px 0 8px;
+    padding: 6px;
+    border: 1px solid rgba(207, 156, 151, 0.62);
+    border-radius: 6px;
+    background: rgba(240, 224, 214, 0.38);
+}
+#balloon-popup .pl-font-card__heading { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+#balloon-popup .pl-font-card__heading strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#balloon-popup .pl-font-card__heading span,
+#balloon-popup .pl-font-card__meta { color: var(--futaba-light-maroon); font-size: 10px; }
+#balloon-popup .pl-font-card__comment { margin: 4px 0; color: var(--futaba-maroon); line-height: 1.35; }
+#balloon-popup .pl-font-card__sample { margin-top: 5px; }
+#balloon-popup .pl-font-card__sample > .pl-label { display: block; margin-bottom: 2px; }
+#balloon-popup .pl-font-sample {
+    min-height: 38px;
+    margin-top: 4px;
+    padding: 5px 6px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+#balloon-popup .pl-font-load-status { display: block; margin-top: 3px; color: var(--futaba-light-maroon); font-size: 10px; }
+#balloon-popup .pl-font-load-status[data-state="error"] { color: var(--futaba-light-maroon); }
+#balloon-popup .pl-font-load-status[data-state="loaded"] { color: var(--futaba-maroon); }
+#balloon-popup .pl-font-sample[data-state="loading"],
+#balloon-popup .pl-font-sample[data-state="error"] { color: var(--futaba-light-maroon); }
+#balloon-popup .pl-font-card__favorite { margin-top: 5px; }
+#balloon-popup .pl-font-card__user-comment { align-items: center; margin: 3px 0; }
+#balloon-popup .pl-font-card__user-comment .pl-label { flex: 0 0 72px; }
+#balloon-popup .pl-font-card__user-comment .pl-text { min-width: 0; }
+#balloon-popup .pl-font-primary { margin: 3px 0; }
+#balloon-popup .pl-font-links { margin-top: 4px; line-height: 1.45; }
+#balloon-popup .pl-font-links a { color: var(--futaba-maroon); text-decoration: underline; }
+#balloon-popup .pl-font-links a:focus-visible { outline: 2px solid var(--active-border); outline-offset: 1px; }

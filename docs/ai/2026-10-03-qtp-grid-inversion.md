@@ -1,5 +1,29 @@
 # QTP grid / inversion evidence
 
+## ALL修飾ターゲット分離（2026-10-03）
+
+Ownerのバケツ / 選択の修飾食い込み・誤操作報告を調査。旧 `.qa-slot-mod` はtop -6px / height 7pxでタブ上端へ食い込む。修飾のpointerdownが親へ伝播する前にALLをtoggleして停止するため、重なった領域ではメインツールを選べなかった。
+CSSだけでtop -7px / height 4px / border-boxに変更。修飾の判定を広げる透明領域は追加せず、メイン上端との溝を確保。JS / toggle契約 / popup stacking / 列幅は変更なし。
+Browserで両対象のheight 4px、メインとのgap 2.1111 CSS pxを確認（既存viewport zoom下）。elementFromPointはメイン上端でqa-fill-tool / qa-selection-tool、修飾中央で各ref-all-toggle。
+選択ツールclickではALL falseを維持、修飾clickでtrue、pen→selection切替後もtrue維持を実操作確認。build / tool-slots / preset-density / diff check PASS。液タブ実機の操作感はOwner確認待ち。
+
+## 丸のサイズ表示追加（2026-10-03）
+
+最終checkout確認で外部commitによるHEAD更新 `b7d7fddfa9f77ce1a8f2b703c03a7f6a2f330bd3` を確認。JS変更は同HEADに含まれ、残るworktree差分はCSS / STATUS / この記録。以下の「未commit・未push」はagentがその操作を実施していない意味。外部push状態は未確認。
+
+Ownerの調査依頼で `_dotSizeForBrushSize` / `_updatePresetSlots` / runtime CSS / component CSSを追跡。
+旧式は `round(4 + min(1, (size - 1) / 24) * 6)`。1–25pxを内丸4–10pxへ対応させる一方、runtime CSSのmax-width / height 7pxで表示が頭打ちだった。外丸の線は1.5px。
+小サイズでも大きく見え、数値の早い段階で見た目の差がなくなる原因を確認。
+
+新式は1–32pxを内丸1–8pxへ線形対応（整数pxへ丸め）、32px以上は外丸全体をmaroonの塗り丸にし内丸を非表示。
+表示専用の閾値 `QA_PRESET_DOT_SATURATION_SIZE = 32` を使用。大サイズの正確な判別は既存数値表示。brush値 / behavior / 保存metadataは不変。
+外丸線幅1px、外径10px（coarse既存12px）。CSSの7px上限制限を内径範囲へ置換。反転配色を導入せず、activeも同じmaroon丸。
+例: size 1.5→内丸1px、3→1px、5→2px、10→3px、20→5px、32 / 50 / 100 / 195→塗り丸。
+
+Browser実測（compact、現viewportのzoom下では線幅computed値0.888889px）: 1 / 3 / 6 / 12 / 24の内丸1 / 1 / 2 / 3 / 6px、中心差X/Yとも0。
+50はis-size-saturated、内丸display none、10px外丸の塗り。slot 1→6の実選択でSIZE / OPACITY更新を確認。
+構文確認、build、tool-slots / preset-density / progressive-density PASS。Owner実機受入・coarse pointer実機は未確認。前件差分を保持、未commit・未push。
+
 ## 最新Owner修正（2026-10-03、画像2点による指示）
 
 追加の角丸指示: Secondary下地は既定で四隅8px、Primaryのfirst-child active時は左上のみ0、last-child active時は右上のみ0にする。CSS :hasで表示中のactive位置を参照、JS / stacking / popup境界は変更なし。Browserでpen=左上0/右上8、eraser=8/8、select=8/0、下側は全状態8/8を確認。追加後build / tool-slots / preset-density / diff check PASS。

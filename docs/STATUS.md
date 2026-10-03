@@ -1,5 +1,13 @@
 # Tegaki — 再開checkpoint
 
+選定フォント導入（2026-10-03）: [WP-021](work/WP-021-curated-font-library.md) TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。先行8＋追加上位19＝27書体、Primaryは源暎アンチック。吹き出しタブに形の分類・選択見本・短評・自分用メモ・favorite優先・Primary・ライセンスリンク、同梱fontの遅延読み込みを追加。Project schema変更なし。公式条件と元LICENSE/readme/版/hashを保持。500枚OCR済み、全500/851の公式監査完了ではない。[取得・保留リスト/検証記録](ai/2026-10-03-curated-font-audit.md)。コーポレート・ロゴ/ようじょは元実体のBrowser decode NGで保留。構文/関連verifier/harness/buildとChromiumで27実体ロード、縦横確定/再編集/UndoRedo、実Project export/load、本人import/folder、favorite/Primary/メモ保持、失敗表示/retryを確認。Owner液タブ/全字形の制作受入は未実施。文字タブ移設・曲線/WARP/スロットは後段。main / 開始HEAD `b7d7fddf`、既存QTP差分を保持、未commit・未push。RIGの中断点・次Card未発行は維持。
+
+QTP ALL判定分離（2026-10-03）: バケツ / 選択の修飾を高さ4pxへ薄型化し、タブ上端とのgap約2.1pxを確保。Browserで判定非重複、ツール選択によるALL不変と直接修飾clickによるtoggleを確認。build / 関連検証PASS。液タブ操作感はOwner確認待ち、前件差分を保持。
+
+最終checkout確認（QTP丸サイズ追加）: 作業中の外部commitでHEADは `b7d7fddf` へ更新。JSの丸サイズ計算は同HEADに含まれ、残る差分はCSS / STATUS / 検証記録。agentからcommit / pushはしていない。
+
+QTP丸サイズ追加（2026-10-03）: 旧内丸4px始まり・7px CSS上限・外線1.5pxを調査。内丸1px始まり、外線1px、32px以上はmaroon塗り丸へ変更（表示のみ）。Browserで小径・中心差0・50pxの塗り丸・選択往復を確認。構文 / build / 関連検証PASS。Owner実機は未確認、前件差分保持、未commit・未push。[検証記録](ai/2026-10-03-qtp-grid-inversion.md)。
+
 QTP角丸追加（2026-10-03）: Secondary上角は既定8px。Primary左端active時は左上だけ0、右端active時は右上だけ0で接続。Browserでpen / eraser / selectの3状態確認、build / 関連検証PASS。前件差分を保持、未commit・未push。
 
 QTP Owner画像修正（2026-10-03、開始HEAD `db0ab249`、開始clean）: 3段の6列中心を揃え、2・3行目activeを非反転（淡い下地 / maroon文字 / orange枠）へ変更。タブの2行目への縦重なりを0にし、popupのstackingは維持。全presetに透明度%、最低36px高、蛇の目中心固定、Third下地をSecondaryより淡い同系色へ。Browser全列中心delta 0px、蛇の目X/Y delta 0px、縦はみ出し0、TEXT展開確認。build / 関連7 verifier PASS。Owner実機・coarse実機は未検証、今回未commit・未push。[検証記録](ai/2026-10-03-qtp-grid-inversion.md)。RIG次Cardへは進めない。

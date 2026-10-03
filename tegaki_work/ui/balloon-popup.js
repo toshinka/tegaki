@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * ファイル名: ui/balloon-popup.js
- * 責務: 吹き出し(漫画ツールのタブ)。形・しっぽ・縦書き/横書きの文字・フォント(端末/取り込み+フォルダ管理)を編集し、
+ * 責務: 吹き出し(漫画ツールのタブ)。形・しっぽ・縦書き/横書きの文字・フォント(端末/選定catalog/取り込み+フォルダ管理)を編集し、
  *       確定で通常Raster Layerを1件のHistoryで追加/更新する。
  * 依存: system/balloon-geometry.js, system/balloon-raster.js, system/lettering-raster.js, system/font-library.js,
  *   system/history.js, system/event-bus.js, ui/balloon-overlay.js, ui/manga-tabs.js, ui/numeric-field.js,
@@ -9,10 +9,11 @@
  * 被依存: core-engine.js, system/popup-manager.js
  * 公開API: BalloonPopup
  * イベント発火: popup:shown, popup:hidden, layer:content-changed
- * 保存: 編集中のparamsはlocalStorage(UI設定)。確定Layerは通常Raster Layerで、再編集用に layerData.balloon
- *   (optional・sanitize済み)を持つ。取り込みフォントの実体はIndexedDB(font-library)で、Projectには入れない。
+ * 保存: 編集中のparamsはlocalStorage(UI設定)。選定フォントのfavorite/Primary/短評/見本もlocalStorage(UI設定)。
+ *   確定Layerは通常Raster Layerで、再編集用に layerData.balloon (optional・sanitize済み)を持つ。
+ *   取り込みフォントの実体はIndexedDB(font-library)で、Projectには入れない。
  * 見た目: 部品のclassはコマ割りpopupと共通(styles/components/panel-layout-popup.css)。
- * 実装状態: ✅実装（WP-013）
+ * 実装状態: ✅実装（WP-021）
  * ============================================================================
  */
 
@@ -30,7 +31,7 @@ import {
 } from '../system/balloon-geometry.js';
 import { letteringPlacement, paintBalloon, rasterizeBalloon } from '../system/balloon-raster.js';
 import { measureLettering, rasterizeLettering } from '../system/lettering-raster.js';
-import { FONT_FILE_ACCEPT, fontLibrary } from '../system/font-library.js';
+import { FONT_FILE_ACCEPT, FONT_SAMPLE_OPTIONS, fontLibrary, sortBundledFonts } from '../system/font-library.js';
 import { BalloonOverlay } from './balloon-overlay.js';
 import { mountMangaTabs, noteMangaTabShown } from './manga-tabs.js';
 import { attachNumericField } from './numeric-field.js';
@@ -45,6 +46,8 @@ const GENERIC_FONTS = Object.freeze([
     { value: 'sys:sans-serif', label: 'ゴシック（標準）' },
     { value: 'sys:serif', label: '明朝（標準）' }
 ]);
+const BUNDLED_OPTION_PREFIX = 'bundle:';
+const IMPORTED_OPTION_PREFIX = 'imp:';
 
 // 数値欄: path は params 内の場所。unit/display は表示用、shape は表示する形(省略=常時)
 const FIELDS = Object.freeze([
@@ -92,7 +95,13 @@ export class BalloonPopup {
         this.textImage = null; // overlay用 { url, x, y, width, height }
         this._letteringToken = 0;
         this._letteringTimer = null;
-        this._fontData = { folders: [], fonts: [] };
+        this._fontData = { folders: [], fonts: [], bundled: [] };
+        this._fontPreviewToken = 0;
+        this._fontRefreshToken = 0;
+        this._fontCommentDraft = null;
+        this._hasStoredParams = false;
+        this._paramsTouched = false;
+        this._primaryApplied = false;
         this.scale = 1;
 
         this.overlay = new BalloonOverlay({
@@ -114,7 +123,10 @@ export class BalloonPopup {
     _restore() {
         try {
             const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-            if (data?.params) this.params = normalizeBalloonParams(data.params, this._canvasSize());
+            if (data?.params) {
+                this.params = normalizeBalloonParams(data.params, this._canvasSize());
+                this._hasStoredParams = true;
+            }
             if (typeof data?.showOverlay === 'boolean') this.showOverlay = data.showOverlay;
         } catch (error) {
             // 壊れた設定は既定へ戻す(Projectには無関係)
@@ -214,6 +226,30 @@ export class BalloonPopup {
                 <span class="pl-label">フォント</span>
                 <select class="pl-select" data-role="font-select" aria-label="フォント"></select>
             </div>
+            <div class="pl-font-card" data-role="font-card" hidden>
+                <div class="pl-font-card__heading">
+                    <strong data-role="font-title"></strong>
+                    <span data-role="font-category"></span>
+                </div>
+                <div class="pl-font-card__comment" data-role="font-catalog-comment"></div>
+                <div class="pl-font-card__meta" data-role="font-meta"></div>
+                <div class="pl-font-card__sample">
+                    <label class="pl-label" for="balloon-font-sample">見本</label>
+                    <select id="balloon-font-sample" class="pl-select pl-select--small" data-role="font-sample" aria-label="フォント見本"></select>
+                    <span class="pl-font-load-status" data-role="font-load-status" aria-live="polite"></span>
+                    <div class="pl-font-sample" data-role="font-sample-preview" aria-live="polite"></div>
+                </div>
+                <label class="pl-row pl-check pl-font-card__favorite">
+                    <input type="checkbox" data-role="font-favorite">
+                    <span>お気に入り</span>
+                </label>
+                <label class="pl-row pl-font-card__user-comment">
+                    <span class="pl-label">自分用メモ</span>
+                    <input type="text" class="pl-text" data-role="font-comment" maxlength="160" placeholder="短いメモ（任意）" aria-label="フォントの自分用メモ">
+                </label>
+                <button type="button" class="pl-btn pl-font-primary" data-action="font-primary">Primaryにする</button>
+                <div class="pl-font-links" data-role="font-links"></div>
+            </div>
             <label class="pl-row pl-check">
                 <input type="checkbox" data-role="auto-fit">
                 <span>吹き出しに合わせて文字サイズを自動調整</span>
@@ -268,6 +304,18 @@ export class BalloonPopup {
             tailEnabled: q('[data-role="tail-enabled"]'),
             content: q('[data-role="content"]'),
             fontSelect: q('[data-role="font-select"]'),
+            fontCard: q('[data-role="font-card"]'),
+            fontTitle: q('[data-role="font-title"]'),
+            fontCategory: q('[data-role="font-category"]'),
+            fontCatalogComment: q('[data-role="font-catalog-comment"]'),
+            fontMeta: q('[data-role="font-meta"]'),
+            fontSample: q('[data-role="font-sample"]'),
+            fontLoadStatus: q('[data-role="font-load-status"]'),
+            fontSamplePreview: q('[data-role="font-sample-preview"]'),
+            fontFavorite: q('[data-role="font-favorite"]'),
+            fontComment: q('[data-role="font-comment"]'),
+            fontPrimary: q('[data-action="font-primary"]'),
+            fontLinks: q('[data-role="font-links"]'),
             autoFit: q('[data-role="auto-fit"]'),
             bold: q('[data-role="bold"]'),
             reseed: q('[data-role="reseed"]'),
@@ -306,6 +354,34 @@ export class BalloonPopup {
         this.elements.bold.addEventListener('click', () => this._setParams(setPath(this.params, ['text', 'bold'], !this.params.text.bold)));
         this.elements.autoFit.addEventListener('change', (e) => this._setParams(setPath(this.params, ['text', 'autoFit'], e.target.checked)));
         this.elements.fontSelect.addEventListener('change', (e) => this._onFontSelected(e.target.value));
+        this.elements.fontSample.addEventListener('change', (e) => {
+            this.fonts.setSample?.(e.target.value);
+            this._renderFontDetails();
+        });
+        this.elements.fontFavorite.addEventListener('change', async (e) => {
+            const id = this._selectedFontId();
+            if (!id) return;
+            this._commitFontCommentDraft();
+            await this.fonts.setFavorite?.(id, e.target.checked);
+        });
+        this.elements.fontComment.addEventListener('input', (e) => {
+            const id = this._selectedFontId();
+            if (id) this._fontCommentDraft = { id, value: e.target.value, dirty: true };
+        });
+        this.elements.fontComment.addEventListener('change', (e) => {
+            const id = this._selectedFontId();
+            if (id) {
+                this._fontCommentDraft = { id, value: e.target.value, dirty: false };
+                this.fonts.setUserComment?.(id, e.target.value);
+            }
+        });
+        this.elements.fontPrimary.addEventListener('click', async () => {
+            const id = this._selectedBundledFont()?.id;
+            if (!id) return;
+            this._commitFontCommentDraft();
+            const preferences = this.fonts.getPreferences?.() || {};
+            await this.fonts.setPrimary?.(preferences.primaryId === id ? null : id);
+        });
         this.elements.overlayToggle.addEventListener('change', (e) => {
             this.showOverlay = e.target.checked;
             this._persist();
@@ -316,7 +392,10 @@ export class BalloonPopup {
             btn.addEventListener('click', () => this._onAction(btn.dataset.action));
         });
         root.querySelector('[data-role="font-file"]').addEventListener('change', (e) => this._importFonts(e.target));
-        ['keydown', 'keyup'].forEach(type => this.elements.folderName.addEventListener(type, e => e.stopPropagation()));
+        ['keydown', 'keyup'].forEach(type => {
+            this.elements.folderName.addEventListener(type, e => e.stopPropagation());
+            this.elements.fontComment.addEventListener(type, e => e.stopPropagation());
+        });
 
         this._fieldDetachers = FIELDS.map(f => attachNumericField({
             range: root.querySelector(`input[data-field="${f.key}"]`),
@@ -357,6 +436,7 @@ export class BalloonPopup {
 
     _setParams(next, options = {}) {
         this.params = normalizeBalloonParams(next, this._canvasSize());
+        if (!options.fromCatalogPrimary) this._paramsTouched = true;
         this._persist();
         this._syncControls();
         this._redraw();
@@ -406,8 +486,9 @@ export class BalloonPopup {
             const input = this.popup.querySelector(`[data-color="${attr}"]`);
             if (input && input.value !== value) input.value = value;
         }
-        const fontValue = p.text.fontKind === 'imported' ? `imp:${p.text.fontId}` : `sys:${p.text.fontFamily}`;
+        const fontValue = this._fontOptionValue(p.text);
         if (this.elements.fontSelect.value !== fontValue && [...this.elements.fontSelect.options].some(o => o.value === fontValue)) this.elements.fontSelect.value = fontValue;
+        this._renderFontDetails();
         this.elements.editStatus.textContent = this.editing ? '— 再編集中' : '';
         this.elements.updateBtn.hidden = !this.editing;
         this.elements.loadBtn.disabled = !this._activeBalloon();
@@ -424,13 +505,150 @@ export class BalloonPopup {
 
     // ------------------------------------------------------------ フォント
 
-    async _refreshFontData() {
-        try {
-            const [folders, fonts] = await Promise.all([this.fonts.listFolders(), this.fonts.listFonts()]);
-            this._fontData = { folders, fonts };
-        } catch (error) {
-            this._fontData = { folders: [], fonts: [] };
+    _fontOptionValue(text) {
+        if (text.fontKind === 'imported') {
+            const bundled = this._fontData.bundled.some(font => font.id === text.fontId);
+            return `${bundled ? BUNDLED_OPTION_PREFIX : IMPORTED_OPTION_PREFIX}${text.fontId || ''}`;
         }
+        return `sys:${text.fontFamily}`;
+    }
+
+    _selectedFontId() {
+        const value = this.elements.fontSelect?.value || '';
+        if (value.startsWith(BUNDLED_OPTION_PREFIX)) return value.slice(BUNDLED_OPTION_PREFIX.length);
+        if (value.startsWith(IMPORTED_OPTION_PREFIX)) return value.slice(IMPORTED_OPTION_PREFIX.length);
+        return '';
+    }
+
+    _selectedBundledFont() {
+        const id = this._selectedFontId();
+        return this._fontData.bundled.find(font => font.id === id) || null;
+    }
+
+    _safeLink(label, href) {
+        const url = String(href || '');
+        if (!/^(?:https?:\/\/|\/|\.\/)/i.test(url)) return '';
+        const text = String(label).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const attr = url.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        return `<a href="${attr}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+    }
+
+    _renderFontDetails() {
+        const card = this.elements.fontCard;
+        if (!card) return;
+        const token = ++this._fontPreviewToken;
+        const id = this._selectedFontId();
+        const bundled = this._selectedBundledFont();
+        const imported = this._fontData.fonts.find(font => font.id === id) || null;
+        const selected = bundled || imported;
+        card.hidden = !selected;
+        if (!selected) return;
+        const preferences = this.fonts.getPreferences?.() || {};
+        const sampleId = preferences.sampleId || FONT_SAMPLE_OPTIONS[0].id;
+        const sample = FONT_SAMPLE_OPTIONS.find(item => item.id === sampleId) || FONT_SAMPLE_OPTIONS[0];
+        this.elements.fontTitle.textContent = selected.label || id;
+        this.elements.fontCategory.textContent = bundled?.category || '取り込みフォント';
+        this.elements.fontCatalogComment.textContent = bundled?.comment || (imported ? 'このブラウザに取り込んだフォントです。' : '');
+        this.elements.fontMeta.textContent = bundled
+            ? [bundled.coverage && `対応: ${bundled.coverage}`, bundled.dakuten !== '' && bundled.dakuten !== undefined ? `濁点: ${typeof bundled.dakuten === 'boolean' ? (bundled.dakuten ? '説明あり' : '未確認') : bundled.dakuten}` : ''].filter(Boolean).join('　')
+            : '実体はIndexedDBに保存され、Projectには入りません。';
+        this.elements.fontSample.innerHTML = FONT_SAMPLE_OPTIONS.map(item => `<option value="${item.id}">${item.label}</option>`).join('');
+        this.elements.fontSample.value = sample.id;
+        this.elements.fontFavorite.checked = preferences.favorites?.includes(id) === true;
+        if (this._fontCommentDraft?.id !== id) this._fontCommentDraft = null;
+        if (this._fontCommentDraft?.dirty) this.elements.fontComment.value = this._fontCommentDraft.value;
+        else this.elements.fontComment.value = preferences.comments?.[id] || '';
+        this.elements.fontPrimary.hidden = !bundled;
+        this.elements.fontPrimary.textContent = preferences.primaryId === id ? 'Primaryを解除' : 'Primaryにする';
+        const licenseFile = bundled ? this.fonts.getBundledAssetUrl?.(bundled, 'licenseFile') : '';
+        this.elements.fontLinks.innerHTML = bundled
+            ? [
+                bundled.sourceUrl && this._safeLink(bundled.author ? `作者・公式: ${bundled.author}` : '作者・公式', bundled.sourceUrl),
+                bundled.licenseUrl && this._safeLink('ライセンス', bundled.licenseUrl),
+                licenseFile && this._safeLink('同梱LICENSE', licenseFile)
+            ].filter(Boolean).join('　')
+            : '';
+        this.elements.fontLoadStatus.textContent = '見本を読み込み中…';
+        this.elements.fontLoadStatus.dataset.state = 'loading';
+        this.elements.fontSamplePreview.textContent = '読み込み中…';
+        this.elements.fontSamplePreview.dataset.state = 'loading';
+        this.elements.fontSamplePreview.style.fontFamily = 'sans-serif';
+        let loadPromise;
+        try {
+            loadPromise = typeof this.fonts.ensureLoaded === 'function' ? this.fonts.ensureLoaded(id) : null;
+        } catch (error) {
+            loadPromise = Promise.reject(error);
+        }
+        Promise.resolve(loadPromise).then(entry => {
+            if (token !== this._fontPreviewToken) return;
+            if (!entry) {
+                this.elements.fontLoadStatus.textContent = '見本を読み込めませんでした';
+                this.elements.fontLoadStatus.dataset.state = 'error';
+                this.elements.fontSamplePreview.textContent = '（フォント未適用）';
+                this.elements.fontSamplePreview.dataset.state = 'error';
+                this.elements.fontSamplePreview.style.fontFamily = '';
+                return;
+            }
+            this.elements.fontLoadStatus.textContent = '見本を読み込みました';
+            this.elements.fontLoadStatus.dataset.state = 'loaded';
+            this.elements.fontSamplePreview.textContent = sample.text;
+            this.elements.fontSamplePreview.dataset.state = 'loaded';
+            this.elements.fontSamplePreview.style.fontFamily = `'${String(entry.family).replace(/["'\\]/g, '')}'`;
+        }).catch(() => {
+            if (token !== this._fontPreviewToken) return;
+            this.elements.fontLoadStatus.textContent = '見本を読み込めませんでした';
+            this.elements.fontLoadStatus.dataset.state = 'error';
+            this.elements.fontSamplePreview.textContent = '（フォント未適用）';
+            this.elements.fontSamplePreview.dataset.state = 'error';
+            this.elements.fontSamplePreview.style.fontFamily = '';
+        });
+    }
+
+    _applyCatalogPrimary() {
+        if (this._hasStoredParams || this._paramsTouched || this._primaryApplied) return;
+        const primaryId = this.fonts.getPreferences?.()?.primaryId || this._fontData.bundled.find(font => font.primary)?.id;
+        if (!primaryId || !this._fontData.bundled.some(font => font.id === primaryId)) return;
+        this._primaryApplied = true;
+        this._setParams({
+            ...this.params,
+            text: { ...this.params.text, fontKind: 'imported', fontId: primaryId }
+        }, { fromCatalogPrimary: true });
+    }
+
+    _commitFontCommentDraft() {
+        const draft = this._fontCommentDraft;
+        if (!draft?.dirty || !draft.id) return;
+        this._fontCommentDraft = { ...draft, dirty: false };
+        try {
+            this.fonts.setUserComment?.(draft.id, draft.value, { silent: true });
+        } catch (error) {
+            this._fontCommentDraft = draft;
+        }
+    }
+
+    _sortImportedFonts(fonts) {
+        return sortBundledFonts(fonts, this.fonts.getPreferences?.() || {});
+    }
+
+    async _refreshFontData() {
+        const refreshToken = ++this._fontRefreshToken;
+        const previous = this._fontData || { folders: [], fonts: [], bundled: [] };
+        const read = (fn, fallback) => {
+            try { return Promise.resolve(fn()); } catch (error) { return Promise.reject(error); }
+        };
+        const [foldersResult, fontsResult, bundledResult] = await Promise.allSettled([
+            read(() => this.fonts.listFolders(), previous.folders),
+            read(() => this.fonts.listFonts(), previous.fonts),
+            read(() => this.fonts.listBundledFonts?.() ?? previous.bundled, previous.bundled)
+        ]);
+        if (refreshToken !== this._fontRefreshToken) return;
+        const valueOrPrevious = (result, fallback) => result.status === 'fulfilled' && Array.isArray(result.value) ? result.value : fallback;
+        this._fontData = {
+            folders: valueOrPrevious(foldersResult, previous.folders),
+            fonts: valueOrPrevious(fontsResult, previous.fonts),
+            bundled: valueOrPrevious(bundledResult, previous.bundled)
+        };
+        this._applyCatalogPrimary();
         if (this.popup) {
             this._renderFontOptions();
             this._renderFontManager();
@@ -446,12 +664,21 @@ export class BalloonPopup {
             : '';
         const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
         const system = this.fonts.listSystemFonts().map(f => ({ value: `sys:${f}`, label: esc(f) }));
-        const { folders, fonts } = this._fontData;
-        let html = group('標準', GENERIC_FONTS) + group('この端末のフォント', system);
+        const { folders, fonts, bundled } = this._fontData;
+        const bundledItems = rows => rows.map(font => ({
+            value: `${BUNDLED_OPTION_PREFIX}${font.id}`,
+            label: `${font.primary ? '★ ' : ''}${font.category ? `［${esc(font.category)}］` : ''}${esc(font.label)}`
+        }));
+        const favoriteBundled = bundled.filter(font => font.favorite);
+        const otherBundled = bundled.filter(font => !font.favorite);
+        let html = group('標準', GENERIC_FONTS)
+            + group('この端末のフォント', system)
+            + group('選定フォント／お気に入り', bundledItems(favoriteBundled))
+            + group('選定フォント', bundledItems(otherBundled));
         for (const folder of folders) {
-            html += group(`取り込み／${esc(folder.name)}`, fonts.filter(f => f.folderId === folder.id).map(f => ({ value: `imp:${f.id}`, label: esc(f.label) })));
+            html += group(`取り込み／${esc(folder.name)}`, this._sortImportedFonts(fonts.filter(f => f.folderId === folder.id)).map(f => ({ value: `${IMPORTED_OPTION_PREFIX}${f.id}`, label: esc(f.label) })));
         }
-        html += group('取り込み／未分類', fonts.filter(f => !f.folderId || !folders.some(x => x.id === f.folderId)).map(f => ({ value: `imp:${f.id}`, label: esc(f.label) })));
+        html += group('取り込み／未分類', this._sortImportedFonts(fonts.filter(f => !f.folderId || !folders.some(x => x.id === f.folderId))).map(f => ({ value: `${IMPORTED_OPTION_PREFIX}${f.id}`, label: esc(f.label) })));
         select.innerHTML = html;
     }
 
@@ -468,7 +695,7 @@ export class BalloonPopup {
             list.innerHTML = '<div class="pl-hint">取り込んだフォントはまだありません</div>';
             return;
         }
-        list.innerHTML = fonts.map(font => `
+        list.innerHTML = this._sortImportedFonts(fonts).map(font => `
             <div class="pl-fontrow" data-font-id="${font.id}">
                 <span class="pl-fontname" title="${esc(font.label)}">${esc(font.label)}</span>
                 <select class="pl-select pl-select--small" data-font-folder aria-label="フォルダ">
@@ -491,8 +718,10 @@ export class BalloonPopup {
     }
 
     _onFontSelected(value) {
-        if (value.startsWith('imp:')) {
-            this._setParams({ ...this.params, text: { ...this.params.text, fontKind: 'imported', fontId: value.slice(4) } });
+        this._commitFontCommentDraft();
+        if (value.startsWith(BUNDLED_OPTION_PREFIX) || value.startsWith(IMPORTED_OPTION_PREFIX)) {
+            const prefix = value.startsWith(BUNDLED_OPTION_PREFIX) ? BUNDLED_OPTION_PREFIX : IMPORTED_OPTION_PREFIX;
+            this._setParams({ ...this.params, text: { ...this.params.text, fontKind: 'imported', fontId: value.slice(prefix.length) } });
         } else {
             this._setParams({ ...this.params, text: { ...this.params.text, fontKind: 'system', fontId: null, fontFamily: value.slice(4) } });
         }
@@ -508,7 +737,7 @@ export class BalloonPopup {
             const result = await this.fonts.addFontFile(file, folderId);
             if (result.ok) {
                 added += 1;
-                if (added === 1) this._onFontSelected(`imp:${result.font.id}`);
+                if (added === 1) this._onFontSelected(`${IMPORTED_OPTION_PREFIX}${result.font.id}`);
             } else {
                 showFeedbackToast(`${file.name}: ${result.reason}`, { duration: 2600 });
             }
