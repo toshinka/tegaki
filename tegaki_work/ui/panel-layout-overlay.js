@@ -1,13 +1,14 @@
 /**
  * ============================================================================
  * ファイル名: ui/panel-layout-overlay.js
- * 責務: コマ割りをキャンバス上へSVGで重ね表示し、線・頂点だけを操作対象にする
+ * 責務: コマ割りのSVG表示。通常は外周/頂点、分割mode・Ctrl対象操作は本体内も操作する
  * 依存: coordinate-system.js, system/event-bus.js
  * 被依存: ui/panel-layout-popup.js
  * 公開API: PanelLayoutOverlay
  * イベント受信: camera:transform-changed, canvas:resized
  * 設計: svg本体はpointer-events:none。操作要素(分割線 / コマ外周 / 頂点)だけがeventを受け、
- *   コマ内側は透過するため描画入力を奪わない。保存・Historyには関与しない(表示専用)。
+ *   通常の連動コマ内側は描画へ透過。Space/global Vでは全hitをCamera/Transformへ譲る。
+ *   保存・Historyには関与しない(表示専用)。
  * 実装状態: ✅実装（WP-010）
  * ============================================================================
  */
@@ -90,7 +91,8 @@ export class PanelLayoutOverlay {
         const state = this.getState?.();
         this.svg.replaceChildren();
         if (!state?.resolved) return;
-        const { resolved, selectedId, hoverSplitId, dragSplitId } = state;
+        const { resolved, selectedId, hoverSplitId, dragSplitId, cutPreview, splitMode } = state;
+        this.svg.classList.toggle('is-splitting', splitMode === true);
 
         for (const panel of resolved.panels) {
             const pts = panel.quad.map(p => this._toScreen(p));
@@ -106,7 +108,7 @@ export class PanelLayoutOverlay {
                 text.textContent = String(panel.number);
                 this.svg.appendChild(text);
             }
-            const hit = el('polygon', { points, class: 'pl-ov-hit', 'data-kind': 'panel' });
+            const hit = el('polygon', { points, class: `pl-ov-hit${selected && panel.free ? ' is-free-selected' : ''}`, 'data-kind': 'panel', 'data-panel-id': panel.id });
             hit.addEventListener('pointerdown', e => this._down({ type: 'panel', id: panel.id }, e));
             this.svg.appendChild(hit);
         }
@@ -130,9 +132,11 @@ export class PanelLayoutOverlay {
                 this.svg.appendChild(handle);
             });
         }
+        if(cutPreview?.ok){const a=this._toScreen(cutPreview.cut[0]),b=this._toScreen(cutPreview.cut[1]);if(a&&b)this.svg.appendChild(el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'pl-ov-cut-preview'}));}
     }
 
     _down(target, event) {
+        if(this.svg.classList.contains('is-camera')||this.svg.classList.contains('is-transform'))return;
         if (event.pointerType === 'mouse' && event.button !== 0) return;
         event.preventDefault();
         event.stopPropagation();

@@ -2,14 +2,15 @@
  * ============================================================================
  * ファイル名: system/balloon-raster.js
  * 責務: 吹き出し(本体+しっぽ+文字)をRGBA画素へ描き出す(確定Raster Layer用)。プレビュー描画も同じ関数を使う。
- * 依存: DOM Canvas2D（コマ割り/集中線と同じ。本番strokeには使わない）、system/balloon-geometry.js
+ * 依存: DOM Canvas2D（本番strokeには使わない）、balloon-geometry.js、balloon-text-layout.js
  * 被依存: ui/balloon-popup.js
  * 公開API: paintBalloon, rasterizeBalloon, letteringPlacement
  * 実装状態: ✅実装
  * ============================================================================
  */
 
-import { balloonBounds, balloonTextArea, buildBalloonParts, normalizeBalloonParams } from './balloon-geometry.js';
+import { balloonBounds, buildBalloonParts, normalizeBalloonParams } from './balloon-geometry.js';
+import { balloonTextFrame } from './balloon-text-layout.js';
 
 function tracePolygon(ctx, poly) {
     ctx.beginPath();
@@ -48,8 +49,8 @@ export function paintBalloon(ctx, rawParams, canvas) {
 }
 
 /** 文字画像(幅w×高さh)を、文字領域の中心へ置く時の左上座標。 */
-export function letteringPlacement(rawParams, canvas, lettering) {
-    const area = balloonTextArea(rawParams, canvas);
+export function letteringPlacement(rawParams, canvas, lettering, bodyIndex = 0) {
+    const area = balloonTextFrame(rawParams, canvas, bodyIndex);
     return { x: Math.round(area.cx - lettering.width / 2), y: Math.round(area.cy - lettering.height / 2) };
 }
 
@@ -64,13 +65,22 @@ function drawLettering(ctx, lettering, x, y) {
 /**
  * @param {object} rawParams 吹き出しparams
  * @param {{width:number,height:number}} canvas プロジェクトのキャンバス寸法
- * @param {{width:number,height:number,pixels:Uint8ClampedArray}|null} lettering rasterizeLetteringの結果(省略で文字なし)
+ * @param {{width:number,height:number,pixels:Uint8ClampedArray}|Array|null} lettering 単体または本体順の文字画像。空欄はnull。
  * @returns {{ok:true,width,height,pixels,rasterBounds}|{ok:false,reason}}
  */
 export function rasterizeBalloon(rawParams, canvas, lettering = null) {
     if (typeof document === 'undefined') return { ok: false, reason: 'Canvas2Dを利用できません' };
     const p = normalizeBalloonParams(rawParams, canvas);
     const bounds = balloonBounds(p, canvas);
+    const texts = (Array.isArray(lettering) ? lettering : [lettering]).map((image, index) => image?.pixels?.length ? { image, ...letteringPlacement(p, canvas, image, index) } : null).filter(Boolean);
+    // Explicit frames may intentionally leave the body. Preserve those pixels instead of clipping to the outline's bounds.
+    const right = Math.max(bounds.x + bounds.width, ...texts.map(t => t.x + t.image.width));
+    const bottom = Math.max(bounds.y + bounds.height, ...texts.map(t => t.y + t.image.height));
+    bounds.x = Math.min(bounds.x, ...texts.map(t => t.x));
+    bounds.y = Math.min(bounds.y, ...texts.map(t => t.y));
+    bounds.width = right - bounds.x;
+    bounds.height = bottom - bounds.y;
+    if (bounds.width > 8192 || bounds.height > 8192 || bounds.width * bounds.height > 16 * 1024 * 1024) return { ok: false, reason: '吹き出しと文字の範囲が大きすぎます' };
     const el = document.createElement('canvas');
     el.width = bounds.width;
     el.height = bounds.height;
@@ -79,10 +89,7 @@ export function rasterizeBalloon(rawParams, canvas, lettering = null) {
     ctx.clearRect(0, 0, bounds.width, bounds.height);
     ctx.translate(-bounds.x, -bounds.y);
     paintBalloon(ctx, p, canvas);
-    if (lettering?.pixels?.length) {
-        const at = letteringPlacement(p, canvas, lettering);
-        drawLettering(ctx, lettering, at.x, at.y);
-    }
+    for (const text of texts) drawLettering(ctx, text.image, text.x, text.y);
     const image = ctx.getImageData(0, 0, bounds.width, bounds.height);
     return { ok: true, width: bounds.width, height: bounds.height, pixels: image.data, rasterBounds: { ...bounds } };
 }

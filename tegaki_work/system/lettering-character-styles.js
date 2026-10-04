@@ -2,7 +2,7 @@
  * Runtime/persisted range helpers for editable lettering. Text remains the sole
  * source of characters; all ranges are UTF-16 grapheme boundaries, not glyph IDs.
  */
-const ATTRIBUTES = ['fontId', 'color', 'size', 'rotation', 'scaleX', 'scaleY', 'offsetX', 'offsetY', 'envelope'];
+const ATTRIBUTES = ['fontId', 'color', 'size', 'rotation', 'scaleX', 'scaleY', 'offsetX', 'offsetY', 'envelope', 'strokeWidth', 'strokeColor', 'outerStrokeWidth', 'outerStrokeColor'];
 const segmenter = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter('ja', { granularity: 'grapheme' }) : null;
 
 export function segmentLetteringText(text = '') {
@@ -30,7 +30,7 @@ function attributes(style) {
         if (value == null) continue;
         if (key === 'fontId') {
             if (typeof value === 'string' && value && !/[\u0000-\u001f\u007f]/.test(value)) result[key] = value.slice(0,120);
-        } else if (key === 'color') {
+        } else if (['color', 'strokeColor', 'outerStrokeColor'].includes(key)) {
             if (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) result[key] = value.toLowerCase();
         } else if (key === 'envelope') {
             if (!['none','skew','perspective','arc','wave','bulge','taper','points'].includes(value.kind)) continue;
@@ -44,7 +44,7 @@ function attributes(style) {
             }
             result[key] = {kind:value.kind,amount,points};
         } else {
-            const bound = key === 'size' ? [0.125,8] : key === 'rotation' ? [-1e6,1e6]
+            const bound = key === 'strokeWidth' || key === 'outerStrokeWidth' ? [0,64] : key === 'size' ? [0.125,8] : key === 'rotation' ? [-1e6,1e6]
                 : key === 'scaleX' || key === 'scaleY' ? [-20,20] : [-8192,8192];
             let number = bounded(value,...bound);
             if (number == null) continue;

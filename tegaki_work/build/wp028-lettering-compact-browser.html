@@ -1,0 +1,68 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>WP028 配置線・文字別 密度検証</title>
+<style>body{margin:8px;background:#ffffee;color:#800000;font:12px system-ui}iframe{width:1280px;height:720px;border:1px solid #b8706b}pre{white-space:pre-wrap}</style>
+<button id="run" disabled>密度・操作を検証</button> <button id="placement" disabled>配置を表示</button> <button id="characters" disabled>文字別を表示</button> <span id="status">製品起動待ち</span><details><summary>検証記録</summary><pre id="output"></pre></details><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+// Owned Browser fixture: actual engine/DOM, synthetic input checks kept separate from native pointer proof.
+const frame=document.querySelector('#product'),run=document.querySelector('#run'),status=document.querySelector('#status'),out=document.querySelector('#output');
+const check=(ok,s)=>{if(!ok)throw new Error(s);out.textContent+='PASS '+s+'\n';},delay=ms=>new Promise(r=>setTimeout(r,ms));
+let core;for(let i=0;i<200;i++){core=frame.contentWindow?.coreEngine;if(core?.popupManager?.get('lettering')?.isReady())break;await delay(100);}
+const popup=core.popupManager.get('lettering'),win=frame.contentWindow,root=popup.popup,q=s=>root.querySelector(s);
+const input=(el,value)=>{el.value=value;el.dispatchEvent(new win.Event('input',{bubbles:true}));};
+const change=(el,value)=>{el.value=value;el.dispatchEvent(new win.Event('change',{bubbles:true}));};
+const shape=value=>{q('[data-role="curve-preset"]').value=value;q('[data-role="curve-preset"]').dispatchEvent(new win.Event('change',{bubbles:true}));};
+const settled=async()=>{const r=await popup._flushCurrent();if(!r?.ok)throw new Error(r?.reason||'preview failed');await new Promise(r=>win.requestAnimationFrame(r));};
+const fits=(el)=>{const a=el.getBoundingClientRect(),b=q('.lettering-popup__body').getBoundingClientRect();return a.top>=b.top-.5&&a.bottom<=b.bottom+.5&&a.left>=b.left-.5&&a.right<=b.right+.5;};
+const demo=async mode=>{core.popupManager.show('lettering');popup.newSession();input(q('[data-role="text"]'),'コトバ');input(q('[data-field-number="fontSize"]'),'48');q('[data-mode="curve"]').click();shape('arc');await settled();if(mode==='characters'){q('[data-mode="characters"]').click();q('[data-character-start="1"]').click();}await settled();};
+for(const id of ['run','placement','characters'])document.querySelector('#'+id).disabled=false;
+document.querySelector('#placement').onclick=()=>demo('curve');document.querySelector('#characters').onclick=()=>demo('characters');status.textContent='検証可能';
+run.onclick=async()=>{
+ run.disabled=true;out.textContent='';status.textContent='実行中';
+ try{
+  await demo('curve');check(popup.params.baseline.kind==='arc'&&popup.params.baseline.path.nodes.length===3,'半弧がpreview可能');
+  const button=q('[data-placement-target="curve"]').getBoundingClientRect(),select=q('[data-role="curve-preset"]').getBoundingClientRect();
+  check(Math.abs(button.top-select.top)<=2&&select.left>button.right,'形は配置線と同じ行の右隣');
+  check(fits(q('.lettering-popup__curve-actions')),'点操作は上部・scrollなし');
+  check(!q('[data-action="flip-horizontal"]')&&!q('[data-action="flip-vertical"]'),'全体の反転buttonを撤去');
+  shape('none');q('[data-mode="whole"]').click();q('[data-mode="curve"]').click();check(popup.params.baseline.kind==='none','明示noneはtab往復で保持');
+  popup.newSession();q('[data-mode="curve"]').click();check(popup.params.baseline.kind==='straight','新規初回だけ直線');
+  const before=popup.params.tracking;q('[data-field-number="tracking"]').dispatchEvent(new win.WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}));check(popup.params.tracking===before+1,'slider非表示でも字間wheel');
+  shape('arc');const count=popup.params.baseline.path.nodes.length;q('[data-action="curve-add"]').click();check(popup.params.baseline.path.nodes.length===count+1,'SVGで点追加');q('[data-action="curve-delete"]').click();check(popup.params.baseline.path.nodes.length===count,'SVGで選択点削除');
+  const node=popup.params.baseline.path.nodes.find(n=>n.id===popup.selectedNodeId),smooth=node.smooth;q('[data-action="curve-smooth"]').click();check(popup.params.baseline.path.nodes.find(n=>n.id===popup.selectedNodeId).smooth!==smooth,'SVGで滑らか/角切替');
+  q('[data-placement-target="whole"]').click();check(!q('[data-role="placement-details"]').hidden&&q('.lettering-popup__curve-actions').hidden,'全体配置の数値と点操作をcontext切替');
+  q('[data-placement-target="curve"]').click();check(q('[data-role="placement-details"]').hidden,'配置線に全体配置の数値を混在させない');
+  await demo('characters');
+  const fields=[...root.querySelectorAll('[data-character]')];check(fields.length===6&&fields.every(el=>el.getBoundingClientRect().width<=60),'文字別6数値は58px');
+  check(Math.abs(fields[0].getBoundingClientRect().top-fields[1].getBoundingClientRect().top)<1&&fields[1].getBoundingClientRect().left>fields[0].getBoundingClientRect().right,'用途ごとに2列');
+  const rotation=popup.params.characterStyles[0]?.rotation||0;q('[data-character="rotation"]').dispatchEvent(new win.WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}));check(Math.abs(popup.params.characterStyles[0].rotation-rotation-Math.PI/180)<1e-9,'個別回転wheel');
+  const unchanged=popup.params.placement.scaleX;q('[data-action="character-flip-horizontal"]').click();check(popup.params.characterStyles[0].scaleX<0&&popup.params.placement.scaleX===unchanged,'個別水平反転は全体を変更しない');q('[data-action="character-flip-vertical"]').click();check(popup.params.characterStyles[0].scaleY<0,'個別垂直反転');
+  check([...root.querySelectorAll('.lettering-popup__icon-button')].every(el=>el.querySelector('svg')&&el.title&&el.getAttribute('aria-label')),'SVG操作にtooltipとaccessible label');
+  const beforeOutline=JSON.stringify(popup.params);q('[data-action="character-outlines"]').click();
+  check(q('[data-role="character-geometry"]').hidden&&!q('[data-role="character-outlines"]').hidden&&JSON.stringify(popup.params)===beforeOutline,'フチtoggleは領域だけ切替、作品は不変');
+  check(q('[data-character-outline-width="strokeWidth"]').disabled&&q('[data-character-outline-width="outerStrokeWidth"]').disabled,'標準継承中は個別数値を無効化');
+  change(q('[data-character-outline-mode="strokeWidth"]'),'custom');input(q('[data-character-outline-width="strokeWidth"]'),'5.5');input(q('[data-character-outline-color="strokeColor"]'),'#ff0000');
+  change(q('[data-character-outline-mode="outerStrokeWidth"]'),'off');await settled();
+  check(popup.params.characterStyles[0].strokeWidth===5.5&&popup.params.characterStyles[0].strokeColor==='#ff0000'&&popup.params.characterStyles[0].outerStrokeWidth===0,'個別幅・色と第二OFFを設定');
+  change(q('[data-character-outline-mode="strokeWidth"]'),'inherit');check(!Object.hasOwn(popup.params.characterStyles[0],'strokeWidth')&&!Object.hasOwn(popup.params.characterStyles[0],'strokeColor'),'標準へ戻すと疎な指定を除去');
+  input(q('[data-field-number="strokeWidth"]'),'7');check(q('[data-character-outline-width="strokeWidth"]').value==='7','継承は全文の新設定へ追従');
+  change(q('[data-character-outline-mode="strokeWidth"]'),'off');await settled();const onlyFill=popup._activeResult().paths.find(path=>path.start===1);check(!onlyFill.strokeWidth&&!onlyFill.outerStrokeWidth,'第一・第二OFFは選択文字の実描画に反映');
+  q('[data-action="character-reset"]').click();check(popup.params.characterStyles.length===0,'全解除はフチ指定も除去');q('[data-action="character-outlines"]').click();
+  input(q('[data-role="text"]'),'コトバの比較文字列\n'.repeat(8));q('[data-character-start="0"]').click();
+  check(fits(q('.lettering-popup__character-actions'))&&q('.lettering-popup__body').scrollHeight===q('.lettering-popup__body').clientHeight,'長い本文は文字strip内に収まり主操作を押し出さない');
+  popup.newSession();q('[data-mode="characters"]').click();check(q('[data-action="character-flip-horizontal"]').disabled&&q('[data-action="character-reset"]').disabled,'未選択では個別操作を無効化');await demo('characters');
+  for(const [width,height] of [[1280,720],[360,640]]){
+   frame.style.width=width+'px';frame.style.height=height+'px';win.dispatchEvent(new win.Event('resize'));await delay(50);
+   q('[data-mode="characters"]').click();check(fits(q('.lettering-popup__character-actions'))&&fits(q('.lettering-popup__editor-options')),'文字別の反転/設定はscrollなし '+width+'×'+height);
+   check(q('.lettering-popup__body').scrollHeight===q('.lettering-popup__body').clientHeight,'文字別bodyにscroll不要 '+width+'×'+height);
+   q('[data-action="character-outlines"]').click();check(fits(q('[data-role="character-outlines"]'))&&fits(q('.lettering-popup__editor-options'))&&q('.lettering-popup__body').scrollHeight===q('.lettering-popup__body').clientHeight,'個別フチもscroll不要 '+width+'×'+height);q('[data-action="character-outlines"]').click();
+   q('[data-mode="curve"]').click();check(fits(q('.lettering-popup__curve-actions'))&&fits(q('[data-role="curve-preset"]')),'形/点操作はscrollなし '+width+'×'+height);
+   q('[data-placement-target="whole"]').click();check(fits(q('[data-role="placement-details"]')),'全体配置数値はscrollなし '+width+'×'+height);q('[data-placement-target="curve"]').click();
+  }
+  frame.style.width='1280px';frame.style.height='720px';win.dispatchEvent(new win.Event('resize'));await demo('curve');
+  const added=await popup.apply();check(added?.ok,'半弧を通常Rasterへ追加');await popup.loadFromActiveLayer();check(popup.params.baseline.kind==='arc','半弧recipeから再編集');
+  const params=JSON.stringify(popup.params);q('[data-mode="whole"]').click();q('[data-mode="curve"]').click();check(JSON.stringify(popup.params)===params,'再編集の配置線は自動変更しない');
+  popup.newSession();shape('none');await popup.apply();await popup.loadFromActiveLayer();q('[data-mode="curve"]').click();check(popup.params.baseline.kind==='none','読込noneも保持');
+  await demo('curve');status.textContent='PASS 全検証完了';
+ }catch(error){status.textContent='FAIL '+error.message;out.textContent+=(error.stack||error)+'\n';}
+ finally{run.disabled=false;}
+};
+</script></html>

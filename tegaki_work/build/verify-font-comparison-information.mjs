@@ -6,7 +6,7 @@ const comparison = await readFile(new URL('../ui/font-comparison.js', import.met
 const balloon = await readFile(new URL('../ui/balloon-popup.js', import.meta.url), 'utf8');
 const styles = await readFile(new URL('../styles/components/panel-layout-popup.css', import.meta.url), 'utf8');
 
-assert.match(comparison, /constructor\(\{ container, getLoadedFont, warmFonts, onCommit, onClose, onMove \}/);
+assert.match(comparison, /constructor\(\{ container, getLoadedFont, warmFonts, onCommit, onClose, onMove(?:, [^}]+)? \}/);
 assert.match(comparison, /data-mode="samples"[^>]*>見本比較/);
 assert.match(comparison, /data-mode="information"[^>]*>情報・整理/);
 assert.match(comparison, /setMode\(mode\)/);
@@ -16,11 +16,12 @@ assert.match(comparison, /this\._mode === 'information'\) this\.onMove\(placemen
 assert.match(comparison, /canMove: this\._mode === 'information' && row\.canMove !== false/);
 assert.match(comparison, /if \(this\._mode !== 'samples'\) return;/);
 
-assert.match(balloon, /data-role="font-information-toggle"/);
+assert.match(balloon, /data-role="font-comparison-toggle"[^>]*>書体/);
+assert.doesNotMatch(balloon, /<button[^>]*data-role="font-information-toggle"/);
 assert.match(balloon, /onMove: \(placement\) => this\._moveOrganizationNode\(placement\)/);
 assert.match(balloon, /this\.fontComparison\.attachInformation\(this\.elements\.fontCard\)/);
-assert.match(balloon, /_toggleFontInformation\(force = null\)/);
-assert.match(balloon, /setMode\('information'\)/);
+assert.match(balloon, /data-role="font-manager" open/);
+assert.match(balloon, /data-role="font-organization" open/);
 assert.match(balloon, /setTargetLabel\(selected\?\.label \|\| ''\)/);
 
 assert.match(styles, /\.pl-font-comparison__tabs/);

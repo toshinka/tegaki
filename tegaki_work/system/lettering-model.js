@@ -25,7 +25,7 @@ const MAX_SCALE = 64;
 const MAX_DIMENSION = 1e6;
 
 const FONT_KINDS = new Set(['imported', 'system']);
-const BASELINE_KINDS = new Set(['none', 'straight', 'wave', 'ellipse', 'polyline', 'free']);
+const BASELINE_KINDS = new Set(['none', 'straight', 'arc', 'wave', 'ellipse', 'polyline', 'free']);
 const ENVELOPE_KINDS = new Set(['none', 'skew', 'perspective', 'arc', 'wave', 'bulge', 'taper', 'points']);
 
 const DEFAULT_LINE_COLOR = '#800000';
@@ -234,7 +234,8 @@ function normalizeCharacterStyles(text, styles) {
         for (const key of LETTERING_CHARACTER_ATTRIBUTES) {
             if (style[key] == null) continue;
             if (key === 'fontId') values[key] = boundedString(style[key], '', MAX_ID_LENGTH);
-            else if (key === 'color') values[key] = normalizeColor(style[key], DEFAULT_LINE_COLOR);
+            else if (['color', 'strokeColor', 'outerStrokeColor'].includes(key)) values[key] = normalizeColor(style[key], key === 'strokeColor' ? DEFAULT_STROKE_COLOR : DEFAULT_LINE_COLOR);
+            else if (key === 'strokeWidth' || key === 'outerStrokeWidth') values[key] = clamp(style[key], 0, 64, 0);
             else if (key === 'envelope') values[key] = normalizeEnvelope(style[key]);
             else if (key === 'size') values[key] = clamp(style[key], 0.125, 8, 1);
             else if (key === 'scaleX' || key === 'scaleY') values[key] = normalizeScale(clamp(style[key], -20, 20, 1));
@@ -272,7 +273,12 @@ function validNewAttributes(params) {
         previousEnd = style.end;
         if (!Object.keys(style).every(key => key === 'start' || key === 'end' || LETTERING_CHARACTER_ATTRIBUTES.includes(key))) return false;
         if (Object.hasOwn(style, 'fontId') && (!validBoundedString(style.fontId, MAX_ID_LENGTH, false) || params.fontKind !== 'imported')) return false;
-        if (Object.hasOwn(style, 'color') && (typeof style.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(style.color))) return false;
+        for (const key of ['color', 'strokeColor', 'outerStrokeColor']) {
+            if (Object.hasOwn(style, key) && (typeof style[key] !== 'string' || !/^#[0-9a-f]{6}$/i.test(style[key]))) return false;
+        }
+        for (const key of ['strokeWidth', 'outerStrokeWidth']) {
+            if (Object.hasOwn(style, key) && (!isFiniteNumber(style[key]) || style[key] < 0 || style[key] > 64)) return false;
+        }
         if (Object.hasOwn(style, 'envelope') && !validNewEnvelope(style.envelope)) return false;
         for (const key of ['size', 'rotation', 'scaleX', 'scaleY', 'offsetX', 'offsetY']) {
             if (!Object.hasOwn(style, key)) continue;

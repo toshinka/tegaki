@@ -143,24 +143,18 @@ export class ProjectManager {
             let imageData = null;
             if (data.renderTexture && this.app.renderer) {
                 try {
-                    let canvas;
-                    if (lettering) {
-                        // WP-025: the integrity hash uses canonical straight-alpha
-                        // LayerSystem pixels. Encode those same pixels directly;
-                        // another alpha conversion would invalidate re-edit data.
-                        const snapshot = this.layerSystem.createLayerRasterSnapshot(layer);
-                        if (!snapshot?.pixels) throw new Error('Lettering raster readback failed');
-                        canvas = document.createElement('canvas');
-                        canvas.width = snapshot.width; canvas.height = snapshot.height;
-                        const context = canvas.getContext('2d');
-                        if (!context) throw new Error('Lettering PNG context unavailable');
-                        context.putImageData(new ImageData(snapshot.pixels, snapshot.width, snapshot.height), 0, 0);
-                    } else {
-                        canvas = this.app.renderer.extract.canvas({
-                            target: data.renderTexture, clearColor: '#00000000'
-                        });
-                        this._unpremultiplyCanvas(canvas);
-                    }
+                    // All Raster layers use the canonical LayerSystem straight-alpha
+                    // snapshot. A second extract/unpremultiply pass shifts low-alpha
+                    // RGB values and breaks Project/export roundtrip equality.
+                    const snapshot = this.layerSystem.createLayerRasterSnapshot(layer, {
+                        includePathCollections: false
+                    });
+                    if (!snapshot?.pixels) throw new Error('Raster readback failed');
+                    const canvas = document.createElement('canvas');
+                    canvas.width = snapshot.width; canvas.height = snapshot.height;
+                    const context = canvas.getContext('2d');
+                    if (!context) throw new Error('Raster PNG context unavailable');
+                    context.putImageData(new ImageData(snapshot.pixels, snapshot.width, snapshot.height), 0, 0);
                     imageData = canvas.toDataURL('image/png');
                 } catch (e) {
                     console.error('[ProjectManager] Failed to extract layer image:', e);

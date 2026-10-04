@@ -1,0 +1,42 @@
+/* WP030: compact balloon editing layout and SVG handles. No data/History ownership. */
+#balloon-popup {
+    width: 316px; max-width: calc(100vw - 88px); height: min(640px, calc(100dvh - 16px));
+    max-height: calc(100dvh - 16px); overflow: hidden;
+    padding: 10px; box-sizing: border-box; flex-direction: column; gap: 4px;
+    background: var(--ui-surface-float); backdrop-filter: var(--ui-backdrop-float);
+    border-color: var(--ui-border-float); box-shadow: var(--ui-shadow-float);
+}
+#balloon-popup.show { display: flex; }
+#balloon-popup > :not(.bl-body-scroll) { flex-shrink: 0; }
+#balloon-popup .pl-title { margin-bottom: 2px; }
+#balloon-popup .pl-textarea { margin: 0; min-height: 42px; height: 42px; resize: vertical; max-height: 100px; }
+#balloon-popup .bl-context-tabs { display: flex; gap: 4px; }
+#balloon-popup .bl-context-tabs > button { flex: 1; }
+#balloon-popup .bl-body-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
+#balloon-popup [hidden] { display: none !important; }
+#balloon-popup .pl-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#balloon-popup .bl-grid-row { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin: 4px 0; }
+#balloon-popup .bl-grid-row label { display: inline-flex; align-items: center; gap: 3px; }
+#balloon-popup .bl-grid-row input[type="number"] { width: 44px; min-width: 0; padding: 2px; font: inherit; color: var(--text-primary); background: var(--ui-surface-control); border: 1px solid var(--ui-border-float); border-radius: var(--ui-radius-control); }
+#balloon-popup .bl-fixed-footer { border-top: 1px solid var(--ui-border-float); padding-top: 5px; }
+#balloon-popup .bl-fixed-footer .pl-footer { margin-top: 4px; }
+.balloon-overlay .bl-ov-handle.is-contour { cursor: crosshair; }
+.balloon-overlay .bl-ov-handle.is-contour.is-selected { fill: var(--active-border); stroke: var(--futaba-maroon); }
+.balloon-overlay .bl-ov-handle.is-secondary { fill: var(--futaba-background); stroke-dasharray: 2 1; }
+.balloon-overlay .bl-ov-grid { fill: none; stroke: var(--active-border); stroke-width: .5; opacity: .25; pointer-events: none; }
+#balloon-popup .bl-common-fonts .pl-row, #balloon-popup .bl-common-fonts .pl-font-picker-row { margin: 3px 0; }
+#balloon-popup .bl-text-targets { display: flex; align-items: center; gap: 5px; }
+#balloon-popup .bl-tail-targets { display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
+#balloon-popup .bl-tail-targets > .pl-chips { flex: 1; }
+#balloon-popup .bl-text-targets .pl-hint { margin: 0 0 0 auto; }
+#balloon-popup .bl-text-warning:empty { display: none; }
+#balloon-popup .bl-text-warning { margin: 4px 0; color: var(--text-primary); border-left: 2px solid var(--active-border); padding-left: 5px; }
+.balloon-overlay .bl-ov-body-hit { fill: transparent; pointer-events: none; cursor: grab; }
+.balloon-overlay.is-object-control .bl-ov-body-hit { pointer-events: all; }
+.balloon-overlay:is(.is-camera,.is-transform) :is(.bl-ov-handle,.bl-ov-body-hit) { pointer-events: none; }
+.balloon-overlay .bl-ov-text-frame { fill: none; stroke: var(--active-border); stroke-width: 1; stroke-dasharray: 4 3; pointer-events: none; opacity: .5; }
+.balloon-overlay .bl-ov-text-frame.is-selected { opacity: 1; }
+.balloon-overlay .bl-ov-handle.is-text { fill: var(--futaba-background); stroke: var(--active-border); }
+.balloon-overlay .bl-ov-handle.is-text.is-selected { stroke: var(--futaba-maroon); }
+.balloon-overlay .bl-ov-handle.is-tip.is-selected { fill: var(--futaba-maroon); }
+.balloon-overlay .bl-ov-text-label { fill: var(--futaba-maroon); font: bold 11px system-ui; pointer-events: none; }

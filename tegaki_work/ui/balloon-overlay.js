@@ -1,12 +1,13 @@
 /**
  * ============================================================================
  * ファイル名: ui/balloon-overlay.js
- * 責務: 吹き出しの仕上がり(本体・しっぽ・文字)をキャンバス上へSVGで重ね、移動/リサイズ/しっぽ先端のハンドルを出す
- * 依存: coordinate-system.js, system/event-bus.js, system/balloon-geometry.js
+ * 責務: 本体・複数しっぽ・独立本文領域のSVG投影、輪郭点/二連/移動/拡縮ハンドルと局所grid
+ * 依存: coordinate-system.js, system/event-bus.js, balloon-geometry.js, balloon-text-layout.js
  * 被依存: ui/balloon-popup.js
  * 公開API: BalloonOverlay
  * イベント受信: camera:transform-changed, canvas:resized
- * 設計: svg本体はpointer-events:none。ハンドルだけがeventを受け、描画入力を奪わない。表示専用で保存・Historyには関与しない。
+ * 設計: svg本体はpointer-events:none。ハンドルとCtrl中だけの本体hitがeventを受け、Space/global Vへ譲る。
+ *   通常の内側は描画へ透過。表示専用で保存・Historyには関与しない。
  *   文字画像は3点(原点/+x/+y)の画面座標から行列を作って貼るので、キャンバスの回転・反転でも正しく見える。
  * 実装状態: ✅実装
  * ============================================================================
@@ -15,6 +16,7 @@
 import { coordinateSystem } from '../coordinate-system.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { balloonHandles, buildBalloonParts } from '../system/balloon-geometry.js';
+import { balloonTextFrameHandles } from '../system/balloon-text-layout.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -26,8 +28,8 @@ function el(name, attrs = {}) {
 
 export class BalloonOverlay {
     /**
-     * @param {{ onPointerDown: (target:{type:'center'|'tip'|'tl'|'tr'|'br'|'bl'}, event:PointerEvent)=>void,
-     *   getState: ()=>({params:object, canvas:object, textImage:{url:string,x:number,y:number,width:number,height:number}|null})|null }} options
+     * @param {{ onPointerDown: (target:{type:string}, event:PointerEvent)=>void,
+     *   getState: ()=>({params:object, canvas:object, editor?:object, textImage:object|Array<object|null>|null})|null }} options
      */
     constructor({ onPointerDown, getState, eventBus = TegakiEventBus } = {}) {
         this.onPointerDown = onPointerDown;
@@ -83,7 +85,7 @@ export class BalloonOverlay {
         const state = this.getState?.();
         this.svg.replaceChildren();
         if (!state?.params) return;
-        const { params, canvas, textImage } = state;
+        const { params, canvas, editor } = state;
         const { body, tails } = buildBalloonParts(params, canvas);
 
         // 本体+しっぽ(本体の縁を2×線幅 → 塗り の順は、popupのプレビュー/確定と同じ見え方になるよう半透明で重ねる)
@@ -92,7 +94,7 @@ export class BalloonOverlay {
             const pts = poly.map(p => this._toScreen(p));
             if (pts.some(p => !p)) continue;
             const d = `M${pts.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z`;
-            this.svg.appendChild(el('path', { d, class: 'bl-ov-line', 'stroke-width': lineWidthScreen * 2 }));
+            this.svg.appendChild(el('path', { d, class: 'bl-ov-line', style: `stroke:${params.lineColor}`, 'stroke-width': lineWidthScreen * 2 }));
         }
         for (const poly of [body, ...tails]) {
             const pts = poly.map(p => this._toScreen(p));
@@ -100,7 +102,21 @@ export class BalloonOverlay {
             this.svg.appendChild(el('path', { d: `M${pts.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z`, class: 'bl-ov-fill', style: `fill:${params.fillColor}` }));
         }
 
-        if (textImage?.url) {
+        if (editor?.grid && editor.context === 'body') {
+            const r = params.rect, step = Math.max(4, Number(editor.gridSize) || 16);
+            // Integer multiples retain the same snap origin while bounding SVG work.
+            const spacing = step * Math.max(1, Math.ceil(Math.max(r.w, r.h) / (step * 80)));
+            let d = '';
+            const segment = (a, b) => {
+                a = this._toScreen(a); b = this._toScreen(b);
+                if (a && b) d += `M${a.x} ${a.y}L${b.x} ${b.y}`;
+            };
+            for (let x = Math.ceil(r.x / spacing) * spacing; x <= r.x + r.w; x += spacing) segment({ x, y: r.y }, { x, y: r.y + r.h });
+            for (let y = Math.ceil(r.y / spacing) * spacing; y <= r.y + r.h; y += spacing) segment({ x: r.x, y }, { x: r.x + r.w, y });
+            this.svg.appendChild(el('path', { d, class: 'bl-ov-grid' }));
+        }
+        for (const textImage of (Array.isArray(state.textImage) ? state.textImage : [state.textImage])) {
+            if (!textImage?.url) continue;
             const o = this._toScreen({ x: textImage.x, y: textImage.y });
             const ex = this._toScreen({ x: textImage.x + 1, y: textImage.y });
             const ey = this._toScreen({ x: textImage.x, y: textImage.y + 1 });
@@ -115,23 +131,57 @@ export class BalloonOverlay {
                 this.svg.appendChild(image);
             }
         }
-
+        // Only Ctrl turns the body interior into a whole-object move surface.
+        const bodyPoints = body.map(point => this._toScreen(point));
+        if (bodyPoints.every(Boolean)) {
+            const hit = el('polygon', { points: bodyPoints.map(p => `${p.x},${p.y}`).join(' '), class: 'bl-ov-body-hit', 'data-kind': 'body-move' });
+            hit.addEventListener('pointerdown', event => this._down('body-move', event));
+            this.svg.appendChild(hit);
+        }
         const handles = balloonHandles(params, canvas);
         const add = (type, point, cls) => {
             const s = this._toScreen(point);
             if (!s) return;
             const handle = el('circle', { cx: s.x, cy: s.y, r: type === 'center' ? 8 : 6, class: `bl-ov-handle ${cls}`, 'data-kind': type });
-            handle.addEventListener('pointerdown', (e) => {
-                if (e.pointerType === 'mouse' && e.button !== 0) return;
-                e.preventDefault();
-                e.stopPropagation();
-                this.onPointerDown?.({ type }, e);
-            });
+            handle.addEventListener('pointerdown', event => this._down(type, event));
             this.svg.appendChild(handle);
         };
-        for (const key of ['tl', 'tr', 'br', 'bl']) add(key, handles.corners[key], 'is-corner');
-        if (handles.tip) add('tip', handles.tip, 'is-tip');
-        add('center', handles.center, 'is-center');
+        if (editor?.context === 'text') {
+            for (const [index, frame] of balloonTextFrameHandles(params, canvas).entries()) {
+                const corners = Object.values(frame.corners).map(p => this._toScreen(p));
+                if (corners.some(p => !p)) continue;
+                const selected = index === (editor.textIndex || 0);
+                const outline = el('path', { d: `M${corners.map(p => `${p.x} ${p.y}`).join('L')}Z`, class: `bl-ov-text-frame${selected ? ' is-selected' : ''}`, 'data-text-frame': index });
+                this.svg.appendChild(outline);
+                for (const [part, point] of Object.entries(frame.corners)) add(`text:${index}:${part}`, point, `is-text${selected ? ' is-selected' : ''}`);
+                add(`text:${index}:center`, frame.center, `is-text${selected ? ' is-selected' : ''}`);
+                const label = this._toScreen(frame.corners.tl);
+                const badge = el('text', { x: label.x + 9, y: label.y - 6, class: 'bl-ov-text-label' });
+                badge.textContent = index + 1; this.svg.appendChild(badge);
+            }
+        } else for (const key of ['tl', 'tr', 'br', 'bl']) add(key, handles.corners[key], 'is-corner');
+        if (editor?.context === 'body') {
+            (handles.contour || []).forEach((point, index) => add(`point:${index}`, point, `is-contour${editor.selectedPoint === index ? ' is-selected' : ''}`));
+            if (handles.secondary) {
+                for (const [key, point] of Object.entries(handles.secondary.corners)) add(`secondary:${key}`, point, 'is-secondary');
+                add('secondary:center', handles.secondary.center, 'is-secondary');
+            }
+        }
+        if (editor?.context !== 'text') {
+            [handles.tip,...(handles.extraTips || [])].forEach((point,index)=>{
+                if(!point)return;
+                add(index?`tip:${index}`:'tip',point,`is-tip${editor?.context==='tail'&&index===(editor.tailIndex||0)?' is-selected':''}`);
+                if(editor?.context==='tail'){const s=this._toScreen(point),label=el('text',{x:s.x+9,y:s.y-6,class:'bl-ov-text-label'});label.textContent=index+1;this.svg.appendChild(label);}
+            });
+            add('center', handles.center, 'is-center');
+        }
+    }
+
+    _down(type, event) {
+        if (this.svg.classList.contains('is-camera') || this.svg.classList.contains('is-transform')) return;
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        event.preventDefault(); event.stopPropagation();
+        this.onPointerDown?.({ type }, event);
     }
 
     /** 文書1pxあたりの画面px(線幅の見た目用)。 */

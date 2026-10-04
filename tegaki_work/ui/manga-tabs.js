@@ -3,15 +3,16 @@
  * ファイル名: ui/manga-tabs.js
  * 責務: 漫画ツール群(コマ / 吹き出し / 集中線 …)を1つの窓のタブとして見せる切替。
  *   各ツールは別々のpopup(PopupManager登録)のまま、タブ切替で同じ位置に入れ替える。
- * 依存: ui/pill-tabs.js, window.coreEngine.popupManager
+ * 依存: ui/pill-tabs.js, ui/manga-input-focus.js, window.coreEngine.popupManager
  * 被依存: ui/panel-layout-popup.js, ui/focus-lines-popup.js, ui/ui-panels.js(サイドバー)
  * 公開API: MANGA_TABS, mountMangaTabs, switchMangaTab, getLastMangaTab
- * 保存: 最後に使ったタブをlocalStorage(UI設定)に記録するだけ。
+ * 保存: 最後に使ったタブをlocalStorage(UI設定)に記録。入力先の橙枠はruntime-only。
  * 実装状態: ✅実装
  * ============================================================================
  */
 
 import { createPillTabs } from './pill-tabs.js';
+import { registerMangaInputRoot, setMangaInputPrimary } from './manga-input-focus.js';
 
 /** 並び順がタブ順。popupNameはPopupManager登録名、popupIdはDOMのid。新しいツールはここへ1行足す。 */
 export const MANGA_TABS = Object.freeze([
@@ -78,6 +79,7 @@ export function switchMangaTab(targetId) {
 /** popup内の host 要素へタブバーを置く。currentIdが選択状態。 */
 export function mountMangaTabs(host, currentId) {
     if (!host) return null;
+    registerMangaInputRoot(document.getElementById(MANGA_TABS.find(tab => tab.id === currentId)?.popupId), currentId);
     const tabs = createPillTabs({
         tabs: availableTabs(),
         active: currentId,
@@ -95,5 +97,6 @@ export function noteMangaTabShown(id) {
     const tab = MANGA_TABS.find(item => item.id === id);
     const popup = tab && document.getElementById(tab.popupId);
     if (popup) popup.dataset.mangaTransition = switchingTo === id ? 'instant' : 'open';
+    setMangaInputPrimary(id);
     rememberTab(id);
 }

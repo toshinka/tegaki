@@ -13,6 +13,18 @@
     "docs/ai/2026-10-03-rig-backend-implementation-proposal.md",
     "docs/ai/2026-10-04-rig-architecture-reassessment.md",
     "docs/work/WP-026-rive-authoring-browser-proof.md",
+    "docs/work/WP-029-rive-editor-first-path.md",
+    "docs/work/WP-031-rive-editor-operational-entry.md",
+    "docs/ai/WP-031-rive-entry-audit.md",
+    "docs/ai/WP-031-rive-dev-entry-result.md",
+    "docs/work/WP-032-rive-direct-bone-edit.md",
+    "docs/work/WP-033-raster-project-alpha-roundtrip.md",
+    "docs/ai/WP-033-raster-project-alpha-result.md",
+    "docs/ai/WP-033-raster-project-alpha-audit.md",
+    "docs/ai/WP-032-rive-bone-editor-result.md",
+    "docs/ai/WP-032-rive-bone-audit.md",
+    "docs/ai/WP-029-rive-editor-result.md",
+    "docs/ai/WP-029-rive-integration-audit.md",
     "docs/ai/WP-020-inochi-proof-result.md",
     "docs/ai/WP-020-rig-entry-boundary.md",
     "docs/work/README.md",
@@ -35,6 +47,7 @@
     "docs/work/WP-027-manga-lettering-workflow.md",
     "docs/ai/2026-10-04-manga-lettering-workflow-result.md",
     "docs/work/WP-028-lettering-character-editing.md",
+    "docs/work/WP-030-manga-tools-follow-through.md",
     "docs/ai/2026-10-04-lettering-character-editing-result.md",
     "docs/ai/2026-10-04-font-comparison-result.md",
     "docs/ai/2026-10-04-text-editing-proposal.md",
@@ -63,8 +76,8 @@
   "domains": {
     "fonts": {
       "architecture":"docs/ARCHITECTURE.md",
-      "entrypoints":["tegaki_work/system/font-library.js","tegaki_work/system/font-organization.js","tegaki_work/ui/font-tree.js","tegaki_work/build/local-font-bridge.mjs"],
-      "patterns":["^verify-curated-font-library","^verify-font-organization","^verify-font-publication","^verify-local-font-bridge","^verify-font-preview-performance","^verify-font-comparison-information"]
+      "entrypoints":["tegaki_work/system/font-library.js","tegaki_work/system/font-organization.js","tegaki_work/ui/font-tree.js","tegaki_work/ui/font-comparison.js","tegaki_work/ui/font-library-window.js","tegaki_work/ui/font-library-management.js","tegaki_work/build/local-font-bridge.mjs"],
+      "patterns":["^verify-curated-font-library","^verify-font-organization","^verify-font-publication","^verify-local-font-bridge","^verify-font-preview-performance","^verify-font-comparison-information","^verify-font-library-window"]
     },
     "folder-composite": {
       "architecture": "docs/ARCHITECTURE.md",
@@ -78,17 +91,21 @@
     },
     "editable-lettering": {
       "architecture": "docs/ARCHITECTURE.md",
-      "entrypoints": ["tegaki_work/system/editable-curve-geometry.js", "tegaki_work/system/lettering-model.js", "tegaki_work/system/lettering-font-engine.js", "tegaki_work/system/lettering-vector-renderer.js", "tegaki_work/system/lettering-layer-adapter.js", "tegaki_work/ui/lettering-popup.js", "tegaki_work/ui/lettering-overlay.js"],
+      "entrypoints": ["tegaki_work/system/editable-curve-geometry.js", "tegaki_work/system/lettering-model.js", "tegaki_work/system/lettering-font-engine.js", "tegaki_work/system/lettering-paragraph.js", "tegaki_work/system/lettering-vector-renderer.js", "tegaki_work/system/lettering-layer-adapter.js", "tegaki_work/ui/lettering-popup.js", "tegaki_work/ui/lettering-overlay.js"],
       "patterns": ["^verify-editable-lettering", "^verify-lettering-character-styles", "^verify-lettering-font-clusters", "^verify-qtp-text-entry-layout", "^verify-text-to-raster", "^verify-numeric-field"]
     },
     "balloon": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [
         "tegaki_work/system/balloon-geometry.js",
+        "tegaki_work/system/balloon-gestures.js",
+        "tegaki_work/system/balloon-text-layout.js",
         "tegaki_work/system/balloon-raster.js",
         "tegaki_work/system/lettering-raster.js",
+        "tegaki_work/system/lettering-paragraph.js",
         "tegaki_work/system/font-library.js",
-        "tegaki_work/ui/balloon-popup.js"
+        "tegaki_work/ui/balloon-popup.js",
+        "tegaki_work/ui/manga-input-focus.js"
       ],
       "patterns": [
         "^verify-balloon"
@@ -193,8 +210,10 @@
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": [
         "tegaki_work/system/panel-layout.js",
+        "tegaki_work/system/panel-layout-gestures.js",
         "tegaki_work/system/panel-layout-raster.js",
-        "tegaki_work/ui/panel-layout-popup.js"
+        "tegaki_work/ui/panel-layout-popup.js",
+        "tegaki_work/ui/manga-canvas-navigation.js"
       ],
       "patterns": [
         "^verify-panel-layout"
@@ -219,6 +238,11 @@
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": ["tegaki_work/system/animation/animation-data-model.js", "tegaki_work/system/animation/folder-part-render-plan.js", "tegaki_work/system/animation/timeline-frame-compositor.js", "tegaki_work/system/animation/part-rig.js"],
       "patterns": ["^verify-(clip-layer|folder-|part-rig|bone-|nested-bone|two-bone|rig-target|rigged-internal|raster-skin-render|raster-bone-skinning|structured-bake|effect-target)", "^verify-motion-"]
+    },
+    "rig-editor": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": ["tegaki_work/ui/rive-editor-entry.js", "tegaki_work/ui/right-workspace-frame.js"],
+      "patterns": ["^verify-rive-editor-", "^verify-rive-bone-editor"]
     },
     "warp": {
       "architecture": "docs/ARCHITECTURE.md",
@@ -260,6 +284,11 @@
     {"id":"WP-024","document":"docs/work/WP-024-font-comparison.md","status":"VERIFIED","dependsOn":[]},
     {"id":"WP-025","document":"docs/work/WP-025-editable-manga-lettering.md","status":"VERIFIED","dependsOn":[]},
     {"id":"WP-027","document":"docs/work/WP-027-manga-lettering-workflow.md","status":"VERIFIED","dependsOn":[]},
-    {"id":"WP-028","document":"docs/work/WP-028-lettering-character-editing.md","status":"VERIFIED","dependsOn":[]}
+    {"id":"WP-028","document":"docs/work/WP-028-lettering-character-editing.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-030","document":"docs/work/WP-030-manga-tools-follow-through.md","status":"ACTIVE","dependsOn":[]},
+    {"id":"WP-029","document":"docs/work/WP-029-rive-editor-first-path.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-031","document":"docs/work/WP-031-rive-editor-operational-entry.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-032","document":"docs/work/WP-032-rive-direct-bone-edit.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-033","document":"docs/work/WP-033-raster-project-alpha-roundtrip.md","status":"VERIFIED","dependsOn":[]}
   ]
 }

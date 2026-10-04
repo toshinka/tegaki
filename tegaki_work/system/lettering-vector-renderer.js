@@ -4,7 +4,7 @@
  * 責務: HarfBuzz glyph outlineを文字localへ配置し、baseline/envelope/placementを
  *       同じ評価器でSVG previewと最終RGBA画素へ反映する。local原点は変形後も固定し、
  *       browser確定画素は変形済みvectorを文書worldの1x viewportへ直接焼く。
- * 依存: lettering-font-engine, editable-curve-geometry, lettering-raster
+ * 依存: lettering-font-engine, editable-curve-geometry, lettering-raster, lettering-paragraph
  * 被依存: lettering UI / Project adapter (rendererは保存・Historyを所有しない)
  * 公開API: renderLettering
  * 契約: SVG/paths/localBoundsはplacement前のlocal文字。pixels/rasterBoundsは
@@ -14,7 +14,8 @@
  * ============================================================================
  */
 
-import { buildLetteringHtml, measureLettering, rasterizeLettering } from './lettering-raster.js';
+import { buildLetteringHtml } from './lettering-raster.js';
+import { paragraphRequest, measureParagraph, rasterizeParagraph } from './lettering-paragraph.js';
 import { isFontAvailable } from './font-library.js';
 import { curveLengthTable, curvePointAtDistance, letteringLocalToWorld, mapEnvelopePoint } from './editable-curve-geometry.js';
 import { parseSvgPath, shapeLettering } from './lettering-font-engine.js';
@@ -44,6 +45,18 @@ function clamp(value, min, max, fallback) {
 
 function color(value, fallback) {
     return typeof value === 'string' && COLOR_PATTERN.test(value) ? value.toLowerCase() : fallback;
+}
+
+// Missing range attributes inherit; explicit zero disables only that outline.
+// Widths are measured after glyph deformation, like the existing global stroke.
+function glyphOutlines(params, style = {}) {
+    const strokeWidth = clamp(style.strokeWidth ?? params.strokeWidth, 0, 64, 0);
+    const added = clamp(style.outerStrokeWidth ?? params.outerStrokeWidth, 0, 64, 0);
+    return {
+        strokeWidth, stroke: color(style.strokeColor, color(params.strokeColor, '#ffffee')),
+        outerStrokeWidth: added > 0 ? strokeWidth + 2 * added : 0,
+        outerStroke: color(style.outerStrokeColor, color(params.outerStrokeColor, '#800000'))
+    };
 }
 
 function escapeAttribute(value) {
@@ -253,9 +266,9 @@ function makeSvg(paths, localBounds, params) {
     const outerWidth = clamp(params.outerStrokeWidth, 0, 64, 0);
     let body;
     if (outerWidth > 0 || params.characterStyles?.length) {
-        const strokePass = (strokeColor, width) => width > 0 ? paths.map(path => `<path d="${escapeAttribute(path.d)}" fill="none" stroke="${strokeColor}" stroke-width="${width}" stroke-linejoin="round"/>`).join('') : '';
-        body = (outerWidth > 0 ? strokePass(color(params.outerStrokeColor, '#800000'), strokeWidth + outerWidth * 2) : '')
-            + strokePass(stroke, strokeWidth)
+        const strokePass = (colorKey, widthKey) => paths.filter(path => path[widthKey] > 0).map(path => `<path d="${escapeAttribute(path.d)}" fill="none" stroke="${path[colorKey]}" stroke-width="${path[widthKey]}" stroke-linejoin="round"/>`).join('');
+        body = strokePass('outerStroke', 'outerStrokeWidth')
+            + strokePass('stroke', 'strokeWidth')
             + paths.map(path => `<path d="${escapeAttribute(path.d)}" fill="${color(path.fill, fill)}" fill-rule="nonzero"/>`).join('');
     } else {
         // Keep existing SVG/paint ordering for unchanged version-1 recipes.
@@ -360,25 +373,24 @@ function rasterizeStyledPolygons(paths, localBounds, params) {
     if (budget) return budget;
     const width = Math.max(1, Math.ceil(localBounds.width)), height = Math.max(1, Math.ceil(localBounds.height));
     const pixels = new Uint8ClampedArray(width * height * 4);
-    const innerWidth = clamp(params.strokeWidth, 0, 64, 0), added = clamp(params.outerStrokeWidth, 0, 64, 0);
-    const outerWidth = added > 0 ? innerWidth + added * 2 : 0;
-    const innerColor = parseHex(params.strokeColor), outerColor = parseHex(params.outerStrokeColor);
-    const prepared = paths.map(path => ({ ...path, rgb: parseHex(path.fill || params.color), bounds: boundsOfSubpaths(path.subpaths) }));
-    const radius = Math.max(innerWidth, outerWidth) / 2;
+    const prepared = paths.map(path => ({ ...path, rgb: parseHex(path.fill || params.color),
+        innerRGB: parseHex(path.stroke), outerRGB: parseHex(path.outerStroke), bounds: boundsOfSubpaths(path.subpaths) }));
     for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
         let hits = 0; const rgb = [0, 0, 0];
         for (const sy of [0.25, 0.75]) for (const sx of [0.25, 0.75]) {
             const point = { x: localBounds.x + x + sx, y: localBounds.y + y + sy };
-            let outer = false, inner = false, fill = null;
+            let outer = null, inner = null, fill = null;
             for (const path of prepared) {
+                const innerWidth = path.strokeWidth, outerWidth = path.outerStrokeWidth;
+                const radius = Math.max(innerWidth, outerWidth) / 2;
                 const box = path.bounds;
                 if (box && (point.x < box.x - radius || point.x > box.x + box.width + radius || point.y < box.y - radius || point.y > box.y + box.height + radius)) continue;
                 const state = pointInSubpaths(point, path.subpaths, Math.max(innerWidth, outerWidth));
-                if (state.stroke && outerWidth > 0) outer = true;
-                if (innerWidth > 0 && (outerWidth <= innerWidth ? state.stroke : pointInSubpaths(point, path.subpaths, innerWidth).stroke)) inner = true;
+                if (state.stroke && outerWidth > 0) outer = path.outerRGB;
+                if (innerWidth > 0 && (outerWidth <= innerWidth ? state.stroke : pointInSubpaths(point, path.subpaths, innerWidth).stroke)) inner = path.innerRGB;
                 if (state.fill) fill = path.rgb;
             }
-            const source = fill || (inner ? innerColor : outer ? outerColor : null);
+            const source = fill || inner || outer;
             if (source) { hits += 1; for (let c = 0; c < 3; c += 1) rgb[c] += source[c]; }
         }
         if (!hits) continue;
@@ -484,19 +496,7 @@ async function browserRasterize(svg, width, height, placement, documentRef, loca
 }
 
 function makeSystemRequest(params) {
-    return {
-        text: params.text,
-        vertical: params.vertical === true,
-        fontFamily: params.fontFamily || 'sans-serif',
-        fontSize: clamp(params.fontSize, 8, 400, 32),
-        lineHeight: clamp(params.lineHeight, 0.8, 3, 1.5),
-        letterSpacing: finite(params.fontSize) ? finite(params.tracking) / Math.max(1, finite(params.fontSize)) : 0,
-        bold: params.bold === true,
-        color: color(params.color, '#800000'),
-        outlineWidth: clamp(params.strokeWidth, 0, 24, 0),
-        outlineColor: color(params.strokeColor, '#ffffee'),
-        align: 'center'
-    };
+    return paragraphRequest(params).request;
 }
 
 function makeSystemSvg(request, width, height) {
@@ -515,7 +515,7 @@ async function renderSystem(params, options, placement) {
     if (!documentRef?.createElement) return fail('文字を描画できない環境です');
     let measured;
     try {
-        measured = await measureLettering(request, documentRef);
+        measured = await measureParagraph(params, {}, documentRef);
     } catch (error) {
         return fail('system-font-raster-failed', error?.message || '文字寸法を測れません');
     }
@@ -525,7 +525,7 @@ async function renderSystem(params, options, placement) {
     const measuredWorldBounds = transformedRasterBounds(measuredBounds, placement);
     const measuredWorldBudget = rasterBudgetFailure(measuredWorldBounds, '配置後の文字画素');
     if (measuredWorldBudget) return measuredWorldBudget;
-    const result = await rasterizeLettering(request, { documentRef });
+    const result = await rasterizeParagraph(params, {}, { documentRef });
     if (!result?.ok) return result || fail('system-font-raster-failed');
     const localBounds = { x: -result.width / 2, y: -result.height / 2, width: result.width, height: result.height };
     const localRasterBounds = integerRasterBounds(localBounds);
@@ -672,7 +672,7 @@ async function renderImported(params, options, placement) {
         let normalNext = { x: anchor.x + (glyph.axis === 'y' ? 1 : 0), y: anchor.y + (glyph.axis === 'y' ? 0 : 1) };
         if (baselineTable) { anchor = mapBaseline(anchor, glyph, shaped, baselineTable); next = mapBaseline(next, glyph, shaped, baselineTable); normalNext = mapBaseline(normalNext, glyph, shaped, baselineTable); }
         if (d) preEnvelopePaths.push({ d, subpaths, cluster: glyph.cluster, start: glyph.start, end: glyph.end,
-            fill: color(glyph.style?.color, color(params.color, '#800000')), anchor, next, normalNext });
+            fill: color(glyph.style?.color, color(params.color, '#800000')), ...glyphOutlines(params, glyph.style), anchor, next, normalNext });
     }
     // The envelope maps the post-size/post-baseline text as one object. Keep
     // this pre-envelope frame stable so baseline nodes and overlay handles
@@ -688,9 +688,9 @@ async function renderImported(params, options, placement) {
     const allMapped = mappedPaths.flatMap(path => path.subpaths);
     let fillBounds = boundsOfSubpaths(allMapped);
     if (!fillBounds) fillBounds = { ...envelopeBounds };
-    const strokeWidth = clamp(params.strokeWidth, 0, 64, 0);
-    const outerStrokeWidth = clamp(params.outerStrokeWidth, 0, 64, 0);
-    const fullStrokeWidth = strokeWidth + outerStrokeWidth * 2;
+    const emptyOutlines = glyphOutlines(params);
+    const fullStrokeWidth = mappedPaths.length ? mappedPaths.reduce((width, path) => Math.max(width, path.strokeWidth, path.outerStrokeWidth), 0)
+        : Math.max(emptyOutlines.strokeWidth, emptyOutlines.outerStrokeWidth);
     const localBounds = {
         x: fillBounds.x - fullStrokeWidth / 2,
         y: fillBounds.y - fullStrokeWidth / 2,
@@ -718,10 +718,10 @@ async function renderImported(params, options, placement) {
             y: (path.next.y - path.anchor.y) / (Math.hypot(path.next.x - path.anchor.x, path.next.y - path.anchor.y) || 1) },
         fill: path.fill,
         fillRule: 'nonzero',
-        ...(outerStrokeWidth > 0 ? { outerStroke: color(params.outerStrokeColor, '#800000'), outerStrokeWidth: fullStrokeWidth } : {}),
-        ...(strokeWidth > 0 ? {
-            stroke: color(params.strokeColor, '#ffffee'),
-            strokeWidth
+        ...(path.outerStrokeWidth > 0 ? { outerStroke: path.outerStroke, outerStrokeWidth: path.outerStrokeWidth } : {}),
+        ...(path.strokeWidth > 0 ? {
+            stroke: path.stroke,
+            strokeWidth: path.strokeWidth
         } : {})
     }));
     if (options.previewOnly === true) {

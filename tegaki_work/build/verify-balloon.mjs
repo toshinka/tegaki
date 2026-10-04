@@ -40,7 +40,8 @@ function inside(poly, pt) {
 }
 
 // 全形状: 多角形が作れ、本体は矩形の範囲内(ギザギザは外へ少し出る)で中心を含む。しっぽは本体の外へ伸びる
-for (const shape of BALLOON_SHAPES) {
+// Custom/double have their own extent/union invariants in verify-balloon-contours.
+for (const shape of BALLOON_SHAPES.filter(shape => ['ellipse', 'roundrect', 'cloud', 'burst'].includes(shape.id))) {
     const p = { ...defaultBalloonParams(canvas), shape: shape.id };
     const { body, tails } = buildBalloonParts(p, canvas);
     assert.ok(body.length >= 4, shape.id);

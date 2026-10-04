@@ -21,7 +21,7 @@ const DEFAULT_PRESET_WIDTH = 240;
 const DEFAULT_PRESET_HEIGHT = 80;
 const MAX_TABLE_DEPTH = 18;
 
-const BASELINE_PRESETS = new Set(['none', 'straight', 'wave', 'ellipse', 'polyline', 'free']);
+const BASELINE_PRESETS = new Set(['none', 'straight', 'arc', 'wave', 'ellipse', 'polyline', 'free']);
 
 function finite(value, fallback = 0) {
     return Number.isFinite(value) ? value : fallback;
@@ -177,6 +177,15 @@ export function createCurvePreset(kind, width = DEFAULT_PRESET_WIDTH, height = D
     if (preset === 'none') return { closed: false, nodes: [] };
     if (preset === 'straight') {
         return { closed: false, nodes: [lineNode('node-0', 0, cy), lineNode('node-1', w, cy)] };
+    }
+    if (preset === 'arc') {
+        // Upper half of an ellipse, two tangent-continuous quarter cubics.
+        const rx = w / 2, k = 0.5522847498307936;
+        return { closed: false, nodes: [
+            handleNode('node-0', 0, h, { x: 0, y: 0 }, { x: 0, y: -k * h }, true),
+            handleNode('node-1', rx, 0, { x: -k * rx, y: 0 }, { x: k * rx, y: 0 }, true),
+            handleNode('node-2', w, h, { x: 0, y: -k * h }, { x: 0, y: 0 }, true)
+        ] };
     }
     if (preset === 'wave') {
         const quarter = w / 4;

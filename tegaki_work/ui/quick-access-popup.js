@@ -21,6 +21,7 @@ import { toolNameToSelectionMode } from '../system/selection-area-tools.js';
 import { TOOL_SLOTS, getLastMember, getSlot, nextMember, onToolSlotsChange, orderMembers, registerSlotActivator, rememberMember, setMemberOrder, slotOfTool } from './tool-slots.js';
 import { enableRowReorder } from './row-reorder.js';
 import { getBrushPresetIcon } from './brush-preset-icons.js';
+import { ShapePaintControls } from './shape-paint-controls.js';
 import { applyBrushPresetValues, brushPresetMatches, getBrushPresetTool, listQtpBrushPresets } from '../system/drawing/brush-presets.js';
 
 const QA_STORAGE_KEYS = {
@@ -1461,6 +1462,7 @@ export class QuickAccessPopup {
                         </button>
                     `).join('')}
                 </div>
+                <div class="qa-shape-paint" data-role="shape-paint" hidden></div>
             </section>
 
             <!-- 4. サイズ & 不透明度 スライダー -->
@@ -2581,14 +2583,14 @@ export class QuickAccessPopup {
             if (tool) this._setCurrentToolFromExternal(tool);
         });
 
-        const selectionToolName = () => ({ auto: 'auto-select', gradient: 'gradient', 'shape-rect': 'shape-rect', 'shape-ellipse': 'shape-ellipse', border: 'border' }[window.pixelSelectionSystem?.getToolMode?.()] || 'selection');
+        const selectionToolName = () => ({ auto: 'auto-select', gradient: 'gradient', 'shape-rect': 'shape-rect', 'shape-ellipse': 'shape-ellipse', 'shape-polygon': 'shape-polygon', border: 'border' }[window.pixelSelectionSystem?.getToolMode?.()] || 'selection');
         this.eventBus.on('selection:tool-changed', ({ active } = {}) => {
             if (active === true) {
                 this._setCurrentToolFromExternal(selectionToolName());
                 return;
             }
 
-            if (['selection', 'auto-select', 'gradient', 'shape-rect', 'shape-ellipse', 'border'].includes(this.currentTool)) {
+            if (['selection', 'auto-select', 'gradient', 'shape-rect', 'shape-ellipse', 'shape-polygon', 'border'].includes(this.currentTool)) {
                 this._setCurrentToolFromExternal(this.brushSettings?.getMode?.() || 'pen');
             }
         });
@@ -2598,6 +2600,7 @@ export class QuickAccessPopup {
 
         this.eventBus.on('brush:size-changed', (payload = {}) => {
             const size = payload.size ?? payload.data?.size;
+            if (Number.isFinite(size) && slotOfTool(this.currentTool) === 'shape') window.CoreRuntime?.api?.selection?.setAreaToolOptions?.({ shape: { width: size } });
             if (typeof size !== 'number' || this.isDraggingSize) return;
             this._updateSizeSlider(size, { persistPreset: false, emit: false });
         });
@@ -2611,6 +2614,14 @@ export class QuickAccessPopup {
         this.eventBus.on('brush:color-changed', (event = {}) => {
             this._updateColorButtons();
             this._updateCurrentColorDot();
+            window.pixelSelectionSystem?.areaTools?.shape?.render?.();
+            window.pixelSelectionSystem?.areaTools?.polygon?.render?.();
+        });
+        this.eventBus.on('selection:area-options-changed', () => this.shapePaintControls?.render());
+        this.eventBus.on('layer:background-color-changed', () => {
+            this.shapePaintControls?.render();
+            window.pixelSelectionSystem?.areaTools?.shape?.render?.();
+            window.pixelSelectionSystem?.areaTools?.polygon?.render?.();
         });
 
         this.eventBus.on('color:swap-main-sub', () => {
@@ -2926,6 +2937,7 @@ export class QuickAccessPopup {
         if (tool === 'gradient') return 'gradient';
         if (tool === 'shape-rect') return 'shape-rect';
         if (tool === 'shape-ellipse') return 'shape-ellipse';
+        if (tool === 'shape-polygon') return 'shape-polygon';
         if (tool === 'border') return 'border';
         return 'pen';
     }
@@ -3148,6 +3160,7 @@ export class QuickAccessPopup {
     }
 
     _updatePresetSlots() {
+        this._updateShapePaintControls();
         const presetKey = this._getPresetToolKey();
         const isPresetEnabled = Boolean(presetKey);
         const presetSlots = Array.isArray(this.elements?.presetSlots) ? this.elements.presetSlots : [];
@@ -3217,6 +3230,24 @@ export class QuickAccessPopup {
                 slot.setAttribute('aria-label', `Preset slot ${index + 1}, unavailable for the current tool`);
             }
         });
+    }
+
+    _updateShapePaintControls() {
+        const host = this.panel?.querySelector('[data-role="shape-paint"]');
+        if (!host) return;
+        const active = slotOfTool(this.currentTool) === 'shape';
+        host.hidden = !active;
+        this.elements.presetSection?.classList.toggle('is-shape-paint', active);
+        if (!this.shapePaintControls) this.shapePaintControls = new ShapePaintControls({
+            host,
+            getState: () => {
+                const color = this.layerSystem?.getLayers?.().find(layer => layer.layerData?.isBackground)?.layerData.backgroundColor;
+                return { tool: this.currentTool, shape: window.CoreRuntime?.api?.selection?.getAreaToolOptions?.()?.shape,
+                    background: `#${(Number.isFinite(color) ? color : QA_DEFAULT_SUB_COLOR).toString(16).padStart(6, '0')}` };
+            },
+            setOptions: patch => window.CoreRuntime?.api?.selection?.setAreaToolOptions?.(patch)
+        });
+        if (active) this.shapePaintControls.render();
     }
 
     _previewPresetSlotSummary(slot) {

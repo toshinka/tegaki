@@ -1,0 +1,53 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>WP030 入力先・吹き出しCtrl</title>
+<style>body{background:#ffffee;color:#800000;font:12px system-ui}iframe{width:1280px;height:720px;border:1px solid #b8706b}pre{white-space:pre-wrap}</style>
+<button id="run" disabled>入力先とCtrl操作を検証</button><button id="inspect" disabled>吹き出しを表示</button><span id="state">製品起動中</span><pre id="output"></pre><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+const frame=document.querySelector('#product'),out=document.querySelector('#output'),state=document.querySelector('#state');
+const delay=ms=>new Promise(r=>setTimeout(r,ms)),check=(ok,label)=>{if(!ok)throw Error(label);out.textContent+='PASS '+label+'\n';};
+let core;for(let i=0;i<200;i++){core=frame.contentWindow?.coreEngine;if(core?.popupManager?.get('balloon')?.isReady())break;await delay(100);}
+const win=frame.contentWindow,p=core.popupManager.get('balloon'),lettering=core.popupManager.get('lettering'),q=s=>p.popup.querySelector(s),canvas=win.document.querySelector('.canvas-area canvas');
+const primary=()=>p.popup.dataset.mangaInputPrimary==='true';
+const key=(type,code,mods={})=>win.document.body.dispatchEvent(new win.KeyboardEvent(type,{code,key:code==='Space'?' ':code==='KeyV'?'v':'Control',bubbles:true,cancelable:true,...mods}));
+const realm=v=>win.JSON.parse(JSON.stringify(v));
+const pixels=()=>{const c=core.exportManager.renderToCanvas({transparent:true});return Array.from(c.getContext('2d').getImageData(0,0,c.width,c.height).data);};
+state.textContent='検証可能';document.querySelectorAll('button').forEach(b=>b.disabled=false);
+document.querySelector('#inspect').onclick=()=>{frame.style.width='1280px';frame.style.height='720px';win.dispatchEvent(new win.Event('resize'));core.popupManager.show('balloon');q('[data-shape="double"]').click();q('[data-context="tail"]').click();p.elements.content.value='入力先は橙の枠';p.elements.content.dispatchEvent(new win.Event('input',{bubbles:true}));};
+document.querySelector('#run').onclick=async()=>{
+ const original=structuredClone(p.params),prefs=win.localStorage.getItem('tegaki-balloon-v1');out.textContent='';state.textContent='実行中';
+ try{
+  core.popupManager.show('balloon');p._onAction('reset');
+  check(primary()&&win.getComputedStyle(p.popup).outlineColor==='rgb(255, 140, 66)','showで漫画入力先の橙枠');
+  p.elements.content.focus();check(primary(),'本文focusで漫画入力先');
+  canvas.dispatchEvent(new win.PointerEvent('pointerdown',{pointerId:81,pointerType:'mouse',button:2,buttons:0,bubbles:true}));canvas.dispatchEvent(new win.PointerEvent('pointerup',{pointerId:81,pointerType:'mouse',button:2,buttons:0,bubbles:true}));
+  check(!primary()&&win.document.activeElement!==p.elements.content,'Canvasへ移動で枠解除・旧入力focus解除');
+  q('[data-context="body"]').focus();check(primary(),'漫画のbutton focusで復帰');
+  p._toggleFontComparison(true);p.fontComparison.refs.close.focus();check(primary(),'共通書体窓も漫画の編集対象');p._toggleFontComparison(false);
+  q('[data-shape="double"]').click();q('[data-context="tail"]').click();q('[data-action="tail-add"]').click();
+  p._setParams({...p.params,text:{...p.params.text,fontKind:'system',fontFamily:'sans-serif',fontId:'',fontSize:24,autoFit:false,content:'本文①'},double:{...p.params.double,content:'本文②'}});
+  p.elements.content.focus();key('keydown','ControlLeft',{ctrlKey:true});p.overlay.render();
+  let r=p.params.rect,from=p.overlay._toScreen({x:r.x+r.w*.6,y:r.y+r.h*.3}),to={x:from.x+20,y:from.y-15},hit=p.overlay.svg.querySelector('[data-kind="body-move"]');
+  check(win.document.elementFromPoint(from.x,from.y)===hit,'Ctrl中は本文上の本体内側をhit');
+  const before=structuredClone(p.params),history=core.history.stack.length,cameraScale=core.cameraSystem.worldContainer.scale.x;
+  hit.dispatchEvent(new win.PointerEvent('pointerdown',{pointerId:82,pointerType:'mouse',button:0,ctrlKey:true,clientX:from.x,clientY:from.y,bubbles:true,cancelable:true}));
+  win.dispatchEvent(new win.PointerEvent('pointermove',{pointerId:82,pointerType:'mouse',ctrlKey:true,clientX:to.x,clientY:to.y}));win.dispatchEvent(new win.PointerEvent('pointerup',{pointerId:82,pointerType:'mouse',ctrlKey:true,clientX:to.x,clientY:to.y}));
+  check(Math.abs(p.params.rect.x-before.rect.x-20)<.01&&Math.abs(p.params.tail.tip.y-before.tail.tip.y+15)<.01&&Math.abs(p.params.extraTails[0].tip.x-before.extraTails[0].tip.x-20)<.01,'Ctrl dragで本体と全しっぽ移動');
+  check(primary()&&core.history.stack.length===history&&core.cameraSystem.worldContainer.scale.x===cameraScale,'draft移動は漫画入力・Canvas/History不変');
+  p.overlay.render();hit=p.overlay.svg.querySelector('[data-kind="body-move"]');const moved=structuredClone(p.params),cx=moved.rect.x+moved.rect.w/2;
+  hit.dispatchEvent(new win.WheelEvent('wheel',{deltaY:-100,ctrlKey:true,bubbles:true,cancelable:true}));
+  check(Math.abs(p.params.rect.w-moved.rect.w*1.05)<.01&&Math.abs(p.params.rect.x+p.params.rect.w/2-cx)<.01,'Ctrl wheelは本体中心から一様拡縮');
+  check(p.params.text.fontSize===24&&p.params.lineWidth===before.lineWidth&&p.params.tail.width===before.tail.width&&core.cameraSystem.worldContainer.scale.x===cameraScale,'文字size・線幅・Camera保持');
+  key('keyup','ControlLeft');p.overlay.render();hit=p.overlay.svg.querySelector('[data-kind="body-move"]');check(win.getComputedStyle(hit).pointerEvents==='none','Ctrl解除で本体内側の描画透過');
+  const draft=JSON.stringify(p.params);canvas.dispatchEvent(new win.WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}));check(!primary()&&core.cameraSystem.worldContainer.scale.x!==cameraScale&&JSON.stringify(p.params)===draft,'通常wheelはCanvas・枠解除・本文不変');
+  q('[data-context="tail"]').focus();key('keydown','ControlLeft',{ctrlKey:true});key('keydown','Space',{ctrlKey:true});check(!primary()&&win.getComputedStyle(hit).pointerEvents==='none','Space優先・橙枠と対象hit解除');key('keyup','Space',{ctrlKey:true});key('keyup','ControlLeft');check(primary(),'Camera未clickならSpace終了で元の入力先');
+  core.eventBus.emit('keyboard:vkey-state-changed',{pressed:true});check(!primary()&&win.getComputedStyle(hit).pointerEvents==='none','global VはCanvas Transformへ譲る');core.eventBus.emit('keyboard:vkey-state-changed',{pressed:false});
+  q('[data-context="text"]').focus();q('[data-context="text"]').click();const oldWidth=p.params.rect.w;canvas.dispatchEvent(new win.WheelEvent('wheel',{deltaY:100,ctrlKey:true,bubbles:true,cancelable:true}));check(p.params.rect.w<oldWidth&&primary(),'文字contextでもCtrlは全体操作');
+  const recipe=structuredClone(p.params),added=await p.apply();check(added.ok,'Ctrl編集の通常Raster確定');p.hide();const png=pixels(),project=await core.projectManager.exportProject();await core.projectManager.loadProject(realm(project));const layer=core.layerSystem.getLayers().find(l=>l.layerData.id===added.layerId);core.layerSystem.setActiveLayer(core.layerSystem.getLayerIndex(layer));check(JSON.stringify(layer.layerData.balloon.params)===JSON.stringify(recipe)&&JSON.stringify(pixels())===JSON.stringify(png),'Ctrl編集Project/PNG一致');
+  core.popupManager.show('balloon');p.loadFromActiveLayer();p._onObjectWheel({ctrlKey:true,deltaY:100,target:p.overlay.svg});await p.update();core.history.undo();check(JSON.stringify(core.layerSystem.getActiveLayer().layerData.balloon.params)===JSON.stringify(recipe),'Ctrl再編集更新Undo');core.history.redo();
+  core.popupManager.show('lettering');key('keydown','KeyV');check(lettering._transformInput&&lettering.popup.dataset.mangaInputPrimary==='true'&&!core.cameraSystem.vKeyPressed,'橙枠中のVは文字draft操作');
+  canvas.dispatchEvent(new win.PointerEvent('pointerdown',{pointerId:83,pointerType:'mouse',button:2,buttons:0,bubbles:true}));canvas.dispatchEvent(new win.PointerEvent('pointerup',{pointerId:83,pointerType:'mouse',button:2,buttons:0,bubbles:true}));key('keydown','KeyV');check(core.cameraSystem.vKeyPressed&&lettering.popup.dataset.mangaInputPrimary==='false','Canvas入力先のVは既存Transform');key('keydown','KeyV');
+  for(const id of ['panelLayout','focusLines','balloon','lettering']){core.popupManager.show(id);const roots=[...win.document.querySelectorAll('[data-manga-input-root].is-manga-input-primary.show')];check(roots.length===1&&roots[0].dataset.mangaInputRoot===id,'4tab共通の入力先 '+id);}
+  state.textContent='PASS';
+ }catch(e){state.textContent='FAIL '+e.message;out.textContent+=e.stack;}
+ finally{core.eventBus.emit('keyboard:vkey-state-changed',{pressed:false});core.popupManager.hideAll();p._setParams(original);if(prefs===null)win.localStorage.removeItem('tegaki-balloon-v1');else win.localStorage.setItem('tegaki-balloon-v1',prefs);}
+};
+</script></html>

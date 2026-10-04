@@ -75,6 +75,13 @@ run.onclick=async()=>{
   win.dispatchEvent(new win.KeyboardEvent('keyup',{key:' ',code:'Space',bubbles:true}));check(!popup._spacePressed,'Space解除');
   q('[data-mode="characters"]').click();q('[data-character-start="1"]').click();await flush();
   const beforeChar=JSON.stringify(popup.params.characterStyles);q('[data-action="character-flip-horizontal"]').click();check(JSON.stringify(popup.params.characterStyles)!==beforeChar,'選択文字のみ反転');
+  q('[data-action="character-outlines"]').click();change(q('[data-character-outline-mode="strokeWidth"]'),'off');change(q('[data-character-outline-mode="outerStrokeWidth"]'),'off');
+  rendered=await flush();const noOutline=rendered.paths.find(p=>p.start===1);
+  check(noOutline&&!noOutline.strokeWidth&&!noOutline.outerStrokeWidth&&popup.params.characterStyles.find(s=>s.start===1).fontId===other.id,'単字別書体と第一/第二OFFを併用');
+  change(q('[data-character-outline-mode="strokeWidth"]'),'custom');input(q('[data-character-outline-width="strokeWidth"]'),'6');input(q('[data-character-outline-color="strokeColor"]'),'#00ff00');
+  change(q('[data-character-outline-mode="outerStrokeWidth"]'),'custom');input(q('[data-character-outline-width="outerStrokeWidth"]'),'4');input(q('[data-character-outline-color="outerStrokeColor"]'),'#0000ff');rendered=await flush();
+  const customOutline=rendered.paths.find(p=>p.start===1);check(customOutline.strokeWidth===6&&customOutline.outerStrokeWidth===14&&customOutline.stroke==='#00ff00'&&customOutline.outerStroke==='#0000ff','個別の二重フチ・色・幅がCanvas previewへ反映: '+JSON.stringify({inner:customOutline.strokeWidth,outer:customOutline.outerStrokeWidth,innerColor:customOutline.stroke,outerColor:customOutline.outerStroke,styles:popup.params.characterStyles}));
+  check(rendered.svg.lastIndexOf('stroke=')<rendered.svg.indexOf('fill="#800000"'),'個別フチでも全文字のfillを最後に描く');q('[data-action="character-outlines"]').click();
   const beforeVertical=structuredClone(popup.params);
   popup._setParams(realm({...beforeVertical,text:'あ゙ゴ\nゴゴ',vertical:true,baseline:{kind:'none',path:null},envelope:{kind:'none',amount:0,points:null},characterStyles:[]}));
   let vertical=await flush();check(vertical?.ok&&vertical.paths.some(p=>p.start===4),'3点サイズと多行縦書きの実描画: '+popup.elements.errorStatus.textContent);
@@ -93,12 +100,12 @@ run.onclick=async()=>{
   const updateBefore=history.stack.length,updated=await popup.update();check(updated.ok&&history.stack.length===updateBefore+1,'再編集更新はHistory一件');history.undo();check(equal(popup.layerAdapter.loadActive().params,params),'更新Undoで全属性復元');history.redo();
   await popup.cancel();check(!popup.layerAdapter.previewSource,'取消で元Raster表示');
   frame.style.width='360px';frame.style.height='640px';win.dispatchEvent(new win.Event('resize'));await delay(60);check(q('.lettering-popup__commit').getBoundingClientRect().bottom<=640,'360pxで固定footer可視');
-  q('[data-action="font-info"]').click();check(cmp('[data-role="font-comparison-information"]').getBoundingClientRect().right<=360,'360pxで情報pane収まる');popup.fontComparison.setOpen(false);
-  q('[data-action="font-info"]').click();const information=cmp('[data-role="font-comparison-information"]');
+  q('[data-role="font-comparison-toggle"]').click();popup.fontComparison.setMode('information');check(cmp('[data-role="font-comparison-information"]').getBoundingClientRect().right<=360,'360pxで情報pane収まる');popup.fontComparison.setOpen(false);
+  q('[data-role="font-comparison-toggle"]').click();popup.fontComparison.setMode('information');const information=cmp('[data-role="font-comparison-information"]');
   check(information.getBoundingClientRect().bottom<=640&&getComputedStyle(information).overflowY==='auto','狭い画面の情報は独立scroll領域に収まる');
   information.scrollTop=information.scrollHeight;check(popup.elements.fontPrimary.getBoundingClientRect().bottom<=640,'情報末尾Primaryも到達');popup.fontComparison.setOpen(false);
   frame.style.height='400px';win.dispatchEvent(new win.Event('resize'));await delay(60);check(q('.lettering-popup__commit').getBoundingClientRect().bottom<=400,'低いviewportでも確定可視');
-  q('[data-action="font-info"]').click();await delay(30);information.scrollTop=information.scrollHeight;
+  q('[data-role="font-comparison-toggle"]').click();popup.fontComparison.setMode('information');await delay(30);information.scrollTop=information.scrollHeight;
   check(information.scrollHeight>information.clientHeight&&popup.elements.fontPrimary.getBoundingClientRect().bottom<=400,'400px高でも情報末尾へscroll可能');popup.fontComparison.setOpen(false);
   status.textContent='PASS 全検証完了';
  }catch(error){status.textContent='FAIL '+error.message;log(error.stack||error);}

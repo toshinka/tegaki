@@ -1,0 +1,52 @@
+/* WP030: shared library host, existing comparison and Futaba glass tokens. */
+.font-library-entry {
+    display: inline-flex; align-items: center; gap: 3px;
+    flex: 0 0 auto; min-height: 22px; padding: 1px 5px;
+    border: 1px solid var(--ui-border-float); border-radius: var(--ui-radius-control);
+    background: var(--ui-surface-control); color: var(--text-primary);
+    font: inherit; cursor: pointer; pointer-events: auto;
+}
+.font-library-entry svg { width: 13px; height: 13px; display: block; }
+.font-library-entry:hover { background: var(--ui-surface-control-hover); }
+.font-library-entry:focus-visible, .font-library-entry[aria-expanded="true"] { outline: 1px solid var(--active-border); }
+#font-library-window {
+    background: var(--ui-surface-float); backdrop-filter: var(--ui-backdrop-float);
+    box-shadow: var(--ui-shadow-float); border-color: var(--ui-border-float);
+}
+#font-library-window .font-library-settings { display: grid; gap: 8px; font-size: 11px; }
+#font-library-window .font-library-settings p { line-height: 1.5; overflow-wrap: anywhere; }
+#font-library-window .font-library-line { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; min-width: 0; }
+#font-library-window .font-library-line > label { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; }
+#font-library-window input[type="text"], #font-library-window select {
+    min-width: 0; max-width: 100%; flex: 1; width: 120px; min-height: 25px; padding: 3px 5px;
+    border: 1px solid var(--ui-border-float); border-radius: var(--ui-radius-control);
+    color: var(--text-primary); background: var(--futaba-background); font: inherit;
+}
+#font-library-window input[type="checkbox"] { accent-color: var(--futaba-light-maroon); vertical-align: middle; }
+#font-library-window fieldset { border: 0; border-top: 1px solid var(--ui-border-float); padding: 6px 0 0; display: grid; gap: 6px; min-width: 0; }
+#font-library-window legend { padding-right: 6px; font-weight: bold; }
+#font-library-window .font-library-links { display: flex; gap: 10px; }
+#font-library-window a { color: var(--text-primary); }
+#font-library-window :disabled { opacity: .55; cursor: default; }
+#font-library-window :focus-visible { outline-color: var(--active-border); }
+#font-library-window .font-library-feedback { color: var(--text-secondary); }
+
+/* Embedded management follows the existing comparison information scroll area. */
+.font-library-management-body { display: grid; gap: 6px; padding: 7px 0; font-size: 11px; }
+.font-library-management-body p { overflow-wrap: anywhere; line-height: 1.5; }
+:is(#balloon-font-comparison, #lettering-font-comparison) .pl-font-comparison__information-host > .pl-details {
+    margin: 6px 0; padding: 4px 6px; border: 1px solid var(--ui-border-float); border-radius: var(--ui-radius-control);
+}
+:is(#balloon-font-comparison, #lettering-font-comparison) .pl-font-comparison__information-host > .pl-details > summary { cursor: pointer; font-weight: 700; }
+.font-library-management-body .font-library-line { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; min-width: 0; }
+#balloon-font-comparison [data-role="font-manager"] .pl-row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
+#balloon-font-comparison :is([data-role="font-manager"], [data-role="font-organization"]) :is(.pl-select, .pl-text) {
+    min-width: 0; width: 100%; min-height: 25px; padding: 3px 5px;
+    border: 1px solid var(--ui-border-float); border-radius: var(--ui-radius-control);
+    background: var(--ui-surface-control); color: var(--text-primary); font: inherit;
+}
+.font-library-management-body input[type="text"], .font-library-management-body select {
+    flex: 1; min-width: 0; width: 120px; max-width: 100%; min-height: 25px; padding: 3px 5px;
+    border: 1px solid var(--ui-border-float); border-radius: var(--ui-radius-control);
+    background: var(--ui-surface-control); color: var(--text-primary); font: inherit;
+}

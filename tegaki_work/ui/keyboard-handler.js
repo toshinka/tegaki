@@ -35,7 +35,7 @@ export const KeyboardHandler = (function() {
             activeElement.tagName === 'TEXTAREA' ||
             activeElement.tagName === 'SELECT' ||
             activeElement.isContentEditable ||
-            Boolean(activeElement.closest?.('#balloon-font-tree, #balloon-font-comparison, #balloon-popup [data-role="font-picker"], #lettering-popup, #lettering-font-comparison'))
+            Boolean(activeElement.closest?.('#balloon-font-tree, #balloon-font-comparison, #balloon-popup [data-role="font-picker"], #lettering-popup, #lettering-font-comparison, #font-library-window, .font-library-entry'))
         );
     }
 
@@ -856,6 +856,11 @@ export const KeyboardHandler = (function() {
 
             case 'BALLOON_TOGGLE':
                 window.coreEngine?.popupManager?.toggle?.('balloon');
+                event.preventDefault();
+                break;
+
+            case 'LETTERING_TOGGLE':
+                if (!event.repeat) window.coreEngine?.popupManager?.toggle?.('lettering');
                 event.preventDefault();
                 break;
 

@@ -1,0 +1,61 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>WP029 Riveから通常Rasterへの実接続</title>
+<style>body{margin:12px;background:#ffffee;color:#800000;font:13px system-ui}button{padding:6px}iframe{width:1280px;height:720px;border:1px solid #b8706b}pre{white-space:pre-wrap;max-width:1280px}</style>
+<button id="prepare" disabled>元絵を用意</button> <button id="verify" disabled>追加・Undo・Projectを検証</button>
+<span id="status">製品起動待ち</span><pre id="output"></pre><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+// ROLE: Visible, isolated Browser acceptance harness using the real product APIs.
+// AUTHORITY: Native frame must arrive through the ordinary editor/host UI.
+// No fake receipt, engine substitute, or hidden browser-tool runtime evaluation.
+const frame=document.querySelector('#product'),prepare=document.querySelector('#prepare'),verify=document.querySelector('#verify'),status=document.querySelector('#status'),out=document.querySelector('#output');
+const log=s=>out.textContent+=s+'\n',check=(ok,s)=>{if(!ok)throw new Error(s);log('PASS '+s);};
+const equal=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
+const delta=(a,b)=>{let channels=0,pixels=0,max=0;const examples=[];for(let i=0;i<a.length;i+=4){let changed=false;for(let c=0;c<4;c++){const d=Math.abs(a[i+c]-b[i+c]);if(d){channels++;changed=true;max=Math.max(max,d);}}if(changed){pixels++;if(examples.length<6)examples.push({index:i/4,before:Array.from(a.slice(i,i+4)),after:Array.from(b.slice(i,i+4))});}}return {pixels,channels,max,examples};};
+const digest=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),v=>v.toString(16).padStart(2,'0')).join('');
+let core,baseline;
+for(let i=0;i<200;i++){core=frame.contentWindow?.coreEngine;if(core?.layerSystem?.currentFrameContainer&&frame.contentDocument.querySelector('[data-testid="rive-editor-entry"]'))break;await new Promise(r=>setTimeout(r,100));}
+if(!core?.layerSystem?.currentFrameContainer){status.textContent='FAIL 製品が起動しません';}else{prepare.disabled=false;status.textContent='元絵の用意後、製品の新RIG入口を操作してください';}
+const pixels=()=>{const c=core.exportManager.renderToCanvas({transparent:true});return c.getContext('2d').getImageData(0,0,c.width,c.height).data;};
+prepare.onclick=async()=>{
+ prepare.disabled=true;out.textContent='';
+ try{
+  const layers=core.layerSystem,history=core.history,win=frame.contentWindow;
+  const marker=new win.Uint8ClampedArray(4*4*4);for(let i=0;i<16;i++){marker.set([30+i*10,70,120,255],i*4);}
+  const made=layers.createRasterLayerFromSnapshot({width:4,height:4,pixels:marker,rasterBounds:{x:3,y:5,width:4,height:4},paths:[],pathsData:[]},{name:'WP029元絵',historyName:'wp029-fixture'});
+  check(!!made?.layer,'独立元絵Rasterを用意');
+  const original=layers.createLayerRasterSnapshot(made.layer);
+  baseline={ids:layers.getLayers().map(l=>l.layerData.id),history:history.stack.length,markerId:made.layer.layerData.id,original:original.pixels.slice(),composite:pixels().slice()};
+  check(frame.contentDocument.querySelectorAll('[data-testid="rive-editor-entry"]').length===1,'通常Drawingに新入口一件');
+  status.textContent='新RIGを開き、画像と角を編集して現在フレームを一度追加してください';verify.disabled=false;
+ }catch(error){status.textContent='FAIL '+error.message;log(error.stack);}
+};
+verify.onclick=async()=>{
+ verify.disabled=true;status.textContent='実接続検証中';
+ try{
+  const layers=core.layerSystem,history=core.history,doc=frame.contentDocument,win=frame.contentWindow;
+  const native=JSON.parse(doc.querySelector('[data-testid="rive-host-state"]').textContent).state;
+  check(native.status==='ready','native load完了済みの状態を受け取った');
+  log('MEASURE native pose '+JSON.stringify({angle:native.angle,progress:native.progress,sourceHash:native.sourceHash,buildId:native.buildId}));
+  doc.querySelector('[data-testid="rive-editor-host"] button')?.click();
+  const added=layers.getLayers().filter(l=>!baseline.ids.includes(l.layerData.id));
+  check(added.length===1&&history.stack.length===baseline.history+1,'nativeフレームは新Raster一件・History一件');
+  check(history.stack.at(-1).name==='rive-frame-import','明示フレーム追加command');
+  const original=layers.getLayers().find(l=>l.layerData.id===baseline.markerId);
+  check(equal(layers.createLayerRasterSnapshot(original).pixels,baseline.original),'元絵のcanonical画素不変');
+  const addedId=added[0].layerData.id,snapshot=layers.createLayerRasterSnapshot(added[0]),after=pixels().slice();
+  check(snapshot.width===native.image.width&&snapshot.height===native.image.height,'追加Rasterはnative PNGの透明原寸1x');
+  check(snapshot.rasterBounds.x===Math.floor((layers.config.canvas.width-snapshot.width)/2)&&snapshot.rasterBounds.y===Math.floor((layers.config.canvas.height-snapshot.height)/2),'原寸RasterをProject Canvas中央へ配置');
+  check(!equal(after,baseline.composite),'追加native frameが製品Exportに描画');
+  log('MEASURE native raster '+snapshot.width+'x'+snapshot.height+' / SHA256 '+await digest(snapshot.pixels));
+  history.undo();check(!layers.getLayers().some(l=>l.layerData.id===addedId)&&equal(pixels(),baseline.composite),'Undoで追加だけを撤回・元Export復元');
+  history.redo();check(layers.getLayers().some(l=>l.layerData.id===addedId)&&equal(pixels(),after),'Redoで同じ画素復元');
+  const saved=await core.projectManager.exportProject();await core.projectManager.loadProject(win.JSON.parse(JSON.stringify(saved)));
+  const reloaded=layers.getLayers().find(l=>l.layerData.id===addedId);
+  log('MEASURE Project raster delta '+JSON.stringify(delta(snapshot.pixels,layers.createLayerRasterSnapshot(reloaded).pixels)));
+  log('MEASURE Project export delta '+JSON.stringify(delta(after,pixels())));
+  log('MEASURE Project export before '+await digest(after)+' / after '+await digest(pixels()));
+  check(equal(snapshot.pixels,layers.createLayerRasterSnapshot(reloaded).pixels),'実Project load経路で追加Rasterのcanonical画素一致');
+  check(layers.getLayers().some(l=>l.layerData.id===addedId)&&equal(pixels(),after),'実Project load経路で追加RasterとExport画素一致');
+  log('MEASURE final export SHA256 '+await digest(after));status.textContent='PASS 実TEGAKI接続・Undo/Redo・Project往復';
+ }catch(error){status.textContent='FAIL '+error.message;log(error.stack);verify.disabled=false;}
+};
+</script></html>

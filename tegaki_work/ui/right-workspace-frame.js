@@ -14,6 +14,7 @@ import {
     resolvePartTransformHandleDrag
 } from '../system/animation/part-rig.js';
 import { rigPivotOverlay } from './rig-pivot-overlay.js';
+import { mountRiveEditorEntry } from './rive-editor-entry.js';
 
 const RIG_PART_OPERATION_MESSAGES = Object.freeze({
     'asset-not-found': '対象CAFが見つかりません。',
@@ -109,6 +110,7 @@ export class RightWorkspaceFrame {
 
         this.root.classList.add('right-workspace-frame');
         this._mountModeSwitch();
+        this.riveEditorEntry = mountRiveEditorEntry({ container: this.drawing, layerSystem: this.layerSystem });
         this._mountStatusPanel();
         this._subscribeLayoutEvents();
         this.host.setAttribute('aria-label', 'Transform 作業面');
@@ -4374,6 +4376,7 @@ export class RightWorkspaceFrame {
     }
 
     destroy() {
+        this.riveEditorEntry?.destroy();
         this._syncRigLensActivePartProjection(null);
         this._getRigLensTable()?.cancelRigLensBonePosePreview?.();
         this._getRigLensTable()?.cancelRigLensPartPosePreview?.();

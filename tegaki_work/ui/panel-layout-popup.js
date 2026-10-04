@@ -3,13 +3,16 @@
  * ファイル名: ui/panel-layout-popup.js
  * 責務: 漫画コマ割りpopup。分割木を編集し、確定でコマ枠Layer群を1件のHistoryで追加/更新する
  * 依存: system/panel-layout.js, system/panel-layout-raster.js, system/history.js, system/event-bus.js,
- *   ui/panel-layout-overlay.js, ui/popup-drag-helper.js, ui/feedback-toast.js, ui/dom-builder.js(閉じるボタン)
+ *   system/panel-layout-gestures.js, ui/panel-layout-overlay.js, ui/manga-canvas-navigation.js,
+ *   ui/popup-drag-helper.js, ui/feedback-toast.js, ui/dom-builder.js(閉じるボタン)
  * 被依存: core-engine.js, system/popup-manager.js
  * 公開API: PanelLayoutPopup
  * イベント発火: popup:shown, popup:hidden, layer:content-changed
  * 保存: 編集中の木はlocalStorage(UI設定)。確定したLayerは通常Raster Layerで、再編集用に
  *   layerData.panelLayout(optional・sanitize済み)を持つ。画素は派生物で、更新で再生成する。
- * 実装状態: ✅実装（WP-010 phase 1-2）
+ * 編集: WP030 Canvas直線/斜線分割・Ctrl対象操作・Space/Transform優先。compact context/固定footer。
+ * 検証: build/wp030-manga-gestures-browser.html、verify-panel-layout-gestures.mjs。
+ * 実装状態: ✅実装（WP-010 / WP-030）
  * ============================================================================
  */
 
@@ -49,6 +52,8 @@ import { emptyPanelRaster, rasterizePanelFrames } from '../system/panel-layout-r
 import { PanelLayoutOverlay } from './panel-layout-overlay.js';
 import { mountMangaTabs, noteMangaTabShown } from './manga-tabs.js';
 import { attachNumericField } from './numeric-field.js';
+import { attachMangaCanvasNavigation } from './manga-canvas-navigation.js';
+import { panelSplitFromStroke, transformFreePanel } from '../system/panel-layout-gestures.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { showFeedbackToast } from './feedback-toast.js';
 
@@ -101,6 +106,9 @@ export class PanelLayoutPopup {
         this.hoverSplitId = null;
         this.resolved = null;
         this.scale = 1;
+        this.context = 'split';
+        this.splitMode = false;
+        this.cutPreview = null;
 
         this.overlay = new PanelLayoutOverlay({
             eventBus: this.eventBus,
@@ -109,11 +117,18 @@ export class PanelLayoutPopup {
                 resolved: this.resolved,
                 selectedId: this.selectedId,
                 hoverSplitId: this.hoverSplitId,
-                dragSplitId: this.drag?.type === 'split' ? this.drag.id : null
+                dragSplitId: this.drag?.type === 'split' ? this.drag.id : null,
+                cutPreview: this.cutPreview,
+                splitMode: this.splitMode
             } : null
         });
         this._layerListener = () => this._syncControls();
         this.eventBus?.on?.('layer:activated', this._layerListener);
+        this._navigation = attachMangaCanvasNavigation({ isVisible: () => this.isVisible, getSvg: () => this.overlay.svg,
+            onSpace: space => { this._spacePressed = space; this.endDrag(); this.cutPreview = null; this.overlay.schedule(); },
+            onObjectWheel: event => this._onObjectWheel(event) });
+        this._resizeListener = () => { if (this.isVisible) this._fitViewport(); };
+        window.addEventListener('resize', this._resizeListener);
 
         this._restore();
         this._ensurePopupElement();
@@ -294,6 +309,7 @@ export class PanelLayoutPopup {
             freeBtn: q('[data-role="free-btn"]')
         };
         this._bind();
+        this._arrangeContexts();
         this._syncControls();
         this._redraw();
     }
@@ -305,6 +321,40 @@ export class PanelLayoutPopup {
             `<polygon points="${p.quad.map(pt => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(' ')}"/>`
         ).join('');
         return `<svg viewBox="0 0 100 130" width="22" height="28" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round" aria-hidden="true">${polys}</svg>`;
+    }
+
+    /** Reuse the bound controls; context and layout do not duplicate their data adapters. */
+    _arrangeContexts() {
+        const root = this.popup, nav = document.createElement('div');
+        nav.className = 'pl-context-tabs'; nav.setAttribute('role', 'tablist'); nav.setAttribute('aria-label', 'コマ編集');
+        nav.innerHTML = [['panel','コマ'],['split','分割'],['page','全体']].map(([key,label]) => `<button type="button" class="pl-chip" role="tab" data-panel-context="${key}">${label}</button>`).join('');
+        const selected = document.createElement('div'); selected.className = 'pl-selected-status'; selected.dataset.role = 'selected-status'; selected.setAttribute('role','status');
+        const tool = document.createElement('div'); tool.className = 'pl-actions';
+        tool.innerHTML = '<button type="button" class="pl-btn" data-panel-tool="select">選択・調整</button><button type="button" class="pl-btn" data-panel-tool="cut" title="コマを横切る線をドラッグ。Shiftで水平・垂直、SpaceでCamera">線で分割</button>';
+        const body = document.createElement('div'); body.className = 'pl-body-scroll ui-scrollbar';
+        const panes = Object.fromEntries(['panel','split','page'].map(key => { const pane=document.createElement('section');pane.dataset.panelPane=key;pane.setAttribute('role','tabpanel');body.append(pane);return [key,pane]; }));
+        const splitActions = root.querySelector('[data-action="split-h"]').parentElement;
+        const panelActions = document.createElement('div'); panelActions.className='pl-actions';
+        panelActions.append(root.querySelector('[data-action="remove"]'),root.querySelector('[data-action="toggle-delete"]'));
+        panes.panel.append(panelActions,root.querySelector('[data-action="add-free"]').parentElement,this.elements.panelGroup);
+        panes.split.append(splitActions,this.elements.splitGroup);
+        const preset = document.createElement('details'); preset.className='pl-details'; preset.innerHTML='<summary>プリセット</summary>'; preset.append(root.querySelector('.pl-presets'));
+        const pageActions = document.createElement('div'); pageActions.className='pl-actions'; pageActions.append(root.querySelector('[data-action="align"]'),root.querySelector('[data-action="reset-outer"]'));
+        panes.page.append(preset,pageActions);
+        root.querySelectorAll('[data-param]').forEach(input=>panes.page.append(input.closest('.pl-row')));
+        panes.page.append(root.querySelector('[data-color="line"]').closest('.pl-row'),root.querySelector('[data-output]').closest('.pl-row'));
+        const preview=document.createElement('details');preview.className='pl-details';preview.innerHTML='<summary>コマ割りプレビュー</summary>';preview.append(this.elements.canvas);panes.page.append(preview,this.elements.overlayToggle.closest('.pl-row'));
+        const hint=document.createElement('div');hint.className='pl-hint';hint.textContent='Space: Camera / Ctrl: 対象操作 / Shift: 傾き・回転 / Alt: 吸着解除';hint.title='連動コマはCtrl+ドラッグで親境界移動、Ctrl+wheelで分割比、Ctrl+Shift+wheelで傾き。フリーコマは移動・中心拡縮・回転。';
+        const footer=document.createElement('div');footer.className='pl-fixed-footer';
+        root.querySelectorAll(':scope > .pl-footer').forEach(node=>footer.append(node));footer.append(this.elements.warning);
+        root.querySelectorAll(':scope > .pl-hint,:scope > .pl-sep').forEach(node=>node.remove());
+        root.append(selected,tool,nav,body,hint,footer);
+        nav.querySelectorAll('button').forEach(button=>button.addEventListener('click',()=>{this.context=button.dataset.panelContext;this._syncControls();}));
+        tool.querySelectorAll('button').forEach(button=>button.addEventListener('click',()=>{
+            this.endDrag();this.splitMode=button.dataset.panelTool==='cut';this.cutPreview=null;
+            if(this.splitMode){this.showOverlay=true;this.elements.overlayToggle.checked=true;this._syncOverlayVisibility();this.context='split';}
+            this._syncControls();this.overlay.schedule();
+        }));
     }
 
     // ------------------------------------------------------------ 操作
@@ -471,6 +521,11 @@ export class PanelLayoutPopup {
 
     _syncControls() {
         if (!this.popup || !this.elements.canvas) return;
+        this.popup.querySelectorAll('[data-panel-pane]').forEach(pane=>pane.hidden=pane.dataset.panelPane!==this.context);
+        this.popup.querySelectorAll('[data-panel-context]').forEach(button=>{const on=button.dataset.panelContext===this.context;button.setAttribute('aria-selected',String(on));button.classList.toggle('is-selected',on);});
+        this.popup.querySelectorAll('[data-panel-tool]').forEach(button=>{const on=(button.dataset.panelTool==='cut')===this.splitMode;button.setAttribute('aria-pressed',String(on));button.classList.toggle('is-selected',on);});
+        const status=this.popup.querySelector('[data-role="selected-status"]');
+        if(status){const node=findNode(this.tree,this.selectedId);status.textContent=node?.kind==='panel'?`選択コマ ${this.resolved?.panels.find(p=>p.id===node.id)?.number||''} — ${node.free?'フリー':'連動'}${this.splitMode?' / 線で分割':''}`:this.splitMode?'コマを横切る線をドラッグ':'キャンバスでコマを選択';}
         for (const s of SLIDERS) {
             const input = this.popup.querySelector(`input[data-param="${s.key}"]`);
             if (input && Number(input.value) !== this.params[s.key]) input.value = String(this.params[s.key]);
@@ -533,8 +588,18 @@ export class PanelLayoutPopup {
     // ------------------------------------------------------------ 共通ドラッグ(プレビュー/キャンバス上)
 
     _beginDrag(target, event, toPoint) {
+        if(this._spacePressed)return;
+        const selected=this.resolved?.panels.find(p=>p.id===target.id),start=toPoint(event);
+        const transformActive=window.coreEngine?.cameraSystem?.vKeyPressed;
+        if(target.type==='panel' && start && this.splitMode && !event.ctrlKey){
+            if(selected?.free)return showFeedbackToast('フリーコマは分割できません。連動コマを選択してください');
+            this.selectedId=target.id;target={type:'cut',id:target.id,startPoint:start,quad:selected.quad.map(p=>({...p}))};
+        }else if(target.type==='panel' && start && event.ctrlKey && !transformActive && !selected?.free){
+            const parent=findParent(this.tree,target.id),split=this.resolved.splits.find(s=>s.id===parent?.id);
+            if(split){this.selectedId=target.id;target={type:'linked-move',id:split.id,startPoint:start,startTree:this.tree,startResolved:this.resolved,anchor:{x:(split.cut[0].x+split.cut[1].x)/2,y:(split.cut[0].y+split.cut[1].y)/2}};}
+        }
         // 選択中のフリーコマの外周/内側をつかむと、コマごと移動する
-        if (target.type === 'panel' && target.id === this.selectedId) {
+        if (target.type === 'panel' && (target.id === this.selectedId || event.ctrlKey) && !transformActive) {
             const selected = this.resolved?.panels.find(p => p.id === target.id);
             const start = toPoint(event);
             if (selected?.free && start) {
@@ -550,12 +615,14 @@ export class PanelLayoutPopup {
         this.endDrag();
         const move = (e) => {
             if (!this.drag || e.pointerId !== this.drag.pointerId) return;
+            this.drag.snap = e.shiftKey;
             const pt = toPoint(e);
             if (pt) this._applyDrag(pt, e.altKey === true);
         };
         const up = (e) => {
             if (!this.drag || e.pointerId !== this.drag.pointerId) return;
-            this.endDrag();
+            if(this.drag.type==='cut' && e.type==='pointerup')this._finishCut(e);
+            this.endDrag();this.cutPreview=null;
             this._redraw();
         };
         window.addEventListener('pointermove', move);
@@ -572,8 +639,8 @@ export class PanelLayoutPopup {
         };
         if (target.type === 'corner') {
             this.selectedId = target.id;
-            this._syncControls();
         }
+        this._syncControls();
         this._redraw();
     }
 
@@ -586,7 +653,14 @@ export class PanelLayoutPopup {
     _applyDrag(pt, noSnap = false) {
         const drag = this.drag;
         if (!drag || !this.resolved) return;
-        if (drag.type === 'split') {
+        if(drag.type==='cut'){
+            drag.endPoint=pt;this.cutPreview=panelSplitFromStroke(drag.quad,drag.startPoint,pt,{snap:drag.snap});
+            this.overlay.schedule();return;
+        }else if(drag.type==='linked-move'){
+            const at={x:drag.anchor.x+pt.x-drag.startPoint.x,y:drag.anchor.y+pt.y-drag.startPoint.y};
+            const ratio=dragSplitRatio(drag.startResolved,drag.id,noSnap?at:snapSplitPoint(drag.startResolved,drag.id,at,6/Math.max(this.scale,.2)));
+            this.tree=updateSplit(drag.startTree,drag.id,{ratio});
+        }else if (drag.type === 'split') {
             const target = noSnap ? pt : snapSplitPoint(this.resolved, drag.id, pt, 6 / Math.max(this.scale, 0.2));
             const ratio = dragSplitRatio(this.resolved, drag.id, target);
             if (ratio !== null) this.tree = updateSplit(this.tree, drag.id, { ratio });
@@ -601,6 +675,29 @@ export class PanelLayoutPopup {
 
     _onOverlayPointerDown(target, event) {
         this._beginDrag(target, event, (e) => this.overlay.clientToCanvas(e.clientX, e.clientY));
+    }
+
+    _finishCut(event) {
+        const drag=this.drag,cut=panelSplitFromStroke(drag.quad,drag.startPoint,drag.endPoint||drag.startPoint,{snap:event.shiftKey,minLength:8*this.overlay.canvasPerScreenPixel()});
+        if(!cut.ok){showFeedbackToast(cut.reason);return;}
+        this.tree=splitPanel(this.tree,drag.id,cut.dir,cut.ratio,{slant:cut.slant});this._changed();
+    }
+
+    _onObjectWheel(event) {
+        if(!event.ctrlKey||event.metaKey||event.altKey||this._spacePressed||window.coreEngine?.cameraSystem?.vKeyPressed||!event.deltaY)return false;
+        const hovered=event.target?.closest?.('[data-panel-id]')?.dataset.panelId;
+        if(hovered)this.selectedId=hovered;
+        const id=this._selectedPanelId(),node=id&&findNode(this.tree,id);if(!node)return false;
+        const direction=Math.sign(event.deltaY);
+        if(node.free)this.tree=transformFreePanel(this.tree,id,event.shiftKey?{rotation:direction*.05}:{scale:direction<0?1.05:1/1.05});
+        else {const parent=this._selectedParentSplit();if(!parent||parent.dir==='o')return false;this.tree=updateSplit(this.tree,parent.id,event.shiftKey?{slant:(parent.slant||0)+direction*.02}:{ratio:parent.ratio+direction*.02});}
+        this._changed();return true;
+    }
+
+    _fitViewport() {
+        const r=this.popup.getBoundingClientRect(),style=getComputedStyle(this.popup);
+        this.popup.style.left=`${Math.max(4,Math.min(parseFloat(style.left)||r.left,innerWidth-r.width-4))}px`;
+        this.popup.style.top=`${Math.max(4,Math.min(parseFloat(style.top)||r.top,innerHeight-r.height-4))}px`;
     }
 
     // ------------------------------------------------------------ プレビュー
@@ -1027,11 +1124,14 @@ export class PanelLayoutPopup {
         if (!this.popup) return;
         this.popup.classList.add('show');
         this.isVisible = true;
+        if (!this.selectedId) this.selectedId = this.resolved?.panels.filter(p=>!p.deleted).sort((a,b)=>(a.number||0)-(b.number||0))[0]?.id || null;
         mountMangaTabs(this.popup.querySelector('[data-role="manga-tabs"]'), 'panelLayout');
         noteMangaTabShown('panelLayout');
         this._syncControls();
         this._redraw();
         this._syncOverlayVisibility();
+        this._fitViewport();
+        this._navigation.sync();
         if (!wasVisible) this.eventBus.emit('popup:shown', { name: 'panelLayout' });
     }
 
@@ -1041,6 +1141,7 @@ export class PanelLayoutPopup {
         this.popup.classList.remove('show');
         this.isVisible = false;
         this.endDrag();
+        this._navigation.clear(); this.cutPreview=null;
         this._syncOverlayVisibility();
         if (wasVisible) this.eventBus.emit('popup:hidden', { name: 'panelLayout' });
     }
@@ -1060,6 +1161,7 @@ export class PanelLayoutPopup {
         this.popupDragCleanup = null;
         this.eventBus?.off?.('layer:activated', this._layerListener);
         this.overlay.destroy();
+        this._navigation.destroy();window.removeEventListener('resize',this._resizeListener);
     }
 }
 

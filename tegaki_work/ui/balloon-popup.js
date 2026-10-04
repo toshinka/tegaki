@@ -3,9 +3,10 @@
  * ファイル名: ui/balloon-popup.js
  * 責務: 吹き出し(漫画ツールのタブ)。形・しっぽ・縦書き/横書きの文字・フォント(端末/選定catalog/取り込み+フォルダ管理)を編集し、
  *       確定で通常Raster Layerを1件のHistoryで追加/更新する。
- * 依存: system/balloon-geometry.js, system/balloon-raster.js, system/lettering-raster.js, system/font-library.js,
+ * 依存: system/balloon-geometry.js, system/balloon-text-layout.js, system/balloon-raster.js,
+ *   system/lettering-paragraph.js, system/font-library.js, system/balloon-gestures.js,
  *   system/history.js, system/event-bus.js, ui/balloon-overlay.js, ui/manga-tabs.js, ui/numeric-field.js,
- *   ui/popup-drag-helper.js, ui/feedback-toast.js
+ *   ui/manga-canvas-navigation.js, ui/manga-input-focus.js, ui/popup-drag-helper.js, ui/feedback-toast.js
  * 被依存: core-engine.js, system/popup-manager.js
  * 公開API: BalloonPopup
  * イベント発火: popup:shown, popup:hidden, layer:content-changed
@@ -13,7 +14,10 @@
  *   確定Layerは通常Raster Layerで、再編集用に layerData.balloon (optional・sanitize済み)を持つ。
  *   取り込みフォントの実体はIndexedDB(font-library)で、Projectには入れない。
  * 見た目: 部品のclassはコマ割りpopupと共通(styles/components/panel-layout-popup.css)。
- * 実装状態: ✅実装（WP-021）
+ * 編集: WP030 輪郭点/二連・独立本文領域・複数しっぽ。geometry/paragraph/PNGはsystemへ委譲。
+ * 操作: Ctrl本体drag/wheelは全体移動/拡縮。手動font size/線幅は保持、Space/global Vへ譲る。
+ * 検証: build/wp030-balloon-editor-browser.html、wp030-balloon-text-browser.html、wp030-manga-gestures-browser.html、wp030-manga-input-browser.html。
+ * 実装状態: ✅実装（WP-021/030）
  * ============================================================================
  */
 
@@ -24,19 +28,27 @@ import {
     BALLOON_SHAPES,
     BALLOON_TAIL_STYLES,
     balloonHandles,
-    balloonTextArea,
+    createBalloonContour,
+    insertBalloonContourPoint,
+    removeBalloonContourPoint,
+    moveBalloonContourPoint,
+    secondaryBalloonRect,
     defaultBalloonParams,
     normalizeBalloonParams,
     sanitizeBalloonData
 } from '../system/balloon-geometry.js';
 import { letteringPlacement, paintBalloon, rasterizeBalloon } from '../system/balloon-raster.js';
-import { measureLettering, rasterizeLettering } from '../system/lettering-raster.js';
+import { measureParagraph, rasterizeParagraph } from '../system/lettering-paragraph.js';
+import { balloonTextFrame, balloonTextFrameHandles, setBalloonTextFrame, resetBalloonTextFrames, assessBalloonTextBounds } from '../system/balloon-text-layout.js';
 import { FONT_FILE_ACCEPT, FONT_SAMPLE_OPTIONS, fontLibrary, sortBundledFonts } from '../system/font-library.js';
 import { BalloonOverlay } from './balloon-overlay.js';
 import { FontComparison } from './font-comparison.js';
 import { FontTree } from './font-tree.js';
 import { mountMangaTabs, noteMangaTabShown } from './manga-tabs.js';
+import { isMangaInputPrimary } from './manga-input-focus.js';
+import { transformBalloon } from '../system/balloon-gestures.js';
 import { attachNumericField } from './numeric-field.js';
+import { attachMangaCanvasNavigation } from './manga-canvas-navigation.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { showFeedbackToast } from './feedback-toast.js';
 
@@ -52,7 +64,6 @@ const BUNDLED_OPTION_PREFIX = 'bundle:';
 const IMPORTED_OPTION_PREFIX = 'imp:';
 const FONT_PREVIEW_DELAY_MS = 120;
 const FONT_PREVIEW_COALESCE_MS = 32;
-const FONT_COMPARE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M9 9v11"/></svg>';
 
 // 数値欄: path は params 内の場所。unit/display は表示用、shape は表示する形(省略=常時)
 const FIELDS = Object.freeze([
@@ -94,6 +105,11 @@ export class BalloonPopup {
         this.elements = {};
         this.params = defaultBalloonParams(this._canvasSize());
         this.showOverlay = true;
+        this.context = 'body';
+        this.selectedPoint = 0;
+        this.editorGrid = false;
+        this.editorSnap = false;
+        this.editorGridSize = 16;
         this.fontDetailsOpen = true;
         this.previewOpen = false;
         this.editing = null; // { layerId }
@@ -121,7 +137,7 @@ export class BalloonPopup {
         this.overlay = new BalloonOverlay({
             eventBus: this.eventBus,
             onPointerDown: (target, event) => this._beginDrag(target, event, (e) => this.overlay.clientToCanvas(e.clientX, e.clientY)),
-            getState: () => this.isVisible ? { params: this.params, canvas: this._canvasSize(), textImage: this.textImage } : null
+            getState: () => this.isVisible ? { params: this.params, canvas: this._canvasSize(), textImage: this.textImage, editor: { context: this.context, selectedPoint: this.selectedPoint, textIndex: this.textIndex || 0, tailIndex: this.tailIndex || 0, grid: this.editorGrid, gridSize: this.editorGridSize } } : null
         });
         this._layerListener = () => this._syncControls();
         this.eventBus?.on?.('layer:activated', this._layerListener);
@@ -129,6 +145,14 @@ export class BalloonPopup {
 
         this._restore();
         this._ensurePopupElement();
+        this._onViewportResize = () => { if (this.isVisible) this._fitViewport(); };
+        window.addEventListener('resize', this._onViewportResize);
+        this._spacePressed = false;
+        this._navigation = attachMangaCanvasNavigation({
+            isVisible: () => this.isVisible, getSvg: () => this.overlay.svg,
+            onSpace: space => { this._spacePressed = space; this.endDrag(); },
+            onObjectWheel: event => this._onObjectWheel(event)
+        });
         this._refreshFontData();
     }
 
@@ -141,8 +165,8 @@ export class BalloonPopup {
                 this.params = normalizeBalloonParams(data.params, this._canvasSize());
                 this._hasStoredParams = true;
             }
-            if (typeof data?.showOverlay === 'boolean') this.showOverlay = data.showOverlay;
-            this.previewOpen = typeof data?.previewOpen === 'boolean' ? data.previewOpen : !this.showOverlay;
+            // Canvas is the primary editor; legacy OFF must not hide its handles.
+            this.previewOpen = typeof data?.previewOpen === 'boolean' ? data.previewOpen : false;
             if (typeof data?.fontDetailsOpen === 'boolean') this.fontDetailsOpen = data.fontDetailsOpen;
         } catch (error) {
             // 壊れた設定は既定へ戻す(Projectには無関係)
@@ -202,7 +226,27 @@ export class BalloonPopup {
             ${closeBtn}
             <div class="manga-tabs-host" data-role="manga-tabs"></div>
             <div class="pl-title">吹き出し <span class="pl-edit-status" data-role="edit-status"></span></div>
+            <div class="bl-text-targets" data-role="text-targets" hidden><span>本文</span><button type="button" class="pl-chip" data-text-index="0">①</button><button type="button" class="pl-chip" data-text-index="1">②</button><span class="pl-hint">書式は共通</span></div>
+            <textarea class="pl-textarea" data-role="content" rows="2" placeholder="セリフ（改行で行を分けます）" aria-label="セリフ"></textarea>
+            <textarea class="pl-textarea" data-role="content-secondary" rows="2" placeholder="二つ目のセリフ" aria-label="二つ目のセリフ" hidden></textarea>
+            <div class="bl-common-fonts" data-role="common-fonts"></div>
+            <div class="bl-context-tabs" role="tablist" aria-label="吹き出し編集">
+                <button type="button" class="pl-chip" role="tab" data-context="body">本体</button>
+                <button type="button" class="pl-chip" role="tab" data-context="tail">しっぽ</button>
+                <button type="button" class="pl-chip" role="tab" data-context="text">文字</button>
+            </div>
+            <div class="bl-body-scroll ui-scrollbar">
+            <section data-context-pane="body" role="tabpanel" aria-label="本体の設定">
             <div class="pl-presets" role="group" aria-label="形">${shapes}</div>
+            <div data-role="contour-controls" hidden>
+                <div class="pl-actions"><button type="button" class="pl-btn" data-action="point-add">点を追加</button><button type="button" class="pl-btn" data-action="point-remove">削除</button><button type="button" class="pl-btn" data-action="point-reset">輪郭を戻す</button></div>
+                <div class="pl-hint" data-role="point-status"></div>
+            </div>
+            <div class="pl-hint" data-role="double-hint" hidden>二つ目の中心で配置、四隅でサイズ。重なりを保って動かせます。</div>
+            <div class="bl-grid-row"><label><input type="checkbox" data-role="editor-grid"> grid</label><input type="number" data-role="editor-grid-size" value="16" min="4" max="128" step="4" aria-label="グリッド間隔"><span>px</span><label><input type="checkbox" data-role="editor-snap"> 吸着</label></div>
+            ${rows(f => !f.tail && !f.text)}
+            <div class="pl-actions" role="group" aria-label="形の乱数"><button type="button" class="pl-btn" data-action="reseed" data-role="reseed" title="ギザギザの配り方を引き直す">とげを引き直す</button></div>
+            <div class="pl-row"><span class="pl-label">線 / 塗り</span><input type="color" class="pl-color" data-color="lineColor" title="線の色"><input type="color" class="pl-color" data-color="fillColor" title="塗りの色"></div>
             <details class="pl-details" data-role="preview-details">
                 <summary>吹き出しプレビュー</summary>
                 <div class="pl-fm">
@@ -210,32 +254,24 @@ export class BalloonPopup {
                     <div class="pl-hint">中心=移動 / 四隅=大きさ / 先端=しっぽの向き。キャンバス上でも同じ操作</div>
                 </div>
             </details>
-            <label class="pl-row pl-check">
-                <input type="checkbox" data-role="overlay-toggle">
-                <span>キャンバス上に重ねて表示・操作する</span>
-            </label>
-
-            <div class="pl-sep"></div>
+            </section>
+            <section data-context-pane="tail" role="tabpanel" aria-label="しっぽの設定" hidden>
+            <div class="bl-tail-targets"><div class="pl-chips" data-role="tail-targets"></div><button type="button" class="pl-btn pl-btn--small" data-action="tail-add" title="しっぽを追加（最大4本）">＋</button><button type="button" class="pl-btn pl-btn--small" data-action="tail-remove" title="選択しっぽを削除。最初のしっぽはOFFで隠す">削除</button></div>
             <div class="pl-row">
                 <span class="pl-label">しっぽ</span>
                 <span class="pl-chips">
-                    <button type="button" class="pl-chip" data-role="tail-enabled" aria-pressed="true">あり</button>
+                    <button type="button" class="pl-chip" data-role="tail-enabled" aria-pressed="true" title="選択中のしっぽを表示">あり</button>
+                    <button type="button" class="pl-chip" data-role="tail-disabled" aria-pressed="false" title="選択中のしっぽを隠す">なし</button>
                     ${tails}
                 </span>
             </div>
             ${rows(f => f.tail)}
-            ${rows(f => !f.tail && !f.text)}
-            <div class="pl-actions" role="group" aria-label="形の乱数">
-                <button type="button" class="pl-btn" data-action="reseed" data-role="reseed" title="ギザギザの配り方を引き直す">とげを引き直す</button>
-            </div>
-            <div class="pl-row">
-                <span class="pl-label">線 / 塗り</span>
-                <input type="color" class="pl-color" data-color="lineColor" title="線の色">
-                <input type="color" class="pl-color" data-color="fillColor" title="塗りの色">
-            </div>
-
-            <div class="pl-sep"></div>
-            <textarea class="pl-textarea" data-role="content" rows="3" placeholder="セリフ（改行で行を分けます）" aria-label="セリフ"></textarea>
+            <p class="pl-hint">キャンバスの橙色の先端を動かして、しっぽの向きを調整。</p>
+            </section>
+            <section data-context-pane="text" role="tabpanel" aria-label="文字の設定" hidden>
+            <div class="pl-actions"><button type="button" class="pl-btn" data-action="text-fit" title="本文領域を本体内に配置し直す">領域を収め直す</button></div>
+            <div class="pl-hint">本文の枠をドラッグで移動、四隅で折り返し領域を調整</div>
+            <div class="bl-text-warning" data-role="text-warning" role="status" aria-live="polite"></div>
             <div class="pl-row">
                 <span class="pl-label">書き方</span>
                 <span class="pl-chips">
@@ -251,8 +287,7 @@ export class BalloonPopup {
                     <button type="button" class="pl-select pl-font-trigger" data-role="font-trigger" aria-haspopup="tree" aria-expanded="false" aria-controls="balloon-font-tree">フォントを選ぶ</button>
                     <div class="pl-font-tree" id="balloon-font-tree" data-role="font-tree" hidden></div>
                 </div>
-                <button type="button" class="pl-btn pl-btn--small pl-font-compare-toggle" data-role="font-comparison-toggle" title="フォント比較を開く" aria-label="フォント比較を開く" aria-expanded="false" aria-controls="balloon-font-comparison"><span aria-hidden="true">${FONT_COMPARE_ICON}</span></button>
-                <button type="button" class="pl-btn pl-btn--small pl-font-information-toggle" data-role="font-information-toggle" title="フォント情報・整理を開く" aria-label="フォント情報・整理を開く" aria-expanded="false" aria-controls="balloon-font-comparison">情報</button>
+                <button type="button" class="pl-btn pl-btn--small pl-font-compare-toggle" data-role="font-comparison-toggle" title="書体の比較・情報・整理を開く" aria-label="書体の比較・情報・整理を開く" aria-expanded="false" aria-controls="balloon-font-comparison">書体</button>
             </div>
             <section class="pl-font-comparison" id="balloon-font-comparison" data-role="font-comparison" hidden></section>
             <div class="pl-row pl-external" hidden>
@@ -311,7 +346,7 @@ export class BalloonPopup {
                 <input type="color" class="pl-color" data-color="outlineColor" title="縁取りの色">
             </div>
 
-            <details class="pl-details" data-role="font-manager">
+            <details class="pl-details" data-role="font-manager" open>
                 <summary>フォント管理（取り込み・フォルダ）</summary>
                 <div class="pl-fm">
                     <div class="pl-hint pl-hint--left">端末のフォントはそのまま使えます。ここでは .ttf / .otf / .woff2 を取り込み、フォルダで分けて管理できます（ファイルはこのブラウザ内にだけ保存。フォントのライセンスはご自身でご確認ください）。</div>
@@ -334,7 +369,7 @@ export class BalloonPopup {
                     <div class="pl-fontlist ui-scrollbar" data-role="font-list"></div>
                 </div>
             </details>
-            <details class="pl-details" data-role="font-organization">
+            <details class="pl-details" data-role="font-organization" open>
                 <summary>表示分類の編集</summary>
                 <div class="pl-fm">
                     <div class="pl-hint pl-hint--left">表示分類はアプリ内だけの整理です。フォントの元ファイルは移動しません。</div>
@@ -349,6 +384,10 @@ export class BalloonPopup {
                 </div>
             </details>
 
+            </section>
+            </div>
+            <div class="bl-fixed-footer">
+            <div class="pl-hint bl-canvas-shortcuts" title="Ctrl操作は吹き出し全体。文字サイズ・線幅は保持します。">Ctrl+drag: 移動 / Ctrl+wheel: 拡縮 / Space: Canvas</div>
             <div class="pl-footer">
                 <button type="button" class="pl-btn" data-action="reset">リセット</button>
                 <button type="button" class="pl-btn" data-action="load-active" title="選択中の吹き出しLayerから読み込んで再編集">レイヤーから再編集</button>
@@ -356,6 +395,7 @@ export class BalloonPopup {
             <div class="pl-footer">
                 <button type="button" class="pl-btn pl-btn--primary" data-action="update" data-role="update-btn" title="再編集中のLayerを置き換え（Undo 1回で戻る）" hidden>既存の吹き出しを更新</button>
                 <button type="button" class="pl-btn pl-btn--primary" data-action="apply" title="新規Layerとして追加（Undo 1回で戻る）">新規レイヤーに適用</button>
+            </div>
             </div>
         `;
         const q = (sel) => this.popup.querySelector(sel);
@@ -365,14 +405,13 @@ export class BalloonPopup {
             editStatus: q('[data-role="edit-status"]'),
             updateBtn: q('[data-role="update-btn"]'),
             loadBtn: q('[data-action="load-active"]'),
-            overlayToggle: q('[data-role="overlay-toggle"]'),
             tailEnabled: q('[data-role="tail-enabled"]'),
+            tailDisabled: q('[data-role="tail-disabled"]'),
             content: q('[data-role="content"]'),
             fontSelect: q('[data-role="font-select"]'),
             fontTrigger: q('[data-role="font-trigger"]'),
             fontTree: q('[data-role="font-tree"]'),
             fontComparisonToggle: q('[data-role="font-comparison-toggle"]'),
-            fontInformationToggle: q('[data-role="font-information-toggle"]'),
             fontComparison: q('[data-role="font-comparison"]'),
             fontCard: q('[data-role="font-card"]'),
             fontTitle: q('[data-role="font-title"]'),
@@ -416,16 +455,20 @@ export class BalloonPopup {
             onMove: (placement) => this._moveOrganizationNode(placement),
             onClose: () => {
                 this.elements.fontComparisonToggle?.setAttribute('aria-expanded', 'false');
-                this.elements.fontComparisonToggle?.setAttribute('aria-label', 'フォント比較を開く');
-                this.elements.fontComparisonToggle?.setAttribute('title', 'フォント比較を開く');
-                this.elements.fontInformationToggle?.setAttribute('aria-expanded', 'false');
-                this.elements.fontInformationToggle?.setAttribute('aria-label', 'フォント情報・整理を開く');
-                this.elements.fontInformationToggle?.setAttribute('title', 'フォント情報・整理を開く');
+                this.elements.fontComparisonToggle?.setAttribute('aria-label', '書体の比較・情報・整理を開く');
+                this.elements.fontComparisonToggle?.setAttribute('title', '書体の比較・情報・整理を開く');
                 this.elements.fontComparisonToggle?.focus?.();
             }
         });
         this.fontComparison.attachInformation(this.elements.fontCard);
         this._bind();
+        // Keep the original bound picker/numeric controls available in every context.
+        const commonFonts = this.popup.querySelector('[data-role="common-fonts"]');
+        commonFonts.append(this.elements.fontTrigger.closest('.pl-font-picker-row'), this.popup.querySelector('[data-row="fontSize"]'));
+        // Move bound nodes, preserving their direct handlers and existing storage APIs.
+        for (const role of ['font-manager', 'font-organization']) {
+            this.fontComparison.refs.informationHost.append(this.popup.querySelector(`[data-role="${role}"]`));
+        }
         this._renderFontOptions();
         this._renderFontManager();
         this._renderFontTree();
@@ -437,12 +480,33 @@ export class BalloonPopup {
 
     _bind() {
         const root = this.popup;
-        root.querySelectorAll('[data-shape]').forEach(btn => btn.addEventListener('click', () => this._setParams({ ...this.params, shape: btn.dataset.shape })));
-        root.querySelectorAll('[data-tail-style]').forEach(btn => btn.addEventListener('click', () => this._setParams(setPath(this.params, ['tail', 'style'], btn.dataset.tailStyle))));
-        this.elements.tailEnabled.addEventListener('click', () => this._setParams(setPath(this.params, ['tail', 'enabled'], !this.params.tail.enabled)));
+        root.querySelectorAll('[data-context]').forEach(button => button.addEventListener('click', () => {
+            this.context = button.dataset.context;
+            this._syncControls(); this.overlay.schedule();
+        }));
+        root.querySelectorAll('[data-text-index]').forEach(button => button.addEventListener('click', () => {
+            this.textIndex = Number(button.dataset.textIndex); this._syncControls(); this.overlay.schedule();
+        }));
+        root.querySelector('[data-role="content-secondary"]').addEventListener('input', event => this._setParams({ ...this.params, double: { ...this.params.double, content: event.target.value } }));
+        for (const role of ['editor-grid', 'editor-snap', 'editor-grid-size']) root.querySelector(`[data-role="${role}"]`).addEventListener(role === 'editor-grid-size' ? 'input' : 'change', event => {
+            if (role === 'editor-grid') this.editorGrid = event.target.checked;
+            else if (role === 'editor-snap') this.editorSnap = event.target.checked;
+            else this.editorGridSize = Math.max(4, Math.min(128, Number(event.target.value) || 16));
+            this.overlay.schedule();
+        });
+        root.querySelectorAll('[data-shape]').forEach(btn => btn.addEventListener('click', () => {
+            this._setParams(resetBalloonTextFrames({ ...this.params, shape: btn.dataset.shape }, this._canvasSize()));
+        }));
+        root.querySelector('[data-role="tail-targets"]').addEventListener('click', event => {
+            const button = event.target.closest('[data-tail-index]');
+            if (button) { this.tailIndex = Number(button.dataset.tailIndex); this._syncControls(); this.overlay.schedule(); }
+        });
+        root.querySelectorAll('[data-tail-style]').forEach(btn => btn.addEventListener('click', () => this._setParams(setPath(this.params, this._tailPath('style'), btn.dataset.tailStyle))));
+        this.elements.tailEnabled.addEventListener('click', () => this._setParams(setPath(this.params, this._tailPath('enabled'), true)));
+        this.elements.tailDisabled.addEventListener('click', () => this._setParams(setPath(this.params, this._tailPath('enabled'), false)));
         root.querySelectorAll('input[data-field]').forEach(input => input.addEventListener('input', () => {
             const f = FIELDS.find(x => x.key === input.dataset.field);
-            let next = setPath(this.params, f.path, Number(input.value));
+            let next = setPath(this.params, f.tail ? this._tailPath(f.path[1]) : f.path, Number(input.value));
             // 文字サイズを手で触ったら自動調整を切る(手動を優先)
             if (f.key === 'fontSize') next = setPath(next, ['text', 'autoFit'], false);
             this._setParams(next);
@@ -462,7 +526,6 @@ export class BalloonPopup {
         this.elements.fontTree.addEventListener('click', () => this._warmFontTreeVisible());
         this.elements.fontTrigger.addEventListener('wheel', (e) => this._onFontWheel(e), { passive: false });
         this.elements.fontComparisonToggle.addEventListener('click', () => this._toggleFontComparison());
-        this.elements.fontInformationToggle.addEventListener('click', () => this._toggleFontInformation());
         this.elements.fontStorage.addEventListener('change', (e) => this._setFontFolder(e.target.value || null));
         this.elements.fontFavoriteFirst.addEventListener('change', (e) => this._setFavoriteFirst(e.target.checked));
         this.elements.fontSample.addEventListener('change', (e) => {
@@ -513,11 +576,6 @@ export class BalloonPopup {
             const preferences = this.fonts.getPreferences?.() || {};
             await this.fonts.setPrimary?.(preferences.primaryId === id ? null : id);
         });
-        this.elements.overlayToggle.addEventListener('change', (e) => {
-            this.showOverlay = e.target.checked;
-            this._persist();
-            this._syncOverlayVisibility();
-        });
         root.querySelectorAll('[data-action]').forEach(btn => {
             if (btn.dataset.action === 'close-popup') return;
             btn.addEventListener('click', () => this._onAction(btn.dataset.action));
@@ -536,6 +594,7 @@ export class BalloonPopup {
             fromDisplay: f.fromDisplay,
             wheelStep: f.wheelStep ?? null
         }));
+        this._fieldDetachers.push(attachNumericField({ numberInput: root.querySelector('[data-role="editor-grid-size"]'), wheelStep: 4 }));
 
         const canvas = this.elements.canvas;
         canvas.addEventListener('pointerdown', (e) => this._onPreviewPointerDown(e));
@@ -546,7 +605,28 @@ export class BalloonPopup {
     }
 
     _onAction(action) {
-        if (action === 'reset') {
+        if (action === 'tail-add') {
+            if ((this.params.extraTails?.length || 0) >= 3) return;
+            const r = this.params.rect, offset = (this.params.extraTails?.length || 0) * .15;
+            const tail = { ...this._selectedTail(), enabled: true, tip: { x: r.x + r.w * (1.25 + offset), y: r.y + r.h * (.5 + offset) } };
+            this.tailIndex = (this.params.extraTails?.length || 0) + 1;
+            this._setParams({ ...this.params, extraTails: [...(this.params.extraTails || []), tail] });
+        } else if (action === 'tail-remove') {
+            if (!this.tailIndex) return;
+            const extras = (this.params.extraTails || []).filter((_, i) => i !== this.tailIndex - 1);
+            this.tailIndex = Math.min(this.tailIndex, extras.length);
+            this._setParams({ ...this.params, extraTails: extras });
+        } else if (action === 'text-fit') {
+            this._setParams(resetBalloonTextFrames(this.params, this._canvasSize()));
+        } else if (action === 'point-add') {
+            this._setParams(insertBalloonContourPoint(this.params, this.selectedPoint + 1, this._canvasSize()));
+            this.selectedPoint = Math.min(this.selectedPoint + 1, this.params.contour.length - 1); this._syncControls(); this.overlay.schedule();
+        } else if (action === 'point-remove') {
+            this._setParams(removeBalloonContourPoint(this.params, this.selectedPoint, this._canvasSize()));
+            this.selectedPoint = Math.min(this.selectedPoint, this.params.contour.length - 1); this._syncControls(); this.overlay.schedule();
+        } else if (action === 'point-reset') {
+            this.selectedPoint = 0; this._setParams({ ...this.params, contour: createBalloonContour() });
+        } else if (action === 'reset') {
             this.editing = null;
             this._setParams(defaultBalloonParams(this._canvasSize()));
         } else if (action === 'reseed') {
@@ -595,16 +675,43 @@ export class BalloonPopup {
     _syncControls() {
         if (!this.popup || !this.elements.canvas) return;
         const p = this.params;
+        this.tailIndex = Math.min(this.tailIndex || 0, p.extraTails?.length || 0);
+        const selectedTail = this._selectedTail();
+        const tailTargets = this.popup.querySelector('[data-role="tail-targets"]');
+        tailTargets.innerHTML = [p.tail, ...(p.extraTails || [])].map((tail, index) => `<button type="button" class="pl-chip${index === this.tailIndex ? ' is-selected' : ''}" data-tail-index="${index}" aria-pressed="${index === this.tailIndex}" title="しっぽ${index + 1}${tail.enabled ? '' : '（OFF）'}">${index + 1}</button>`).join('');
+        this.popup.querySelector('[data-action="tail-add"]').disabled = (p.extraTails?.length || 0) >= 3;
+        this.popup.querySelector('[data-action="tail-remove"]').disabled = !this.tailIndex;
+        this.popup.querySelectorAll('[data-context-pane]').forEach(pane => { pane.hidden = pane.dataset.contextPane !== this.context; });
+        this.popup.querySelectorAll('[data-context]').forEach(button => {
+            this._press(button, button.dataset.context === this.context);
+            button.setAttribute('aria-selected', String(button.dataset.context === this.context));
+        });
+        this.popup.querySelector('[data-role="contour-controls"]').hidden = p.shape !== 'custom';
+        this.popup.querySelector('[data-role="double-hint"]').hidden = p.shape !== 'double';
+        const secondaryContent = this.popup.querySelector('[data-role="content-secondary"]');
+        this.textIndex = p.shape === 'double' ? this.textIndex || 0 : 0;
+        this.popup.querySelector('[data-role="text-targets"]').hidden = p.shape !== 'double';
+        this.popup.querySelectorAll('[data-text-index]').forEach(button => this._press(button, Number(button.dataset.textIndex) === this.textIndex));
+        this.elements.content.hidden = this.textIndex === 1;
+        secondaryContent.hidden = p.shape !== 'double' || this.textIndex !== 1;
+        if (document.activeElement !== secondaryContent) secondaryContent.value = p.double?.content || '';
+        if (p.shape === 'custom') {
+            this.selectedPoint = Math.min(this.selectedPoint, p.contour.length - 1);
+            this.popup.querySelector('[data-role="point-status"]').textContent = `選択: ${this.selectedPoint + 1} / ${p.contour.length}点　キャンバスで点を動かす`;
+            this.popup.querySelector('[data-action="point-remove"]').disabled = p.contour.length <= 4;
+            this.popup.querySelector('[data-action="point-add"]').disabled = p.contour.length >= 24;
+        }
         for (const f of FIELDS) {
             const row = this.popup.querySelector(`[data-row="${f.key}"]`);
-            if (row) row.hidden = (f.shape && f.shape !== p.shape) || (f.tail && !p.tail.enabled);
-            const raw = getPath(p, f.path);
+            if (row) row.hidden = (f.shape && f.shape !== p.shape) || (f.tail && !selectedTail.enabled);
+            const raw = getPath(p, f.tail ? this._tailPath(f.path[1]) : f.path);
             const input = this.popup.querySelector(`input[data-field="${f.key}"]`);
             if (input && Number(input.value) !== raw) input.value = String(raw);
             const out = this.popup.querySelector(`[data-value-for="${f.key}"]`);
             if (out && !out.dataset.editing) {
-                const auto = f.key === 'fontSize' && p.text.autoFit && this.lettering?.request?.fontSize;
-                out.textContent = auto ? `自動 ${this.lettering.request.fontSize}px` : `${f.toDisplay ? f.toDisplay(raw) : raw}${f.unit}`;
+                const firstLettering = Array.isArray(this.lettering) ? this.lettering[this.textIndex || 0] : this.lettering;
+                const auto = f.key === 'fontSize' && p.text.autoFit && firstLettering?.request?.fontSize;
+                out.textContent = auto ? `自動 ${firstLettering.request.fontSize}px` : `${f.toDisplay ? f.toDisplay(raw) : raw}${f.unit}`;
             }
             if (input) {
                 const min = Number(input.min);
@@ -615,16 +722,15 @@ export class BalloonPopup {
         }
         this.popup.querySelectorAll('[data-shape]').forEach(btn => this._press(btn, btn.dataset.shape === p.shape));
         this.popup.querySelectorAll('[data-tail-style]').forEach(btn => {
-            this._press(btn, btn.dataset.tailStyle === p.tail.style);
-            btn.disabled = !p.tail.enabled;
+            this._press(btn, btn.dataset.tailStyle === selectedTail.style);
+            btn.disabled = !selectedTail.enabled;
         });
-        this._press(this.elements.tailEnabled, p.tail.enabled);
-        this.elements.tailEnabled.textContent = p.tail.enabled ? 'あり' : 'なし';
+        this._press(this.elements.tailEnabled, selectedTail.enabled);
+        this._press(this.elements.tailDisabled, !selectedTail.enabled);
         this.popup.querySelectorAll('[data-vertical]').forEach(btn => this._press(btn, (btn.dataset.vertical === 'true') === p.text.vertical));
         this._press(this.elements.bold, p.text.bold);
         this.elements.reseed.hidden = p.shape !== 'burst';
         this.elements.autoFit.checked = p.text.autoFit;
-        this.elements.overlayToggle.checked = this.showOverlay;
         if (this.elements.content.value !== p.text.content && document.activeElement !== this.elements.content) this.elements.content.value = p.text.content;
         for (const [attr, value] of [['lineColor', p.lineColor], ['fillColor', p.fillColor], ['textColor', p.text.color], ['outlineColor', p.text.outlineColor]]) {
             const input = this.popup.querySelector(`[data-color="${attr}"]`);
@@ -644,6 +750,9 @@ export class BalloonPopup {
         btn.setAttribute('aria-pressed', String(on));
         btn.classList.toggle('is-selected', on);
     }
+
+    _tailPath(key) { return this.tailIndex ? ['extraTails', this.tailIndex - 1, key] : ['tail', key]; }
+    _selectedTail() { return this.params.extraTails?.[this.tailIndex - 1] || this.params.tail; }
 
     _syncOverlayVisibility() {
         this.overlay.setVisible(this.isVisible && this.showOverlay);
@@ -719,32 +828,10 @@ export class BalloonPopup {
 
     _toggleFontComparison(force = null) {
         const next = force === null ? !this.fontComparison?.isOpen?.() : force === true;
-        this.fontComparison?.setMode('samples');
         this.fontComparison?.setOpen(next);
         this.elements.fontComparisonToggle?.setAttribute('aria-expanded', String(next));
-        this.elements.fontComparisonToggle?.setAttribute('aria-label', next ? 'フォント比較を閉じる' : 'フォント比較を開く');
-        this.elements.fontComparisonToggle?.setAttribute('title', next ? 'フォント比較を閉じる' : 'フォント比較を開く');
-        this.elements.fontInformationToggle?.setAttribute('aria-expanded', 'false');
-        this.elements.fontInformationToggle?.setAttribute('aria-label', 'フォント情報・整理を開く');
-        this.elements.fontInformationToggle?.setAttribute('title', 'フォント情報・整理を開く');
-    }
-
-    _toggleFontInformation(force = null) {
-        const open = this.fontComparison?.isOpen?.() === true;
-        const information = this.fontComparison?.getMode?.() === 'information';
-        const next = force === null ? !(open && information) : force === true;
-        if (next) {
-            this.fontComparison?.setMode('information');
-            this.fontComparison?.setOpen(true);
-        } else if (open && information) {
-            this.fontComparison?.setOpen(false);
-        }
-        this.elements.fontInformationToggle?.setAttribute('aria-expanded', String(next));
-        this.elements.fontInformationToggle?.setAttribute('aria-label', next ? 'フォント情報・整理を閉じる' : 'フォント情報・整理を開く');
-        this.elements.fontInformationToggle?.setAttribute('title', next ? 'フォント情報・整理を閉じる' : 'フォント情報・整理を開く');
-        this.elements.fontComparisonToggle?.setAttribute('aria-expanded', 'false');
-        this.elements.fontComparisonToggle?.setAttribute('aria-label', 'フォント比較を開く');
-        this.elements.fontComparisonToggle?.setAttribute('title', 'フォント比較を開く');
+        this.elements.fontComparisonToggle?.setAttribute('aria-label', next ? '書体の比較・情報・整理を閉じる' : '書体の比較・情報・整理を開く');
+        this.elements.fontComparisonToggle?.setAttribute('title', next ? '書体の比較・情報・整理を閉じる' : '書体の比較・情報・整理を開く');
     }
 
     _onComparisonFontCommitted(row) {
@@ -1392,17 +1479,42 @@ export class BalloonPopup {
     /** 文字領域に収まる文字画像を作る(自動調整ONなら収まる最大サイズを探す)。 */
     async _refreshLettering() {
         const token = ++this._letteringToken;
+        this.popup.querySelector('[data-role="text-warning"]').textContent = '';
         const p = this.params;
-        const text = p.text;
-        if (!text.content.trim()) {
-            this.lettering = null;
-            this.textImage = null;
-            this._redraw();
-            return null;
+        const texts = p.shape === 'double' ? [p.text, { ...p.text, content: p.double.content }] : [p.text];
+        const results = await Promise.all(texts.map((text, index) => this._composeBodyLettering(p, text, index, token)));
+        if (token !== this._letteringToken) return null;
+        if (texts.some((text, index) => text.content.trim() && !results[index])) {
+            this.lettering = null; this.textImage = null; this._redraw(); return null;
         }
-        const area = balloonTextArea(p, this._canvasSize());
+        const images = results.map((result, index) => {
+            if (!result) return null;
+            const at = letteringPlacement(p, this._canvasSize(), result, index);
+            const c = document.createElement('canvas'); c.width = result.width; c.height = result.height;
+            c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(result.pixels), result.width, result.height), 0, 0);
+            return { url: c.toDataURL('image/png'), x: at.x, y: at.y, width: result.width, height: result.height };
+        });
+        this.lettering = p.shape === 'double' ? results : results[0];
+        this.textImage = p.shape === 'double' ? images : images[0];
+        const status = assessBalloonTextBounds(p, this._canvasSize(), images.map(image => image && ({ x: image.x, y: image.y, w: image.width, h: image.height })));
+        const warnings = status.outside.map(index => `本文${index + 1}が本体からはみ出しています`);
+        if (status.overlap) warnings.push('本文1と2が重なっています');
+        results.forEach((result, index) => {
+            const area = balloonTextFrame(p, this._canvasSize(), index);
+            if (result && (result.width > area.w + 1 || result.height > area.h + 1)) warnings.push(`本文${index + 1}が文字領域に収まりません`);
+        });
+        this.popup.querySelector('[data-role="text-warning"]').textContent = warnings.join(' / ');
+        this._syncControls(); this._redraw(); return this.lettering;
+    }
+
+    async _composeBodyLettering(p, text, index, token) {
+        if (!text.content.trim()) return null;
+        const area = balloonTextFrame(p, this._canvasSize(), index);
         let family = text.fontFamily;
         let embedCss = '';
+        // New explicit frames describe the full image, including outline padding.
+        // Legacy recipes retain their original content-box wrapping dimensions.
+        const padding = (index === 1 ? p.double?.frame : p.text.frame) ? (Math.ceil(text.outlineWidth) + 2) * 2 : 0;
         if (text.fontKind === 'imported' && text.fontId) {
             const entry = await this.fonts.ensureLoaded(text.fontId);
             if (token !== this._letteringToken) return null;
@@ -1412,10 +1524,7 @@ export class BalloonPopup {
             } else {
                 const external = this._fontData.bundled.find(font => font.id === text.fontId)?.external === true;
                 if (external) {
-                    this.lettering = null;
-                    this.textImage = null;
                     showFeedbackToast('外部フォントを読み込めません。保管先と元ファイルを確認してください');
-                    this._redraw();
                     return null;
                 }
                 family = 'sans-serif';
@@ -1438,16 +1547,20 @@ export class BalloonPopup {
             outlineColor: text.outlineColor,
             align: text.align,
             // 縦書きは高さ、横書きは幅で折り返す
-            boxWidth: text.vertical ? 0 : Math.floor(area.w),
-            boxHeight: text.vertical ? Math.floor(area.h) : 0
+            boxWidth: text.vertical ? 0 : Math.max(1, Math.floor(area.w - padding)),
+            boxHeight: text.vertical ? Math.max(1, Math.floor(area.h - padding)) : 0
         };
         let size = text.fontSize;
+        const paragraph = s => ({ text: base.text, vertical: base.vertical, fontFamily: base.fontFamily, fontSize: s,
+            lineHeight: base.lineHeight, tracking: base.letterSpacing * s, bold: base.bold,
+            color: base.color, strokeWidth: base.outlineWidth, strokeColor: base.outlineColor });
+        const layout = { boxWidth: base.boxWidth, boxHeight: base.boxHeight, align: base.align, embedCss: base.embedCss };
         if (text.autoFit) {
             let lo = 8;
             let hi = 200;
             const fits = async (s) => {
-                const m = await measureLettering({ ...base, fontSize: s, ...this._normalizedForMeasure(base, s) });
-                return text.vertical ? m.width <= area.w : m.height <= area.h;
+                const m = await measureParagraph(paragraph(s), layout);
+                return m.ok && (text.vertical ? m.width <= area.w : m.height <= area.h);
             };
             for (let i = 0; i < 8 && lo < hi; i += 1) {
                 const mid = Math.ceil((lo + hi) / 2);
@@ -1456,49 +1569,36 @@ export class BalloonPopup {
             }
             size = lo;
         }
-        const result = await rasterizeLettering({ ...base, fontSize: size });
+        const result = await rasterizeParagraph(paragraph(size), layout);
         if (token !== this._letteringToken) return null; // 新しい入力に追い越された
-        if (!result.ok) {
-            this.lettering = null;
-            this.textImage = null;
-            this._redraw();
-            return null;
-        }
-        this.lettering = result;
-        const at = letteringPlacement(p, this._canvasSize(), result);
-        const c = document.createElement('canvas');
-        c.width = result.width;
-        c.height = result.height;
-        c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(result.pixels), result.width, result.height), 0, 0);
-        this.textImage = { url: c.toDataURL('image/png'), x: at.x, y: at.y, width: result.width, height: result.height };
-        this._syncControls();
-        this._redraw();
-        return result;
-    }
-
-    /** 測定用に正規化済みのrequest(measureLetteringはnormalize済みを期待する)。 */
-    _normalizedForMeasure(base, size) {
-        return {
-            vertical: base.vertical !== false,
-            fontFamily: String(base.fontFamily),
-            embedCss: '',
-            fontSize: size,
-            lineHeight: base.lineHeight,
-            letterSpacing: base.letterSpacing,
-            bold: base.bold === true,
-            outlineWidth: base.outlineWidth,
-            align: base.align,
-            boxWidth: base.boxWidth,
-            boxHeight: base.boxHeight
-        };
+        return result.ok ? result : null;
     }
 
     // ------------------------------------------------------------ ドラッグ(プレビュー/キャンバス上)
 
     _beginDrag(target, event, toPoint) {
+        if (this._spacePressed) return;
+        if (target.type === 'body-move') {
+            if (!event.ctrlKey || event.altKey || event.metaKey) return;
+            target = { type: 'center' };
+        }
         this.endDrag();
+        if (target.type === 'tip' || target.type.startsWith('tip:')) {
+            this.tailIndex = target.type === 'tip' ? 0 : Number(target.type.slice(4));
+            this.context = 'tail'; this._syncControls();
+        }
+        if (target.type.startsWith('text:')) {
+            this.textIndex = Number(target.type.split(':')[1]);
+            const area = balloonTextFrame(this.params, this._canvasSize(), this.textIndex);
+            this._setParams(setBalloonTextFrame(this.params, this._canvasSize(), this.textIndex, area));
+        } else if (target.type.startsWith('point:') && !this.params.text.frame) {
+            this._setParams(resetBalloonTextFrames(this.params, this._canvasSize()));
+        }
         const start = toPoint(event);
         if (!start) return;
+        if (target.type.startsWith('point:')) {
+            this.selectedPoint = Number(target.type.slice(6)); this._syncControls(); this.overlay.schedule();
+        }
         const move = (e) => {
             if (!this.drag || e.pointerId !== this.drag.pointerId) return;
             const pt = toPoint(e);
@@ -1535,13 +1635,34 @@ export class BalloonPopup {
         if (!drag) return;
         const s = drag.startParams;
         let next = structuredClone(s);
-        if (drag.type === 'center') {
+        if (this.editorSnap) pt = { x: Math.round(pt.x / this.editorGridSize) * this.editorGridSize, y: Math.round(pt.y / this.editorGridSize) * this.editorGridSize };
+        if (drag.type.startsWith('text:')) {
+            const [, index, part] = drag.type.split(':');
+            const area = balloonTextFrame(s, this._canvasSize(), Number(index));
+            let box;
+            if (part === 'center') box = { ...area, x: area.x + pt.x - drag.startPoint.x, y: area.y + pt.y - drag.startPoint.y };
+            else {
+                const fixed = { tl: { x: area.x + area.w, y: area.y + area.h }, tr: { x: area.x, y: area.y + area.h }, br: { x: area.x, y: area.y }, bl: { x: area.x + area.w, y: area.y } }[part];
+                if (!fixed) return;
+                box = { x: Math.min(fixed.x, pt.x), y: Math.min(fixed.y, pt.y), w: Math.max(8, Math.abs(pt.x - fixed.x)), h: Math.max(8, Math.abs(pt.y - fixed.y)) };
+            }
+            next = setBalloonTextFrame(s, this._canvasSize(), Number(index), box);
+        } else if (drag.type.startsWith('point:')) {
+            next = moveBalloonContourPoint(s, Number(drag.type.slice(6)), pt, this._canvasSize());
+        } else if (drag.type === 'secondary:center') {
+            next.double.dx = s.double.dx + (pt.x - drag.startPoint.x) / s.rect.w;
+            next.double.dy = s.double.dy + (pt.y - drag.startPoint.y) / s.rect.h;
+        } else if (drag.type.startsWith('secondary:')) {
+            const r = secondaryBalloonRect(s), c = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+            next.double.scale = Math.max(Math.abs(pt.x - c.x) * 2 / s.rect.w, Math.abs(pt.y - c.y) * 2 / s.rect.h);
+        } else if (drag.type === 'center') {
             const dx = pt.x - drag.startPoint.x;
             const dy = pt.y - drag.startPoint.y;
-            next.rect = { ...s.rect, x: s.rect.x + dx, y: s.rect.y + dy };
-            next.tail = { ...s.tail, tip: { x: s.tail.tip.x + dx, y: s.tail.tip.y + dy } };
-        } else if (drag.type === 'tip') {
-            next.tail = { ...s.tail, tip: { x: pt.x, y: pt.y } };
+            next = transformBalloon(s, this._canvasSize(), { dx, dy });
+        } else if (drag.type === 'tip' || drag.type.startsWith('tip:')) {
+            const index = drag.type === 'tip' ? 0 : Number(drag.type.slice(4));
+            if (index) next.extraTails[index - 1].tip = { x: pt.x, y: pt.y };
+            else next.tail.tip = { x: pt.x, y: pt.y };
         } else {
             const r = s.rect;
             const fixed = {
@@ -1558,6 +1679,14 @@ export class BalloonPopup {
         this._setParams(next);
     }
 
+    _onObjectWheel(event) {
+        if (!event.ctrlKey || event.shiftKey || event.altKey || event.metaKey || this._spacePressed
+            || window.coreEngine?.cameraSystem?.vKeyPressed || !Number.isFinite(event.deltaY) || !event.deltaY) return false;
+        if (!event.target?.closest?.('.balloon-overlay') && !isMangaInputPrimary('balloon')) return false;
+        this._setParams(transformBalloon(this.params, this._canvasSize(), { scale: event.deltaY < 0 ? 1.05 : 1 / 1.05 }));
+        return true;
+    }
+
     _toCanvasPoint(e) {
         const rect = this.elements.canvas.getBoundingClientRect();
         const px = (e.clientX - rect.left) * (this.elements.canvas.width / rect.width);
@@ -1568,7 +1697,14 @@ export class BalloonPopup {
     _hitHandle(pt) {
         const tol = 10 / this.scale;
         const h = balloonHandles(this.params, this._canvasSize());
-        const candidates = [['tip', h.tip], ['tl', h.corners.tl], ['tr', h.corners.tr], ['br', h.corners.br], ['bl', h.corners.bl], ['center', h.center]];
+        const bodyEditing = this.context === 'body';
+        const candidates = [
+            ...(h.extraTips || []).map((point, index) => [`tip:${index + 1}`, point]),
+            ...(this.context === 'text' ? balloonTextFrameHandles(this.params, this._canvasSize()).flatMap((frame, index) => [...Object.entries(frame.corners), ['center', frame.center]].map(([part, point]) => [`text:${index}:${part}`, point])) : []),
+            ...(bodyEditing ? (h.contour || []).map((point, i) => [`point:${i}`, point]) : []),
+            ...(bodyEditing && h.secondary ? Object.entries(h.secondary.corners).map(([key, point]) => [`secondary:${key}`, point]).concat([['secondary:center', h.secondary.center]]) : []),
+            ['tip', h.tip], ['tl', h.corners.tl], ['tr', h.corners.tr], ['br', h.corners.br], ['bl', h.corners.bl], ['center', h.center]
+        ];
         for (const [type, point] of candidates) {
             if (point && Math.hypot(pt.x - point.x, pt.y - point.y) <= tol) return type;
         }
@@ -1604,13 +1740,15 @@ export class BalloonPopup {
         ctx.save();
         ctx.scale(this.scale, this.scale);
         paintBalloon(ctx, this.params, size);
-        if (this.lettering) {
-            const at = letteringPlacement(this.params, size, this.lettering);
+        for (const [index, lettering] of (Array.isArray(this.lettering) ? this.lettering : [this.lettering]).entries()) {
+        if (lettering) {
+            const at = letteringPlacement(this.params, size, lettering, index);
             const tmp = document.createElement('canvas');
-            tmp.width = this.lettering.width;
-            tmp.height = this.lettering.height;
-            tmp.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(this.lettering.pixels), this.lettering.width, this.lettering.height), 0, 0);
+            tmp.width = lettering.width;
+            tmp.height = lettering.height;
+            tmp.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(lettering.pixels), lettering.width, lettering.height), 0, 0);
             ctx.drawImage(tmp, at.x, at.y);
+        }
         }
         ctx.restore();
         const h = balloonHandles(this.params, size);
@@ -1618,9 +1756,23 @@ export class BalloonPopup {
         ctx.fillStyle = '#ffffee';
         ctx.lineWidth = 1.5;
         const dot = (p, r) => { ctx.beginPath(); ctx.arc(p.x * this.scale, p.y * this.scale, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); };
-        for (const c of Object.values(h.corners)) dot(c, 4);
-        if (h.tip) { ctx.fillStyle = '#ff8c42'; dot(h.tip, 5); ctx.fillStyle = '#ffffee'; }
-        dot(h.center, 6);
+        if (this.context === 'text') {
+            for (const frame of balloonTextFrameHandles(this.params, size)) {
+                const area = frame.corners;
+                ctx.setLineDash([4, 3]); ctx.strokeRect(area.tl.x * this.scale, area.tl.y * this.scale, (area.br.x - area.tl.x) * this.scale, (area.br.y - area.tl.y) * this.scale); ctx.setLineDash([]);
+                for (const point of Object.values(area)) dot(point, 4);
+                dot(frame.center, 6);
+            }
+        } else for (const c of Object.values(h.corners)) dot(c, 4);
+        if (this.context === 'body') {
+            for (const [index, point] of (h.contour || []).entries()) { ctx.fillStyle = index === this.selectedPoint ? '#ff8c42' : '#ffffee'; dot(point, 4); }
+            if (h.secondary) { ctx.fillStyle = '#ffffee'; for (const point of Object.values(h.secondary.corners)) dot(point, 4); dot(h.secondary.center, 6); }
+        }
+        if (this.context !== 'text') {
+            if (h.tip) { ctx.fillStyle = '#ff8c42'; dot(h.tip, 5); ctx.fillStyle = '#ffffee'; }
+            for (const point of h.extraTips || []) if (point) { ctx.fillStyle = '#ff8c42'; dot(point, 5); }
+            dot(h.center, 6);
+        }
         void view;
         this.overlay.schedule();
     }
@@ -1645,11 +1797,12 @@ export class BalloonPopup {
         const lettering = await this._refreshLettering();
         const selectedExternal = this.params.text.fontKind === 'imported'
             && this._fontData.bundled.find(font => font.id === this.params.text.fontId)?.external === true;
-        if (selectedExternal && this.params.text.content.trim() && !lettering) {
+        const hasContent = this.params.text.content.trim() || this.params.double?.content?.trim();
+        if (selectedExternal && hasContent && !lettering) {
             return { ok: false, reason: '外部フォントを読み込めません。保管先と元ファイルを確認してください' };
         }
         const size = this._canvasSize();
-        return rasterizeBalloon(this.params, size, lettering || (this.params.text.content.trim() ? this.lettering : null));
+        return rasterizeBalloon(this.params, size, lettering);
     }
 
     _meta() {
@@ -1753,6 +1906,17 @@ export class BalloonPopup {
         this._refreshLettering();
         this._syncOverlayVisibility();
         if (!wasVisible) this.eventBus.emit('popup:shown', { name: 'balloon' });
+        this._fitViewport();
+        this._navigation.sync();
+    }
+
+    _fitViewport() {
+        if (!this.popup) return;
+        const rect = this.popup.getBoundingClientRect();
+        const style = getComputedStyle(this.popup);
+        const left = Number.parseFloat(style.left), top = Number.parseFloat(style.top);
+        this.popup.style.left = `${Math.max(4, Math.min(Number.isFinite(left) ? left : rect.left, innerWidth - this.popup.offsetWidth - 4))}px`;
+        this.popup.style.top = `${Math.max(4, Math.min(Number.isFinite(top) ? top : rect.top, innerHeight - this.popup.offsetHeight - 4))}px`;
     }
 
     hide() {
@@ -1763,6 +1927,7 @@ export class BalloonPopup {
         if (this.fontComparison?.isOpen?.()) this._toggleFontComparison(false);
         this.popup.classList.remove('show');
         this.isVisible = false;
+        this._navigation.clear();
         this.endDrag();
         this._syncOverlayVisibility();
         if (wasVisible) this.eventBus.emit('popup:hidden', { name: 'balloon' });
@@ -1779,6 +1944,8 @@ export class BalloonPopup {
 
     destroy() {
         this.endDrag();
+        this._navigation.destroy();
+        window.removeEventListener('resize', this._onViewportResize);
         clearTimeout(this._letteringTimer);
         this.popupDragCleanup?.();
         this.popupDragCleanup = null;

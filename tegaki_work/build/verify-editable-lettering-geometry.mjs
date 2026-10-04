@@ -38,6 +38,7 @@ const deepFreeze = value => {
 {
     const straight = createCurvePreset('straight', 240, 80);
     const wave = createCurvePreset('wave', 240, 80);
+    const arc = createCurvePreset('arc', 240, 80);
     const ellipse = createCurvePreset('ellipse', 240, 80);
     assert.equal(straight.closed, false);
     assert.equal(curveSegments(straight).length, 1);
@@ -45,7 +46,19 @@ const deepFreeze = value => {
     assert.equal(ellipse.closed, true);
     assert.equal(curveSegments(ellipse).length, 4);
     assert.equal(createCurvePreset('none').nodes.length, 0);
-    for (const path of [straight, wave, ellipse, createCurvePreset('polyline'), createCurvePreset('free')]) {
+    const arcs = curveSegments(arc);
+    assert.equal(arc.closed, false);
+    assert.equal(arcs.length, 2);
+    nearPoint(arcs[0].p0, { x: 0, y: 80 }, 'half arc left');
+    nearPoint(arcs[0].p3, { x: 120, y: 0 }, 'half arc top');
+    nearPoint(arcs[1].p3, { x: 240, y: 80 }, 'half arc right');
+    nearPoint({ x: arcs[0].p3.x - arcs[0].p2.x, y: arcs[0].p3.y - arcs[0].p2.y },
+        { x: arcs[1].p1.x - arcs[1].p0.x, y: arcs[1].p1.y - arcs[1].p0.y }, 'half arc smooth seam');
+    for (const segment of arcs) for (let i = 0; i <= 20; i++) {
+        const point = evaluateCubic(segment, i / 20);
+        near(((point.x - 120) / 120) ** 2 + ((point.y - 80) / 80) ** 2, 1, 'half ellipse shape', 0.001);
+    }
+    for (const path of [straight, arc, wave, ellipse, createCurvePreset('polyline'), createCurvePreset('free')]) {
         for (const segment of curveSegments(path)) {
             for (const point of [segment.p0, segment.p1, segment.p2, segment.p3]) {
                 assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y), 'preset control point finite');
@@ -197,6 +210,10 @@ const deepFreeze = value => {
     assert.equal(sanitized.version, 1);
     assert.deepEqual(sanitized.fingerprint, valid.fingerprint);
     assert.equal(sanitized.params.text, '一\n二', 'strict save keeps normalized multiline text');
+    const arcParams = { ...defaults, baseline: { ...defaults.baseline, kind: 'arc', path: createCurvePreset('arc') } };
+    const savedArc = sanitizeLetteringData({ ...valid, params: arcParams }, canvas);
+    assert.equal(savedArc.params.baseline.kind, 'arc', 'half arc survives recipe save');
+    assert.deepEqual(savedArc.params.baseline.path, arcParams.baseline.path);
     assert.equal(sanitizeLetteringData({ ...valid, version: 2 }, canvas), null);
     assert.equal(sanitizeLetteringData({ ...valid, fingerprint: { ...valid.fingerprint, hash: '' } }, canvas), null);
     assert.equal(sanitizeLetteringData({ ...valid, params: { ...defaults, placement: { ...defaults.placement, x: NaN } } }, canvas), null);

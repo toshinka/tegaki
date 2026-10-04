@@ -4,6 +4,7 @@
  * 責務: 吹き出しの右側に開くフォント比較page。分類、DOM見本、hover/focusの
  *       一時表示、click/Enterによる選択固定、読み込み済みfontのwarmを扱う。
  *       params/Project/Historyは変更せず、選択確定だけを呼び出し元へ返す。
+ *       WP030の共通書体窓はstandalone hostを使う。font保存・作品適用は所有しない。
  * 公開API: FontComparison
  * ============================================================================
  */
@@ -32,8 +33,11 @@ function nodeKey(value) {
  * 右側の比較page。見本は通常のDOM文字で、Canvas/組版の経路には入らない。
  */
 export class FontComparison {
-    constructor({ container, getLoadedFont, warmFonts, onCommit, onClose, onMove } = {}) {
+    constructor({ container, getLoadedFont, warmFonts, onCommit, onClose, onMove, standalone = false, title = 'フォント比較', informationLabel = '情報・整理' } = {}) {
         this.container = container || null;
+        this.standalone = standalone === true;
+        this.title = title;
+        this.informationLabel = informationLabel;
         this.anchor = container?.closest?.('#balloon-popup') || null;
         this.getLoadedFont = typeof getLoadedFont === 'function' ? getLoadedFont : null;
         this.warmFonts = typeof warmFonts === 'function' ? warmFonts : null;
@@ -122,8 +126,12 @@ export class FontComparison {
             informationHost: q('[data-role="font-comparison-information-host"]'),
             target: q('[data-role="font-comparison-target"]')
         };
+        this.container.setAttribute('aria-label', this.title);
+        q('.pl-font-comparison__title').textContent = this.title;
+        q('[data-mode="information"]').textContent = this.informationLabel;
+        this.refs.close.setAttribute('aria-label', `${this.title}を閉じる`);
         this.container.addEventListener('keydown', event => {
-            if (event.key === 'Escape') {
+            if (event.key === 'Escape' && !event.isComposing && event.keyCode !== 229) {
                 event.preventDefault();
                 this.setOpen(false);
             }
@@ -326,6 +334,16 @@ export class FontComparison {
 
     reposition() {
         if (!this._open || !this.container || typeof window === 'undefined') return;
+        if (this.standalone) {
+            this.container.style.removeProperty('width');
+            const rect = this.container.getBoundingClientRect();
+            this.container.classList.toggle('is-compact', rect.width < 520);
+            this.container.style.left = `${Math.max(PANEL_MARGIN, (window.innerWidth - rect.width) / 2)}px`;
+            this.container.style.top = `${Math.max(PANEL_MARGIN, (window.innerHeight - rect.height) / 2)}px`;
+            this.container.style.visibility = 'visible';
+            this.container.dataset.placement = 'standalone';
+            return;
+        }
         const popup = this.anchor;
         if (!popup) return;
         this.container.style.visibility = 'hidden';

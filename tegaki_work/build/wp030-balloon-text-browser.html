@@ -1,0 +1,43 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>WP030 本文領域・Camera</title>
+<style>body{background:#ffffee;color:#800000;font:12px system-ui}iframe{width:1280px;height:720px;border:1px solid #b8706b}pre{white-space:pre-wrap}</style>
+<button id="run" disabled>本文領域を検証</button><button id="inspect" disabled>操作確認の表示</button><span id="state">製品起動中</span><pre id="output"></pre><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+import { balloonTextFrame, setBalloonTextFrame, resetBalloonTextFrames, assessBalloonTextBounds } from '../system/balloon-text-layout.js';
+import { rasterizeBalloon } from '../system/balloon-raster.js';
+const frame=document.querySelector('#product'),out=document.querySelector('#output'),state=document.querySelector('#state');
+const delay=ms=>new Promise(r=>setTimeout(r,ms)),check=(ok,label)=>{if(!ok)throw Error(label);out.textContent+='PASS '+label+'\n';};
+let core;for(let i=0;i<200;i++){core=frame.contentWindow?.coreEngine;if(core?.popupManager?.get('balloon')?.isReady())break;await delay(100);}
+const win=frame.contentWindow,popup=core.popupManager.get('balloon'),q=s=>popup.popup.querySelector(s),size=()=>popup._canvasSize();
+const set=(el,value)=>{el.value=value;el.dispatchEvent(new win.Event('input',{bubbles:true}));};
+const pixels=()=>{const c=core.exportManager.renderToCanvas({transparent:true});return Array.from(c.getContext('2d').getImageData(0,0,c.width,c.height).data);};
+const drag=async(kind,to)=>{popup.overlay.render();const h=popup.overlay.svg.querySelector(`[data-kind="${kind}"]`),from={x:+h.getAttribute('cx'),y:+h.getAttribute('cy')},end=popup.overlay._toScreen(to);h.dispatchEvent(new win.PointerEvent('pointerdown',{pointerId:51,pointerType:'mouse',button:0,clientX:from.x,clientY:from.y,bubbles:true}));win.dispatchEvent(new win.PointerEvent('pointermove',{pointerId:51,pointerType:'mouse',clientX:end.x,clientY:end.y}));win.dispatchEvent(new win.PointerEvent('pointerup',{pointerId:51,pointerType:'mouse',clientX:end.x,clientY:end.y}));await delay(30);};
+const realm=v=>win.JSON.parse(JSON.stringify(v));
+state.textContent='検証可能';document.querySelectorAll('button').forEach(b=>b.disabled=false);
+document.querySelector('#inspect').onclick=()=>{frame.style.width='1280px';frame.style.height='720px';win.dispatchEvent(new win.Event('resize'));core.popupManager.show('balloon');popup._onAction('reset');q('[data-shape="double"]').click();set(popup.elements.content,'本文の枠を\n調整できます');set(q('[data-role="content-secondary"]'),'二つ目の\nセリフ');q('[data-context="text"]').click();};
+document.querySelector('#run').onclick=async()=>{
+ const original=structuredClone(popup.params),preferences=win.localStorage.getItem('tegaki-balloon-v1');out.textContent='';state.textContent='実行中';
+ try{
+  core.popupManager.show('balloon');popup._onAction('reset');
+  for(const context of ['body','tail','text']){q(`[data-context="${context}"]`).click();check(q('[data-role="font-trigger"]').getBoundingClientRect().height>0&&q('[data-row="fontSize"]').getBoundingClientRect().height>0,'書体・基本サイズ常設 '+context);}
+  const fontBefore=popup.params.text.fontId||popup.params.text.fontFamily;q('[data-role="font-trigger"]').dispatchEvent(new win.WheelEvent('wheel',{deltaY:100,bubbles:true,cancelable:true}));check((popup.params.text.fontId||popup.params.text.fontFamily)!==fontBefore,'常設書体のwheelジョグ');
+  popup._setParams({...popup.params,text:{...popup.params.text,fontKind:'system',fontId:'',fontFamily:'sans-serif',autoFit:false,fontSize:20,vertical:false,content:'セリフの折り返しと指定改行\nを調整するテスト'}});
+  q('[data-shape="custom"]').click();const stable=JSON.stringify(popup.params.text.frame),r=popup.params.rect;q('[data-context="body"]').click();await drag('point:0',{x:r.x+r.w*.7,y:r.y+r.h*.5});check(JSON.stringify(popup.params.text.frame)===stable,'輪郭点移動で文字領域を保持');
+  q('[data-context="text"]').click();let area=balloonTextFrame(popup.params,size()),fontSize=popup.params.text.fontSize;await drag('text:0:center',{x:area.cx+8,y:area.cy+9});let moved=balloonTextFrame(popup.params,size());check(Math.abs(moved.cx-area.cx-8)<.01&&popup.params.text.fontSize===fontSize,'本文だけ移動・文字サイズ維持');
+  await drag('text:0:br',{x:moved.x+45,y:moved.y+80});await popup._refreshLettering();const narrow=popup.lettering.height;await drag('text:0:br',{x:moved.x+130,y:moved.y+80});await popup._refreshLettering();check(popup.lettering.height<narrow&&popup.params.text.fontSize===fontSize,'領域幅で折返し変更・指定サイズ維持');
+  q('[data-context="body"]').click();q('[data-shape="double"]').click();let a=balloonTextFrame(popup.params,size(),0),b=balloonTextFrame(popup.params,size(),1);check(!assessBalloonTextBounds(popup.params,size(),[a,b]).overlap,'二連初期本文領域は非衝突');
+  set(popup.elements.content,'本文1');q('[data-text-index="1"]').click();set(q('[data-role="content-secondary"]'),'本文2');check(popup.elements.content.hidden&&!q('[data-role="content-secondary"]').hidden&&popup.params.text.content==='本文1','本文②の入力対象を明示・本文①保持');
+  q('[data-context="text"]').click();await drag('text:1:center',{x:a.cx,y:a.cy});await popup._refreshLettering();check(popup.textIndex===1&&q('[data-role="text-warning"]').textContent.includes('重なっています'),'Canvas本文選択と衝突警告');
+  q('[data-action="text-fit"]').click();await popup._refreshLettering();check(!q('[data-role="text-warning"]').textContent.includes('重なっています'),'収め直すで本文衝突解消');
+  a=balloonTextFrame(popup.params,size(),0);popup._setParams(setBalloonTextFrame(popup.params,size(),0,{...a,x:popup.params.rect.x-90}));await popup._refreshLettering();check(q('[data-role="text-warning"]').textContent.includes('はみ出しています'),'本文の本体外警告');
+  const raster=rasterizeBalloon(popup.params,size(),popup.lettering),image=popup.textImage[0];check(raster.ok&&raster.rasterBounds.x<=image.x&&raster.rasterBounds.x+raster.width>=image.x+image.width,'本体外の文字もRaster boundsに含める');
+  const recipe=structuredClone(popup.params),added=await popup.apply();check(added.ok,'明示本文領域を通常Rasterに確定');popup.hide();let png=pixels(),project=await core.projectManager.exportProject();await core.projectManager.loadProject(realm(project));let layer=core.layerSystem.getLayers().find(l=>l.layerData.id===added.layerId);core.layerSystem.setActiveLayer(core.layerSystem.getLayerIndex(layer));check(JSON.stringify(layer.layerData.balloon.params)===JSON.stringify(recipe)&&JSON.stringify(pixels())===JSON.stringify(png),'本文領域・PNG Project往復一致');
+  core.popupManager.show('balloon');popup.loadFromActiveLayer();q('[data-context="text"]').click();q('[data-action="text-fit"]').click();await popup.update();core.history.undo();check(JSON.stringify(core.layerSystem.getActiveLayer().layerData.balloon.params)===JSON.stringify(recipe),'本文領域更新Undo');core.history.redo();
+  const camera=core.cameraSystem,cameraBefore=camera.worldContainer.scale.x,paramsBefore=JSON.stringify(popup.params);popup.overlay.render();let h=popup.overlay.svg.querySelector('[data-kind="text:0:center"]');h.dispatchEvent(new win.WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}));check(camera.worldContainer.scale.x!==cameraBefore&&JSON.stringify(popup.params)===paramsBefore,'ハンドル上wheelはCamera zoom');
+  win.dispatchEvent(new win.KeyboardEvent('keydown',{code:'Space',key:' ',bubbles:true}));check(win.getComputedStyle(h).pointerEvents==='none','Space中ハンドルhitをCameraへ譲る');win.dispatchEvent(new win.KeyboardEvent('keyup',{code:'Space',key:' ',bubbles:true}));check(win.getComputedStyle(h).pointerEvents!=='none','Space終了で本文操作復帰');
+  popup.hide();const key=()=>win.document.body.dispatchEvent(new win.KeyboardEvent('keydown',{code:'KeyT',key:'t',bubbles:true,cancelable:true}));key();check(core.popupManager.get('lettering').isVisible,'Tで文字tabを開く');key();check(!core.popupManager.get('lettering').isVisible,'Tで文字tabを閉じる');
+  core.popupManager.show('balloon');for(const height of [640,400]){frame.style.width='360px';frame.style.height=`${height}px`;win.dispatchEvent(new win.Event('resize'));await delay(60);const foot=q('.bl-fixed-footer').getBoundingClientRect();check(foot.bottom<=height&&foot.right<=360,'360px/高さ'+height+'の確定操作可視');}
+  state.textContent='PASS';
+ }catch(e){state.textContent='FAIL '+e.message;out.textContent+=e.stack;}
+ finally{popup.hide();popup._setParams(original);if(preferences===null)win.localStorage.removeItem('tegaki-balloon-v1');else win.localStorage.setItem('tegaki-balloon-v1',preferences);}
+};
+</script></html>

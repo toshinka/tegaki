@@ -1,6 +1,6 @@
 # WP-029 — 新RIGの試作編集入口と通常Rasterへの受渡し
 
-状態: ACTIVE / ROUGH PRODUCT PASS。2026-10-04 Ownerが触れる移植を先に、改修しやすいモジュールとAI可視性を意識して裁量で実装するよう指示。main/f245c354開始、既存WP023〜028等のdirty保持。製品採用・最終制作受入・pushは未。
+状態: VERIFIED / ROUGH PRODUCT PASS — 限定技術目標達成、OWNER ACCEPTANCE PENDING。2026-10-04 Ownerが触れる移植を先に、改修しやすいモジュールとAI可視性を意識して裁量で実装するよう指示。main/f245c354開始、既存WP023〜028等のdirty保持。製品採用・最終制作受入・pushは未。
 
 READ: AGENTS → STATUS → TECHNICAL → 本Card → DEVELOPMENT「漫画文字とRIG proofの並行導線」→ ARCHITECTURE「起動と接続」「データの所有」「LayerとCAF編集」。[WP026結果](../ai/WP-026-rive-proof-result.md)の固定CLI/runtimeと実RML構造を継承。旧proof4filesは変更しない。
 
@@ -8,7 +8,7 @@ READ: AGENTS → STATUS → TECHNICAL → 本Card → DEVELOPMENT「漫画文字
 
 通常Canvasから独立Rive編集を開き、PNG一枚を二bone/四頂点のnative画像meshで動かし、source+画像を独立保存、現在フレームの透明1x PNGを明示操作で新規通常Rasterへ追加する。最初は画像読込・終点角・scrub・保存/再読込/取消・フレーム追加。旧RIG内部互換、Timeline/CAF直接接続、多部品editorは先取りしない。
 
-## Exact files / ownership
+## Scope
 
 既存LUNA `01a0ff17-48d3-7f51-93b9-c1df1dfc7ae2`, gpt-5.6-luna/maxのwrite:
 
@@ -26,16 +26,19 @@ READ: AGENTS → STATUS → TECHNICAL → 本Card → DEVELOPMENT「漫画文字
 
 - `tegaki_work/ui/rive-editor-entry.js`: runtime-only host/iframe adapter、PNG decode、既存Raster追加API。
 - `tegaki_work/ui/right-workspace-frame.js`: Drawing側の独立「新RIG（試作）」入口、destroyでadapter解放。
-- 本Card/STATUS RIG節/登録/案内、新規限定host verifier/Browser fixture。
+- `tegaki_work/build/verify-rive-editor-entry.mjs`、`tegaki_work/build/wp029-rive-browser.html`: 限定host verifierと実製品接続Browser fixture。
+- 本Card/STATUS RIG節/登録/案内。
+- `docs/ai/WP-029-rive-integration-audit.md`: 司令のnative/製品接続監査のみ（worker reportとは分離）。
 
 同時writeしない。文字WP028のmodel/UI/renderer/keyboard/CSS等、共通Layer/Project/History/Export/Pixi/core/index/package/lock/Viteはwriteしない。LayerSystemの既存`createRasterLayerFromSnapshot`だけ利用。right-workspace-frameから新host moduleをimportし、共有bootstrapを変更しない。
 
-## Native editor契約
+## Contract
 
 - CLI1.3.0 / canvas-advanced2.44.0のWP026固定hashを検査し既存cacheをread-only参照。system install/PATH、login/publish/cloud、CLI再配布、SDK patch無し。
 - 専用127.0.0.1:18729、CORS無し、API mutationはsame-origin＋起動nonce、CLI同時一件。占有port/他processは停止せずHOLD。RIVE_HOMEは本cache、analytics off。自分のprocessだけ停止。
 - PNG一軸1024px以下/1MP以下、8MiB以下binary upload。control JSON64KiB。Browser native decodeで破損拒否、serverはPNG header/sizeと公式compilerで確認。任意URL/path/CLI args/RML uploadは受けない。
 - 一画像、四頂点/二triangle、Root/End二bone、left vertices Root/right Endの固定weight。rest30°、終点角-90..90°、一秒timeline、scrub0..1。実PNG寸法のartboardとmesh、通常blend。WP026 native schemaの寸法展開だけで、変形/skin/rendererは公式runtime。
+- 原寸templateはRoot x=0、画像中心(.5W,.5H)、mesh half-size(.5W,.5H)、bone length=.5W。PNG読込はheader上限確認→Browser native decode→同寸RGBA8 PNG正規化。nativeロード完了まではloading/building、編集/保存/再読込は一件ずつ、ready時だけframe受渡し。nativeロード失敗は良好instanceを保持。launcherは配布archiveだけでなくserved runtime三filesのWP026 hashも確認。
 - outputはartboard全体の原寸透明PNG。表示zoom/DPRを焼かず、素材を無言縮小しない。上限外は理由付き拒否、frame外の変形部分がcropされることを表示。
 - source+画像が独立authoring正本、rivは派生物。製品Projectに新property無し。read/rebuild失敗では良好scene保持。壊れた保存の起動を初期fixtureで成功扱いにしない。save/reopen/cancelは保存PNGを実使用。
 - engine/runtime、model/template、GUIを分け、汎用plugin framework/旧GUI互換層を作らない。
@@ -55,14 +58,28 @@ URL `http://127.0.0.1:18729/?embed=1#session=<uuid>&parent=<encoded-origin>`。h
 
 親はnormal Drawing context、frameContainer identity、Canvas寸法、未確定Transform/live stroke/selection transform、History適用中、request/build identityをdecode前後で照合。frame/context変更は拒否。PNGをdecodeし既存`createRasterLayerFromSnapshot({width,height,pixels,rasterBounds,paths:[],pathsData:[]},{name,historyName:'rive-frame-import',source:'rive-editor'})`へ一回。新Layer/原寸/Project Canvas中央配置、一command/一History、原Layer上書き無し。Undo/RedoとProjectは既存Raster経路。
 
-## Acceptance / Verification
+## Tasks
+
+LUNAは固定CLI/runtimeを境界確認してeditor modulesを実装・native検証、司令はhostと既存Raster接続を実装・検証。独立writeを統合し、受渡しの単一HistoryとProject往復を実Browserで確認する。
+
+## Acceptance
+
+触れる独立editorと製品入口から、原寸フレームを一回のHistoryで新Rasterへ追加できること。編集中sourceの独立保存と失敗保持、AI snapshot、元絵不変、旧入口保持を確認し、Owner受入とは分ける。
+
+## Verification
 
 worker: model verifier、JS/PowerShell構文、CLI verify/build/inspect、専用BrowserでPNG読込→angle→scrub→save/dispose/rebuild/reopen→cancel→透明原寸PNG。WP026と異なる寸法のPNGも使う。破損/超過/未接続/保存asset欠落で成功を偽装せず、source/hash/log/PNG/snapshot/行数をreportへ。
 
 司令: hostのorigin/source/token/重複/stale拒否、実TEGAKI Drawing Canvasで入口→編集→新Raster追加→Undo/Redo→Project往復、追加一Historyと元絵不変、旧入口保持、構文/build/関連verifier/harness/diff check。文字差分を保持、対象外回帰を無限に広げない。専用Browser/own processのみ。static/Browser/Owner受入は別記。
 
-## Stop / Completion
+## Stop
 
 system install、SDK/CLI/renderer/evaluator修復、第二version/platform/別backend、旧RIG自動移行、production保存schema/History/renderer authority変更、文字共有filesのwrite、他project、commit/pushは禁止。frame返却以上のProject統合・多部品/IK/physics/Timelineは次Card。失敗はcommand/input/logを返す。
 
-Owner指示により発行。独立editorを既存LUNA、製品hostと接続/監査を司令が担当。worker報告だけでcloseせず、制作受入前の技術検証を進める。
+## Completion
+
+独立editorを既存LUNA、製品hostと接続/監査を司令が担当。[担当結果](../ai/WP-029-rive-editor-result.md)に加えて[司令監査](../ai/WP-029-rive-integration-audit.md)でsource/commands/hash/native実行と実TEGAKI接続を照合した。300×180素材の編集/source＋PNG保存/取消/再build/新instance、透明原寸frame、新Raster一件/History一件、元絵不変、Undo/Redo、実Project export/load後のExport画素一致までPASS。最終限定修正のcandidate失敗時のprogress/画素保持を司令がBrowser再実測した。構文/build/関連verifier/harness/diff検査PASS。
+
+embedded全編集操作はBrowserツールのnested iframe制御制限によりUNVERIFIED。standalone編集とembedded native load/state/host受渡しは実測済み。液タブ/coarse、長時間性能、公開CLI同梱/利用条件、製品backend採用、Owner制作受入は未。保存sourceは独立authoringに留まり、TEGAKI Projectは受け取ったRaster画素を保存する。共通schema/History/rendererの変更、SDK patch、旧系自動移行無し。次Cardの多部品/IK/物理/Timeline直接接続は自動実行しない。
+
+作業中の外部commitでHEADはmain/871c51edへ更新された。司令/workerはcommit/pushせず、文字/フォント・他leadの既存dirtyを保持。技術目標達成により監視をPAUSEDへ戻す。Ownerによる編集操作を急がせず、最終制作受入と採用判断を残す。

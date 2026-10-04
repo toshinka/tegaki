@@ -52,6 +52,24 @@ model/組版/rendererの追加属性、font比較widget、文字popup/overlay/ke
 
 新しいProject/History/Vector Layer authority、CAF/Anime/SOURCE/ANIMATE変更、独立WP026の変更は止めて次Cardへ。Ownerの最終受入とpushを代行しない。
 
+## Owner follow-up — compact placement / characters (2026-10-04)
+
+配置線の形を全体/配置線の隣へ置き、点の追加/削除/滑らか切替をその直下へ。新規draftの初回配置線entryだけ直線を選び、読込済みrecipeと明示した「なし」は保持。半弧は3点・2 cubicの上半楕円で、既存path/optional recipe内の追加kindとして保存する。全体の反転buttonは撤去し既存Transform gestureを維持、文字別の反転は共通SVG/tooltip付きで残す。文字別数値は2列・58px入力で用途をまとめ、字間/行送りは既存数値wheelを維持してsliderを非表示にする。316px glass/固定footer、既存保存/History authorityは変更しない。対象はlettering popup/CSS/model/geometry、共通icon registry、関連geometry verifier/Browser fixtureと本Card/STATUS。RIG並行差分は変更しない。
+
+検証: 半弧の端点/接線連続/楕円近似/recipe roundtrip、初回直線と明示none保持、配置線の形とpoint操作の上部到達、文字別の2列/反転/tooltip/数値wheel、1280×720/360×640で主要buttonと固定footer、既存追加・再編集・History/Project回帰。制作操作感はOwner確認。
+
+追加結果: main/871c51edでsyntax / editable-lettering 8件 / production build / diff-check PASS。新規`build/wp028-lettering-compact-browser.html`を実Chromiumで実行し、形の同一行、点操作、none保持、半弧preview/追加/再編集、個別反転の対象分離、58px・2列、長い本文のstrip内収納、未選択disable、1280×720と360×640のbody scroll不要を確認。既存WP027制作動線fixtureとWP028文字別/Project/PNG画素/History fixtureは更新後PASS。native mouse wheelで個別回転0→1度も確認。短いviewportとcoarseでは既存scroll/fixed footerを保持し、今回液タブ実機の証拠は追加していない。Owner制作受入は別、commit/pushなし。並行WP029 dirtyは保持。
+
+## Owner follow-up — per-character outlines (2026-10-04)
+
+可否判定: 既存のgrapheme属性とglyph別描画に追加でき、通常Raster/optional version-1 recipe/History authorityの変更は不要。単字の別fontは既存実装を使用。疎なcharacterStylesへ`strokeWidth`, `strokeColor`, `outerStrokeWidth`, `outerStrokeColor`をoptional追加。幅は0..64、色は#rrggbb、欠損は全文設定を継承、明示0はそのフチをOFF。第二フチのfull strokeは個別第一幅＋追加厚さ×2。各glyphの外線→全文字内線→全文字fill順をSVG/CPU/Canvasへ共通反映し、個別最大幅をboundsへ反映。本文編集で範囲追従、全解除と標準継承を可能にする。
+
+UIは文字別の「フチ」toggleで配置/変形数値領域を切替え、常設文字/書体/選択/個別flip/確定を維持。第一・第二は標準/なし/個別、個別のみ太さ・色が有効。主担当がcharacter-styles/model/vector-renderer/popup/CSS、関連純粋verifier、WP028 Browser fixture、本Card/STATUSを所有。同fileへの並列委任はしない。独立RIG dirtyは保持。
+
+検証条件: 欠損時旧画素維持、0と未指定の区別、strict保存拒否、単字別font＋第一/第二OFF・色/幅の組合せ、混在strokeの順序・clip/bounds・CPUとSVG、本文挿入/削除で追従、Project/PNG/再編集/UndoRedo、1280×720/360×640でtoggleと主要操作の到達。Owner制作受入は別。
+
+追加結果: main/871c51ed、syntax / editable-lettering 8 / Project 10 / production build PASS。strict sanitizerに新色/幅を追加し、正規化後・保存後の色文字列/明示0を実値で確認。synthetic SFNTのCPUでは全OFFと通常fillの画素一致、5色の混在stroke/最大幅bounds/温まったshape cacheの現設定反映を検証。実ChromiumのWP028 compactと文字別保存fixtureは新機能を含めPASS。単字F910＋回転/局所warp＋第一/第二OFFから、独自6px/緑・追加4px/青へ変更し、通常Raster追加→Project往復→PNG画素一致→再編集/UndoRedoを確認。1280×720/360×640でフチ領域もbody scroll不要。実UIでselect/color/数値入力、native wheelで第一6→6.5pxを確認。液タブ/制作受入は未検証、commit/pushなし、並行RIG差分を保持。
+
 ## Completion
 
 構文・関連検証・build・実Browser統合を記録してTECHNICAL COMPLETEとする。制作受入/液タブはOwner確認待ちとして保持。

@@ -395,3 +395,31 @@ assert.equal(legacyDefaultAttrs.svg,legacyMissingAttrs.svg,'default additive pro
 assert.deepEqual(legacyDefaultAttrs.pixels,legacyMissingAttrs.pixels,'default additive properties preserve legacy CPU pixels');
 console.log('verify-editable-lettering-render: synthetic SFNT, legacy pixels/holes/cache, mixed font advances, per-line profile, styled paths, whole-text double outline and CPU colors, bounds, vertical styles, failures OK');
 
+// Per-character strokes share the same paths/pass order on SVG and CPU.
+const offParams = params({text:'A',strokeWidth:8,outerStrokeWidth:5,characterStyles:[{start:0,end:1,strokeWidth:0,outerStrokeWidth:0}]});
+const allOff = await renderLettering(offParams,{fontLibrary:mixedLibrary});
+const plainStroke = await renderLettering(params({text:'A',strokeWidth:0,outerStrokeWidth:0,characterStyles:[{start:0,end:1,color:'#800000'}]}),{fontLibrary:mixedLibrary});
+assert.equal(allOff.ok,true,allOff.reason);
+assert.deepEqual(allOff.pixels,plainStroke.pixels,'explicit OFF removes both outlines in CPU pixels');
+assert.deepEqual(allOff.localBounds,plainStroke.localBounds,'OFF removes inherited outline padding');
+assert.ok(!allOff.svg.includes('stroke-width='),'explicit OFF removes both SVG strokes');
+const strokeMixParams = params({text:'AAA',tracking:16,strokeWidth:4,outerStrokeWidth:3,outerStrokeColor:'#0000ff',characterStyles:[
+    {start:1,end:2,strokeWidth:0,outerStrokeWidth:0},
+    {start:2,end:3,fontId:'wide',strokeWidth:10,strokeColor:'#00ff00',outerStrokeWidth:5,outerStrokeColor:'#ffff00'}
+]});
+const strokeMix = await renderLettering(strokeMixParams,{fontLibrary:mixedLibrary});
+assert.equal(strokeMix.ok,true,strokeMix.reason);
+assert.deepEqual(strokeMix.paths.map(path=>path.strokeWidth||0),[4,0,10]);
+assert.deepEqual(strokeMix.paths.map(path=>path.outerStrokeWidth||0),[10,0,20]);
+assert.equal(strokeMix.paths[2].stroke,'#00ff00');assert.equal(strokeMix.paths[2].outerStroke,'#ffff00');
+const widthsCleared = {...strokeMixParams,strokeWidth:0,outerStrokeWidth:0,characterStyles:strokeMixParams.characterStyles.map(style=>({...style,strokeWidth:0,outerStrokeWidth:0}))};
+const noStrokeMix = await renderLettering(widthsCleared,{fontLibrary:mixedLibrary,previewOnly:true});
+assert.ok(Math.abs(strokeMix.localBounds.width-noStrokeMix.localBounds.width-20)<1e-8,'largest individual outline fits bounds');
+assert.ok(strokeMix.svg.lastIndexOf('stroke=') < strokeMix.svg.indexOf('fill="#800000"'),'all individual strokes precede all fills');
+assert.ok(strokeMix.svg.indexOf('stroke="#ffff00"') < strokeMix.svg.indexOf('stroke="#ffffee"'),'all outer strokes precede inner strokes');
+const mixedColors = new Set();for(let i=0;i<strokeMix.pixels.length;i+=4)if(strokeMix.pixels[i+3]===255)mixedColors.add([...strokeMix.pixels.slice(i,i+3)].join(','));
+for(const rgb of ['128,0,0','255,255,238','0,0,255','0,255,0','255,255,0'])assert.ok(mixedColors.has(rgb),`individual CPU pass includes ${rgb}`);
+const warmStroke = await renderLettering({...strokeMixParams,characterStyles:strokeMixParams.characterStyles.map(style=>style.start===2?{...style,strokeColor:'#ff00ff',strokeWidth:12}:style)},{fontLibrary:mixedLibrary,previewOnly:true});
+assert.equal(warmStroke.paths[2].stroke,'#ff00ff');assert.equal(warmStroke.paths[2].strokeWidth,12,'warm shape receives current outline attributes');
+console.log('per-character outlines: inherited/OFF/custom widths and colors, CPU pixels, pass order, max bounds, warm cache OK');
+

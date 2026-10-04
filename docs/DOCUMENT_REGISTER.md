@@ -15,8 +15,22 @@
 
 ## 現行入口と互換入口
 
+- `docs/work/WP-033-raster-project-alpha-roundtrip.md`: CURRENT。通常Rasterの既存PNG保存をcanonical snapshotへ揃える限定契約。共通保存blockのwrite ownerと実Project往復の検証境界を持つ。
+- `docs/ai/WP-033-raster-project-alpha-result.md`: REFERENCE EVIDENCE。担当のPNG採取限定修正と実export関数のmock検証。実Browserの証拠と区別する。
+- `docs/ai/WP-033-raster-project-alpha-audit.md`: REFERENCE EVIDENCE。司令の実56°終点Raster/Export画素差0と吹き出しProject往復、固定hash/未測定の監査。
+
+- `docs/work/WP-030-manga-tools-follow-through.md`: CURRENT。Owner承認の漫画後続の依存順と、書体の情報整理集約の限定write/保存境界/検証。後続段階は開始前に同Cardへ限定契約を追記する。
+
 - `docs/work/WP-027-manga-lettering-workflow.md`: CURRENT。文字パネルの目的別設定・Futaba glass・固定footer・Ctrl+Enter・数値wheel・共通漫画tab即時切替の限定UI契約。WP-025の保存/rendererを変更しない。
 - `docs/work/WP-028-lettering-character-editing.md`: CURRENT。Owner指定の書体集約・4tab・文字別編集・3点サイズ・第二フチ取り。version-1 recipeへoptional属性を追加し、Project/History/確定画素の正本を維持。
+- `docs/work/WP-029-rive-editor-first-path.md`: CURRENT。触れるRive試作編集と新規通常Rasterへの一経路。独立editor/製品hostのwrite owner、iframe protocol、AI可視性、保存とHistory境界を指定。
+- `docs/work/WP-031-rive-editor-operational-entry.md`: CURRENT。新RIG入口のlazy起動/接続/再試行、固定SDKとprocess所有、Vite dev専用bridgeの限定契約。WP030の漫画/書体filesを変更しない。
+- `docs/ai/WP-031-rive-entry-audit.md`: REFERENCE EVIDENCE。司令のhost接続/失敗/復帰監査。担当結果とnative/Browser/Owner受入の階層を分け、実装契約を上書きしない。
+- `docs/ai/WP-031-rive-dev-entry-result.md`: REFERENCE EVIDENCE。専用companion/bridgeの固定cache・所有・HTTP・receipt競合修正の担当証拠。実製品監査は司令reportで区別する。
+- `docs/work/WP-032-rive-direct-bone-edit.md`: CURRENT。一枚PNG/既存End骨のnative直接previewと一回compile、独立gesture/投影module、取消/未確定frame拒否の限定契約。共通renderer/保存を変更しない。
+- `docs/ai/WP-032-rive-bone-editor-result.md`: REFERENCE EVIDENCE。担当の直接編集/native Browser結果と未実測範囲。初報を司令監査・制作受入へ拡張しない。
+- `docs/ai/WP-032-rive-bone-audit.md`: REFERENCE EVIDENCE。司令のnative直接編集/保存再build/PNG/AX/狭幅と通常Raster受渡しの実測。Project再読込の半透明縁差によるHOLD、次の一般Raster保存修正案と未実測を保持する。
+- `docs/ai/WP-029-rive-editor-result.md / WP-029-rive-integration-audit.md`: REFERENCE EVIDENCE。担当の独立native編集検証と司令の実製品Raster/History/Project往復監査。未確認の範囲を区別し、Card/製品コードを上書きしない。
 - `docs/ai/2026-10-04-lettering-character-editing-result.md`: REFERENCE EVIDENCE。WP-028の実装・Browser/renderer/保存回帰と未受入範囲。Card/製品コードを上書きしない。
 - `docs/ai/2026-10-04-manga-lettering-workflow-result.md`: REFERENCE EVIDENCE。WP-027の限定UI実装、Browser/数値behavior/保存回帰の証拠とOwner未受入範囲。Card/製品コードを上書きしない。
 

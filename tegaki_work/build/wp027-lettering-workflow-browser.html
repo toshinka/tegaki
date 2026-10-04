@@ -34,14 +34,15 @@ run.onclick=async()=>{
   input(q('[data-field-number="fontSize"]'),'');check(popup.params.fontSize===75,'入力途中の空欄は保持');
   wheel(q('[data-field-number="fontSize"]'),-100);check(popup.params.fontSize===75,'空欄wheelは値を変えない');
   input(q('[data-field-number="fontSize"]'),'64');check(popup.params.fontSize===64,'直接数値入力');
-  const last=snapshot();q('[data-mode="curve"]').click();check(snapshot()===last,'mode切替はparams不変');
+  q('[data-mode="curve"]').click();check(popup.params.baseline.kind==='straight','新規文字の初回配置線は直線');
+  const last=snapshot();q('[data-mode="whole"]').click();q('[data-mode="curve"]').click();check(snapshot()===last,'初回以降mode切替はparams不変');
   q('[data-role="curve-preset"]').value='wave';q('[data-role="curve-preset"]').dispatchEvent(new win.Event('change',{bubbles:true}));
   const curve=snapshot();q('[data-mode="envelope"]').click();check(snapshot()===curve,'変形へ移動しても配置線保持');
   check(!q('[data-mode-panel="envelope"]').hidden&&q('[data-mode-panel="curve"]').hidden,'modeとcontextを同期');
   q('[data-role="envelope-preset"]').value='points';q('[data-role="envelope-preset"]').dispatchEvent(new win.Event('change',{bubbles:true}));
   check(q('[data-role="envelope-strength"]').hidden&&q('[data-envelope-amount]').disabled,'9点で効かない強さを隠す');
   input(q('[data-field-number="endFontSize"]'),'90');const effects=snapshot();q('[data-mode="whole"]').click();check(snapshot()===effects,'書式へ戻っても両効果とサイズ勾配保持');
-  q('[data-role="placement-details"]').open=true;input(q('[data-placement="rotation"]'),'90');check(Math.abs(popup.params.placement.rotation-Math.PI/2)<1e-9,'回転UI度→保存rad');
+  q('[data-mode="curve"]').click();q('[data-placement-target="whole"]').click();input(q('[data-placement="rotation"]'),'90');check(Math.abs(popup.params.placement.rotation-Math.PI/2)<1e-9,'回転UI度→保存rad');
   wheel(q('[data-placement="rotation"]'),-100);check(Math.abs(popup.params.placement.rotation-91*Math.PI/180)<1e-9,'回転wheel 1度');
   q('[data-mode="curve"]').click();await delay(30);
   const footerTop=q('.lettering-popup__commit').getBoundingClientRect().top;q('.lettering-popup__body').scrollTop=2000;

@@ -14,7 +14,8 @@ for (const [tool, slot] of Object.entries({ pen: 'pen', eraser: 'eraser', 'airbr
 assert.equal(slotOfTool('eyedropper'), null);
 // バケツ枠は 普通/消し/グラデ の三つ(規格違いにならない)
 assert.deepEqual(getSlot('bucket').members.map(m => m.id), ['fill', 'eraser-fill', 'gradient', 'border']);
-assert.deepEqual(getSlot('shape').members.map(m => m.id), ['lasso-fill', 'shape-rect', 'shape-ellipse']);
+assert.deepEqual(getSlot('shape').members.map(m => m.id), ['lasso-fill', 'shape-rect', 'shape-ellipse', 'shape-polygon']);
+assert.equal(slotOfTool('shape-polygon'), 'shape');
 assert.deepEqual(getSlot('select').members.map(m => m.id), ['selection', 'auto-select']);
 
 // 並び: 保存順 + 新しい仲間は末尾 + 消えた仲間は捨てる

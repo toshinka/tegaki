@@ -262,7 +262,8 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/work/WP-0
 WP-020も公開確認前はOwnerの貼付/添付で渡す。worker reportはCard指定時だけ参照する。
 WP-020はBLOCKED。固定nightly sourceの一行serializer修正後もfixture生成が別例外で停止。司令が再現確認し追加patchを打切り。新入口接点調査は完了、保存往復/Browser/製品統合は未実証。次の候補と残る責任はCardのCompletionを読む。
 2026-10-04の設計判断を問う場合のみ: docs/ai/2026-10-04-rig-architecture-reassessment.md [REFERENCE / 外部の評価と描画をまとめて借りる案、Riveを次の技術proof候補へ]
-限定Card: docs/work/WP-026-rive-authoring-browser-proof.md [独立Browser proofの成立範囲と司令監査、製品採用/統合・Owner受入未、現在地はSTATUS/manifest]。結果はdocs/ai/WP-026-rive-proof-result.mdをCard指定時だけ参照。次の通常Raster取込への接続案はCard Completionを読み、自動実行しない。並行境界はdocs/DEVELOPMENT.md「漫画文字とRIG proofの並行導線」。文字/font/WARP/Layer/Project/History/ExportをRIG workerが変更せず、専用proof/cache/port/tabに限定する。安定版Inochi native再buildの先行案は取り下げた。公開確認前はOwner貼付/添付で渡す。必要な質問/Cardでのみ読み、STATUS/TECHNICALの第二正本にしない。
+最新の限定Card: docs/work/WP-033-raster-project-alpha-roundtrip.md [通常Rasterの既存PNG採取だけをcanonical snapshotへ統一、状態はSTATUS/manifest]。実56°終点のProject Raster/Export画素差0は docs/ai/WP-033-raster-project-alpha-audit.md、担当の限定関数検証は同Card Completionから読む。直接編集の先行契約はdocs/work/WP-032-rive-direct-bone-edit.md、そのHOLD履歴/native証拠はdocs/ai/WP-032-rive-bone-audit.md。起動/復帰はWP031、通常Raster入口はWP029、先行native proofはWP026。製品採用/Owner受入と技術実行を区別する。並行境界はdocs/DEVELOPMENT.md「漫画文字とRIG proofの並行導線」。WP033は共通ProjectのPNG採取blockだけの明示例外であり、保存schema/load/Layer/History/rendererを変更しない。文字/fontと既存dirtyを保持。公開確認前はOwner貼付/添付で渡す。STATUS/TECHNICALの第二正本にしない。
+WP-029の成立範囲と未確認はCard Completionからdocs/ai/WP-029-rive-editor-result.md（担当native証拠）とdocs/ai/WP-029-rive-integration-audit.md（司令の実製品接続・監査）へ進む。これらはREFERENCE EVIDENCEで、既定の必読には追加しない。
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/docs/ai/2026-10-03-rig-backend-implementation-proposal.md
 この提案も公開確認前はOwnerの貼付/添付で渡す。既定の必読に追加せず、現在地・技術契約の第二正本にしない。
 START WITH:

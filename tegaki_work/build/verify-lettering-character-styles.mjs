@@ -31,16 +31,26 @@ const params = defaultLetteringParams(); params.text='A😀あ\u3099';
 params.characterStyles=[{start:1,end:3,fontId:'alternate',color:'#123456',size:2,scaleX:-1,scaleY:1,rotation:0.25,offsetX:2,offsetY:-3,envelope:{kind:'skew',amount:0.5,points:null}}];
 params.outerStrokeWidth=4; params.outerStrokeColor='#ffffff'; params.sizeProfile={mode:'three',start:1,mid:2,end:1};
 const raw = {version:1,params,fingerprint};
+Object.assign(params.characterStyles[0], { strokeWidth: 0, strokeColor: '#abcdef', outerStrokeWidth: 6, outerStrokeColor: '#987654' });
 assert.deepEqual(sanitizeLetteringData(raw).params, normalizeLetteringParams(params));
+const savedOutline = sanitizeLetteringData(raw).params.characterStyles[0];
+assert.equal(savedOutline.strokeWidth,0);assert.equal(savedOutline.outerStrokeWidth,6);
+assert.equal(savedOutline.strokeColor,'#abcdef');assert.equal(savedOutline.outerStrokeColor,'#987654','save retains colors as strings');
 for (const mutate of [
     p=>p.outerStrokeWidth=65, p=>p.outerStrokeColor='red', p=>p.sizeProfile.mid=NaN,
     p=>p.characterStyles[0].start=2, p=>p.characterStyles[0].end=4,
     p=>p.characterStyles[0].size=9, p=>p.characterStyles[0].scaleX=0,
     p=>p.characterStyles[0].offsetX=9000, p=>p.characterStyles.push({...p.characterStyles[0]}),
     p=>p.characterStyles[0].envelope.amount=5, p=>p.characterStyles[0].cache={},
+    ...['strokeWidth','outerStrokeWidth'].flatMap(key => [-1,65,NaN,'2',null].map(value => p=>p.characterStyles[0][key]=value)),
+    ...['strokeColor','outerStrokeColor'].flatMap(key => ['red','#fff',null,3].map(value => p=>p.characterStyles[0][key]=value)),
     p=>p.fontKind='system', p=>p.text=null
 ]) { const bad=structuredClone(raw); mutate(bad.params); assert.equal(sanitizeLetteringData(bad),null,'malformed new metadata must reject'); }
 const old = structuredClone(raw); for (const key of ['outerStrokeWidth','outerStrokeColor','sizeProfile','characterStyles']) delete old.params[key];
 assert.ok(sanitizeLetteringData(old), 'old version-1 remains valid');
 assert.deepEqual(applyCharacterStyle('AB',[],0,2,{size:100,offsetX:1e9,scaleY:0,color:'bad'}),[{start:0,end:2,size:8,scaleY:0.01,offsetX:8192}],'UI helpers return bounded sparse attributes');
+const outlined = applyCharacterStyle('A😀B', [], 1, 3, { strokeWidth:0,outerStrokeWidth:64,strokeColor:'#ABCDEF' });
+assert.deepEqual(outlined,[{start:1,end:3,strokeWidth:0,strokeColor:'#abcdef',outerStrokeWidth:64}],'zero is an explicit override, not missing');
+assert.deepEqual(remapCharacterStyles('A😀B','AX😀B',outlined,{start:1,end:1}),[{...outlined[0],start:2,end:4}],'outline follows text insertion');
+assert.deepEqual(applyCharacterStyle('A😀B',outlined,1,3,{strokeWidth:null,strokeColor:null,outerStrokeWidth:null}),[],'inheritance removes outline overrides');
 console.log('verify-lettering-character-styles: UTF16/grapheme, IME/edit range remap, sparse inheritance, three-anchor profile, strict new metadata, legacy recipe OK');

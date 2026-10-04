@@ -550,6 +550,13 @@ export const TEGAKI_KEYMAP = {
             shift: true,
             description: '吹き出し'
         },
+        LETTERING_TOGGLE: {
+            key: 'KeyT',
+            ctrl: false,
+            shift: false,
+            alt: false,
+            description: '漫画文字'
+        },
         FOCUS_LINES_TOGGLE: {
             key: 'KeyF',
             ctrl: false,

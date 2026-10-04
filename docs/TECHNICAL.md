@@ -32,7 +32,7 @@
 
 ## Transform / Motion / WARP / Rig
 
-RIG刷新の進め方（Owner承認、2026-10-03）: 旧系は既存作品用の経路として隔離し、新しい土台で制作動線を作る。新系の初期検証は編集/保存/再読込/出力の接点に絞り、旧・旧々RIGとの全機能一致、自動移植、GUI内部コードの維持を必須にしない。既存Project/History/出力の所有は以下の現行契約のまま。新しい保存schemaやproduction切替は個別の確定Cardで扱う。WP-020は停止済み、現在の独立実行範囲は[WP-026](work/WP-026-rive-authoring-browser-proof.md)。漫画文字との並行write境界は[DEVELOPMENT](DEVELOPMENT.md#漫画文字とrig-proofの並行導線)。外部proofの出力を製品の描画/保存正本へ昇格させない。
+RIG刷新の進め方（Owner承認、2026-10-03）: 旧系は既存作品用の経路として隔離し、新しい土台で制作動線を作る。新系の初期検証は編集/保存/再読込/出力の接点に絞り、旧・旧々RIGとの全機能一致、自動移植、GUI内部コードの維持を必須にしない。既存Project/History/出力の所有は以下の現行契約のまま。新しい保存schemaやproduction切替は個別の確定Cardで扱う。WP-020は停止済み、[WP-026](work/WP-026-rive-authoring-browser-proof.md)の独立proofを経て現在は[WP-029](work/WP-029-rive-editor-first-path.md)の試作入口とRaster受渡し。外部authoringのsource/runtimeをProjectへ保存せず、明示的な1x PNG受渡しだけを既存新Raster追加APIで一Historyにする。外部sceneを製品renderer/保存正本へ昇格させない。漫画文字との並行write境界は[DEVELOPMENT](DEVELOPMENT.md#漫画文字とrig-proofの並行導線)。
 
 - SOURCE変形はpreviewと確定を分離し、確定で一度だけRaster bake。既定Container transformへ戻す。
 - SOURCE Layer Transform中のプレビュー切り出し（V+M Rescue）は、変形プレビューからProject Canvas内の選択矩形だけを新規Raster Layerへ切り出す可逆操作。巨大中間テクスチャの確保を禁止し、切り出し矩形サイズのみを単一Canvas2Dでサンプリングして新規レイヤーを生成、元レイヤーはベースラインへロールバックする。容量上限（16MP/8192px）による確定拒絶時もVセッションを破棄せず保持し、Mキー切り出しへ誘導する。

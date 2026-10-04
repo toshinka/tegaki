@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>新RIG（試作）</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font: 13px/1.45 system-ui, sans-serif;
+      --maroon: #800000;
+      --light-maroon: #9c3835;
+      --cream: #f0e0d6;
+      --paper: #ffffee;
+      --orange: #ff8c42;
+      --green: #397b4a;
+      --red: #a40000;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--maroon); background: var(--paper); }
+    main { width: min(100%, 720px); margin: 0 auto; padding: 14px; }
+    h1 { margin: 0 0 10px; font-size: 18px; }
+    .editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 250px); gap: 12px; align-items: start; min-width: 0; }
+    .editor-grid > * { min-width: 0; }
+    .preview-frame { min-width: 0; min-height: 210px; display: grid; place-items: center; padding: 8px; border: 1px solid var(--light-maroon); background: repeating-conic-gradient(#ead5c9 0 25%, #f8ede7 0 50%) 50% / 20px 20px; }
+    .preview-stage { position: relative; width: min(100%, 620px); max-width: 100%; min-width: 0; line-height: 0; }
+    #preview { display: block; width: 100%; max-width: 100%; height: auto; image-rendering: auto; }
+    #bone-overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+    #bone-overlay[hidden] { display: none !important; }
+    #bone-line { stroke: var(--orange); stroke-width: 2; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; opacity: .9; }
+    #rive-bone-end { fill: var(--paper); stroke: var(--maroon); stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: all; cursor: grab; }
+    #rive-bone-end:hover, #rive-bone-end:focus-visible { fill: #ffd27d; stroke: var(--orange); outline: none; }
+    #rive-bone-end:active { cursor: grabbing; }
+    .controls, .diagnostics { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--light-maroon); background: var(--cream); min-width: 0; }
+    label { display: grid; gap: 3px; font-weight: 650; }
+    input[type="number"], input[type="file"], button { font: inherit; color: var(--maroon); background: var(--paper); border: 1px solid var(--light-maroon); border-radius: 4px; padding: 6px 7px; }
+    input[type="number"], input[type="file"] { min-width: 0; width: 100%; }
+    input[type="range"] { accent-color: var(--orange); width: 100%; }
+    button { cursor: pointer; text-align: left; }
+    button:hover, button:focus-visible { border-color: var(--orange); outline: 2px solid color-mix(in srgb, var(--orange) 40%, transparent); outline-offset: 1px; }
+    button:disabled { cursor: default; opacity: .55; }
+    .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .button-row button { text-align: center; }
+    .section-title { margin: 2px 0 0; font-size: 12px; color: var(--light-maroon); }
+    [role="status"] { min-height: 2.5em; padding: 6px; border-left: 3px solid var(--orange); background: rgba(255,255,255,.45); }
+    .status-error { border-left-color: var(--red) !important; color: var(--red); }
+    .status-ready { border-left-color: var(--green) !important; }
+    .hint { color: #6c4742; font-size: 11px; }
+    #snapshot { margin: 0; max-height: 190px; overflow: auto; white-space: pre-wrap; font: 11px/1.35 ui-monospace, monospace; background: rgba(255,255,255,.6); padding: 6px; }
+    .pixel-inspection { display: grid; gap: 4px; margin-top: 8px; }
+    #pixel-report { margin: 0; max-height: 220px; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; font: 11px/1.35 ui-monospace, monospace; background: rgba(255,255,255,.6); padding: 6px; }
+    .full { grid-column: 1 / -1; }
+    @media (max-width: 620px) { main { padding: 8px; } .editor-grid { grid-template-columns: minmax(0, 1fr); } .full { grid-column: auto; } }
+  </style>
+</head>
+<body>
+  <main id="rive-editor" data-editor-status="loading" data-testid="rive-editor">
+    <h1>新RIG（試作）</h1>
+    <div class="editor-grid">
+      <section class="preview-frame" aria-label="Rive native preview">
+        <div class="preview-stage" id="preview-stage">
+          <canvas id="preview" width="320" height="200" aria-label="Rive native 1x preview" data-testid="rive-preview"></canvas>
+          <svg id="bone-overlay" viewBox="0 0 320 200" role="group" aria-label="End骨の編集overlay" data-testid="rive-bone-overlay" hidden>
+            <line id="bone-line" x1="0" y1="0" x2="0" y2="0" aria-hidden="true"></line>
+            <circle id="rive-bone-end" cx="0" cy="0" r="12" tabindex="0" role="slider" aria-label="End骨の終点角" aria-valuemin="-90" aria-valuemax="90" aria-valuenow="30" data-testid="rive-bone-end"></circle>
+          </svg>
+        </div>
+      </section>
+      <aside class="controls" aria-label="Rive editor controls">
+        <p class="section-title">PNG素材</p>
+        <label>画像を読み込む
+          <input id="image-input" type="file" accept="image/png" data-testid="rive-image-input">
+        </label>
+        <label>終点角（度）
+          <input id="angle" type="number" min="-90" max="90" step="1" value="30" data-testid="rive-angle">
+        </label>
+        <button id="apply" type="button" data-testid="rive-compile">変形を適用</button>
+        <label>スクラブ <output id="progress-value">0.00</output>
+          <input id="progress" type="range" min="0" max="1" step="0.01" value="0" data-testid="rive-progress">
+        </label>
+        <p class="section-title">保存</p>
+        <div class="button-row">
+          <button id="save" type="button" data-testid="rive-save">保存</button>
+          <button id="reopen" type="button" data-testid="rive-reopen">再読込</button>
+          <button id="cancel" type="button" data-testid="rive-cancel">取消</button>
+          <button id="save-frame" type="button" data-testid="rive-save-frame">PNG保存</button>
+        </div>
+        <p id="status" role="status" aria-live="polite" data-editor-status="loading">読み込み中…</p>
+        <p class="hint">骨を動かす → 保存 → 現在フレームを追加。明示保存したsource＋画像だけが保存正本です。骨の補助線はPNG/native frameへ混入しません。</p>
+      </aside>
+      <section class="diagnostics full" aria-label="AI snapshot">
+        <details data-testid="rive-snapshot-details">
+          <summary class="section-title">状態 snapshot</summary>
+          <pre id="snapshot" data-testid="rive-snapshot" aria-live="polite">{}</pre>
+          <div class="pixel-inspection" aria-label="native画素診断">
+            <button id="pixel-inspect" type="button" data-testid="rive-pixel-inspect" aria-controls="pixel-report">native画素を記録</button>
+            <pre id="pixel-report" data-testid="rive-pixel-report" aria-live="polite">native画素診断は未取得です。</pre>
+          </div>
+        </details>
+      </section>
+    </div>
+  </main>
+  <script type="module" src="/editor.js?v=wp032-1"></script>
+</body>
+</html>
+

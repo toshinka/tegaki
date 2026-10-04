@@ -31,11 +31,14 @@ import { defaultLetteringParams, normalizeLetteringParams } from '../system/lett
 import { renderLettering as defaultRenderLettering } from '../system/lettering-vector-renderer.js';
 import { FONT_SAMPLE_OPTIONS, fontLibrary, sortBundledFonts } from '../system/font-library.js';
 import { FontComparison } from './font-comparison.js';
+import { FontLibraryManagement } from './font-library-management.js';
 import { FontTree } from './font-tree.js';
 import { LetteringOverlay } from './lettering-overlay.js';
 import { mountMangaTabs, noteMangaTabShown } from './manga-tabs.js';
+import { isMangaInputPrimary } from './manga-input-focus.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { attachNumericField } from './numeric-field.js';
+import { UI_ICONS } from './ui-icons.js';
 import { segmentLetteringText, characterStyleAt, applyCharacterStyle, remapCharacterStyles } from '../system/lettering-character-styles.js';
 import { resolveDirectionalTransformDragMode, applyDirectionalTransformDrag } from '../system/transform-math.js';
 
@@ -54,6 +57,7 @@ const MAX_CURVE_NODES = 64;
 const CURVE_KINDS = Object.freeze([
     ['none', 'なし'],
     ['straight', '直線'],
+    ['arc', '半弧'],
     ['wave', '波'],
     ['ellipse', '楕円'],
     ['polyline', '折れ線'],
@@ -85,6 +89,10 @@ const CHARACTER_FIELDS = Object.freeze([
     { key: 'offsetY', label: '線から離す', min: -8192, max: 8192, step: 1, unit: 'px' },
     { key: 'scaleX', label: '横拡縮', min: -20, max: 20, step: 0.05, unit: '倍' },
     { key: 'scaleY', label: '縦拡縮', min: -20, max: 20, step: 0.05, unit: '倍' }
+]);
+const CHARACTER_OUTLINES = Object.freeze([
+    { label: '第一', width: 'strokeWidth', color: 'strokeColor' },
+    { label: '第二', width: 'outerStrokeWidth', color: 'outerStrokeColor' }
 ]);
 const PLACEMENT_FIELDS = Object.freeze([
     { key: 'x', label: 'X', min: -8192, max: 16384, step: 1, unit: 'px' },
@@ -153,6 +161,8 @@ export class LetteringPopup {
         this._fontTarget = 'whole';
         this._informationFontValue = '';
         this._transformInput = false;
+        this._curveEntryInitialized = false;
+        this._characterOutlineView = false;
         this._spacePressed = false;
         this.grid = { enabled: false, size: DEFAULT_GRID };
         this.snap = true;
@@ -194,7 +204,7 @@ export class LetteringPopup {
         };
         this._blurInput = () => { this._spacePressed = false; this._transformInput = false; this._endDrag({ cancel: true }); this.overlay?.svg?.classList.remove('is-camera'); };
         this._canvasWheel = event => {
-            if (!this.isVisible || !this._transformInput || this._spacePressed || event.ctrlKey || event.metaKey || event.altKey) return;
+            if (!this.isVisible || !isMangaInputPrimary('lettering') || !this._transformInput || this._spacePressed || event.ctrlKey || event.metaKey || event.altKey) return;
             if (!event.target?.closest?.('canvas,.lettering-overlay')) return;
             if (!Number.isFinite(event.deltaY) || !event.deltaY) return;
             event.preventDefault(); event.stopImmediatePropagation();
@@ -312,8 +322,7 @@ export class LetteringPopup {
                     <button type="button" class="pl-select pl-font-trigger" data-role="font-trigger" aria-haspopup="tree" aria-expanded="false" aria-controls="${FONT_TREE_ID}">フォントを選ぶ</button>
                     <div class="pl-font-tree" id="${FONT_TREE_ID}" data-role="font-tree" hidden></div>
                 </div>
-                <button type="button" class="pl-btn pl-btn--small pl-font-compare-toggle" data-role="font-comparison-toggle" aria-expanded="false" aria-controls="${FONT_COMPARISON_ID}" aria-label="フォント比較を開く" title="フォント比較を開く">比較</button>
-                <button type="button" class="pl-btn pl-btn--small" data-action="font-info" aria-label="フォント情報・整理を開く">情報</button>
+                <button type="button" class="pl-btn pl-btn--small pl-font-compare-toggle" data-role="font-comparison-toggle" aria-expanded="false" aria-controls="${FONT_COMPARISON_ID}" aria-label="書体の比較・情報・整理を開く" title="書体の比較・情報・整理を開く">書体</button>
             </div>
             <section class="pl-font-comparison" id="${FONT_COMPARISON_ID}" data-role="font-comparison" hidden></section>
             <details class="pl-details pl-font-card" data-role="font-card">
@@ -406,20 +415,31 @@ export class LetteringPopup {
         panels[0].append(root.querySelector('.lettering-popup__field-grid'), colorRow);
         colorRow.querySelector('.pl-label').textContent = '第一 / 第二フチの色';
         const placementTarget = document.createElement('div');
-        placementTarget.className = 'pl-row';
-        placementTarget.innerHTML = '<span class="pl-label">操作対象</span><button type="button" class="pl-chip" data-placement-target="whole">全体</button><button type="button" class="pl-chip" data-placement-target="curve">配置線</button>';
-        panels[1].append(placementTarget, panels[0].querySelector('[data-field-row="tracking"]'), panels[0].querySelector('[data-field-row="lineHeight"]'), root.querySelector('[data-role="placement-details"]'));
-        const flips = document.createElement('div');
-        flips.className = 'pl-actions';
-        flips.innerHTML = '<button type="button" class="pl-btn" data-action="flip-horizontal">水平反転</button><button type="button" class="pl-btn" data-action="flip-vertical">垂直反転</button>';
-        panels[1].append(flips);
+        placementTarget.className = 'pl-row lettering-popup__placement-targets';
+        placementTarget.setAttribute('role', 'group');
+        placementTarget.setAttribute('aria-label', '配置の操作対象と配置線の形');
+        placementTarget.innerHTML = '<button type="button" class="pl-chip" data-placement-target="whole" title="文字全体の配置・回転・拡縮">全体</button><button type="button" class="pl-chip" data-placement-target="curve" title="配置線の点を編集">配置線</button><label class="lettering-popup__curve-shape"><span>形</span></label>';
+        placementTarget.querySelector('label').append(root.querySelector('[data-role="curve-preset"]'));
+        const curveActions = root.querySelector('.lettering-popup__curve-actions');
+        const iconButton = (action, icon, title) => `<button type="button" class="pl-btn lettering-popup__icon-button" data-action="${action}" title="${title}" aria-label="${title}">${UI_ICONS[icon]}</button>`;
+        curveActions.innerHTML = `<span class="pl-label">選択点</span>${iconButton('curve-add', 'plus', '配置線に点を追加')}${iconButton('curve-delete', 'trash', '選択点を削除')}${iconButton('curve-smooth', 'curveSmooth', '選択点を滑らかにする')}`;
+        const spacing = document.createElement('div');
+        spacing.className = 'lettering-popup__spacing-grid';
+        for (const key of ['tracking', 'lineHeight']) {
+            const row = panels[0].querySelector(`[data-field-row="${key}"]`);
+            // Retain range as the existing numeric adapter's canonical input,
+            // but expose the small wheel-enabled number instead of a slider.
+            row.querySelector('input[type="range"]').hidden = true;
+            spacing.append(row);
+        }
+        panels[1].append(placementTarget, curveActions, spacing, root.querySelector('[data-role="placement-details"]'));
+        root.querySelector('[data-role="curve-details"]').remove();
         const unwrapDetails = (role, panel) => {
             const details = root.querySelector(`[data-role="${role}"]`);
             details.querySelector('summary').remove();
             while (details.firstChild) panel.append(details.firstChild);
             details.remove();
         };
-        unwrapDetails('curve-details', panels[1]);
         unwrapDetails('envelope-details', panels[2]);
         const sizeTitle = document.createElement('div');
         sizeTitle.className = 'lettering-popup__section-title';
@@ -433,7 +453,39 @@ export class LetteringPopup {
         profile.innerHTML = `<label class="pl-row"><span class="pl-label">変化</span><select class="pl-select" data-role="size-profile"><option value="legacy">従来の末尾サイズ</option><option value="uniform">均一</option><option value="ends">先頭 → 末尾</option><option value="three">先頭 → 中央 → 末尾</option></select></label><div class="lettering-popup__profile-values">${[['start','先頭'],['mid','中央'],['end','末尾']].map(([key,label]) => `<label class="pl-row" data-profile-row="${key}"><span>${label}</span><input type="number" class="pl-text" data-profile="${key}" min="0.125" max="8" step="0.025" aria-label="${label}サイズ倍率"><span>倍</span><output data-profile-px="${key}"></output></label>`).join('')}</div>`;
         panels[2].append(profile);
         sizeHint.dataset.role = 'legacy-size-hint';
-        panels[3].innerHTML = `<div class="lettering-popup__character-selection" data-role="character-status" aria-live="polite">キャンバスか下の文字を選択</div><div class="lettering-popup__character-strip" data-role="character-strip" role="group" aria-label="文字の選択"></div><div data-role="character-inspector"><div class="pl-row"><span class="pl-label">書体</span><button type="button" class="pl-btn" data-action="character-font">標準を継承</button><button type="button" class="pl-btn" data-action="character-font-clear" aria-label="選択文字の書体指定を解除">解除</button></div><label class="pl-row"><span class="pl-label">文字色</span><input type="color" class="pl-color" data-role="character-color" aria-label="選択文字の色"><button type="button" class="pl-btn" data-action="character-color-clear">継承</button></label>${CHARACTER_FIELDS.map(spec => `<label class="lettering-popup__character-field"><span>${spec.label}</span><input type="number" class="pl-text" data-character="${spec.key}" min="${spec.min}" max="${spec.max}" step="${spec.step}" aria-label="選択文字 ${spec.label}"><span>${spec.unit}</span></label>`).join('')}<label class="pl-row"><span class="pl-label">局所変形</span><select class="pl-select" data-role="character-envelope">${envelopeOptions.replace('<option value="outward">外へ膨らむ</option>','').replace('<option value="points">9点</option>','')}</select></label><label class="lettering-popup__character-field"><span>強さ</span><input type="number" class="pl-text" data-role="character-envelope-amount" min="-1" max="1" step="0.01" aria-label="選択文字の変形の強さ"><span></span></label><div class="pl-actions"><button type="button" class="pl-btn" data-action="character-reset">個別指定を全て解除</button><button type="button" class="pl-btn" data-action="character-flip-horizontal">水平反転</button><button type="button" class="pl-btn" data-action="character-flip-vertical">垂直反転</button></div></div>`;
+        panels[3].innerHTML = `
+            <div class="lettering-popup__character-selection" data-role="character-status" aria-live="polite">キャンバスか下の文字を選択</div>
+            <div class="lettering-popup__character-strip" data-role="character-strip" role="group" aria-label="文字の選択"></div>
+            <div data-role="character-inspector">
+                <div class="pl-row lettering-popup__character-appearance">
+                    <span class="pl-label">書体</span><button type="button" class="pl-btn" data-action="character-font" title="選択文字の書体を比較・変更">標準を継承</button>
+                    ${iconButton('character-font-clear', 'rotateCcw', '選択文字の書体指定を解除')}
+                    <input type="color" class="pl-color" data-role="character-color" title="選択文字の色" aria-label="選択文字の色">
+                    ${iconButton('character-color-clear', 'rotateCcw', '選択文字の色を標準に戻す')}
+                    <button type="button" class="pl-chip" data-action="character-outlines" aria-pressed="false" aria-controls="lettering-character-outlines" title="数値領域を第一・第二フチの設定に切り替え">フチ</button>
+                </div>
+                <div class="lettering-popup__character-grid">${CHARACTER_FIELDS.map(spec => `<label class="lettering-popup__character-field"><span title="${spec.label}">${spec.label}</span><input type="number" class="pl-text" data-character="${spec.key}" min="${spec.min}" max="${spec.max}" step="${spec.step}" aria-label="選択文字 ${spec.label}"><span>${spec.unit}</span></label>`).join('')}</div>
+                <div class="pl-row lettering-popup__character-warp"><span class="pl-label">局所変形</span><select class="pl-select" data-role="character-envelope" aria-label="選択文字の局所変形">${envelopeOptions.replace('<option value="outward">外へ膨らむ</option>','').replace('<option value="points">9点</option>','')}</select><input type="number" class="pl-text" data-role="character-envelope-amount" min="-1" max="1" step="0.01" title="選択文字の変形の強さ" aria-label="選択文字の変形の強さ"></div>
+                <div class="pl-actions lettering-popup__character-actions">${iconButton('character-reset', 'rotateCcw', '個別指定を全て解除')}${iconButton('character-flip-horizontal', 'flipHorizontal', '選択文字を水平反転')}${iconButton('character-flip-vertical', 'flipVertical', '選択文字を垂直反転')}</div>
+            </div>`;
+        const selectionTools = document.createElement('div');
+        selectionTools.className = 'lettering-popup__character-selection-tools';
+        const strip = panels[3].querySelector('[data-role="character-strip"]');
+        strip.before(selectionTools);
+        selectionTools.append(strip, panels[3].querySelector('.lettering-popup__character-actions'));
+        const geometry = document.createElement('div');
+        geometry.dataset.role = 'character-geometry';
+        const characterGrid = panels[3].querySelector('.lettering-popup__character-grid');
+        characterGrid.before(geometry);
+        geometry.append(characterGrid, panels[3].querySelector('.lettering-popup__character-warp'));
+        const outlines = document.createElement('div');
+        outlines.id = 'lettering-character-outlines';
+        outlines.dataset.role = 'character-outlines';
+        outlines.hidden = true;
+        outlines.setAttribute('role', 'group');
+        outlines.setAttribute('aria-label', '選択文字のフチ');
+        outlines.innerHTML = CHARACTER_OUTLINES.map(spec => `<div class="lettering-popup__character-outline-row"><span>${spec.label}</span><select class="pl-select" data-character-outline-mode="${spec.width}" aria-label="選択文字 ${spec.label}フチの設定"><option value="inherit">標準</option><option value="off">なし</option><option value="custom">個別</option></select><input type="number" class="pl-text" data-character-outline-width="${spec.width}" min="0" max="64" step="0.5" aria-label="選択文字 ${spec.label}フチの${spec.width === 'strokeWidth' ? '太さ' : '追加厚さ'}" title="${spec.label}フチの${spec.width === 'strokeWidth' ? '太さ' : '外側に追加する厚さ'}"><span class="pl-unit">px</span><input type="color" class="pl-color" data-character-outline-color="${spec.color}" aria-label="選択文字 ${spec.label}フチの色" title="${spec.label}フチの色"></div>`).join('') + '<p class="pl-hint lettering-popup__outline-hint">標準を継承／なし／個別の太さ・色。<br>第二は第一の外側に追加する厚さです。</p>';
+        geometry.after(outlines);
         body.append(root.querySelector('.lettering-popup__editor-options'));
         mode.after(body);
         root.querySelectorAll(':scope > .pl-sep').forEach(el => el.remove());
@@ -494,8 +546,8 @@ export class LetteringPopup {
             onCommit: (row) => this._onComparisonFontCommitted(row),
             onClose: () => {
                 this.elements.fontComparisonToggle?.setAttribute('aria-expanded', 'false');
-                this.elements.fontComparisonToggle?.setAttribute('aria-label', 'フォント比較を開く');
-                this.elements.fontComparisonToggle?.setAttribute('title', 'フォント比較を開く');
+                this.elements.fontComparisonToggle?.setAttribute('aria-label', '書体の比較・情報・整理を開く');
+                this.elements.fontComparisonToggle?.setAttribute('title', '書体の比較・情報・整理を開く');
                 this.elements.fontComparisonToggle?.focus?.();
             }
         });
@@ -504,6 +556,7 @@ export class LetteringPopup {
         this.fontComparison.anchor = this.popup;
         this._bind();
         this.fontComparison.attachInformation?.(this.elements.fontCard);
+        this.fontManagement = new FontLibraryManagement({ library: this.fonts, host: this.fontComparison.refs.informationHost });
         this._renderFontOptions();
         this._renderFontTree();
         this._renderFontComparison();
@@ -549,6 +602,16 @@ export class LetteringPopup {
             this._numericCleanups.push(attachNumericField({ range: root.querySelector(`[data-field="${input.dataset.fieldNumber}"]`), numberInput: input }));
         });
         root.querySelectorAll('[data-color]').forEach(input => input.addEventListener('input', (event) => this._setParams({ ...this.params, [event.target.dataset.color]: event.target.value })));
+        root.querySelectorAll('[data-character-outline-mode]').forEach(input => input.addEventListener('change', () => this._setCharacterOutlineMode(input.dataset.characterOutlineMode, input.value)));
+        root.querySelectorAll('[data-character-outline-width]').forEach(input => {
+            input.addEventListener('input', () => {
+                if (input.value === '' || !Number.isFinite(input.valueAsNumber)) return;
+                this._patchCharacters({ [input.dataset.characterOutlineWidth]: input.valueAsNumber });
+            });
+            ['keydown', 'keyup'].forEach(type => input.addEventListener(type, stopEditorKey));
+            this._numericCleanups.push(attachNumericField({ numberInput: input }));
+        });
+        root.querySelectorAll('[data-character-outline-color]').forEach(input => input.addEventListener('input', () => this._patchCharacters({ [input.dataset.characterOutlineColor]: input.value })));
         root.querySelectorAll('[data-placement]').forEach(input => {
             input.addEventListener('input', () => {
                 if (input.value === '' || !Number.isFinite(input.valueAsNumber)) return;
@@ -558,7 +621,10 @@ export class LetteringPopup {
             ['keydown', 'keyup'].forEach(type => input.addEventListener(type, stopEditorKey));
             this._numericCleanups.push(attachNumericField({ numberInput: input }));
         });
-        this.elements.curvePreset.addEventListener('change', () => this._setCurvePreset(this.elements.curvePreset.value));
+        this.elements.curvePreset.addEventListener('change', () => {
+            this._setCurvePreset(this.elements.curvePreset.value);
+            this.placementTarget = 'curve'; this._setMode('curve');
+        });
         this.elements.envelopePreset.addEventListener('change', () => this._setEnvelopePreset(this.elements.envelopePreset.value));
         this.elements.envelopeAmount.addEventListener('input', () => this._setEnvelopeAmount(this.elements.envelopeAmount.value));
         this._numericCleanups.push(attachNumericField({ range: this.elements.envelopeAmount, numberInput: this.elements.envelopeAmountNumber }));
@@ -696,18 +762,26 @@ export class LetteringPopup {
         if (action === 'curve-delete') return this._deleteSelectedCurveNode();
         if (action === 'curve-smooth') return this._toggleSelectedCurveNodeSmooth();
         if (action === 'font-primary') return;
-        if (action === 'font-info') { this._toggleFontComparison(true); this.fontComparison?.setMode?.('information'); return; }
         if (action === 'character-font') return this._openCharacterFonts();
         if (action === 'character-font-clear') return this._patchCharacters({ fontId: null });
         if (action === 'character-color-clear') return this._patchCharacters({ color: null });
+        if (action === 'character-outlines') {
+            this._characterOutlineView = !this._characterOutlineView;
+            this._syncCharacterControls();
+            return;
+        }
         if (action === 'character-reset') {
-            return this._patchCharacters(Object.fromEntries(['fontId', 'color', 'size', 'rotation', 'scaleX', 'scaleY', 'offsetX', 'offsetY', 'envelope'].map(key => [key, null])));
+            return this._patchCharacters(Object.fromEntries(['fontId', 'color', 'size', 'rotation', 'scaleX', 'scaleY', 'offsetX', 'offsetY', 'envelope', 'strokeWidth', 'strokeColor', 'outerStrokeWidth', 'outerStrokeColor'].map(key => [key, null])));
         }
         if (action === 'flip-horizontal' || action === 'flip-vertical') return this._transformDraft({ flip: action.endsWith('horizontal') ? 'x' : 'y' }, 'whole');
         if (action === 'character-flip-horizontal' || action === 'character-flip-vertical') return this._transformDraft({ flip: action.endsWith('horizontal') ? 'x' : 'y' }, 'characters');
     }
 
     _setMode(mode) {
+        if (mode === 'curve' && this.placementTarget === 'curve' && !this._curveEntryInitialized) {
+            this._curveEntryInitialized = true;
+            if (!this.editing && this.params.fontKind !== 'system' && this.params.baseline?.kind === 'none') this._setCurvePreset('straight');
+        }
         if (!['whole', 'curve', 'envelope', 'characters'].includes(mode)) return;
         if (mode !== this.activeTab) this.popup.querySelector('.lettering-popup__body').scrollTop = 0;
         this.activeTab = mode;
@@ -758,6 +832,7 @@ export class LetteringPopup {
 
     _setCurvePreset(kind) {
         if (!CURVE_KINDS.some(item => item[0] === kind)) return;
+        this._curveEntryInitialized = true;
         const current = this.params.baseline || { kind: 'none', path: { closed: false, nodes: [] } };
         const result = this._activeResult();
         const size = result?.envelopeBounds || result?.localBounds || { width: 240, height: 80 };
@@ -823,7 +898,20 @@ export class LetteringPopup {
         this._setParams({ ...base, characterStyles: styles }, { recordUndo });
     }
 
+    _setCharacterOutlineMode(widthKey, mode) {
+        const spec = CHARACTER_OUTLINES.find(item => item.width === widthKey);
+        if (!spec || !this.characterSelection || !['inherit', 'off', 'custom'].includes(mode)) return;
+        const style = characterStyleAt(this.params.characterStyles || [], this.characterSelection.start) || {};
+        if (mode === 'inherit') return this._patchCharacters({ [spec.width]: null, [spec.color]: null });
+        if (mode === 'off') return this._patchCharacters({ [spec.width]: 0, [spec.color]: null });
+        this._patchCharacters({ [spec.width]: style[spec.width] > 0 ? style[spec.width] : this.params[spec.width] > 0 ? this.params[spec.width] : 3,
+            [spec.color]: style[spec.color] || this.params[spec.color] });
+    }
+
     _syncCharacterControls() {
+        this.popup.querySelector('[data-role="character-geometry"]').hidden = this._characterOutlineView;
+        this.popup.querySelector('[data-role="character-outlines"]').hidden = !this._characterOutlineView;
+        this._press(this.popup.querySelector('[data-action="character-outlines"]'), this._characterOutlineView);
         const strip = this.popup.querySelector('[data-role="character-strip"]');
         const range = this.characterSelection;
         if (this._characterStripText !== this.params.text) {
@@ -843,6 +931,8 @@ export class LetteringPopup {
         const status = this.popup.querySelector('[data-role="character-status"]');
         const label = range ? this.params.text.slice(range.start, range.end).replace(/\n/g, ' / ') : '';
         status.textContent = range ? `選択:「${label.slice(0, 40)}」` : 'キャンバスか下の文字を選択（Shiftで複数）';
+        status.title = range ? `選択:「${label}」` : status.textContent;
+        this.popup.querySelectorAll('.lettering-popup__character-actions button').forEach(button => { button.disabled = !range; });
         const inspector = this.popup.querySelector('[data-role="character-inspector"]');
         inspector.querySelectorAll('input,select,button').forEach(input => { input.disabled = !range; });
         if (!range) return;
@@ -854,6 +944,14 @@ export class LetteringPopup {
         for (const spec of CHARACTER_FIELDS) {
             const value = style[spec.key] ?? (['size', 'scaleX', 'scaleY'].includes(spec.key) ? 1 : 0);
             set(`[data-character="${spec.key}"]`, spec.key === 'rotation' ? Number((value * 180 / Math.PI).toFixed(2)) : value);
+        }
+        for (const spec of CHARACTER_OUTLINES) {
+            const mode = !Object.hasOwn(style, spec.width) && !Object.hasOwn(style, spec.color) ? 'inherit' : style[spec.width] === 0 ? 'off' : 'custom';
+            set(`[data-character-outline-mode="${spec.width}"]`, mode);
+            set(`[data-character-outline-width="${spec.width}"]`, style[spec.width] ?? this.params[spec.width] ?? 0);
+            set(`[data-character-outline-color="${spec.color}"]`, style[spec.color] || this.params[spec.color]);
+            inspector.querySelector(`[data-character-outline-width="${spec.width}"]`).disabled = mode !== 'custom';
+            inspector.querySelector(`[data-character-outline-color="${spec.color}"]`).disabled = mode !== 'custom';
         }
         set('[data-role="character-color"]', style.color || this.params.color);
         set('[data-role="character-envelope"]', style.envelope?.kind || 'none');
@@ -960,7 +1058,7 @@ export class LetteringPopup {
             if (!event.repeat) void this.commitAndClose();
             return true;
         }
-        if (event.ctrlKey || event.metaKey || event.altKey || this._spacePressed) return false;
+        if (event.ctrlKey || event.metaKey || event.altKey || this._spacePressed || !isMangaInputPrimary('lettering')) return false;
         if (key === 'v') {
             if (event.repeat) return true;
             this._transformInput = !this._transformInput;
@@ -1103,6 +1201,9 @@ export class LetteringPopup {
         this.popup.querySelectorAll('[data-mode]').forEach(button => this._press(button, button.dataset.mode === this.activeTab));
         this.popup.querySelectorAll('[data-mode-panel]').forEach(panel => { panel.hidden = panel.dataset.modePanel !== this.activeTab; });
         this.popup.querySelectorAll('[data-placement-target]').forEach(button => this._press(button, button.dataset.placementTarget === this.placementTarget));
+        this.elements.placementDetails.hidden = this.placementTarget !== 'whole';
+        if (this.placementTarget === 'whole') this.elements.placementDetails.open = true;
+        this.popup.querySelector('.lettering-popup__curve-actions').hidden = this.placementTarget !== 'curve';
         this.popup.querySelector('[data-mode="curve"]').classList.toggle('has-effect', p.baseline?.kind !== 'none');
         this.popup.querySelector('[data-mode="envelope"]').classList.toggle('has-effect', p.envelope?.kind !== 'none' || p.endFontSize != null || !!p.sizeProfile);
         this.popup.querySelector('[data-mode="characters"]').classList.toggle('has-effect', !!p.characterStyles?.length);
@@ -1117,6 +1218,11 @@ export class LetteringPopup {
         const curveEnabled = p.baseline?.kind !== 'none';
         this.popup.querySelector('[data-action="curve-add"]').disabled = !curveEnabled;
         for (const action of ['curve-delete', 'curve-smooth']) this.popup.querySelector(`[data-action="${action}"]`).disabled = !curveEnabled || !this.selectedNodeId;
+        const selectedNode = p.baseline?.path?.nodes?.find(node => node.id === this.selectedNodeId);
+        const smooth = this.popup.querySelector('[data-action="curve-smooth"]');
+        const smoothLabel = selectedNode?.smooth ? '選択点を角にする' : '選択点を滑らかにする';
+        smooth.innerHTML = selectedNode?.smooth ? UI_ICONS.curveCorner : UI_ICONS.curveSmooth;
+        smooth.title = smoothLabel; smooth.setAttribute('aria-label', smoothLabel);
         setValue('[data-role="curve-preset"]', p.baseline?.kind || 'none');
         setValue('[data-role="envelope-preset"]', this._outwardPreset ? 'outward' : p.envelope?.kind || 'none');
         const amount = finite(p.envelope?.amount, 0);
@@ -1622,15 +1728,14 @@ export class LetteringPopup {
         if (open) {
             this._fontTarget = 'whole';
             this._informationFontValue = this.elements.fontSelect.value;
-            this.fontComparison?.setMode?.('samples');
             this.fontComparison?.setTargetLabel?.('文字全体の標準書体');
             this.fontComparison?.setCommittedKey(this._selectedTreeKey());
             this._renderFontDetails();
         }
         this.fontComparison?.setOpen(open);
         this.elements.fontComparisonToggle.setAttribute('aria-expanded', String(open));
-        this.elements.fontComparisonToggle.setAttribute('aria-label', open ? 'フォント比較を閉じる' : 'フォント比較を開く');
-        this.elements.fontComparisonToggle.setAttribute('title', open ? 'フォント比較を閉じる' : 'フォント比較を開く');
+        this.elements.fontComparisonToggle.setAttribute('aria-label', open ? '書体の比較・情報・整理を閉じる' : '書体の比較・情報・整理を開く');
+        this.elements.fontComparisonToggle.setAttribute('title', open ? '書体の比較・情報・整理を閉じる' : '書体の比較・情報・整理を開く');
     }
 
     _renderFontTree() {
@@ -1882,6 +1987,7 @@ export class LetteringPopup {
             return result || { ok: false };
         }
         this.editing = { layerId: result.layerId || null };
+        this._curveEntryInitialized = true;
         const changedDuringCommit = committedRevision !== this._paramsRevision;
         this._sessionBaseline = clone(params);
         if (!changedDuringCommit) this._sessionUndo = [];
@@ -1966,7 +2072,10 @@ export class LetteringPopup {
         this.editing = null;
         this.mode = 'whole';
         this.activeTab = 'whole'; this.characterSelection = null;
+        this._curveEntryInitialized = false;
         this._informationFontValue = ''; this._fontTarget = 'whole'; this._profileChoice = null; this._outwardPreset = false;
+        this._characterOutlineView = false;
+        this.placementTarget = 'curve';
         this.selectedNodeId = '';
         this.selectedEnvelopeIndex = -1;
         this._sessionUndo = [];
@@ -2085,6 +2194,7 @@ export class LetteringPopup {
         this.popupDragCleanup = null;
         this._offFonts?.();
         this.eventBus?.off?.('layer:activated', this._layerListener);
+        this.fontManagement?.destroy();
         this.fontComparison?.destroy?.();
         // FontComparison mounts its fixed host beside the popup; remove that
         // host explicitly because it is no longer a child of this.popup.

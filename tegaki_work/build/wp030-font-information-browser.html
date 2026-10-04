@@ -1,0 +1,60 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>WP030 情報・整理集約</title>
+<style>body{background:#ffffee;color:#800000;font:12px system-ui}iframe{width:1280px;height:720px;border:1px solid #b8706b}pre{white-space:pre-wrap}</style>
+<button id="run" disabled>管理操作を検証</button><span id="state">製品起動中</span><pre id="output"></pre><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+const frame=document.querySelector('#product'),out=document.querySelector('#output'),state=document.querySelector('#state');
+const delay=ms=>new Promise(r=>setTimeout(r,ms)),check=(ok,label)=>{if(!ok)throw Error(label);out.textContent+='PASS '+label+'\n';};
+let core;for(let i=0;i<200;i++){core=frame.contentWindow?.coreEngine;if(core?.popupManager?.get('lettering')?.isReady())break;await delay(100);}
+const win=frame.contentWindow,lettering=core.popupManager.get('lettering'),balloon=core.popupManager.get('balloon');
+const manager=lettering.fontManagement,library=lettering.fonts;
+state.textContent='検証可能';document.querySelector('#run').disabled=false;
+document.querySelector('#run').onclick=async()=>{
+ document.querySelector('#run').disabled=true;out.textContent='';state.textContent='実行中';
+ const originalOrg=library.getOrganization();let folderId,importedId;
+ const before=JSON.stringify(lettering.params),beforeBalloon=JSON.stringify(balloon.params),historyCount=core.history.stack.length;
+ try{
+  check(!win.document.querySelector('.font-library-entry')&&!core.fontLibraryWindow,'画面右下の書体入口を撤去');
+  for(const popup of [lettering,balloon]) check(popup.elements.fontComparisonToggle.textContent.trim()==='書体'&&!popup.popup.querySelector('[data-action="font-info"],[data-role="font-information-toggle"]'),'書体入口は一つ');
+  const host=balloon.fontComparison.refs.informationHost;
+  check(!balloon.popup.querySelector('[data-role="font-manager"]')&&host.querySelector('[data-role="font-manager"]')&&host.querySelector('[data-role="font-organization"]'),'吹き出し管理と表示分類を情報・整理へ移動');
+  check(host.querySelector('[data-role="font-manager"]').open&&host.querySelector('[data-role="font-organization"]').open&&manager.element.open,'管理・分類は初期展開');
+  check(!balloon.popup.querySelector('[data-role="overlay-toggle"]')&&balloon.showOverlay,'Canvas操作の不要な切替を撤去');
+  const oldPrefs=Object.keys(win.localStorage).filter(k=>/balloon/i.test(k)).map(k=>[k,win.localStorage.getItem(k)]);
+  let exercised=false;
+  try{
+   balloon._persist();
+   for(const k of Object.keys(win.localStorage).filter(k=>/balloon/i.test(k))){let data;try{data=JSON.parse(win.localStorage.getItem(k));}catch{continue;}if(data?.params){win.localStorage.setItem(k,JSON.stringify({...data,showOverlay:false,previewOpen:false}));exercised=true;}}
+   balloon._restore();check(exercised&&balloon.showOverlay&&balloon.previewOpen===false,'旧overlay OFFでもCanvasを維持・previewは独立');
+  }finally{for(const k of Object.keys(win.localStorage).filter(k=>/balloon/i.test(k)))win.localStorage.removeItem(k);for(const [k,value] of oldPrefs)win.localStorage.setItem(k,value);balloon._restore();}
+  core.popupManager.show('lettering');lettering.elements.fontComparisonToggle.click();lettering.fontComparison.refs.tabs.find(tab=>tab.dataset.mode==='information').click();
+  check(lettering.fontComparison.isOpen()&&!lettering.fontComparison.refs.information.hidden,'漫画文字の情報から管理へ到達');
+  manager.element.open=true;await manager.refresh();
+  manager.refs.name.value='WP030 集約検証';manager.element.querySelector('[data-action="add"]').click();await delay(150);await manager.refresh();folderId=manager.folderId;
+  check(library.getOrganization().folders.some(f=>f.id===folderId),'情報・整理内の分類作成');
+  manager.refs.name.value='WP030 改名';await manager._action('rename');check(library.getOrganization().folders.find(f=>f.id===folderId).label==='WP030 改名','分類改名');
+  const source=(await library.listBundledFonts()).find(f=>f.external),loaded=await library.ensureLoaded(source.id);
+  const prior=new Set((await library.listFonts()).map(f=>f.id));
+  const transfer=new win.DataTransfer();transfer.items.add(new win.File([loaded.data],'WP030-embedded-import.ttf',{type:'font/ttf'}));
+  manager.refs.files.files=transfer.files;await manager._importFiles();importedId=(await library.listFonts()).find(f=>!prior.has(f.id))?.id;
+  check(importedId&&library.getOrganization().placements[importedId]===folderId,'実font bytes取り込みと分類収納');
+  for(let i=0;i<50&&!balloon._fontData.fonts.some(f=>f.id===importedId);i++)await delay(20);
+  check(balloon._fontData.fonts.some(f=>f.id===importedId),'吹き出し側にも取り込みが同期');
+  await manager._action('remove');folderId=null;
+  check(library.getOrganization().placements[importedId]===null,'分類解除は実体を残してルートへ戻す');
+  check(JSON.stringify(lettering.params)===before&&JSON.stringify(balloon.params)===beforeBalloon&&core.history.stack.length===historyCount,'分類・取り込みで作品とHistory不変');
+  frame.style.width='360px';frame.style.height='640px';await delay(150);lettering.fontComparison.reposition();
+  const rect=lettering.fontComparison.container.getBoundingClientRect();
+  check(rect.left>=0&&rect.right<=360&&rect.bottom<=640,'360px画面内に情報窓が収まる');
+  const info=lettering.fontComparison.refs.information;
+  check(info.scrollWidth<=info.clientWidth+1,'分類・取り込みの横overflowなし');
+  info.scrollTop=info.scrollHeight;check(manager.element.getBoundingClientRect().bottom<=rect.bottom,'管理末尾へscrollで到達');
+  state.textContent='PASS';
+ }catch(e){state.textContent='FAIL '+e.message;out.textContent+=e.stack;throw e;}
+ finally{
+  if(importedId)await library.deleteFont(importedId);
+  if(folderId)library.deleteOrganizationFolder(folderId);
+  for(const [parentKey,nodes] of Object.entries(originalOrg.orders||{})){const parent=parentKey==='root'?null:parentKey.slice(7);let before=null;for(const node of [...nodes].reverse()){library.moveOrganizationNode(node,parent,before);before=node;}}
+  await manager.refresh();document.querySelector('#run').disabled=false;
+ }
+};
+</script></html>

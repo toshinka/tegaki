@@ -33,6 +33,11 @@ READYは委任可能という意味で、現在の製品実装停止を解除す
 | WP-026 | Rive画像rigの独立Browser proof（VERIFIED / 製品採用・Owner受入未） | [Rive authoring proof](WP-026-rive-authoring-browser-proof.md) |
 | WP-027 | 漫画文字の密度・目的別設定・固定確定欄 | [Lettering workflow](WP-027-manga-lettering-workflow.md) |
 | WP-028 | 文字別編集・3点サイズ・書体集約・第二フチ取り | [Character editing](WP-028-lettering-character-editing.md) |
+| WP-029 | 新RIGの試作編集入口・独立素材保存・新Rasterフレーム受渡し（限定技術VERIFIED / Owner未受入） | [Rive first path](WP-029-rive-editor-first-path.md) |
+| WP-030 | 漫画後続の依存順・書体の情報整理集約から順次実装 | [Manga follow-through](WP-030-manga-tools-follow-through.md) |
+| WP-031 | 新RIG入口のlazy起動・接続・失敗表示と復帰 | [Rive operational entry](WP-031-rive-editor-operational-entry.md) |
+| WP-032 | 既存End骨の直接編集/native保存往復VERIFIED、Project HOLDはWP033で解消 | [Rive direct bone edit](WP-032-rive-direct-bone-edit.md) |
+| WP-033 | 通常Rasterの半透明PNGをProject往復で保持・実画素差0 | [Raster alpha roundtrip](WP-033-raster-project-alpha-roundtrip.md) |
 
 先の機能すべてへ未確定の詳細カードを作らない。新カードはGoal / Scope / Contract / Tasks / Acceptance / Verification / Stop / Completionを持ち、同じ概念の第二正本を作らない。
 カードを渡す前に対象fileの存在とbaseline、依存の完了状態を確認する。

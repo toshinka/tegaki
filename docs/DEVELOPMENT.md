@@ -15,13 +15,15 @@
 
 ### 漫画文字とRIG proofの並行導線
 
+WP-033（Owner続行、2026-10-05）はWP032で実測した一般RasterのProject再読込色差を修正する例外Slice。最新WP030の入力先/吹き出し操作WRITEにproject-managerは含まないとlive Card/diffを照合済み。project-manager.jsのexportProject PNG採取blockだけを既存LUNAの単独writeとし、漫画向けの既存dirtyを保持する。司令はCard/STATUS RIG/登録/実Browser fixtureを所有。保存schema/load/Layer/renderer/Historyは変更せず、より広い修正が必要ならHOLD。司令専用product18833、native18729、workerはserver/API/process/Browserを操作しない。
+
 Ownerは2026-10-04、漫画/フォント作業と独立RIG proofの並行を承認。現在の分担は次の通り。現在地はSTATUS、exact write filesはそれぞれのCardが所有する。
 
 | 担当 | WRITE | 共有部分の扱い |
 |---|---|---|
 | 漫画/文字側leadと確定worker | WP-023/024/025のfont/lettering/漫画UIと確定した接続file | 通常Raster/Project/History/Exportへの変更は文字側Cardの限定契約内 |
-| RIG側LUNA | WP-026の`advanced/rive-proof/`指定4files、専用結果report、専用cache | 製品のfont/lettering/WARP/Layer/Project/History/renderer/packageはread-only。production import無し |
-| RIG司令 | WP-026、STATUSのRIG節、案内のRIG節、package登録 | 共通文書fileへの反映は他leadの書込みと直列。全file再生成せず対象節だけpatch |
+| RIG側LUNA | 現在のWP-029 `advanced/rive-editor/`指定modules、model verifier、専用report/cache。WP026はread-only証拠 | 製品のfont/lettering/WARP/Layer/Project/History/renderer/packageはread-only。editorは独立source保存 |
+| RIG司令 | WP029の`ui/rive-editor-entry.js`、`ui/right-workspace-frame.js`の入口、限定host verifier/fixture、Card/STATUS RIG節/案内/package登録 | 既存Raster追加APIを呼び共通Layerをwriteしない。共通文書反映は他leadと直列、対象節だけpatch |
 
 文字の独自envelopeと既存Anime WARPは現在接続されていない。engineが別でも、保存・History・出力の接続を共有すれば競合し得る。`editable-curve-geometry.js`等の文字用幾何をRIG proofへ共通化/importしない。文字側が既存WARPを触っても、独立proofはその変更へ追従する作業を混ぜない。
 
@@ -30,6 +32,9 @@ Ownerは2026-10-04、漫画/フォント作業と独立RIG proofの並行を承�
 各workerは自分の結果reportへ書き、STATUS/TECHNICAL/ARCHITECTURE/登録簿/harness/案内を直接更新しない。共通文書に他leadの進行中変更が見えた場合は差分を保持し、対象行を再読して短いpatchだけを直列反映する。競合したpatchは再読して調整し、他者段落の置換/restore/stashで解決しない。
 
 WP-026は既存Vite/漫画Browserのprocess/tabを共用しない。専用`127.0.0.1:18726`と専用Browser tabを使い、portが占有されていたら停止して返す。既存serviceをkill/restartしない。stopできるのは自分が起動しPIDを記録したproof processだけ。
+WP-029 editorは専用`127.0.0.1:18729`。司令の製品接続確認は新規専用tab/自己起動の開発serverで行い、漫画側process/tabは共用・停止しない。WP028の文字/keyboard/rendererとRIG hostに同時writeを作らない。
+WP-031の起動/復帰SliceはLUNAが専用dev-companion/bridge/healthだけを所有し、司令がhostと`vite.config.js`の薄いplugin登録を所有する。WP030共通書体窓のcurrent sliceはViteを変更しないとCard照合済み。font bridge/keyboard/共通bootstrapを変更しない。bridgeはdev loopbackのみ、固定SDK検査、single-flight起動、同一installationの再利用、own childだけの終了。実製品検証は司令専用18831/tab。
+WP-032は既存End骨の直接編集。LUNAはCard指定のeditor-local gesture/投影/native preview/GUI/verifier/reportを所有し、司令はCard/STATUS/登録/限定監査を所有。serverは独立moduleの固定static配信二件追加だけCard追補で許可し、API/保存/CLI/health/securityを変更しない。model/bridge/Viteと漫画/共通filesは変更しない。native18729と専用product18832、cache rive-editorのみ。worker検証中は司令が同じcompanionへmutationしない。共有checkoutのHMRは他leadの途中writeでreloadし得るため、検証用cache runnerに限るHMR抑止と製品設定変更を区別する。
 既存`.codex/agents/tegaki-luna-worker.toml`は`gpt-5.6-luna` / `max`で、AGENTS → STATUS → TECHNICAL → 指定WPの順を持つ。LUNAの世代は割当時に明示し、チャット名の「LUNA MAX」だけから別世代へ切り替えない。configの変更は別の明示作業で行う。
 workerへは新しい読む順序と対象カードを明示する。利用不能なら状態を報告し、別modelへ黙って切り替えない。
 深いarchitecture判断はCommander / Architecture reviewへ戻すが、既存契約内の技術修正で逐一Owner確認を求めない。

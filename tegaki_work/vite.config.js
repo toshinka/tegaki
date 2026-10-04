@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite';
 import { createLocalFontBridgePlugin } from './build/local-font-bridge.mjs';
+import { createRiveEditorDevBridgePlugin } from './build/rive-editor-dev-bridge.mjs';
 
 export default defineConfig(({ command, isPreview }) => ({
     ...(command === 'serve' && !isPreview ? {
-        plugins: [createLocalFontBridgePlugin()],
+        plugins: [createLocalFontBridgePlugin(), createRiveEditorDevBridgePlugin()],
         server: {
             // Personal localhost only: the dev server must not become a LAN file reader.
             host: '127.0.0.1',
