@@ -1,12 +1,13 @@
 /**
  * ============================================================================
  * ファイル名: system/focus-lines.js
- * 責務: 集中線 / ウニフラ の純幾何。パラメータ(+seed)から決定的に線ポリゴン列を生成する
+ * 責務: 集中線 / ウニフラ / 閉輪郭の純幾何。パラメータ(+seed)から決定的に出力を生成する
  * 依存: なし（DOM / Pixi / Canvasを使わない）
  * 被依存: ui/focus-lines-popup.js, ui/focus-lines-overlay.js, system/focus-lines-raster.js,
  *   system/project-manager.js(sanitize), build/verify-focus-lines.mjs
- * 公開API: FOCUS_LINES_LIMITS, FOCUS_LINES_STYLES, defaultFocusLinesParams, normalizeFocusLinesParams,
- *   sanitizeFocusLinesData, buildFocusLines, innerRadiusAt, focusLinesHandles
+ * 公開API: FOCUS_LINES_LIMITS, FOCUS_BODY_LIMITS, FOCUS_LINES_STYLES, defaultFocusLinesParams,
+ *   normalizeFocusLinesParams, normalizeFocusLinesBody, sanitizeFocusLinesData, buildFocusLines,
+ *   buildFocusLinesBody, innerRadiusAt, focusLinesHandles
  * 保存: Projectの正本ではない。popupがUI設定(localStorage)と、確定Layerの layerData.focusLines
  *   (optional・sanitize済み)へ保持する。画素は派生物で、更新で再生成する。
  *
@@ -30,6 +31,12 @@ export const FOCUS_LINES_LIMITS = Object.freeze({
     jitter: { min: 0, max: 1, step: 0.01 }
 });
 
+export const FOCUS_BODY_LIMITS = Object.freeze({
+    lineWidth: { min: 0.5, max: 60, step: 0.5 },
+    inset: { min: 0.05, max: 0.8, step: 0.01 },
+    count: { min: 3, max: 256, step: 1 }
+});
+
 export const FOCUS_LINES_STYLES = Object.freeze([
     { id: 'focus', label: '集中線', patch: { count: 120, widthMin: 1, widthMax: 5, taper: 1, direction: 'in', outer: 0, angleJitter: 0.6, lengthJitter: 0.25 } },
     { id: 'fine', label: '細かい', patch: { count: 260, widthMin: 0.5, widthMax: 2.5, taper: 1, direction: 'in', outer: 0, angleJitter: 0.8, lengthJitter: 0.35 } },
@@ -39,6 +46,10 @@ export const FOCUS_LINES_STYLES = Object.freeze([
 ]);
 
 const EPS = 1e-9;
+
+function isHexColor(value) {
+    return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+}
 
 function clamp(value, min, max, fallback = min) {
     const n = Number(value);
@@ -73,7 +84,7 @@ export function normalizeFocusLinesParams(raw, canvas = { width: 400, height: 40
     const centerOk = Number.isFinite(cx) && Number.isFinite(cy) && Math.abs(cx) <= w * 4 && Math.abs(cy) <= h * 4;
     const widthMin = clamp(src.widthMin ?? d.widthMin, L.width.min, L.width.max);
     const widthMax = clamp(src.widthMax ?? d.widthMax, L.width.min, L.width.max);
-    return {
+    const params = {
         center: centerOk ? { x: cx, y: cy } : d.center,
         innerRx: clamp(src.innerRx ?? d.innerRx, L.inner.min, L.inner.max),
         innerRy: clamp(src.innerRy ?? d.innerRy, L.inner.min, L.inner.max),
@@ -88,6 +99,29 @@ export function normalizeFocusLinesParams(raw, canvas = { width: 400, height: 40
         seed: Math.trunc(Number.isFinite(Number(src.seed)) ? Number(src.seed) : d.seed) >>> 0,
         color: /^#[0-9a-f]{6}$/i.test(src.color || '') ? src.color : d.color
     };
+    const body = normalizeFocusLinesBody(src.body);
+    // Keep the old ray recipe byte-for-byte compatible: body is optional and is
+    // intentionally absent when an older recipe did not contain it.
+    if (body) params.body = body;
+    return params;
+}
+
+/**
+ * Normalize the optional closed-body recipe.  This helper has no canvas or DOM
+ * dependency so it can be used at the Project boundary and by pure verifiers.
+ * A missing fillColor is transparent; callers that want the actual Background
+ * choose it at the UI boundary before creating the recipe.
+ */
+export function normalizeFocusLinesBody(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const kind = raw.kind === 'ring' || raw.kind === 'outline' ? raw.kind : null;
+    if (!kind) return null;
+    const lineWidth = clamp(raw.lineWidth, FOCUS_BODY_LIMITS.lineWidth.min, FOCUS_BODY_LIMITS.lineWidth.max, 3);
+    const inset = clamp(raw.inset, FOCUS_BODY_LIMITS.inset.min, FOCUS_BODY_LIMITS.inset.max, 0.25);
+    let fillColor = null;
+    if (raw.fillColor === null) fillColor = null;
+    else if (isHexColor(raw.fillColor)) fillColor = raw.fillColor;
+    return { kind, lineWidth, fillColor, inset };
 }
 
 /** 保存/復元境界。壊れたdataはnull。 */
@@ -158,6 +192,52 @@ export function buildFocusLines(rawParams, canvas = { width: 400, height: 400 })
         ]);
     }
     return polygons;
+}
+
+/**
+ * Build a closed, angularly ordered body contour for the optional outline/ring
+ * recipe.  The returned arrays contain ordered vertices; consumers close each
+ * path with closePath()/Z.  Radius jitter is bounded and angle jitter is kept
+ * below half a sector, so adjacent sectors stay ordered and cannot cross.
+ *
+ * @returns {{kind:'outline'|'ring', lineWidth:number, fillColor:string|null,
+ *   inset:number, outer:Array<{x:number,y:number}>, inner:Array<{x:number,y:number}>|null}}
+ */
+export function buildFocusLinesBody(rawParams, canvas = { width: 400, height: 400 }) {
+    const p = normalizeFocusLinesParams(rawParams, canvas);
+    const body = p.body || normalizeFocusLinesBody(rawParams?.body) || {
+        kind: 'outline', lineWidth: 3, fillColor: null, inset: 0.25
+    };
+    const w = Math.max(1, Number(canvas.width) || 400);
+    const h = Math.max(1, Number(canvas.height) || 400);
+    const { x: cx, y: cy } = p.center;
+    const count = Math.min(FOCUS_BODY_LIMITS.count.max,
+        Math.max(FOCUS_BODY_LIMITS.count.min, Math.round(Number(p.count) || 48)));
+    const rand = mulberry32(p.seed);
+    const step = (Math.PI * 2) / count;
+    // A finite outer radius is preferred for a body.  Legacy outer=0 is still
+    // useful, so derive a bounded viewport-sized radius for that case.
+    const base = p.outer > 0 ? p.outer : Math.max(w, h) * 0.45;
+    const radiusX = Math.max(1, base);
+    const aspect = p.innerRx > EPS && p.innerRy > EPS ? p.innerRy / p.innerRx : 1;
+    const radiusY = Math.max(1, radiusX * Math.max(0.25, Math.min(4, aspect)));
+    const outer = [];
+    for (let i = 0; i < count; i += 1) {
+        // Keep each angular perturbation well inside its sector.  The sequence
+        // remains strictly ordered even at the maximum count/jitter values.
+        const angleJitter = (rand() - 0.5) * step * Math.min(0.24, p.angleJitter * 0.24);
+        const theta = i * step + angleJitter;
+        const radiusJitter = 1 + (rand() - 0.5) * Math.min(0.34, p.lengthJitter * 0.34);
+        outer.push({
+            x: cx + Math.cos(theta) * radiusX * radiusJitter,
+            y: cy + Math.sin(theta) * radiusY * radiusJitter
+        });
+    }
+    const scale = 1 - body.inset;
+    const inner = body.kind === 'ring'
+        ? outer.map(point => ({ x: cx + (point.x - cx) * scale, y: cy + (point.y - cy) * scale }))
+        : null;
+    return { kind: body.kind, lineWidth: body.lineWidth, fillColor: body.fillColor, inset: body.inset, outer, inner };
 }
 
 /** 編集ハンドルの文書座標: 中心 / 楕円の右端(rx) / 楕円の下端(ry)。 */
