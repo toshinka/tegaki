@@ -43,7 +43,7 @@ export class PixelSelectionSystem {
         this.imageImporter = null;
         this.coordSystem = coordinateSystem;
         this.toolActive = false;
-        // 'rect'=矩形選択 / 'auto'=自動選択 / 'gradient'=グラデーション。入力経路(capture)は共通。
+        // 'rect'=矩形選択 / 'auto'=自動選択 / 'gradient'=グラデーション / shape-polygon。入力経路(capture)は共通。
         this.toolMode = 'rect';
         this.areaTools = new AreaToolController(this);
         this.state = null;
@@ -86,8 +86,8 @@ export class PixelSelectionSystem {
         const next = SELECTION_TOOL_MODES.includes(mode) ? mode : 'rect';
         if (this.toolMode === next) return true;
         if (this.transformSession && !this.confirmTransform()) return false;
-        // 図形の編集中にツールを替えたら、その図形は確定する
-        this.areaTools?.shape?.commit?.();
+        // 図形/多角形の編集中にツールを替えたら、既存の確定終端へ送る
+        this.areaTools?.commitActive?.();
         this.areaTools?.shape?.clearHover?.();
         this.toolMode = next;
         this.areaTools?.border?.sync?.();
@@ -507,7 +507,7 @@ export class PixelSelectionSystem {
     setToolActive(active) {
         const nextActive = active === true;
         if (this.toolActive === nextActive) return true;
-        if (!nextActive) { this.areaTools?.shape?.commit?.(); this.areaTools?.shape?.clearHover?.(); }
+        if (!nextActive) { this.areaTools?.commitActive?.(); this.areaTools?.shape?.clearHover?.(); this.areaTools?.polygon?.clearHover?.(); }
         this.toolActive = nextActive;
         this.areaTools?.border?.sync?.();
         this.drag = null;
@@ -1109,6 +1109,7 @@ export class PixelSelectionSystem {
     destroy() {
         this._detachCallbacks.forEach(detach => detach());
         this._detachCallbacks = [];
+        this.areaTools?.destroy?.();
         this.overlay?.remove();
         this.overlay = null;
         this.overlayPolygon = null;
@@ -1165,6 +1166,28 @@ export class PixelSelectionSystem {
                 return;
             }
             const shapeEditor = this.areaTools?.shape;
+            const polygonEditor = this.areaTools?.polygon;
+            if (polygonEditor?.isEditing?.() && this.toolActive && this.toolMode === 'shape-polygon'
+                && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                if (event.key === 'Enter') {
+                    polygonEditor.commit();
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    return;
+                }
+                if (event.key === 'Backspace') {
+                    polygonEditor.undoLastPoint();
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    return;
+                }
+                if (event.key === 'Escape') {
+                    polygonEditor.cancel();
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    return;
+                }
+            }
             if (shapeEditor?.isEditing?.() && this.toolActive && !event.ctrlKey && !event.metaKey && !event.altKey) {
                 if (event.key === 'Enter') {
                     shapeEditor.commit();
@@ -1411,8 +1434,9 @@ export class PixelSelectionSystem {
     }
 
     _handlePointerMove(event) {
-        if (this.toolActive && (this.toolMode === 'shape-rect' || this.toolMode === 'shape-ellipse')) {
+        if (this.toolActive && (this.toolMode === 'shape-rect' || this.toolMode === 'shape-ellipse' || this.toolMode === 'shape-polygon')) {
             this.areaTools?.shape?.hover?.(event);
+            this.areaTools?.polygon?.hover?.(event);
         }
         if (this.rulerPointerId === event.pointerId) {
             window.rulerSystem?.handlePointerMove?.({ clientX: event.clientX, clientY: event.clientY, rawClientX: event.clientX, rawClientY: event.clientY }, event);
@@ -1901,6 +1925,7 @@ export class PixelSelectionSystem {
         if (!this.areaTools) return;
         this.areaTools.renderMask(this.state?.mask ? this._getSelectionContext() : null);
         this.areaTools.shape?.render?.();
+        this.areaTools.polygon?.render?.();
         this.areaTools.border?.render?.();
         this._watchMaskOverlay();
     }

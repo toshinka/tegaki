@@ -19,6 +19,9 @@
     "docs/ai/WP-031-rive-dev-entry-result.md",
     "docs/work/WP-032-rive-direct-bone-edit.md",
     "docs/work/WP-033-raster-project-alpha-roundtrip.md",
+    "docs/work/WP-034-rive-weights-playback.md",
+    "docs/ai/WP-034-rive-weights-playback-result.md",
+    "docs/ai/WP-034-rive-weights-playback-audit.md",
     "docs/ai/WP-033-raster-project-alpha-result.md",
     "docs/ai/WP-033-raster-project-alpha-audit.md",
     "docs/ai/WP-032-rive-bone-editor-result.md",
@@ -174,6 +177,9 @@
         "tegaki_work/system/selection-area-tools.js",
         "tegaki_work/system/shape-geometry.js",
         "tegaki_work/system/shape-tool.js",
+        "tegaki_work/system/polygon-shape-tool.js",
+        "tegaki_work/system/closed-shape-paint.js",
+        "tegaki_work/ui/shape-paint-controls.js",
         "tegaki_work/system/border-fill.js",
         "tegaki_work/system/border-tool.js"
       ],
@@ -181,6 +187,7 @@
         "^verify-auto-select",
         "^verify-gradient-fill",
         "^verify-shape-geometry",
+        "^verify-closed-shape",
         "^verify-border-fill"
       ]
     },
@@ -289,6 +296,7 @@
     {"id":"WP-029","document":"docs/work/WP-029-rive-editor-first-path.md","status":"VERIFIED","dependsOn":[]},
     {"id":"WP-031","document":"docs/work/WP-031-rive-editor-operational-entry.md","status":"VERIFIED","dependsOn":[]},
     {"id":"WP-032","document":"docs/work/WP-032-rive-direct-bone-edit.md","status":"VERIFIED","dependsOn":[]},
-    {"id":"WP-033","document":"docs/work/WP-033-raster-project-alpha-roundtrip.md","status":"VERIFIED","dependsOn":[]}
+    {"id":"WP-033","document":"docs/work/WP-033-raster-project-alpha-roundtrip.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-034","document":"docs/work/WP-034-rive-weights-playback.md","status":"BLOCKED","dependsOn":[]}
   ]
 }

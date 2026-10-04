@@ -82,13 +82,15 @@ export function normalizeFocusLinesParams(raw, canvas = { width: 400, height: 40
     const cy = Number(src.center?.y);
     // 中心がキャンバスから極端に離れた値は捨てる(キャンバス寸法の4倍まで)
     const centerOk = Number.isFinite(cx) && Number.isFinite(cy) && Math.abs(cx) <= w * 4 && Math.abs(cy) <= h * 4;
+    const body = normalizeFocusLinesBody(src.body);
+    const countMin = body ? FOCUS_BODY_LIMITS.count.min : L.count.min;
     const widthMin = clamp(src.widthMin ?? d.widthMin, L.width.min, L.width.max);
     const widthMax = clamp(src.widthMax ?? d.widthMax, L.width.min, L.width.max);
     const params = {
         center: centerOk ? { x: cx, y: cy } : d.center,
         innerRx: clamp(src.innerRx ?? d.innerRx, L.inner.min, L.inner.max),
         innerRy: clamp(src.innerRy ?? d.innerRy, L.inner.min, L.inner.max),
-        count: Math.round(clamp(src.count ?? d.count, L.count.min, L.count.max)),
+        count: Math.round(clamp(src.count ?? d.count, countMin, body ? FOCUS_BODY_LIMITS.count.max : L.count.max)),
         widthMin: Math.min(widthMin, widthMax),
         widthMax: Math.max(widthMin, widthMax),
         taper: clamp(src.taper ?? d.taper, L.taper.min, L.taper.max),
@@ -99,10 +101,12 @@ export function normalizeFocusLinesParams(raw, canvas = { width: 400, height: 40
         seed: Math.trunc(Number.isFinite(Number(src.seed)) ? Number(src.seed) : d.seed) >>> 0,
         color: /^#[0-9a-f]{6}$/i.test(src.color || '') ? src.color : d.color
     };
-    const body = normalizeFocusLinesBody(src.body);
     // Keep the old ray recipe byte-for-byte compatible: body is optional and is
     // intentionally absent when an older recipe did not contain it.
-    if (body) params.body = body;
+    if (body) {
+        params.body = body;
+        params.count = Math.min(FOCUS_BODY_LIMITS.count.max, params.count);
+    }
     return params;
 }
 
@@ -196,18 +200,19 @@ export function buildFocusLines(rawParams, canvas = { width: 400, height: 400 })
 
 /**
  * Build a closed, angularly ordered body contour for the optional outline/ring
- * recipe.  The returned arrays contain ordered vertices; consumers close each
- * path with closePath()/Z.  Radius jitter is bounded and angle jitter is kept
- * below half a sector, so adjacent sectors stay ordered and cannot cross.
+ * recipe.  `count` is the number of spikes: every sector contributes one
+ * valley on the inner ellipse followed by one tip on the finite outer ellipse.
+ * The returned arrays contain ordered vertices; consumers close each path with
+ * closePath()/Z.  Both jitter values are bounded so valley/tip order remains
+ * safe even at their maximum.
  *
  * @returns {{kind:'outline'|'ring', lineWidth:number, fillColor:string|null,
- *   inset:number, outer:Array<{x:number,y:number}>, inner:Array<{x:number,y:number}>|null}}
+ *   inset:number, outer:Array<{x:number,y:number}>, inner:Array<{x:number,y:number}>|null}|null}
  */
 export function buildFocusLinesBody(rawParams, canvas = { width: 400, height: 400 }) {
     const p = normalizeFocusLinesParams(rawParams, canvas);
-    const body = p.body || normalizeFocusLinesBody(rawParams?.body) || {
-        kind: 'outline', lineWidth: 3, fillColor: null, inset: 0.25
-    };
+    const body = p.body;
+    if (!body) return null;
     const w = Math.max(1, Number(canvas.width) || 400);
     const h = Math.max(1, Number(canvas.height) || 400);
     const { x: cx, y: cy } = p.center;
@@ -216,21 +221,37 @@ export function buildFocusLinesBody(rawParams, canvas = { width: 400, height: 40
     const rand = mulberry32(p.seed);
     const step = (Math.PI * 2) / count;
     // A finite outer radius is preferred for a body.  Legacy outer=0 is still
-    // useful, so derive a bounded viewport-sized radius for that case.
-    const base = p.outer > 0 ? p.outer : Math.max(w, h) * 0.45;
-    const radiusX = Math.max(1, base);
+    // useful, so derive a bounded viewport-sized radius for that case. Keep
+    // the outer ellipse wider than the valley ellipse so every spike points
+    // outward even when length jitter is at its maximum.
+    const requestedOuter = p.outer > 0 ? p.outer : Math.max(w, h) * 0.45;
+    // outer is the horizontal radius; aspect is applied only once below.
+    const base = Math.max(1, requestedOuter, (Number(p.innerRx) || 0) * 1.6);
+    const radiusX = base;
     const aspect = p.innerRx > EPS && p.innerRy > EPS ? p.innerRy / p.innerRx : 1;
-    const radiusY = Math.max(1, radiusX * Math.max(0.25, Math.min(4, aspect)));
+    const radiusY = Math.max(1, radiusX * aspect);
+    const angleJitter = Math.min(0.18, Math.max(0, p.angleJitter) * 0.18);
+    const lengthJitter = Math.min(0.18, Math.max(0, p.lengthJitter) * 0.18);
+    const safeGap = Math.max(1, base * 0.02);
     const outer = [];
     for (let i = 0; i < count; i += 1) {
-        // Keep each angular perturbation well inside its sector.  The sequence
-        // remains strictly ordered even at the maximum count/jitter values.
-        const angleJitter = (rand() - 0.5) * step * Math.min(0.24, p.angleJitter * 0.24);
-        const theta = i * step + angleJitter;
-        const radiusJitter = 1 + (rand() - 0.5) * Math.min(0.34, p.lengthJitter * 0.34);
+        // Each sector is [valley, tip]. Independent perturbations stay within
+        // 18% of the sector width, leaving a positive gap to both neighbours.
+        const valleyTheta = i * step + (rand() - 0.5) * step * angleJitter * 2;
+        const tipTheta = (i + 0.5) * step + (rand() - 0.5) * step * angleJitter * 2;
+        const valleyRadius = Math.max(0, innerRadiusAt(p.innerRx, p.innerRy, valleyTheta) *
+            (1 + (rand() - 0.5) * lengthJitter * 2));
+        const tipBase = innerRadiusAt(radiusX, radiusY, tipTheta);
+        const tipRadius = Math.max(
+            tipBase * (1 + (rand() - 0.5) * lengthJitter * 2),
+            valleyRadius + safeGap
+        );
         outer.push({
-            x: cx + Math.cos(theta) * radiusX * radiusJitter,
-            y: cy + Math.sin(theta) * radiusY * radiusJitter
+            x: cx + Math.cos(valleyTheta) * valleyRadius,
+            y: cy + Math.sin(valleyTheta) * valleyRadius
+        }, {
+            x: cx + Math.cos(tipTheta) * tipRadius,
+            y: cy + Math.sin(tipTheta) * tipRadius
         });
     }
     const scale = 1 - body.inset;

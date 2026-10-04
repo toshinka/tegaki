@@ -10,14 +10,14 @@ export class ShapePaintControls {
         this.setOptions = setOptions;
         host.innerHTML = `<div class="qa-shape-paint-modes" role="group" aria-label="図形の内側">
             <button type="button" data-paint="legacy" title="従来の投げ縄塗り。輪郭線なし">線なし</button>
-            <button type="button" data-paint="line" title="内側は透明。輪郭線だけ描く">塗りなし</button>
+            <button type="button" data-paint="line" title="内側は透明。輪郭線だけ描く">線のみ</button>
             <button type="button" data-paint="same" title="線と内側を同じ描画色にする">同色</button>
             <button type="button" data-paint="custom" title="輪郭は描画色、内側は自由色">自由色</button>
         </div><div class="qa-shape-paint-color">
             <label>内側 <input type="color" aria-label="図形の内側色"></label>
             <button type="button" data-background title="Canvasの背景色を内側に使用。背景色の変更にも追従">背景色</button>
             <span data-hint></span>
-        </div>`;
+        </div><div data-polygon-hint hidden title="点をドラッグして移動 / Backspaceで最後の点を削除 / Escで取消 / Shiftで45度に整える">点を追加 → 始点/Enterで確定</div>`;
         host.addEventListener('pointerdown', event => event.stopPropagation());
         host.addEventListener('wheel', event => event.stopPropagation());
         host.querySelectorAll('[data-paint]').forEach(button => button.addEventListener('click', () => {
@@ -46,6 +46,7 @@ export class ShapePaintControls {
             button.setAttribute('aria-pressed', String(button.dataset.paint === mode));
         });
         this.host.dataset.lasso = String(isLasso);
+        this.host.querySelector('[data-polygon-hint]').hidden = tool !== 'shape-polygon';
         this.color.value = /^#[0-9a-f]{6}$/i.test(shape.fillColor || '') ? shape.fillColor : background;
         this.color.disabled = mode !== 'custom';
         const backgroundButton = this.host.querySelector('[data-background]');

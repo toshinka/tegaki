@@ -21,6 +21,13 @@ import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { TegakiEventBus } from '../event-bus.js';
 import { normalizeRasterBounds } from '../raster-bounds.js';
 import { estimateRasterHistoryPairBytes } from '../raster-snapshot-memory.js';
+import {
+    normalizePaintMode,
+    normalizeClosedPoints,
+    resolveClosedShapePaint,
+    strokePolygonsForPoints,
+    paintClosedShapeToLayer
+} from '../closed-shape-paint.js';
 
 // 塗りつぶしのしきい値定数 (Phase 3e 以降は設定UI化を検討)
 const FILL_ALPHA_THRESHOLD = 24;  // これ以上の不透明度は「壁」とみなす
@@ -530,9 +537,68 @@ export class FillTool {
     async performLassoFill(points, color, alpha, layer, layerManager, beforeSnapshot) {
         const app = layerManager.app;
         const layerData = layer.layerData;
-        if (!layerData?.renderTexture || !app?.renderer) return;
+        if (!layerData?.renderTexture) return false;
 
-        const lassoBounds = this._getPointBounds(points);
+        // 投げ縄はstroke recorderの採取点をそのまま使う。256点上限は新polygon専用。
+        const normalized = normalizeClosedPoints(points, { min: 3, max: Infinity, dedupe: false });
+        if (!normalized.ok) return false;
+        const shapeOptions = window.CoreRuntime?.api?.selection?.getAreaToolOptions?.()?.shape
+            || window.pixelSelectionSystem?.areaTools?.getOptions?.()?.shape
+            || {};
+        const requestedPaint = normalizePaintMode(shapeOptions.paint, 'legacy');
+
+        // 投げ縄の明示paintだけ共有CPU終端を使う。欠損/legacyは従来GPU塗りを保持する。
+        if (requestedPaint !== 'legacy') {
+            const backgroundLayer = layerManager.getLayers?.()?.find(entry => entry.layerData?.isBackground);
+            const backgroundColor = Number.isFinite(backgroundLayer?.layerData?.backgroundColor)
+                ? backgroundLayer.layerData.backgroundColor
+                : Number.isFinite(layerManager.config?.canvas?.backgroundColor)
+                    ? layerManager.config.canvas.backgroundColor
+                    : Number.isFinite(window.TEGAKI_CONFIG?.renderer?.backgroundColor)
+                        ? window.TEGAKI_CONFIG.renderer.backgroundColor : 0;
+            const paint = resolveClosedShapePaint({
+                ...shapeOptions,
+                paint: requestedPaint,
+                strokeColor: color,
+                backgroundColor
+            }, { main: color, background: backgroundColor }, { legacyMode: 'same' });
+            const widthValue = shapeOptions.width ?? window.brushSettings?.getSize?.();
+            const width = Number.isFinite(Number(widthValue)) && Number(widthValue) > 0 ? Number(widthValue) : 4;
+            const strokePolygons = strokePolygonsForPoints(normalized.points, {
+                width,
+                join: shapeOptions.join === 'round' ? 'round' : 'miter',
+                maxPoints: Infinity,
+                dedupe: false
+            });
+            const selectionSystem = window.pixelSelectionSystem || {};
+            const result = paintClosedShapeToLayer({
+                system: selectionSystem,
+                layerSystem: layerManager,
+                layer,
+                contours: [normalized.points],
+                strokePolygons,
+                paint,
+                opacity: Number.isFinite(Number(alpha)) ? Number(alpha) : 1,
+                beforeSnapshot,
+                source: 'lasso-paint',
+                historyName: 'lasso-paint',
+                meta: { pointCount: normalized.points.length, width, paint: paint.mode }
+            });
+            if (!result.ok) return false;
+            const layerIndex = layerManager.getLayerIndex?.(layer);
+            layerManager.requestThumbnailUpdate?.(layerIndex, true);
+            this.eventBus?.emit('layer:filled', {
+                layerId: layerData.id,
+                color,
+                alpha,
+                method: 'lasso-paint'
+            });
+            return true;
+        }
+
+        if (!app?.renderer) return false;
+
+        const lassoBounds = this._getPointBounds(normalized.points);
         const historyBeforeSnapshot = beforeSnapshot || layerManager.createLayerRasterSnapshot?.(layer);
         if (!historyBeforeSnapshot) return;
         if (lassoBounds && typeof layerManager.ensureLayerRasterBoundsForRect === 'function') {
@@ -552,7 +618,7 @@ export class FillTool {
         });
         rasterBounds.width = width;
         rasterBounds.height = height;
-        const localPoints = points.map(point => ({
+        const localPoints = normalized.points.map(point => ({
             x: point.x - rasterBounds.x,
             y: point.y - rasterBounds.y
         }));

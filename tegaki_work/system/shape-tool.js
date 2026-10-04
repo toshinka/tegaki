@@ -16,10 +16,9 @@
 
 import {
     createQuadFromDrag, moveVertex, moveEdge, translateQuad, rotateQuad, quadCenter,
-    pointInQuad, distanceToSegment, squareFromQuad, strokePolygons, polygonsBounds
+    pointInQuad, distanceToSegment, squareFromQuad, strokePolygons, outlinePoints
 } from './shape-geometry.js';
-import { normalizeRasterBounds } from './raster-bounds.js';
-import { estimateRasterHistoryPairBytes } from './raster-snapshot-memory.js';
+import { resolveClosedShapePaint, paintClosedShapeToLayer } from './closed-shape-paint.js';
 import { showFeedbackToast } from '../ui/feedback-toast.js';
 import { createInlineNumberField } from '../ui/inline-number-field.js';
 import { attachPopupDrag } from '../ui/popup-drag-helper.js';
@@ -276,8 +275,10 @@ export class ShapeEditor {
         const opacity = Number(window.brushSettings?.getOpacity?.());
         return {
             rgb: colors.main,
+            background: colors.background,
             width: shape?.width ?? 4,
-            alpha: Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1
+            alpha: Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1,
+            paint: resolveClosedShapePaint(this.areaTools.options.shape, colors, { legacyMode: 'line' })
         };
     }
 
@@ -298,102 +299,24 @@ export class ShapeEditor {
         }
         const stroke = this._getStroke(shape);
         const polys = this._polygons(shape);
-        const pb = polygonsBounds(polys);
-        const rect = {
-            x: Math.floor(pb.x0) - 2,
-            y: Math.floor(pb.y0) - 2,
-            width: Math.ceil(pb.x1 - pb.x0) + 4,
-            height: Math.ceil(pb.y1 - pb.y0) + 4
-        };
-        const canvasCfg = layerSystem?.config?.canvas || window.TEGAKI_CONFIG?.canvas || {};
-        // 書く範囲はキャンバス内に限る（キャンバス外へはみ出した分は捨てる）
-        const clipped = { x: Math.max(0, rect.x), y: Math.max(0, rect.y), width: 0, height: 0 };
-        clipped.width = Math.min(Math.round(canvasCfg.width || 0), rect.x + rect.width) - clipped.x;
-        clipped.height = Math.min(Math.round(canvasCfg.height || 0), rect.y + rect.height) - clipped.y;
-        if (!(clipped.width > 0 && clipped.height > 0)) {
-            showFeedbackToast('キャンバスの外です');
-            return false;
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = clipped.width;
-        canvas.height = clipped.height;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = `rgb(${stroke.rgb[0]},${stroke.rgb[1]},${stroke.rgb[2]})`;
-        // 全多角形を1つのパスにして一度に塗る（同じ向きなのでnonzeroで継ぎ目なく1枚の線になる）
-        ctx.beginPath();
-        for (const poly of polys) {
-            poly.forEach((p, i) => {
-                const x = p.x - clipped.x;
-                const y = p.y - clipped.y;
-                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-            });
-            ctx.closePath();
-        }
-        ctx.fill('nonzero');
-        const drawn = ctx.getImageData(0, 0, clipped.width, clipped.height).data;
-
-        // 選択があればその中だけ（グラデーションと同じ扱い）
-        const hasSel = system.hasSelection() && system.state.layerId === layerData.id && system.state.scope?.kind !== 'folder';
-        const sel = hasSel ? { bounds: { ...system.state.bounds }, mask: system.state.mask || null } : null;
-
-        const expanded = layerSystem.ensureLayerRasterBoundsForRect?.(layer, clipped, { padding: 0 });
-        if (expanded?.ok === false) {
-            showFeedbackToast('描画範囲を広げられません（サイズ上限）');
-            return false;
-        }
-        const before = layerSystem.createLayerRasterSnapshot(layer);
-        if (!before?.pixels) return false;
-        const after = { ...before, pixels: new Uint8ClampedArray(before.pixels), paths: [], pathsData: [] };
-        const rb = normalizeRasterBounds(before.rasterBounds, { width: before.width, height: before.height });
-
-        let changed = 0;
-        for (let y = 0; y < clipped.height; y += 1) {
-            const py = clipped.y + y;
-            for (let x = 0; x < clipped.width; x += 1) {
-                const srcA = (drawn[(y * clipped.width + x) * 4 + 3] / 255) * stroke.alpha;
-                if (srcA <= 0.002) continue;
-                const px = clipped.x + x;
-                if (sel) {
-                    const b = sel.bounds;
-                    if (px < b.x || py < b.y || px >= b.x + b.width || py >= b.y + b.height) continue;
-                    if (sel.mask && sel.mask[(py - Math.floor(b.y)) * b.width + (px - Math.floor(b.x))] !== 1) continue;
-                }
-                const i = ((py - rb.y) * after.width + (px - rb.x)) * 4;
-                if (i < 0 || i + 3 >= after.pixels.length) continue;
-                const dstA = after.pixels[i + 3] / 255;
-                const outA = srcA + dstA * (1 - srcA);
-                if (outA <= 0) continue;
-                after.pixels[i] = Math.round((stroke.rgb[0] * srcA + after.pixels[i] * dstA * (1 - srcA)) / outA);
-                after.pixels[i + 1] = Math.round((stroke.rgb[1] * srcA + after.pixels[i + 1] * dstA * (1 - srcA)) / outA);
-                after.pixels[i + 2] = Math.round((stroke.rgb[2] * srcA + after.pixels[i + 2] * dstA * (1 - srcA)) / outA);
-                after.pixels[i + 3] = Math.round(outA * 255);
-                changed += 1;
-            }
-        }
-        if (changed === 0) {
-            showFeedbackToast('描ける範囲がありません');
-            return false;
-        }
-        if (!layerSystem.restoreLayerRasterSnapshot(after)) return false;
-
-        const layerId = layerData.id;
-        const retainedMemory = estimateRasterHistoryPairBytes(before, after);
-        const restore = snapshot => {
-            layerSystem.restoreLayerRasterSnapshot(snapshot);
-            layerSystem.refreshClippingMasks?.();
-            system.eventBus?.emit('layer:content-changed', { layerId, source: 'shape-line' });
-        };
-        system.history.record({
-            name: 'shape-line',
-            do: () => restore(after),
-            undo: () => restore(before),
-            byteSize: retainedMemory.estimatedBytes,
-            meta: { type: 'shape-line', layerId, kind: shape.kind, retainedMemory }
+        const result = paintClosedShapeToLayer({
+            system,
+            layerSystem,
+            layer,
+            contours: [outlinePoints(shape.kind, shape.quad)],
+            strokePolygons: polys,
+            paint: stroke.paint,
+            opacity: stroke.alpha,
+            source: 'shape-line',
+            historyName: 'shape-line',
+            meta: { kind: shape.kind, width: stroke.width, paint: stroke.paint.mode }
         });
-        layerSystem.refreshClippingMasks?.();
-        system.eventBus?.emit('layer:content-changed', { layerId, source: 'shape-line' });
-        return true;
+        if (!result.ok) {
+            if (result.reason === 'outside-canvas') showFeedbackToast('キャンバスの外です');
+            else if (result.reason === 'bounds-limit') showFeedbackToast('描画範囲を広げられません（サイズ上限）');
+            else if (result.reason === 'empty-selection') showFeedbackToast('描ける範囲がありません');
+        }
+        return result.ok;
     }
 
     // ------------------------------------------------------------ 表示
@@ -409,6 +332,8 @@ export class ShapeEditor {
         };
         const g = document.createElementNS(SVG_NS, 'g');
         g.classList.add('shape-tool-group');
+        const fill = make('path', 'shape-tool-fill');
+        fill.setAttribute('fill-rule', 'evenodd');
         const preview = make('path', 'shape-tool-preview');
         const guide = make('path', 'shape-tool-guide');
         const stem = make('line', 'shape-tool-stem');
@@ -426,9 +351,12 @@ export class ShapeEditor {
             r.setAttribute('rx', '3');
             return r;
         });
-        [preview, guide, stem, ...edges, ...vertices, rotate].forEach(el => g.appendChild(el));
+        const paint = document.createElementNS(SVG_NS, 'g');
+        paint.classList.add('shape-tool-paint');
+        paint.append(fill, preview);
+        [paint, guide, stem, ...edges, ...vertices, rotate].forEach(el => g.appendChild(el));
         svg.appendChild(g);
-        this.parts = { g, preview, guide, stem, rotate, vertices, edges };
+        this.parts = { g, paint, fill, preview, guide, stem, rotate, vertices, edges };
         return true;
     }
 
@@ -532,13 +460,23 @@ export class ShapeEditor {
         this._setHidden(false);
         // 実際の線の見た目（色・太さ・不透明度・遠近）をそのまま重ねて見せる
         const stroke = this._getStroke(shape);
+        const contour = outlinePoints(kind, shape.quad);
+        const contourPoints = contour.map(p => this._toScreen(layer, p)).filter(Boolean);
+        const fillPath = contourPoints.length >= 3
+            ? `M${contourPoints.map(p => `${p.x} ${p.y}`).join('L')}Z`
+            : '';
+        parts.fill.setAttribute('d', fillPath);
+        parts.fill.style.display = stroke.paint.fillRgb ? '' : 'none';
+        parts.fill.style.fill = stroke.paint.fillRgb ? `rgb(${stroke.paint.fillRgb.join(',')})` : 'none';
+        parts.paint.style.opacity = String(stroke.alpha);
+        parts.fill.style.fillOpacity = '1';
         const d = this._polygons(shape).map(poly => {
             const pts = poly.map(p => this._toScreen(layer, p)).filter(Boolean);
             return pts.length >= 3 ? `M${pts.map(p => `${p.x} ${p.y}`).join('L')}Z` : '';
         }).join('');
         parts.preview.setAttribute('d', d);
         parts.preview.style.fill = `rgb(${stroke.rgb.join(',')})`;
-        parts.preview.style.fillOpacity = String(stroke.alpha);
+        parts.preview.style.fillOpacity = '1';
         parts.guide.setAttribute('d', `M${screen.map(p => `${p.x} ${p.y}`).join('L')}Z`);
 
         const editing = !shape.creating;

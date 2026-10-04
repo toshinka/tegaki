@@ -1,0 +1,81 @@
+/* 集中線 editor: panel-layout の共通pl部品を使い、目的別contextだけを薄く追加する。 */
+#focus-lines-popup {
+    width: 316px;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    box-sizing: border-box;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    overflow: hidden;
+    font-size: 11px;
+}
+
+#focus-lines-popup.show { display: flex; }
+#focus-lines-popup > :not(.focus-lines-body-scroll):not(.focus-lines-fixed-footer):not(.fl-fixed-footer) { flex: 0 0 auto; }
+#focus-lines-popup .focus-lines-context-tabs { display: flex; gap: 4px; flex: 0 0 auto; }
+#focus-lines-popup .focus-lines-context-tabs > button { flex: 1; min-width: 0; }
+#focus-lines-popup .focus-lines-body-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding-right: 4px; }
+#focus-lines-popup .focus-lines-body-scroll [hidden] { display: none !important; }
+#focus-lines-popup .focus-lines-fixed-footer,
+#focus-lines-popup .fl-fixed-footer {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--ui-border-float);
+    padding-top: 4px;
+}
+#focus-lines-popup .focus-lines-fixed-footer .pl-footer,
+#focus-lines-popup .fl-fixed-footer .pl-footer { margin: 4px 0 0; }
+#focus-lines-popup .focus-lines-canvas-hint { margin: 4px 0 7px; text-align: left; }
+#focus-lines-popup .focus-lines-field[data-body-row="true"] { transition: opacity 0.12s ease; }
+#focus-lines-popup .focus-lines-fill-toggle { align-items: center; }
+#focus-lines-popup .focus-lines-fill-toggle .pl-color { margin-left: auto; }
+#focus-lines-popup .focus-lines-field .pl-label { flex-basis: 88px; }
+#focus-lines-popup .pl-color:disabled { opacity: 0.45; }
+#focus-lines-popup .pl-hint { font-size: 10px; }
+
+/* Canvas-first preview: the SVG itself is full-screen and receives only handles. */
+.focus-lines-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    width: 100vw;
+    height: 100vh;
+    overflow: visible;
+    pointer-events: none;
+    visibility: hidden;
+}
+.focus-lines-overlay.is-visible { visibility: visible; }
+.focus-lines-overlay .fl-ov-lines,
+.focus-lines-overlay .fl-ov-body {
+    pointer-events: none;
+    vector-effect: non-scaling-stroke;
+}
+.focus-lines-overlay .fl-ov-lines { opacity: 0.72; }
+.focus-lines-overlay .fl-ov-body { opacity: 0.62; }
+.focus-lines-overlay .fl-ov-hole {
+    fill: none;
+    stroke: var(--active-border);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 3;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+}
+.focus-lines-overlay .fl-ov-handle {
+    fill: var(--futaba-background);
+    stroke: var(--active-border);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+    pointer-events: all;
+    cursor: move;
+}
+.focus-lines-overlay .fl-ov-handle.is-center {
+    fill: var(--futaba-light-maroon);
+    stroke: var(--futaba-maroon);
+}
+.focus-lines-overlay:is(.is-camera, .is-transform) .fl-ov-handle { pointer-events: none; }
+
+@media (pointer: coarse) {
+    #focus-lines-popup { font-size: 13px; }
+    #focus-lines-popup .pl-btn,
+    #focus-lines-popup .pl-chip { min-height: 38px; font-size: 12px; }
+}

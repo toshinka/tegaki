@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WP034 Rive 四隅 weight Browser fixture</title>
+  <style>
+    :root { color-scheme: light; font: 13px/1.45 system-ui, sans-serif; }
+    body { margin: 12px; color: #800000; background: #ffffee; }
+    button { margin-right: 6px; padding: 6px 9px; color: #800000; background: #f0e0d6; border: 1px solid #9c3835; border-radius: 4px; }
+    button:disabled { opacity: .55; }
+    iframe { display: block; width: min(1280px, calc(100vw - 24px)); height: min(820px, calc(100vh - 170px)); min-height: 520px; margin-top: 10px; border: 1px solid #b8706b; background: #ffffee; }
+    #status { display: inline-block; margin-left: 6px; }
+    #output { max-width: 1280px; min-height: 100px; white-space: pre-wrap; background: #f0e0d6; padding: 8px; }
+    .instructions { max-width: 1280px; padding: 8px; border: 1px solid #d4a8a0; }
+  </style>
+</head>
+<body>
+  <h1>WP034 — 四隅の骨への追従</h1>
+  <div class="instructions">
+    <strong>trusted操作:</strong> 「editorを開く」後、実editorの <code>rive-weight-TopLeft</code> などを編集し、初期/Rootのみ/Endのみ/均等プリセット、適用、変更を戻すを手動で確認します。draft中はnative画素を変えず、適用は公式CLIへ一度だけ送られます。無効値、取消、再読込後の値と状態 snapshot を目視してください。
+  </div>
+  <p>
+    <button id="open" data-testid="wp034-open">editorを開く</button>
+    <button id="inspect" data-testid="wp034-inspect">状態を確認</button>
+    <span id="status" role="status">editor起動待ち</span>
+  </p>
+  <pre id="output" data-testid="wp034-output"></pre>
+  <iframe id="product" title="WP034 Rive weight fixture" src="http://127.0.0.1:18729/editor.html"></iframe>
+  <script type="module">
+    // ROLE: Visible WP034 Browser fixture. It provides ordinary trusted user actions only.
+    // TRUST: This page never dispatches input, click, pointer, or keyboard events into the editor.
+    const frame = document.querySelector('#product');
+    const open = document.querySelector('#open');
+    const inspect = document.querySelector('#inspect');
+    const status = document.querySelector('#status');
+    const output = document.querySelector('#output');
+    let latestState = null;
+    const log = value => { output.textContent += `${value}\n`; };
+    window.addEventListener('message', event => {
+      if (event.source !== frame.contentWindow || event.origin !== new URL(frame.src).origin) return;
+      if (event.data?.type !== 'tegaki:rive-editor:state') return;
+      latestState = event.data.state || null;
+      status.textContent = `editor state: ${latestState?.status || 'unknown'} / weight ${latestState?.weightEditPhase || 'idle'}`;
+    });
+    open.addEventListener('click', () => {
+      const parent = encodeURIComponent(window.location.origin);
+      frame.src = `http://127.0.0.1:18729/editor.html#session=wp034-browser&parent=${parent}`;
+      status.textContent = 'editorを開きました。weight操作はtrusted手動操作です';
+      log('editorを通常loopback経路で開いた。weight入力/適用/取消はtrusted操作で実施する。');
+    });
+    inspect.addEventListener('click', () => {
+      if (!latestState) { status.textContent = 'FAIL snapshotがまだありません'; return; }
+      log(`SNAPSHOT ${JSON.stringify(latestState, null, 2)}`);
+      status.textContent = 'editor snapshotを記録しました。native画素とdraft/commitを目視確認してください';
+    });
+  </script>
+</body>
+</html>

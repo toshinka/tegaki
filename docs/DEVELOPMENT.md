@@ -15,6 +15,8 @@
 
 ### 漫画文字とRIG proofの並行導線
 
+WP-034（Owner就寝中ロングラン、2026-10-05）はeditor-local四隅weight→既存EndPose再生のA/B。LUNAはCardのmodel/controller/editor/server接続/verifier/fixture/reportを単独所有。司令はCard/STATUS RIG/登録/案内/監査、worker検証中同companionへmutation無し。開始main/e0f353ed、漫画index/focus-lines/QTP dirty保持、共通Layer/Project/History/renderer/Vite/packageは双方read-only。A監査後にBを同担当へ割当。重大保存/描画仕様は自動実装しない。
+
 WP-033（Owner続行、2026-10-05）はWP032で実測した一般RasterのProject再読込色差を修正する例外Slice。最新WP030の入力先/吹き出し操作WRITEにproject-managerは含まないとlive Card/diffを照合済み。project-manager.jsのexportProject PNG採取blockだけを既存LUNAの単独writeとし、漫画向けの既存dirtyを保持する。司令はCard/STATUS RIG/登録/実Browser fixtureを所有。保存schema/load/Layer/renderer/Historyは変更せず、より広い修正が必要ならHOLD。司令専用product18833、native18729、workerはserver/API/process/Browserを操作しない。
 
 Ownerは2026-10-04、漫画/フォント作業と独立RIG proofの並行を承認。現在の分担は次の通り。現在地はSTATUS、exact write filesはそれぞれのCardが所有する。

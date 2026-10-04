@@ -16,7 +16,9 @@
 import { floodSelectRegion, traceMaskOutline, AUTO_SELECT_LIMITS } from './auto-select.js';
 import { applyGradientToPixels } from './gradient-fill.js';
 import { ShapeEditor } from './shape-tool.js';
+import { PolygonShapeEditor } from './polygon-shape-tool.js';
 import { BorderEditor } from './border-tool.js';
+import { CLOSED_SHAPE_PAINTS, normalizeHexColor, normalizePaintMode } from './closed-shape-paint.js';
 import { normalizeRasterBounds } from './raster-bounds.js';
 import { estimateRasterHistoryPairBytes } from './raster-snapshot-memory.js';
 import { showFeedbackToast } from '../ui/feedback-toast.js';
@@ -24,11 +26,11 @@ import { showFeedbackToast } from '../ui/feedback-toast.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const STORAGE_KEY = 'tegaki-area-tools-v1';
 
-export const SELECTION_TOOL_MODES = Object.freeze(['rect', 'auto', 'gradient', 'shape-rect', 'shape-ellipse', 'border']);
+export const SELECTION_TOOL_MODES = Object.freeze(['rect', 'auto', 'gradient', 'shape-rect', 'shape-ellipse', 'shape-polygon', 'border']);
 
 const TOOL_TO_MODE = Object.freeze({
     selection: 'rect', 'auto-select': 'auto', gradient: 'gradient',
-    'shape-rect': 'shape-rect', 'shape-ellipse': 'shape-ellipse', border: 'border'
+    'shape-rect': 'shape-rect', 'shape-ellipse': 'shape-ellipse', 'shape-polygon': 'shape-polygon', border: 'border'
 });
 export function toolNameToSelectionMode(tool) {
     return TOOL_TO_MODE[tool] || null;
@@ -45,11 +47,12 @@ export class AreaToolController {
         this.options = {
             auto: { tolerance: AUTO_SELECT_LIMITS.tolerance.default, referenceAll: false, contiguous: true },
             gradient: { kind: 'linear', fade: 'sub' }, // fade: 'sub'=メイン→サブ色 / 'transparent'=メイン→透明
-            shape: { join: 'miter', width: null }, // 線の図形: 四角の角 miter=尖る / round=丸い / width=最後に使った太さ(null=ペンの太さ)
+            shape: { join: 'miter', width: null, paint: 'legacy', fillColor: null }, // 線/内側: 欠損legacy、幅null=ペンSIZE
             border: { radius: 4, position: 'outside' } // フチ: 太さ(px) / 位置 outside=外 inside=内
         };
         this.gradientDrag = null;
         this.shape = new ShapeEditor(this);
+        this.polygon = new PolygonShapeEditor(this);
         this.border = new BorderEditor(this);
         this.maskImage = null;
         this.guideLine = null;
@@ -69,6 +72,12 @@ export class AreaToolController {
             if (['miter', 'round'].includes(data.shape?.join)) this.options.shape.join = data.shape.join;
             const shapeWidth = Number(data.shape?.width);
             if (Number.isFinite(shapeWidth) && shapeWidth >= 1) this.options.shape.width = Math.min(400, Math.round(shapeWidth * 10) / 10);
+            if (CLOSED_SHAPE_PAINTS.includes(data.shape?.paint)) this.options.shape.paint = data.shape.paint;
+            if (data.shape?.fillColor === null) this.options.shape.fillColor = null;
+            else {
+                const fillColor = normalizeHexColor(data.shape?.fillColor);
+                if (fillColor) this.options.shape.fillColor = fillColor;
+            }
             const radius = Number(data.border?.radius);
             if (Number.isFinite(radius)) this.options.border.radius = Math.max(1, Math.min(100, Math.round(radius)));
             if (['outside', 'inside'].includes(data.border?.position)) this.options.border.position = data.border.position;
@@ -88,10 +97,35 @@ export class AreaToolController {
     setOptions(patch = {}) {
         if (patch.auto) Object.assign(this.options.auto, patch.auto);
         if (patch.gradient) Object.assign(this.options.gradient, patch.gradient);
-        if (patch.shape) Object.assign(this.options.shape, patch.shape);
+        if (patch.shape) {
+            const shapePatch = { ...patch.shape };
+            if (shapePatch.paint !== undefined) shapePatch.paint = normalizePaintMode(shapePatch.paint, this.options.shape.paint);
+            if (shapePatch.fillColor !== undefined) {
+                if (shapePatch.fillColor === null) shapePatch.fillColor = null;
+                else {
+                    const normalized = normalizeHexColor(shapePatch.fillColor);
+                    if (normalized) shapePatch.fillColor = normalized;
+                    else delete shapePatch.fillColor;
+                }
+            }
+            if (shapePatch.width !== undefined) {
+                const width = Number(shapePatch.width);
+                if (Number.isFinite(width) && width >= 1) shapePatch.width = Math.min(400, Math.round(width * 10) / 10);
+                else delete shapePatch.width;
+            }
+            Object.assign(this.options.shape, shapePatch);
+            // QTP SIZE変更は編集中の図形/多角形へ即時反映し、次の図形にも保存値を使う。
+            if (Number.isFinite(Number(shapePatch.width))) {
+                if (this.shape.shape) this.shape.shape.width = shapePatch.width;
+                this.shape.render?.();
+                this.polygon.render?.();
+            }
+        }
         if (patch.border) Object.assign(this.options.border, patch.border);
         this._persist();
         this.system.eventBus?.emit('selection:area-options-changed', JSON.parse(JSON.stringify(this.options)));
+        this.shape.render?.();
+        this.polygon.render?.();
     }
 
     getOptions() {
@@ -104,14 +138,21 @@ export class AreaToolController {
         const qa = window.coreEngine?.popupManager?.get?.('quickAccess');
         const main = Number.isFinite(qa?.mainColor) ? qa.mainColor : (window.brushSettings?.getColor?.() ?? 0x800000);
         const sub = Number.isFinite(qa?.subColor) ? qa.subColor : 0xf0e0d6;
-        return { main: hexToRgb(main), sub: hexToRgb(sub) };
+        const backgroundLayer = this.system.layerSystem?.getLayers?.()?.find(layer => layer.layerData?.isBackground);
+        const configured = backgroundLayer?.layerData?.backgroundColor;
+        const canvasBackground = this.system.layerSystem?.config?.canvas?.backgroundColor;
+        const rendererBackground = window.TEGAKI_CONFIG?.renderer?.backgroundColor;
+        const background = Number.isFinite(configured) ? configured
+            : Number.isFinite(canvasBackground) ? canvasBackground
+                : Number.isFinite(rendererBackground) ? rendererBackground : 0;
+        return { main: hexToRgb(main), sub: hexToRgb(sub), background: hexToRgb(background) };
     }
 
     // ------------------------------------------------------------ 入力(selection systemから呼ばれる)
 
     /** ドラッグ中の操作があるか（グラデーションの範囲指定 / 図形の作成・編集） */
     hasActiveDrag() {
-        return !!this.gradientDrag || this.shape.hasActiveDrag();
+        return !!this.gradientDrag || this.shape.hasActiveDrag() || this.polygon.hasActiveDrag();
     }
 
     pointerDown(event, target, point) {
@@ -119,6 +160,7 @@ export class AreaToolController {
         if (mode === 'shape-rect' || mode === 'shape-ellipse') {
             return this.shape.pointerDown(event, target);
         }
+        if (mode === 'shape-polygon') return this.polygon.pointerDown(event, target);
         if (mode === 'border') return true; // フチは操作盤で行う。キャンバスのドラッグは何もしない
         if (target.kind !== 'layer') {
             showFeedbackToast('フォルダでは使えません。Raster Layerを選んでください');
@@ -139,6 +181,7 @@ export class AreaToolController {
 
     pointerMove(event) {
         if (this.shape.hasActiveDrag()) return this.shape.pointerMove(event);
+        if (this.polygon.hasActiveDrag()) return this.polygon.pointerMove(event);
         const drag = this.gradientDrag;
         if (!drag || event.pointerId !== drag.pointerId) return false;
         const point = this.system._clientToLayerPoint(event.clientX, event.clientY, drag.layer);
@@ -149,6 +192,7 @@ export class AreaToolController {
 
     pointerUp(event) {
         if (this.shape.hasActiveDrag()) return this.shape.pointerUp(event);
+        if (this.polygon.hasActiveDrag()) return this.polygon.pointerUp(event);
         const drag = this.gradientDrag;
         if (!drag || event.pointerId !== drag.pointerId) return false;
         this.gradientDrag = null;
@@ -162,11 +206,34 @@ export class AreaToolController {
 
     pointerCancel(event) {
         if (this.shape.hasActiveDrag() && this.shape.pointerCancel(event)) return true;
+        if (this.polygon.hasActiveDrag() && this.polygon.pointerCancel(event)) return true;
         const drag = this.gradientDrag;
         if (!drag || event.pointerId !== drag.pointerId) return false;
         this.gradientDrag = null;
         this.renderOverlay();
         return true;
+    }
+
+    commitActive() {
+        let changed = false;
+        if (this.shape.isEditing()) changed = this.shape.commit() || changed;
+        if (this.polygon.isEditing()) {
+            const committed = this.polygon.commit();
+            changed = committed || changed;
+            if (!committed) this.polygon.cancel();
+        }
+        return changed;
+    }
+
+    cancelActive() {
+        this.shape.cancel();
+        this.polygon.cancel();
+    }
+
+    destroy() {
+        this.shape.destroy();
+        this.polygon.destroy();
+        this.border.destroy?.();
     }
 
     // ------------------------------------------------------------ 自動選択

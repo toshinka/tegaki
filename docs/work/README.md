@@ -38,6 +38,7 @@ READYは委任可能という意味で、現在の製品実装停止を解除す
 | WP-031 | 新RIG入口のlazy起動・接続・失敗表示と復帰 | [Rive operational entry](WP-031-rive-editor-operational-entry.md) |
 | WP-032 | 既存End骨の直接編集/native保存往復VERIFIED、Project HOLDはWP033で解消 | [Rive direct bone edit](WP-032-rive-direct-bone-edit.md) |
 | WP-033 | 通常Rasterの半透明PNGをProject往復で保持・実画素差0 | [Raster alpha roundtrip](WP-033-raster-project-alpha-roundtrip.md) |
+| WP-034 | 新RIG四隅weight編集→監査後に既存EndPoseの再生。HOLDの根拠/再開条件はCard/STATUS | [Rive weights / playback](WP-034-rive-weights-playback.md) |
 
 先の機能すべてへ未確定の詳細カードを作らない。新カードはGoal / Scope / Contract / Tasks / Acceptance / Verification / Stop / Completionを持ち、同じ概念の第二正本を作らない。
 カードを渡す前に対象fileの存在とbaseline、依存の完了状態を確認する。

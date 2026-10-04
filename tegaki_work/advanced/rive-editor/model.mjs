@@ -2,12 +2,19 @@
  * ROLE: WP-029 の固定 PNG/source template、制約、snapshot の純粋な authoring model。
  * AUTHORITY: source と image が編集正本。`.riv` は公式 CLI の派生物で、製品 schema は所有しない。
  * INVARIANTS: RGBA PNG の境界、rest 30°/end -90..90°、実寸 4 vertex/2 triangle mesh を維持する。
- * RELATED: advanced/rive-editor/server.mjs、build/verify-rive-editor-model.mjs、WP-029 card。
+ * RELATED: advanced/rive-editor/server.mjs、weight-model.mjs、build/verify-rive-editor-model.mjs、WP-034 card。
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import {
+    DEFAULT_END_WEIGHTS,
+    assertEndWeights,
+    cloneEndWeights,
+    decodeWeightRecords,
+    encodeWeightRecords,
+} from './weight-model.mjs';
 
 export const SNAPSHOT_SCHEMA = 'tegaki.rive-editor.state.v1';
 export const MODEL_SCHEMA = 'tegaki.rive-editor.model.v1';
@@ -245,9 +252,15 @@ export function createRiveYaml(width, height) {
     return `name: tegaki_rive_editor\nmain: RiveEditorProof\nartboard:\n  width: ${width}\n  height: ${height}\n  background: "#00000000"\nlogs:\n  file: build/rive.log\n  problems: build/problems.log\n`;
 }
 
-export function createSource({ width, height, angle = LIMITS.restAngle }) {
+export function createSource({ width, height, angle = LIMITS.restAngle, meshWeights = DEFAULT_END_WEIGHTS }) {
     const safeAngle = assertAngle(angle);
     if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) throw new Error('Image dimensions are required.');
+    const safeWeights = assertEndWeights(meshWeights);
+    const weightRecords = encodeWeightRecords(safeWeights);
+    const weightTag = name => {
+        const record = weightRecords.find(entry => entry.name === name);
+        return `<Weight values="${record.values}" indices="${record.indices}"/>`;
+    };
     const rootX = 0;
     const centerX = width * 0.5;
     const centerY = height * 0.5;
@@ -265,16 +278,16 @@ export function createSource({ width, height, angle = LIMITS.restAngle }) {
         <Image x="${formatNumber(centerX)}" y="${formatNumber(centerY)}" originX="0.5" originY="0.5" assetId="0:60" name="RiggedMark" id="0:20">
             <Mesh triangleIndexBytes="AAECAAID" name="QuadMesh" id="0:21">
                 <ContourMeshVertex x="-${formatNumber(halfWidth)}" y="-${formatNumber(halfHeight)}" u="0" v="0" name="TopLeft">
-                    <Weight values="255" indices="1"/>
+                    ${weightTag('TopLeft')}
                 </ContourMeshVertex>
                 <ContourMeshVertex x="${formatNumber(halfWidth)}" y="-${formatNumber(halfHeight)}" u="1" v="0" name="TopRight">
-                    <Weight values="255" indices="2"/>
+                    ${weightTag('TopRight')}
                 </ContourMeshVertex>
                 <ContourMeshVertex x="${formatNumber(halfWidth)}" y="${formatNumber(halfHeight)}" u="1" v="1" name="BottomRight">
-                    <Weight values="255" indices="2"/>
+                    ${weightTag('BottomRight')}
                 </ContourMeshVertex>
                 <ContourMeshVertex x="-${formatNumber(halfWidth)}" y="${formatNumber(halfHeight)}" u="0" v="1" name="BottomLeft">
-                    <Weight values="255" indices="1"/>
+                    ${weightTag('BottomLeft')}
                 </ContourMeshVertex>
                 <Skin tx="0" ty="0" name="Skin">
                     <Tendon boneId="0:40" tx="-${formatNumber(halfWidth)}" ty="0" name="RootTendon"/>
@@ -303,7 +316,7 @@ export function parseSourceMetadata(source) {
     const text = String(source || '');
     const artboard = text.match(/<Artboard width="([0-9.]+)" height="([0-9.]+)"[^>]*name="RiveEditorProof"/);
     const frames = [...text.matchAll(/<KeyFrameDouble value="([^\"]+)" interpolationType="linear" frame="(0|60)"\/>/g)];
-    const vertexMatches = [...text.matchAll(/<ContourMeshVertex\s+x="(-?[0-9.]+)"\s+y="(-?[0-9.]+)"/g)];
+    const vertexMatches = [...text.matchAll(/<ContourMeshVertex\s+x="(-?[0-9.]+)"\s+y="(-?[0-9.]+)"\s+u="([0-9.]+)"\s+v="([0-9.]+)"\s+name="([A-Za-z]+)">\s*<Weight\s+values="([0-9]+)"\s+indices="([0-9]+)"\/>\s*<\/ContourMeshVertex>/g)];
     const vertices = [...text.matchAll(/<ContourMeshVertex\b/g)];
     const endFrame = frames.find(frame => frame[2] === '60');
     const startFrame = frames.find(frame => frame[2] === '0');
@@ -321,6 +334,21 @@ export function parseSourceMetadata(source) {
     const boneLength = Number(root[3]);
     const meshX = vertexMatches.map(vertex => Number(vertex[1]));
     const meshY = vertexMatches.map(vertex => Number(vertex[2]));
+    let meshWeights;
+    try {
+        const expectedUv = [[0, 0], [1, 0], [1, 1], [0, 1]];
+        const records = vertexMatches.map((vertex, index) => {
+            const uv = [Number(vertex[3]), Number(vertex[4])];
+            if (vertex[5] !== ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'][index]
+                || uv[0] !== expectedUv[index][0] || uv[1] !== expectedUv[index][1]) {
+                throw new Error('Unsupported source vertex order or UV.');
+            }
+            return { name: vertex[5], values: Number(vertex[6]), indices: Number(vertex[7]) };
+        });
+        meshWeights = decodeWeightRecords(records);
+    } catch {
+        return null;
+    }
     const meshBounds = {
         minX: Math.min(...meshX),
         maxX: Math.max(...meshX),
@@ -341,6 +369,7 @@ export function parseSourceMetadata(source) {
         rootY,
         boneLength,
         meshBounds,
+        meshWeights,
     };
 }
 
@@ -360,6 +389,13 @@ export function makeSnapshot(state) {
         progress: state.progress,
         dirty: state.dirty === true,
         reason: state.reason || null,
+        meshWeights: state.meshWeights ? cloneEndWeights(state.meshWeights) : null,
+        weightEditPhase: state.weightEditPhase || 'idle',
+        weightDraft: state.weightDraft ? {
+            endWeights: state.weightDraft.endWeights ? cloneEndWeights(state.weightDraft.endWeights) : null,
+            percentages: Array.isArray(state.weightDraft.percentages) ? [...state.weightDraft.percentages] : null,
+        } : null,
+        selectedVertex: state.selectedVertex || null,
     };
 }
 

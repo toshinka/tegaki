@@ -1,10 +1,11 @@
 /**
- * ROLE: WP-032 standalone GUI、iframe protocol、End bone の native preview bridge。
+ * ROLE: WP-034 Slice A standalone GUI、四隅 weight draft、iframe protocol、End bone の native preview bridge。
  * AUTHORITY: server の snapshot を表示し、native runtime は preview/receipt 派生。host Project/History は所有しない。
  * INVARIANTS: loopback origin+event source+session/version、ready/非previewだけ frame、bone previewはpointermoveでcompileしない。
- * RELATED: runtime.js、bone-editor.js、bone-projection.mjs、server.mjs、ui/rive-editor-entry.js、WP-032。
+ * RELATED: runtime.js、bone-editor.js、weight-editor.js、weight-model.mjs、bone-projection.mjs、server.mjs、WP-034。
  */
 import { BoneEditorController } from './bone-editor.js';
+import { WeightEditorController } from './weight-editor.js';
 import { RiveNativeRuntime, imageMetrics } from './runtime.js';
 
 const PROTOCOL_VERSION = 1;
@@ -26,6 +27,12 @@ const progressValue = document.querySelector('#progress-value');
 const boneOverlay = document.querySelector('#bone-overlay');
 const boneLine = document.querySelector('#bone-line');
 const boneHandle = document.querySelector('#rive-bone-end');
+const weightRoot = document.querySelector('#weight-editor');
+const weightInputs = Object.fromEntries([...document.querySelectorAll('[data-rive-weight]')].map(node => [node.dataset.riveWeight, node]));
+const weightRootOutputs = Object.fromEntries([...document.querySelectorAll('[data-rive-root]')].map(node => [node.dataset.riveRoot, node]));
+const weightApplyButton = document.querySelector('#weight-apply');
+const weightDiscardButton = document.querySelector('#weight-discard');
+const weightPresetButtons = Object.fromEntries([...document.querySelectorAll('[data-weight-preset]')].map(node => [node.dataset.weightPreset, node]));
 
 let apiState = null;
 let snapshot = null;
@@ -38,6 +45,9 @@ let editorDisposed = false;
 let boneController = null;
 let boneGeneration = 0;
 let boneBaselineSnapshot = null;
+let weightController = null;
+let weightGeneration = 0;
+let weightBaselineSnapshot = null;
 let pixelInspectionGeneration = 0;
 const handledRequests = new Set();
 const operationControls = [
@@ -51,16 +61,21 @@ const operationControls = [
     document.querySelector('#save-frame'),
 ];
 
+function syncOperationControls() {
+    const locked = busy || weightController?.isDraft() || weightController?.isPending();
+    for (const control of operationControls) if (control) control.disabled = locked;
+}
+
 function setBusy(next) {
     if (editorDisposed) return;
     busy = next === true;
     root.dataset.editorBusy = String(busy);
-    for (const control of operationControls) if (control) control.disabled = busy;
+    syncOperationControls();
     boneController?.refresh();
 }
 
 async function runOperation(label, operation) {
-    if (busy) return;
+    if (busy || weightController?.isDraft() || weightController?.isPending()) return;
     setBusy(true);
     try {
         return await operation();
@@ -165,6 +180,19 @@ function setSnapshot(next, reason = null) {
         selectedBone: next?.selectedBone || null,
         editPhase: next?.editPhase || 'idle',
         previewAngle,
+        meshWeights: Array.isArray(next?.meshWeights) ? [...next.meshWeights] : null,
+        weightEditPhase: next?.weightEditPhase || 'idle',
+        weightDraft: next?.weightDraft ? {
+            endWeights: Array.isArray(next.weightDraft.endWeights) ? [...next.weightDraft.endWeights] : null,
+            percentages: Array.isArray(next.weightDraft.percentages) ? [...next.weightDraft.percentages] : null,
+            rawValues: next.weightDraft.rawValues ? { ...next.weightDraft.rawValues } : null,
+            fieldValidity: next.weightDraft.fieldValidity ? { ...next.weightDraft.fieldValidity } : null,
+            fieldErrors: next.weightDraft.fieldErrors ? { ...next.weightDraft.fieldErrors } : null,
+            selectedVertex: next.weightDraft.selectedVertex || null,
+            valid: next.weightDraft.valid !== false,
+            error: next.weightDraft.error || null,
+        } : null,
+        selectedVertex: next?.selectedVertex || next?.weightDraft?.selectedVertex || null,
     };
     root.dataset.editorStatus = snapshot.status;
     statusNode.dataset.editorStatus = snapshot.status;
@@ -353,7 +381,43 @@ async function loadRuntime(value) {
     lastFrame = runtime.render(Number(value.snapshot.progress ?? 0));
 }
 
-async function applyState(value, message = null) {
+function cloneWeightBaseline(value) {
+    if (!value) return null;
+    return {
+        ...value,
+        image: value.image ? { ...value.image } : null,
+        meshWeights: Array.isArray(value.meshWeights) ? [...value.meshWeights] : null,
+        weightDraft: value.weightDraft ? {
+            ...value.weightDraft,
+            endWeights: Array.isArray(value.weightDraft.endWeights) ? [...value.weightDraft.endWeights] : null,
+            percentages: Array.isArray(value.weightDraft.percentages) ? [...value.weightDraft.percentages] : null,
+            rawValues: value.weightDraft.rawValues ? { ...value.weightDraft.rawValues } : null,
+            fieldValidity: value.weightDraft.fieldValidity ? { ...value.weightDraft.fieldValidity } : null,
+            fieldErrors: value.weightDraft.fieldErrors ? { ...value.weightDraft.fieldErrors } : null,
+        } : null,
+    };
+}
+
+function localWeightFields(phase = 'draft') {
+    const draft = weightController?.getDraft?.();
+    if (!draft) return { weightEditPhase: 'idle', weightDraft: null, selectedVertex: null };
+    return {
+        weightEditPhase: phase,
+        weightDraft: {
+            endWeights: draft.endWeights ? [...draft.endWeights] : null,
+            percentages: draft.percentages ? [...draft.percentages] : null,
+            rawValues: draft.rawValues ? { ...draft.rawValues } : null,
+            fieldValidity: draft.fieldValidity ? { ...draft.fieldValidity } : null,
+            fieldErrors: draft.fieldErrors ? { ...draft.fieldErrors } : null,
+            selectedVertex: draft.selectedVertex || null,
+            valid: draft.valid === true,
+            error: draft.error || null,
+        },
+        selectedVertex: draft.selectedVertex || null,
+    };
+}
+
+async function applyState(value, message = null, options = {}) {
     if (editorDisposed) throw new Error('Editor is disposed.');
     apiState = value;
     if (value.snapshot?.status === 'error') {
@@ -361,12 +425,20 @@ async function applyState(value, message = null) {
         setStatus(value.error || value.snapshot.reason || 'Editor state is unavailable.', 'error');
         return;
     }
-    setSnapshot({ ...value.snapshot, status: 'loading', reason: 'native-load' }, 'native-load');
+    const weightOverlay = weightController?.isDraft() ? localWeightFields('commit') : {};
+    setSnapshot({ ...value.snapshot, ...weightOverlay, status: 'loading', reason: 'native-load' }, 'native-load');
     await loadRuntime(value);
     if (editorDisposed) throw new Error('Editor is disposed.');
-    setSnapshot({ ...value.snapshot, status: 'ready' }, value.snapshot?.reason);
+    const keepWeightPending = options.keepWeightPending === true && weightController?.isDraft();
+    setSnapshot({
+        ...value.snapshot,
+        ...weightOverlay,
+        status: keepWeightPending ? 'building' : 'ready',
+        reason: keepWeightPending ? 'weights-commit-recording' : value.snapshot?.reason,
+    }, keepWeightPending ? 'weights-commit-recording' : value.snapshot?.reason);
+    if (!keepWeightPending && !weightController?.isDraft() && Array.isArray(value.snapshot?.meshWeights)) weightController?.loadCommitted(value.snapshot.meshWeights);
     boneController?.refresh();
-    if (message) setStatus(message, 'ready');
+    if (message && !keepWeightPending) setStatus(message, 'ready');
 }
 
 async function compileAngle() {
@@ -556,6 +628,10 @@ async function handleFrameRequest(event) {
     const requestId = String(data.requestId || '');
     if (!requestId || handledRequests.has(requestId)) return;
     handledRequests.add(requestId);
+    if (weightController?.isDraft() || weightController?.isPending()) {
+        sendError(requestId, 'weight-draft-active');
+        return;
+    }
     if (busy || !runtime || !snapshot || snapshot.status !== 'ready' || !snapshot.buildId || !snapshot.documentId) {
         sendError(requestId, 'editor-not-ready');
         return;
@@ -598,6 +674,117 @@ function previewBoneAngle(angle) {
     setStatus(`終点角${angle}°をnative preview中…`);
 }
 
+function weightFieldsFromDraft(draft, phase = 'draft') {
+    return {
+        weightEditPhase: phase,
+        weightDraft: draft ? {
+            endWeights: draft.endWeights ? [...draft.endWeights] : null,
+            percentages: draft.percentages ? [...draft.percentages] : null,
+            rawValues: draft.rawValues ? { ...draft.rawValues } : null,
+            fieldValidity: draft.fieldValidity ? { ...draft.fieldValidity } : null,
+            fieldErrors: draft.fieldErrors ? { ...draft.fieldErrors } : null,
+            selectedVertex: draft.selectedVertex || null,
+            valid: draft.valid === true,
+            error: draft.error || null,
+        } : null,
+        selectedVertex: draft?.selectedVertex || null,
+    };
+}
+
+function onWeightSelectionChanged(selectedVertex) {
+    if (editorDisposed || !snapshot) return;
+    setSnapshot({ ...snapshot, selectedVertex }, snapshot.reason);
+}
+
+function onWeightDraftChanged(draft) {
+    if (editorDisposed || !snapshot) return;
+    syncOperationControls();
+    if (draft && !weightBaselineSnapshot && snapshot.status === 'ready') weightBaselineSnapshot = cloneWeightBaseline(snapshot);
+    if (!draft) {
+        setSnapshot({
+            ...snapshot,
+            status: snapshot.buildId ? 'ready' : snapshot.status,
+            ...weightFieldsFromDraft(null, 'idle'),
+            reason: 'weights-idle',
+        }, 'weights-idle');
+        syncOperationControls();
+        return;
+    }
+    setSnapshot({
+        ...snapshot,
+        status: 'building',
+        reason: 'weights-draft',
+        ...weightFieldsFromDraft(draft, 'draft'),
+    }, 'weights-draft');
+    setStatus(draft.valid === false ? (draft.error || 'End追従率を確認してください。') : '四隅の骨への追従を編集中です。', draft.valid === false ? 'error' : '');
+    syncOperationControls();
+    boneController?.refresh();
+}
+
+function onWeightDiscard() {
+    weightGeneration += 1;
+    const baseline = weightBaselineSnapshot;
+    if (baseline) {
+        angleInput.value = String(baseline.angle ?? 30);
+        progressInput.value = String(baseline.progress ?? 0);
+        progressValue.value = Number(baseline.progress ?? 0).toFixed(2);
+        setSnapshot({
+            ...baseline,
+            status: 'ready',
+            ...weightFieldsFromDraft(null, 'idle'),
+            reason: 'weights-discarded',
+        }, 'weights-discarded');
+    }
+    weightBaselineSnapshot = null;
+    boneController?.refresh();
+}
+
+async function commitWeightDraft(draft) {
+    const previous = weightBaselineSnapshot || snapshot;
+    const token = ++weightGeneration;
+    if (!previous || previous.status !== 'ready' || !draft?.valid || !Array.isArray(draft.endWeights)) {
+        return { ok: false, reason: 'weight-commit-state-invalid' };
+    }
+    setSnapshot({
+        ...snapshot,
+        status: 'building',
+        reason: 'weights-commit',
+        ...weightFieldsFromDraft(draft, 'commit'),
+    }, 'weights-commit');
+    setStatus('四隅の追従率を公式CLIで一度だけ確定中…');
+    try {
+        const value = await postJson('/api/compile', {
+            angle: Number(previous.angle),
+            progress: Number(previous.progress),
+            weights: [...draft.endWeights],
+        });
+        if (editorDisposed || token !== weightGeneration) return { ok: false, reason: 'weight-commit-stale', suppressCancel: true };
+        await applyState(value, null, { keepWeightPending: true });
+        if (editorDisposed || token !== weightGeneration) return { ok: false, reason: 'weight-commit-stale', suppressCancel: true };
+        await record('weights-commit', { weights: { endBytes: [...draft.endWeights], selectedVertex: draft.selectedVertex || null } });
+        if (editorDisposed || token !== weightGeneration) return { ok: false, reason: 'weight-commit-stale', suppressCancel: true };
+        weightBaselineSnapshot = null;
+        weightController?.commitAccepted(value.snapshot.meshWeights);
+        return { ok: true, acceptedByCallback: true, snapshot: value.snapshot };
+    } catch (error) {
+        if (!editorDisposed && token === weightGeneration) {
+            setSnapshot({
+                ...previous,
+                status: 'building',
+                reason: 'weights-draft-rejected',
+                ...weightFieldsFromDraft(draft, 'draft'),
+            }, 'weights-draft-rejected');
+            setStatus(error?.message || '四隅の追従率を適用できませんでした。', 'error');
+            boneController?.refresh();
+        }
+        return {
+            ok: false,
+            reason: editorDisposed || token !== weightGeneration ? 'weight-commit-stale' : (error?.message || 'weight-commit-rejected'),
+            suppressCancel: editorDisposed || token !== weightGeneration,
+        };
+    }
+}
+
 boneController = new BoneEditorController({
     canvas,
     overlay: boneOverlay,
@@ -616,6 +803,27 @@ boneController = new BoneEditorController({
 });
 boneController.attach();
 
+weightController = new WeightEditorController({
+    root: weightRoot,
+    inputs: weightInputs,
+    rootOutputs: weightRootOutputs,
+    applyButton: weightApplyButton,
+    discardButton: weightDiscardButton,
+    presetButtons: weightPresetButtons,
+    initialWeights: snapshot?.meshWeights,
+    onDraftChanged: onWeightDraftChanged,
+    onSelectionChanged: onWeightSelectionChanged,
+    onPendingChanged: () => syncOperationControls(),
+    onApply: commitWeightDraft,
+    onDiscard: onWeightDiscard,
+    canBeginDraft: () => !busy && snapshot?.status === 'ready',
+    onMessage: (message, kind) => {
+        if (!message) return;
+        setStatus(message, kind === 'error' ? 'error' : kind === 'ready' ? 'ready' : '');
+    },
+});
+weightController.attach();
+
 imageInput.addEventListener('change', () => void runOperation('image-load', () => loadImage(imageInput.files?.[0])));
 document.querySelector('#apply').addEventListener('click', () => void runOperation('compile', compileAngle));
 progressInput.addEventListener('input', scrub);
@@ -629,7 +837,9 @@ window.addEventListener('message', event => handleFrameRequest(event));
 window.addEventListener('pagehide', () => {
     editorDisposed = true;
     pixelInspectionGeneration += 1;
+    weightGeneration += 1;
     boneController?.dispose();
+    weightController?.dispose();
     runtime.dispose();
 });
 

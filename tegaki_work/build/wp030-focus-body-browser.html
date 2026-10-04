@@ -1,0 +1,49 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>WP030 Canvas集中線・ウニ枠</title>
+<style>body{background:#ffffee;color:#800000;font:12px system-ui}iframe{width:1280px;height:720px;border:1px solid #b8706b}pre{white-space:pre-wrap}</style>
+<button id="run" disabled>ウニ枠とCanvas編集を検証</button><button id="inspect" disabled>ウニ枠を表示</button><span id="state">製品起動中</span><pre id="output"></pre><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+const frame=document.querySelector('#product'),out=document.querySelector('#output'),state=document.querySelector('#state');
+const delay=ms=>new Promise(r=>setTimeout(r,ms)),check=(ok,label)=>{if(!ok)throw Error(label);out.textContent+='PASS '+label+'\n';};
+let core;for(let i=0;i<200;i++){core=frame.contentWindow?.coreEngine;if(core?.popupManager?.get('focusLines')?.isReady())break;await delay(100);}
+const win=frame.contentWindow,f=core.popupManager.get('focusLines'),b=core.popupManager.get('balloon'),q=(p,s)=>p.popup.querySelector(s),realm=v=>win.JSON.parse(JSON.stringify(v));
+const image=()=>{const c=core.exportManager.renderToCanvas({transparent:true});return [...c.getContext('2d').getImageData(0,0,c.width,c.height).data];},equal=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
+const rasterAt=(r,x,y)=>[...r.pixels.slice((y*r.width+x)*4,(y*r.width+x)*4+4)];
+const drag=async(kind,to)=>{f.overlay.render();const h=f.overlay.svg.querySelector(`[data-kind="${kind}"]`),s=f.overlay._toScreen(to);h.dispatchEvent(new win.PointerEvent('pointerdown',{pointerId:73,pointerType:'mouse',button:0,clientX:Number(h.getAttribute('cx')),clientY:Number(h.getAttribute('cy')),bubbles:true}));win.dispatchEvent(new win.PointerEvent('pointermove',{pointerId:73,pointerType:'mouse',clientX:s.x,clientY:s.y}));win.dispatchEvent(new win.PointerEvent('pointerup',{pointerId:73,pointerType:'mouse',clientX:s.x,clientY:s.y}));await delay(30);};
+state.textContent='検証可能';document.querySelectorAll('button').forEach(b=>b.disabled=false);
+document.querySelector('#inspect').onclick=()=>{frame.style.width='1280px';frame.style.height='720px';out.hidden=true;win.dispatchEvent(new win.Event('resize'));core.popupManager.hideAll();core.layerSystem.getLayers().forEach((l,i)=>{if(!l.layerData.isBackground&&l.layerData.visible)core.layerSystem.toggleLayerVisibility(i);});core.cameraSystem.setZoom(1);core.popupManager.show('focusLines');f._setParams({...f.params,center:{x:200,y:200},innerRx:80,innerRy:100,count:22,outer:140,direction:'out',angleJitter:.25,lengthJitter:.25,color:'#800000',body:{kind:'outline',lineWidth:3,fillColor:'#ffffee',inset:.25}});};
+document.querySelector('#run').onclick=async()=>{
+const original=structuredClone(f.params),prefs=win.localStorage.getItem('tegaki-focus-lines-v1'),balloonPrefs=win.localStorage.getItem('tegaki-balloon-v1');state.textContent='実行中';out.hidden=false;out.textContent='';document.querySelector('#run').disabled=true;
+try{
+ core.popupManager.show('balloon');q(b,'[data-shape="burst"]').click();q(b,'[data-context="tail"]').click();q(b,'[data-role="tail-disabled"]').click();b.overlay.render();
+ check(!b.params.tail.enabled&&q(b,'[data-role="tail-disabled"]').getAttribute('aria-pressed')==='true'&&!b.overlay.svg.querySelector('[data-kind="tip"]'),'ギザギザのしっぽ「なし」が明示選択・先端非表示');
+ q(b,'[data-role="tail-enabled"]').click();check(b.params.tail.enabled,'しっぽ「あり」で復帰');
+ core.popupManager.show('focusLines');check(!q(f,'canvas.pl-preview')&&!q(f,'[data-role="overlay-toggle"]')&&f.overlay.visible,'集中線は小previewなし・Canvas常時表示');
+ q(f,'[data-mode="rays"]').click();q(f,'[data-style="flash"]').click();check(f.params.count===48&&f.params.direction==='out'&&!f.params.body&&q(f,'[data-style="flash"]').getAttribute('aria-pressed')==='true','旧ウニフラpresetと旧ray出力の入口を保持');q(f,'[data-direction="in"]').click();check(f.params.direction==='in','放射線の向き切替を保持');
+ const base={...f.params,center:{x:200,y:200},innerRx:70,innerRy:95,count:24,outer:165,direction:'out',color:'#123456',angleJitter:.6,lengthJitter:.3};
+ f._setParams({...base,body:{kind:'outline',lineWidth:4,fillColor:'#ffffff',inset:.25}});let r=f._raster();
+ check(q(f,'[data-row="bodyInset"]').hidden&&q(f,'[data-row="widthMin"]').hidden&&q(f,'[data-ray-controls]').hidden,'外枠は効く設定だけを表示');
+ check(r.ok&&equal(rasterAt(r,200,200),[255,255,255,255])&&rasterAt(r,0,0)[3]===0,'ウニ外枠は閉じた白い本体・外側透明');
+ f.overlay.render();check(f.overlay.svg.querySelectorAll('path').length>0,'閉輪郭をCanvas SVGへ反映');
+ const svgViewport=f.overlay.svg.getBoundingClientRect();check(Math.abs(svgViewport.left)<.01&&Math.abs(svgViewport.top)<.01,'SVGは変形済みCanvas親の位置を二重加算しない');
+ const camera=core.cameraSystem,zoom=camera.worldContainer.scale.x,rotation=camera.worldContainer.rotation;
+ camera.setZoom(zoom*1.6);camera.worldContainer.rotation=Math.PI/5;camera.updateTransformDisplay();await delay(40);f.overlay.render();
+ const origin=f.overlay._toScreen({x:0,y:0}),axis=f.overlay._toScreen({x:1,y:0}),screenWidth=4*Math.hypot(axis.x-origin.x,axis.y-origin.y);
+ check(Math.abs(Number(f.overlay.svg.querySelector('.fl-ov-body').getAttribute('stroke-width'))-screenWidth)<.001&&f.overlay.svg.querySelector('clipPath path')&&!f.overlay.svg.querySelector('clipPath rect'),'zoomで枠線幅も追従・回転Canvasを四辺でclip');
+ camera.worldContainer.rotation=rotation;camera.setZoom(zoom);camera.updateTransformDisplay();await delay(30);
+ f._setParams({...f.params,body:{...f.params.body,fillColor:null}});r=f._raster();check(rasterAt(r,200,200)[3]===0,'塗り透明の外枠');
+ f._setParams({...f.params,body:{...f.params.body,kind:'ring',fillColor:'#ffffff'}});r=f._raster();check(rasterAt(r,200,200)[3]===0&&r.pixels.some((v,i)=>i%4===3&&v>0),'二重枠の中央は白で隠さず透明');
+ const center={...f.params.center};await drag('center',{x:center.x+15,y:center.y-10});check(f.params.center.x===center.x+15&&f.params.center.y===center.y-10,'Canvasでウニ枠全体を配置');
+ const history=core.history.stack.length,added=f.apply();check(added.ok&&core.history.stack.length===history+1,'ウニ枠を一Historyで新Rasterへ確定');f.hide();
+ const png=image(),project=await core.projectManager.exportProject();await core.projectManager.loadProject(realm(project));check(equal(png,image()),'二重ウニ枠の実Project/PNG全画素一致');
+ const layer=core.layerSystem.getLayers().find(l=>l.layerData.id===added.layerId);core.layerSystem.setActiveLayer(core.layerSystem.getLayerIndex(layer));core.popupManager.show('focusLines');check(f.loadFromActiveLayer().ok&&f.params.body.kind==='ring','ウニ枠のoptional v1 recipeから再編集');
+ const oldWidth=f.params.body.lineWidth;f._setParams({...f.params,body:{...f.params.body,lineWidth:oldWidth+2}});check(f.update().ok,'ウニ枠の線幅を再編集更新');core.history.undo();check(core.layerSystem.getActiveLayer().layerData.focusLines.params.body.lineWidth===oldWidth,'更新Undoで輪郭設定と画素を復元');core.history.redo();
+ const wheelWidth=f.params.body.lineWidth;q(f,'input[data-field="bodyLineWidth"]').dispatchEvent(new win.WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}));check(f.params.body.lineWidth===wheelWidth+.5,'枠線range上のwheelで数値調整');
+ const draft=JSON.stringify(f.params),navScale=camera.worldContainer.scale.x,renderer=win.document.querySelector('.canvas-area canvas');
+ win.document.body.dispatchEvent(new win.KeyboardEvent('keydown',{code:'Space',key:' ',bubbles:true,cancelable:true}));renderer.dispatchEvent(new win.WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}));win.document.body.dispatchEvent(new win.KeyboardEvent('keyup',{code:'Space',key:' ',bubbles:true,cancelable:true}));
+ check(camera.worldContainer.scale.x!==navScale&&JSON.stringify(f.params)===draft,'Space wheelはCanvasへ譲りウニ枠を変えない');
+ for(const [width,height]of [[1280,720],[360,640],[360,400]]){frame.style.width=width+'px';frame.style.height=height+'px';win.dispatchEvent(new win.Event('resize'));await delay(60);const footer=q(f,'.fl-fixed-footer')||q(f,'.pl-footer:last-child'),p=f.popup.getBoundingClientRect(),foot=footer.getBoundingClientRect();check(p.left>=0&&p.right<=width&&foot.bottom<=height&&foot.height>0,'集中線の常設確定・狭幅 '+width+'x'+height);f.overlay.render();const shown=f.overlay._toScreen(f.params.center),truth=win.pixelSelectionSystem.coordSystem.worldToScreenImmediate(f.params.center.x,f.params.center.y);check(Math.hypot(shown.x-truth.clientX,shown.y-truth.clientY)<.001,'Canvasの現在位置とoverlay投影が一致 '+width);}
+ state.textContent='PASS';
+}catch(e){state.textContent='FAIL '+e.message;out.textContent+=e.stack;}
+finally{core.popupManager.hideAll();f._setParams(original);if(prefs===null)win.localStorage.removeItem('tegaki-focus-lines-v1');else win.localStorage.setItem('tegaki-focus-lines-v1',prefs);if(balloonPrefs===null)win.localStorage.removeItem('tegaki-balloon-v1');else win.localStorage.setItem('tegaki-balloon-v1',balloonPrefs);document.querySelector('#run').disabled=false;}
+};
+</script></html>

@@ -41,6 +41,15 @@
     button:disabled { cursor: default; opacity: .55; }
     .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .button-row button { text-align: center; }
+    .weight-editor { display: grid; gap: 6px; min-width: 0; padding-top: 4px; border-top: 1px solid rgba(128,0,0,.22); }
+    .weight-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; min-width: 0; }
+    .weight-row { min-width: 0; font-size: 11px; }
+    .weight-row > span { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; align-items: center; min-width: 0; }
+    .weight-row output { white-space: nowrap; font-size: 10px; color: var(--light-maroon); }
+    .weight-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; min-width: 0; }
+    .weight-presets button { padding: 5px 3px; text-align: center; font-size: 11px; }
+    .weight-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .weight-actions button { text-align: center; }
     .section-title { margin: 2px 0 0; font-size: 12px; color: var(--light-maroon); }
     [role="status"] { min-height: 2.5em; padding: 6px; border-left: 3px solid var(--orange); background: rgba(255,255,255,.45); }
     .status-error { border-left-color: var(--red) !important; color: var(--red); }
@@ -78,6 +87,35 @@
         <label>スクラブ <output id="progress-value">0.00</output>
           <input id="progress" type="range" min="0" max="1" step="0.01" value="0" data-testid="rive-progress">
         </label>
+        <section id="weight-editor" class="weight-editor" aria-label="四隅の骨への追従" data-testid="rive-weight-editor">
+          <p class="section-title">四隅の骨への追従</p>
+          <p class="hint">Endへ追従 %（Rootは補数）</p>
+          <div class="weight-grid">
+            <label class="weight-row">TopLeft
+              <span><input id="weight-TopLeft" type="number" min="0" max="100" step="0.1" value="0" aria-label="Endへ追従 %" data-rive-weight="TopLeft" data-testid="rive-weight-TopLeft"><output data-rive-root="TopLeft">End 0% / Root 100%</output></span>
+            </label>
+            <label class="weight-row">TopRight
+              <span><input id="weight-TopRight" type="number" min="0" max="100" step="0.1" value="100" aria-label="Endへ追従 %" data-rive-weight="TopRight" data-testid="rive-weight-TopRight"><output data-rive-root="TopRight">End 100% / Root 0%</output></span>
+            </label>
+            <label class="weight-row">BottomRight
+              <span><input id="weight-BottomRight" type="number" min="0" max="100" step="0.1" value="100" aria-label="Endへ追従 %" data-rive-weight="BottomRight" data-testid="rive-weight-BottomRight"><output data-rive-root="BottomRight">End 100% / Root 0%</output></span>
+            </label>
+            <label class="weight-row">BottomLeft
+              <span><input id="weight-BottomLeft" type="number" min="0" max="100" step="0.1" value="0" aria-label="Endへ追従 %" data-rive-weight="BottomLeft" data-testid="rive-weight-BottomLeft"><output data-rive-root="BottomLeft">End 0% / Root 100%</output></span>
+            </label>
+          </div>
+          <div class="weight-presets" aria-label="追従率プリセット">
+            <button type="button" data-weight-preset="initial" data-testid="rive-weight-preset-initial">初期</button>
+            <button type="button" data-weight-preset="root" data-testid="rive-weight-preset-root">Rootのみ</button>
+            <button type="button" data-weight-preset="end" data-testid="rive-weight-preset-end">Endのみ</button>
+            <button type="button" data-weight-preset="even" data-testid="rive-weight-preset-even">均等</button>
+          </div>
+          <div class="weight-actions">
+            <button id="weight-apply" type="button" data-testid="rive-weight-apply">適用</button>
+            <button id="weight-discard" type="button" data-testid="rive-weight-discard">変更を戻す</button>
+          </div>
+          <p class="hint">入力とプリセットは一時 draft です。適用で一度だけ公式CLIへ渡し、変更を戻すで確認済みの値へ戻します。</p>
+        </section>
         <p class="section-title">保存</p>
         <div class="button-row">
           <button id="save" type="button" data-testid="rive-save">保存</button>

@@ -1,0 +1,65 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>WP030 図形の線と塗り</title>
+<style>body{background:#ffffee;color:#800000;font:12px system-ui}iframe{width:1280px;height:720px;border:1px solid #b8706b}pre{white-space:pre-wrap}</style>
+<button id="run" disabled>図形の線と塗りを検証</button><button id="inspect" disabled>QTP図形を表示</button><span id="state">製品起動中</span><pre id="output"></pre><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+const frame=document.querySelector('#product'),out=document.querySelector('#output'),state=document.querySelector('#state');
+const {paintClosedShapeToLayer,resolveClosedShapePaint,strokePolygonsForPoints}=await import('../system/closed-shape-paint.js');
+const delay=ms=>new Promise(r=>setTimeout(r,ms)),check=(ok,label)=>{if(!ok)throw Error(label);out.textContent+='PASS '+label+'\n';};
+let core;for(let i=0;i<200;i++){core=frame.contentWindow?.coreEngine;if(core?.pixelSelectionSystem||frame.contentWindow?.pixelSelectionSystem)break;await delay(100);}
+const win=frame.contentWindow,ps=win.pixelSelectionSystem,ls=core.layerSystem,area=ps.areaTools,canvas=win.document.querySelector('.canvas-area canvas');
+core.popupManager.show('quickAccess');const qa=core.popupManager.get('quickAccess');
+const realm=v=>win.JSON.parse(JSON.stringify(v));
+const key=key=>{win.document.activeElement?.blur();win.document.body.dispatchEvent(new win.KeyboardEvent('keydown',{key,code:key,bubbles:true,cancelable:true}));};
+const pointEvent=(type,layer,x,y,mods={})=>{const s=ps._layerPointToScreen(layer,x,y);canvas.dispatchEvent(new win.PointerEvent(type,{pointerId:71,pointerType:'mouse',button:0,buttons:type==='pointerup'?0:1,clientX:s.clientX,clientY:s.clientY,bubbles:true,cancelable:true,...mods}));};
+const click=(layer,x,y)=>{pointEvent('pointerdown',layer,x,y);pointEvent('pointerup',layer,x,y);};
+const drag=(layer,x0,y0,x1,y1)=>{pointEvent('pointerdown',layer,x0,y0);pointEvent('pointermove',layer,x1,y1);pointEvent('pointerup',layer,x1,y1);};
+const at=(layer,x,y)=>{const s=ls.createLayerRasterSnapshot(layer),b=s.rasterBounds||{x:0,y:0};const i=((y-b.y)*s.width+x-b.x)*4;return [...s.pixels.slice(i,i+4)];};
+const image=()=>{const c=core.exportManager.renderToCanvas({transparent:true});return [...c.getContext('2d').getImageData(0,0,c.width,c.height).data];};
+const equal=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
+const blank=async()=>{const result=ls.createRasterLayerFromSnapshot({width:400,height:400,pixels:new Uint8ClampedArray(400*400*4),rasterBounds:{x:0,y:0,width:400,height:400},paths:[],pathsData:[]},{name:'図形検証',source:'fixture'});ls.setActiveLayer(ls.getLayerIndex(result.layer));await delay(40);return result.layer;};
+state.textContent='検証可能';document.querySelectorAll('button').forEach(b=>b.disabled=false);
+document.querySelector('#inspect').onclick=async()=>{frame.style.width='1280px';frame.style.height='720px';out.hidden=true;win.dispatchEvent(new win.Event('resize'));core.popupManager.hideAll();ls.getLayers().forEach((l,i)=>{if(!l.layerData.isBackground&&l.layerData.visible)ls.toggleLayerVisibility(i);});const bg=ls.getLayers().find(l=>l.layerData.isBackground);ls.changeBackgroundLayerColor(ls.getLayerIndex(bg),bg.layerData.id,0xf0e0d6);core.popupManager.show('quickAccess');qa._applySharedPosition(880,130);qa._switchTool('shape-polygon');qa.mainColor=0x800000;win.brushSettings.setSize(5);win.brushSettings.setOpacity(1);area.setOptions({shape:{paint:'custom',fillColor:'#ffffee',width:5}});const layer=await blank();for(const[x,y]of [[105,90],[140,125],[177,75],[192,125],[260,110],[236,160],[280,195],[232,212],[253,270],[193,246],[157,287],[145,237],[91,250],[117,202],[72,169],[121,151]])click(layer,x,y);key('Enter');};
+document.querySelector('#run').onclick=async()=>{
+const prefs=win.localStorage.getItem('tegaki-area-tools-v1'),original=area.getOptions();state.textContent='実行中';out.hidden=false;out.textContent='';document.querySelector('#run').disabled=true;
+try{
+ core.popupManager.show('quickAccess');qa._switchTool('shape-rect');
+ check(qa.panel.querySelector('[data-role="shape-paint"]').hidden===false&&win.getComputedStyle(qa.elements.presetGrid).display==='none','図形で筆棚を内側色の設定へ切替');
+ win.brushSettings.setSize(8);win.brushSettings.setOpacity(.5);qa.mainColor=0x123456;
+ area.setOptions({shape:{paint:'custom',fillColor:'#abcdef',width:8}});let layer=await blank(),before=ls.createLayerRasterSnapshot(layer).pixels.slice(),history=core.history.stack.length;
+ drag(layer,85,90,265,240);check(area.shape.isEditing(),'Canvas dragで四角を編集');
+ win.brushSettings.setSize(12);check(area.shape.shape.width===12,'QTP SIZE変更が編集中の線幅へ反映');
+ win.brushSettings.setSize(8);key('Enter');await delay(30);
+ check(core.history.stack.length===history+1,'線と内側色を一Historyで確定');
+ check(equal(at(layer,160,150),[171,205,239,128]),'内側自由色とOPACITY50%');
+ check(equal(at(layer,85,160),[18,52,86,128]),'輪郭色とOPACITYは二重適用されない');
+ core.history.undo();check(equal([...ls.createLayerRasterSnapshot(layer).pixels],[...before]),'線と塗りのUndo完全一致');core.history.redo();
+ const bg=ls.getLayers().find(l=>l.layerData.isBackground);ls.changeBackgroundLayerColor(ls.getLayerIndex(bg),bg.layerData.id,0);
+ area.setOptions({shape:{paint:'custom',fillColor:null}});win.brushSettings.setOpacity(1);layer=await blank();qa._switchTool('shape-ellipse');drag(layer,100,80,280,240);key('Enter');
+ check(equal(at(layer,190,160),[0,0,0,255]),'自由色の初期値はCanvas背景色・黒0も保持');
+ area.setOptions({shape:{paint:'line'}});layer=await blank();qa._switchTool('shape-rect');drag(layer,85,90,265,240);key('Enter');check(at(layer,160,150)[3]===0&&at(layer,85,160)[3]===255,'塗りなしは内側透明');
+ area.setOptions({shape:{paint:'same'}});layer=await blank();const mask=new Uint8Array(80*80);for(let y=0;y<80;y++)mask.fill(1,y*80,y*80+40);ps.setMaskSelection(layer.layerData.id,{x:100,y:100,width:80,height:80},mask);drag(layer,85,90,265,240);key('Enter');check(at(layer,120,140)[3]===255&&at(layer,160,140)[3]===0&&at(layer,85,140)[3]===0,'線と内側色の両方が選択maskに従う');ps.clearSelection();
+ layer=await blank();ls.restoreLayerRasterSnapshot({...ls.createLayerRasterSnapshot(layer),width:20,height:20,rasterBounds:{x:10,y:10,width:20,height:20},pixels:new Uint8ClampedArray(20*20*4)});const small=ls.createLayerRasterSnapshot(layer),contour=[{x:80,y:80},{x:220,y:80},{x:180,y:220}],paint=resolveClosedShapePaint({paint:'same'},{main:[18,52,86]});
+ const terminal=(selection)=>paintClosedShapeToLayer({system:ps,layerSystem:ls,layer,contours:[contour],strokePolygons:strokePolygonsForPoints(contour,{width:8}),paint,selection});history=core.history.stack.length;
+ const empty=terminal({bounds:{x:0,y:0,width:1,height:1},mask:new Uint8Array([1])}),afterEmpty=ls.createLayerRasterSnapshot(layer);check(!empty.ok&&equal([...afterEmpty.pixels],[...small.pixels])&&JSON.stringify(afterEmpty.rasterBounds)===JSON.stringify(small.rasterBounds)&&core.history.stack.length===history,'描けない選択ではRasterの空拡張を残さない');
+ check(terminal(null).ok&&core.history.stack.length===history+1,'小さなRasterを必要範囲へ広げて一Historyで確定');core.history.undo();const undone=ls.createLayerRasterSnapshot(layer);check(equal([...undone.pixels],[...small.pixels])&&JSON.stringify(undone.rasterBounds)===JSON.stringify(small.rasterBounds),'Undoで拡張前のRaster boundsと全画素を復元');core.history.redo();
+ area.setOptions({shape:{paint:'same'}});layer=await blank();qa._switchTool('shape-polygon');history=core.history.stack.length;
+ for(const [x,y]of [[90,90],[250,90],[205,145],[270,235],[90,225],[130,155]])click(layer,x,y);
+ check(area.polygon.isEditing()&&core.history.stack.length===history,'多角形クリック入力はpreviewだけ');
+ key('Backspace');click(layer,130,155);drag(layer,250,90,255,100);key('Enter');
+ check(core.history.stack.length===history+1&&at(layer,170,155)[3]===255,'凹多角形・点移動・Backspace・Enter確定');
+ history=core.history.stack.length;click(layer,290,40);click(layer,340,50);key('Enter');check(core.history.stack.length===history,'3点未満は確定しない');key('Escape');check(!area.polygon.isEditing(),'Escで途中多角形を破棄');
+ layer=await blank();history=core.history.stack.length;click(layer,300,30);pointEvent('pointerdown',layer,340,80,{shiftKey:true});pointEvent('pointerup',layer,340,80,{shiftKey:true});let points=area.polygon.getPoints();check(Math.abs((points[1].x-points[0].x)-(points[1].y-points[0].y))<.001,'Shift点入力で45度に整える');click(layer,300,120);click(layer,300,30);check(!area.polygon.isEditing()&&core.history.stack.length===history+1,'始点クリックで閉じて確定');
+ qa._switchTool('lasso-fill');area.setOptions({shape:{paint:'custom',fillColor:'#ffffff',width:8}});layer=await blank();history=core.history.stack.length;
+ await win.FillTool.performLassoFill([{x:80,y:80},{x:280,y:80},{x:230,y:160},{x:280,y:250},{x:80,y:250}],0x123456,.5,layer,ls,ls.createLayerRasterSnapshot(layer));
+ check(core.history.stack.length===history+1&&equal(at(layer,150,150),[255,255,255,128])&&equal(at(layer,80,150),[18,52,86,128]),'投げ縄も共通の線＋内側色・一History・Opacity一回');
+ const longLasso=Array.from({length:513},(_,i)=>({x:190+80*Math.cos(i*2*Math.PI/513),y:160+65*Math.sin(i*2*Math.PI/513)}));
+ area.setOptions({shape:{paint:'legacy'}});layer=await blank();history=core.history.stack.length;await win.FillTool.performLassoFill(longLasso,0x234567,1,layer,ls,ls.createLayerRasterSnapshot(layer));check(core.history.stack.length===history+1&&equal(at(layer,190,160),[35,69,103,255]),'513点の従来投げ縄は旧GPU塗りを保持');
+ area.setOptions({shape:{paint:'custom',fillColor:'#ffffff',width:8}});layer=await blank();history=core.history.stack.length;await win.FillTool.performLassoFill(longLasso,0x234567,1,layer,ls,ls.createLayerRasterSnapshot(layer));check(core.history.stack.length===history+1&&equal(at(layer,190,160),[255,255,255,255])&&equal(at(layer,110,160),[35,69,103,255]),'513点の手描き投げ縄にも線と内側自由色');
+ qa._switchTool('pen');check(qa.panel.querySelector('[data-role="shape-paint"]').hidden&&win.getComputedStyle(qa.elements.presetGrid).display!=='none','ペンへ戻ると従来6スロット');
+ core.popupManager.hideAll();const png=image(),project=await core.projectManager.exportProject();await core.projectManager.loadProject(realm(project));check(equal(png,image()),'図形と投げ縄の実Project/PNG往復で画素差0');
+ for(const [width,height]of [[1280,720],[360,640]]){frame.style.width=width+'px';frame.style.height=height+'px';win.dispatchEvent(new win.Event('resize'));core.popupManager.show('quickAccess');qa._switchTool('shape-polygon');await delay(50);const paint=qa.panel.querySelector('[data-role="shape-paint"]'),r=paint.getBoundingClientRect();check(r.width>0&&r.left>=0&&r.right<=width,'内側色の設定が狭幅で切れない '+width);}
+ state.textContent='PASS';
+}catch(e){state.textContent='FAIL '+e.message;out.textContent+=e.stack;}
+finally{area.shape.cancel();area.polygon?.cancel();area.setOptions(original);if(prefs===null)win.localStorage.removeItem('tegaki-area-tools-v1');else win.localStorage.setItem('tegaki-area-tools-v1',prefs);document.querySelector('#run').disabled=false;}
+};
+</script></html>

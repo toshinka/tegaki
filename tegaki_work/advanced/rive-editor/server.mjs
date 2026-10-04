@@ -2,7 +2,7 @@
  * ROLE: WP-029 専用 loopback server、公式 CLI build、source+image bundle の保存/復元。
  * AUTHORITY: dedicated cache と startup nonce のみ。Project/History/Canvas の正本は所有しない。
  * INVARIANTS: 127.0.0.1:18729、Origin+nonce mutation gate、saved bundle 破損時は fallback しない、health は installation/pid を識別する。
- * RELATED: advanced/rive-editor/model.mjs、run-editor.ps1、editor.js、WP-029 card。
+ * RELATED: advanced/rive-editor/model.mjs、weight-model.mjs、run-editor.ps1、editor.js、WP-034 card。
  */
 import http from 'node:http';
 import fs from 'node:fs';
@@ -24,6 +24,11 @@ import {
     validatePngBytes,
     writeInitialFixture,
 } from './model.mjs';
+import {
+    DEFAULT_END_WEIGHTS,
+    assertEndWeights,
+    cloneEndWeights,
+} from './weight-model.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WORK = path.resolve(HERE, '..', '..');
@@ -188,6 +193,7 @@ const state = {
     image: null,
     angle: LIMITS.restAngle,
     progress: 0,
+    meshWeights: cloneEndWeights(DEFAULT_END_WEIGHTS),
     dirty: false,
     reason: 'startup',
     error: null,
@@ -210,6 +216,7 @@ function promote(candidate, reason, dirty = true) {
     state.currentSource = candidate.source;
     state.currentImagePath = imagePath;
     state.currentRiv = rivPath;
+    state.meshWeights = cloneEndWeights(candidate.sourceInfo.meshWeights);
     state.image = {
         name: state.image?.name || fixtureInfo.name,
         width: candidate.imageInfo.width,
@@ -383,6 +390,8 @@ function staticRoute(res, pathname) {
         '/runtime.js': [path.join(HERE, 'runtime.js'), 'text/javascript; charset=utf-8'],
         '/bone-editor.js': [path.join(HERE, 'bone-editor.js'), 'text/javascript; charset=utf-8'],
         '/bone-projection.mjs': [path.join(HERE, 'bone-projection.mjs'), 'text/javascript; charset=utf-8'],
+        '/weight-model.mjs': [path.join(HERE, 'weight-model.mjs'), 'text/javascript; charset=utf-8'],
+        '/weight-editor.js': [path.join(HERE, 'weight-editor.js'), 'text/javascript; charset=utf-8'],
         '/runtime/canvas_advanced.mjs': [path.join(RUNTIME, 'canvas_advanced.mjs'), 'text/javascript; charset=utf-8'],
         '/runtime/rive.wasm': [path.join(RUNTIME, 'rive.wasm'), 'application/wasm'],
         '/runtime/rive_fallback.wasm': [path.join(RUNTIME, 'rive_fallback.wasm'), 'application/wasm'],
@@ -445,7 +454,7 @@ const server = http.createServer(async (req, res) => {
             const name = sanitizeImageName(url.searchParams.get('name') || 'image.png');
             const uploadPath = path.join(CACHE, 'incoming-image.png');
             fs.writeFileSync(uploadPath, image);
-            const source = createSource({ width: info.width, height: info.height, angle: state.angle });
+            const source = createSource({ width: info.width, height: info.height, angle: state.angle, meshWeights: state.meshWeights });
             const candidate = buildCandidate(source, uploadPath);
             if (!candidate.ok) return json(res, 422, { ok: false, error: 'image-build-rejected', phase: candidate.phase, message: candidate.output.slice(-500) });
             state.image = { name, width: info.width, height: info.height };
@@ -457,8 +466,11 @@ const server = http.createServer(async (req, res) => {
             const body = parseJson(await readBody(req, LIMITS.maxControlBytes));
             const angle = assertAngle(body.angle);
             const progress = assertProgress(body.progress ?? 0);
+            const meshWeights = Object.prototype.hasOwnProperty.call(body, 'weights')
+                ? assertEndWeights(body.weights)
+                : cloneEndWeights(state.meshWeights);
             if (!state.image) return json(res, 409, { ok: false, error: 'no-image', message: 'Load a PNG before compiling.' });
-            const candidate = buildCandidate(createSource({ width: state.image.width, height: state.image.height, angle }), state.currentImagePath);
+            const candidate = buildCandidate(createSource({ width: state.image.width, height: state.image.height, angle, meshWeights }), state.currentImagePath);
             if (!candidate.ok) return json(res, 422, { ok: false, error: 'compile-rejected', phase: candidate.phase, message: candidate.output.slice(-500) });
             promote(candidate, 'compile', true);
             state.progress = progress;
@@ -499,7 +511,12 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
         if (error?.code === 'BODY_TOO_LARGE') return json(res, 413, { ok: false, error: 'body-too-large', message: error.message });
         if (error?.code === 'SAVED_STATE_REJECTED') return json(res, 409, { ok: false, error: 'saved-state-rejected', message: error.message });
-        if (error?.message?.startsWith('Angle must') || error?.message?.startsWith('Progress must')) return json(res, 400, { ok: false, error: 'input-rejected', message: error.message });
+        if (error?.message?.startsWith('Angle must')
+            || error?.message?.startsWith('Progress must')
+            || error?.message?.startsWith('End weights')
+            || error?.message?.startsWith('Packed weight')) {
+            return json(res, 400, { ok: false, error: 'input-rejected', message: error.message });
+        }
         return json(res, 500, { ok: false, error: 'server-error', message: String(error?.message || error) });
     }
 });

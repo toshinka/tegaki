@@ -2,6 +2,7 @@
  * ============================================================================
  * ファイル名: ui/quick-access-popup.js
  * 責務: ペン設定（サイズ、不透明度、色、ツール切替、ツール別プリセット）への素早いアクセスを提供するUI
+ *   図形時は筆棚をshape-paint-controlsへ投影。描画/保存はAreaToolControllerへ委譲。
  * 依存: config.js, system/event-bus.js, system/drawing/brush-settings.js, ui/ui-icons.js
  * 被依存: core-engine.js, system/popup-manager.js
  * 公開API: QuickAccessPopup
@@ -3071,7 +3072,7 @@ export class QuickAccessPopup {
 
         const selectionApi = window.CoreRuntime?.api?.selection || window.pixelSelectionSystem;
         if (selectionApi?.isToolActive?.() === true) {
-            this.currentTool = ({ auto: 'auto-select', gradient: 'gradient', 'shape-rect': 'shape-rect', 'shape-ellipse': 'shape-ellipse', border: 'border' }[window.pixelSelectionSystem?.getToolMode?.()]) || 'selection';
+            this.currentTool = ({ auto: 'auto-select', gradient: 'gradient', 'shape-rect': 'shape-rect', 'shape-ellipse': 'shape-ellipse', 'shape-polygon': 'shape-polygon', border: 'border' }[window.pixelSelectionSystem?.getToolMode?.()]) || 'selection';
         } else if (this.brushSettings.getMode) {
             this.currentTool = this._normalizeTool(this.brushSettings.getMode());
         }
@@ -3149,8 +3150,9 @@ export class QuickAccessPopup {
                 'lasso-fill': 'lasso fill',
                 'auto-select': 'auto select',
                 gradient: 'gradient',
-                'shape-rect': 'line rectangle',
-                'shape-ellipse': 'line ellipse',
+                'shape-rect': 'rectangle',
+                'shape-ellipse': 'ellipse',
+                'shape-polygon': 'polygon',
                 border: 'border',
                 selection: 'selection',
                 eyedropper: 'eyedropper'
@@ -3174,7 +3176,10 @@ export class QuickAccessPopup {
             this.elements.presetSection.removeAttribute('aria-hidden');
         }
 
-        if (this.elements.presetStatus) {
+        if (this.elements.presetStatus && slotOfTool(this.currentTool) === 'shape') {
+            this.elements.presetStatus.textContent = '図形の線と内側色。線幅はSIZEで調整します。';
+            this.elements.presetStatus.title = this.elements.presetStatus.textContent;
+        } else if (this.elements.presetStatus) {
             this.elements.presetStatus.textContent = activePreset
                 ? `${presetKey} preset slot ${activeIndex + 1}: ${this._roundSize(activePreset.size)}px / ${Math.round(activePreset.opacity)}%`
                 : isPresetEnabled
@@ -3238,6 +3243,7 @@ export class QuickAccessPopup {
         const active = slotOfTool(this.currentTool) === 'shape';
         host.hidden = !active;
         this.elements.presetSection?.classList.toggle('is-shape-paint', active);
+        this.elements.presetSection?.setAttribute('aria-label', active ? '図形の線と内側色' : 'プリセットスロット');
         if (!this.shapePaintControls) this.shapePaintControls = new ShapePaintControls({
             host,
             getState: () => {

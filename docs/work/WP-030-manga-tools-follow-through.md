@@ -19,19 +19,32 @@
 
 将来の自由手描き輪郭、形の個人preset、コマ外clipは候補として保持する。全将来機能を最初のSliceへ混ぜない。
 
-## Current slice — 独立文字領域・共通組版・複数しっぽ・コマ直接分割
+## Current slice — 図形の線/内側色・多角形・Canvas集中線
 
 ### Owner follow-up — 図形の線/内側色・多角形・Canvas集中線（2026-10-05）
 
 Ownerが調査後の実装を指示。クリスタ公式の線/塗り別設定とMediBang公式の多角形/選択境界からの吹き出しを参照し、閉領域の入力とpaintを共用する。参考: [線・塗り](https://help.clip-studio.com/ja-jp/manual_jp/810_subtools/は行.htm)、[選択境界の描画](https://medibangpaint.com/use/2019/08/speech-bubble/)。
 
-確定Slice: QTP図形で空くpreset領域を内側色へ使用。旧欠損設定は四角/楕円=線のみ、投げ縄=旧単色塗りを保持。明示paintは線のみ/線と同色/自由色（初期Canvas Background色、黒0も有効）。線幅はQTP SIZE。不透明度は塗りと線を合わせた結果へ一回だけ。閉じた領域はSVG previewと確定で同じcontour/線polygonを使い、既存選択mask/通常Raster/一History/Projectを保持。自己交差塗りはeven-odd、点は有限・最大256、作品へ編集点を新保存しない。新多角形は点click追加、既存点drag、始点click/Enter確定、Backspace末尾取消、Esc破棄、Shift45度補助。途中previewは画素/Historyへ書かず、3点未満は確定しない。既存Space Camera/global Transformを優先。
+確定Slice: QTP図形で空くpreset領域を内側色へ使用。旧欠損設定は四角/楕円=線のみ、投げ縄=旧単色塗りを保持。明示paintは線のみ/線と同色/自由色（初期Canvas Background色、黒0も有効）。線幅はQTP SIZE。不透明度は塗りと線を合わせた結果へ一回だけ。閉じた領域はSVG previewと確定で同じcontour/線polygonを使い、既存選択mask/通常Raster/一History/Projectを保持。自己交差塗りはeven-odd、多角形点は有限・最大256、手描き投げ縄は有限な採取点列を保持し、作品へ編集点を新保存しない。新多角形は点click追加、既存点drag、始点click/Enter確定、Backspace末尾取消、Esc破棄、Shift45度補助。途中previewは画素/Historyへ書かず、3点未満は確定しない。既存Space Camera/global Transformを優先。
 
 worker SHAPE_WRITE: `system/shape-tool.js`、`system/selection-area-tools.js`、`system/pixel-selection-system.js`、`system/drawing/fill-tool.js`、new `system/polygon-shape-tool.js`/`system/closed-shape-paint.js`、限定pure verifier。既存shapeの確定時CPU compositorを共用し、live pen strokeへCanvas2Dを混入しない。QTP UI/slots/CSS/共通icon・docsはleadのみ。
 
 worker FOCUS_WRITE: `ui/balloon-popup.js`（明示あり/なしのみ）、`ui/focus-lines-popup.js`/`ui/focus-lines-overlay.js`、`system/focus-lines.js`/`system/focus-lines-raster.js`、new集中線CSSと限定verifier。集中線の小preview/overlay OFF UIを外し、Canvas常時表示と共通glass密度/目的別context/固定footer。既存params/旧放射polygon評価は保持。ウニの閉輪郭はoptional `body={kind:'outline'|'ring',lineWidth,fillColor:null|hex,inset}` のv1 recipe（欠損時旧出力）。閉輪郭は角度順の谷/先端点と有界jitter、ringは同じ輪郭の中心縮小で入れ子を保ち中心を透明にする。outlineは背景色の初期塗り/透明切替、線幅と色を編集。SVG/PNGは同じpure contourを使用。放射/枠/二重枠(中抜き)を明示、outline/ringで本数を256以内、手動drawn領域はCanvas寸法へclip。旧rayの機能/Project/再編集/Undoを保持。本文は既存文字ツールを重ねる入口、本文統合や新Layer schemaは今回なし。
 
 lead WRITE: QTP UI/slots/icons/CSS、新Browser fixture、関連verifier/harness/当Card/STATUS。他担当の一般Raster保存block/WP033/RIGはread-only。workerは同checkoutに他担当がいるため既存差分を戻さず、担当外のfileを変更しない。報告だけでcloseせずleadが実Browser・保存画素/Undo・1280/360px・関連test/buildを監査。最終制作受入/pushはOwner。ネーム/AI配置/部品union/ベクターレイヤーは今回対象外。
+
+### 図形paint・Canvas集中線の結果（2026-10-05）
+
+TECHNICAL COMPLETE / OWNER REVIEW。吹き出しの選択中しっぽへ明示「あり/なし」。QTP図形の空く筆preset棚に線のみ/同色/自由色とCanvas背景色への追従を配置し、ペンへ戻ると従来6スロットを復帰する。矩形/楕円/多角形と明示paintの投げ縄は、共通 `closed-shape-paint.js` で線と塗りを合成してからopacityを一回だけ適用する。選択maskと通常Raster/既存Historyを使用し、拡張前snapshotを保持、描けない場合の空拡張もrollbackする。新多角形は最大256点、点追加/移動/始点またはEnter確定/Backspace/Esc/Shift45度。手描き投げ縄は採取済みの有限点列を保持し、256点で切らない。欠損/legacy投げ縄は旧GPU塗りを保持。
+
+集中線はCanvas常設へ移し、小previewとoverlay OFF UIを撤去。共通glass、形/線・配置・ばらつきcontext、固定footerと数値wheel。旧5preset/放射方向/再編集を維持。optional v1 bodyの外枠/二重枠は谷と先端の交互点（最大256本）をseedから生成し、ringは同じ輪郭を中心縮小して透明な中央を作る。枠線の幅・色・内側塗りを編集でき、本文は文字tabで重ねる。枠で無効な放射幅/尖らせ、外枠で無効な中抜きは表示しない。SVGはviewportのbody直下に置き、現在のCamera投影、zoomに対応する線幅、回転Canvasの四辺clipを使う。Project/History/rendererの正本、手描きpen pipelineは変更しない。
+
+- 実Chromium `build/wp030-shape-paint-browser.html`: 四角dragと編集中SIZE、自由色/輪郭色/opacity一回、背景黒0、内側透明、線と塗りの選択mask、空拡張rollback/拡張前boundsへのUndo、凹多角形の点移動/Backspace/Enter/Esc/Shift45度/始点確定、513点投げ縄のlegacy GPUと明示paint、ペン6スロット復帰、実Project export/loadとPNG全画素一致、1280/360px PASS。
+- 実Chromium `build/wp030-focus-body-browser.html`: 明示しっぽなし/復帰、旧ウニフラpreset/向き、外枠/透明塗り/透明中央の二重枠、Canvas中心drag、zoom線幅/回転clip、SVGviewport原点、1History、実Project/PNG全画素一致、recipe再編集/更新UndoRedo、数値wheel/Space Camera、1280×720・360×640/400で確定操作、現在Cameraの投影 PASS。gesture/wheelは製品のhandlerへ合成eventを送るfixtureであり、液タブ/native連続drag完走の証明ではない。
+- 通常の製品tabでも実buttonでモード/内側色と線幅keyboard、外枠/二重枠のCanvas位置を確認。確認画像はworkspace外 `wp030-shape-paint-final.png`、`wp030-focus-body-final.png`、`wp030-focus-ring-final.png`。iframe fixture初期化にMutationObserver error（起点未確定）が記録されたが、通常の製品tabは同errorなし。当Sliceの操作/保存結果とは分離し、RIG所有fileへ修正を広げない。
+- 構文、area-tools5/focus-lines2/balloon5/tool-slots1/Project11、QTP preset/progressive density/static style、harness check、production build、対象diff-check PASS。buildの既存module externalization/chunk-size warningは保持。公開font原本の追加はゼロ。
+
+main/e0f353ed、開始871c51ed。途中のOwner/external commitで先行差分の一部がHEADへ入ったが、lead/workerはcommit/pushしていない。並行WP033/034・RIGと全既存dirtyを保持。Owner制作/液タブ受入は未。フォント追加取得、ネーム/AI配置、union/後編集可能な輪郭部品、正式Vector Layerは次の独立判断であり、今回へ進めない。
 
 ### Owner follow-up — 入力先表示・吹き出しCtrl操作（2026-10-04）
 

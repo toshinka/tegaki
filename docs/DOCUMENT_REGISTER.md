@@ -15,6 +15,10 @@
 
 ## 現行入口と互換入口
 
+- `docs/work/WP-034-rive-weights-playback.md`: CURRENT。Owner就寝中ロングラン。固定四隅の二骨weightと既存EndPose再生を二Sliceで実装、source/Project/rendererの正本境界を維持する。
+- `docs/ai/WP-034-rive-weights-playback-result.md`: REFERENCE EVIDENCE。担当の限定実装/検証結果。native/Browser/Ownerの未検証範囲を司令監査と区別する。
+- `docs/ai/WP-034-rive-weights-playback-audit.md`: REFERENCE EVIDENCE。司令の実controller境界監査、独立公式CLI/native評価、現行UI/hostの未検証範囲。
+
 - `docs/work/WP-033-raster-project-alpha-roundtrip.md`: CURRENT。通常Rasterの既存PNG保存をcanonical snapshotへ揃える限定契約。共通保存blockのwrite ownerと実Project往復の検証境界を持つ。
 - `docs/ai/WP-033-raster-project-alpha-result.md`: REFERENCE EVIDENCE。担当のPNG採取限定修正と実export関数のmock検証。実Browserの証拠と区別する。
 - `docs/ai/WP-033-raster-project-alpha-audit.md`: REFERENCE EVIDENCE。司令の実56°終点Raster/Export画素差0と吹き出しProject往復、固定hash/未測定の監査。
