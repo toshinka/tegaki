@@ -28,6 +28,8 @@
 - `docs/ai/2026-10-03-curated-font-audit.md`: REFERENCE。WP-021の27書体取得・追加監査/保留リスト・Browser検証。実装契約はWP-021、現在地はSTATUS。
 - `docs/ai/2026-10-04-font-organization-proposal.md`: REFERENCE。ホイール選択・一軸ツリー・Eドライブ保管の比較案。Owner案A承認後の実装範囲はWP-022、現在地はSTATUS。
 - `docs/work/WP-022-font-organization.md`: CURRENT。外部実体・場面別一軸ツリー・wheel/手動順の限定実装カード。
+- `docs/work/WP-023-font-auto-local.md`: CURRENT。個人開発server限定のloopback自動参照。通常接続UI非表示、公開buildへ実体とbridgeを含めない。
+- `docs/ai/2026-10-04-font-auto-local-result.md`: REFERENCE。自動参照の配信範囲と検証記録。
 - `docs/ai/2026-10-04-font-organization-result.md`: REFERENCE。初期場面分類の根拠、外部保管、検証記録。
 - `docs/ai/2026-10-03-manga-font-feasibility.md / 2026-10-03-manga-font-conditions.md`: REFERENCE。漫画用文字タブの事前検討と一次12候補の取得前調査。後続の取得・実装はWP-021と監査記録を参照。
 - `docs/handoffs/2026-09-06-wp002-to-wp003.md`: HANDOFF SNAPSHOT。新チャット用の読み順・最初のSlice・除外範囲。現在地の正本はSTATUSのまま。

@@ -171,7 +171,7 @@ export class FontTree {
     moveRelative(key, direction) {
         const node = this.getNode(key);
         if (!node || node.canMove === false) return null;
-        const siblings = this._actualChildrenFor(node.parentId);
+        const siblings = this._actualChildrenFor(node.parentId).filter(item => item.canMove !== false);
         const index = siblings.findIndex(item => item.key === node.key);
         if (index < 0) return null;
         if (direction < 0) {
@@ -265,9 +265,12 @@ export class FontTree {
         const ordered = this._actualChildrenFor(parentId);
         if (!this._favoriteFirst) return ordered;
         if (parentId) return ordered.filter(node => !(node.type === 'font' && node.favorite));
-        const allFavorites = [...this._nodes.values()]
-            .filter(node => node.type === 'font' && node.favorite)
-            .sort((a, b) => a.orderIndex - b.orderIndex);
+        const allFavorites = [];
+        const collect = parent => this._actualChildrenFor(parent).forEach(node => {
+            if (node.type === 'folder') collect(node.id);
+            else if (node.favorite) allFavorites.push(node);
+        });
+        collect(null);
         const favoriteKeys = new Set(allFavorites.map(node => node.key));
         return allFavorites.concat(ordered.filter(node => !favoriteKeys.has(node.key)));
     }

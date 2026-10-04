@@ -13,7 +13,7 @@
  * 保存: 取り込んだフォント実体とフォルダはブラウザ内ローカル(IndexedDB)。Project/History/書き出しへは関与しない。
  *   Layerに残るのは確定した画素と、再編集用のフォント参照(family名 or 取り込みフォントid)だけ。
  * ライセンス: 同梱フォントはcatalogのsource/license情報と親Cardの取得物を正本とする。ユーザー取り込みも維持。
- * 実装状態: ✅実装（WP-021 / WP-022 backend slice）
+ * 実装状態: ✅実装（WP-021 / WP-022 / WP-023 backend slice）
  * ============================================================================
  */
 
@@ -120,6 +120,8 @@ function normalizeCatalogRow(raw, index) {
         sourceUrl: cleanUrl(raw.sourceUrl),
         licenseUrl: cleanUrl(raw.licenseUrl),
         licenseFile: String(raw.licenseFile ?? '').trim(),
+        authorFile: String(raw.authorFile ?? '').trim(),
+        readmeFile: String(raw.readmeFile ?? '').trim(),
         coverage: cleanText(Array.isArray(raw.coverage) ? raw.coverage.join(' / ') : raw.coverage, 120),
         dakuten: typeof raw.dakuten === 'boolean' ? raw.dakuten : cleanText(raw.dakuten, 120),
         sha256: cleanText(raw.sha256, 128),
@@ -154,6 +156,40 @@ function baseUrlWithSlash(baseUrl) {
 
 function catalogUrlFor(baseUrl) {
     return `${baseUrlWithSlash(baseUrl)}fonts/catalog.json`;
+}
+
+function normalizeLocalBridgeConfig(value) {
+    let raw = value;
+    if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch (error) { raw = null; }
+    }
+    if (!raw || typeof raw !== 'object' || raw.automatic !== true) return null;
+    const baseUrl = String(raw.baseUrl || '').trim().replace(/\/$/, '');
+    if (!baseUrl || !baseUrl.startsWith('/') || baseUrl.startsWith('//') || baseUrl.includes('..') || /[?#]/.test(baseUrl)) return null;
+    const localPath = (value, fallback) => {
+        const text = String(value || fallback).trim().replace(/\/$/, '');
+        if (!text || !text.startsWith('/') || text.startsWith('//') || text.includes('..') || /[?#]/.test(text)) return null;
+        if (text !== baseUrl && !text.startsWith(`${baseUrl}/`)) return null;
+        return text;
+    };
+    const statusUrl = localPath(raw.statusUrl, `${baseUrl}/status`);
+    const fileUrl = localPath(raw.fileUrl, `${baseUrl}/file`);
+    if (!statusUrl || !fileUrl) return null;
+    return Object.freeze({
+        automatic: true,
+        baseUrl,
+        statusUrl,
+        fileUrl
+    });
+}
+
+function runtimeLocalBridgeConfig() {
+    try {
+        if (import.meta.env?.DEV !== true) return null;
+        return normalizeLocalBridgeConfig(import.meta.env?.VITE_TEGAKI_LOCAL_FONT_BRIDGE);
+    } catch (error) {
+        return null;
+    }
 }
 
 function relativeAssetUrl(baseUrl, path) {
@@ -246,6 +282,12 @@ export class FontLibrary {
         this._fontCache = null;
         this._externalRecord = null;
         this._externalRecordLoaded = false;
+        const configuredBridge = Object.prototype.hasOwnProperty.call(options, 'localBridge')
+            ? options.localBridge
+            : runtimeLocalBridgeConfig();
+        this.localBridge = normalizeLocalBridgeConfig(configuredBridge);
+        this._localBridgeStatus = null;
+        this._localBridgeStatusPromise = null;
         this._organization = null;
         this._organizationInitPromise = null;
         this._organizationFontIds = new Set();
@@ -463,11 +505,87 @@ export class FontLibrary {
         return this._externalRecord;
     }
 
+    async _getLocalBridgeStatus() {
+        if (this._localBridgeStatus) return { ...this._localBridgeStatus };
+        if (this._localBridgeStatusPromise) return this._localBridgeStatusPromise;
+        const unavailable = () => ({
+            automatic: true,
+            connected: false,
+            supported: false,
+            name: '',
+            permission: 'unavailable'
+        });
+        this._localBridgeStatusPromise = (async () => {
+            try {
+                if (!this.localBridge || typeof this.fetch !== 'function') return unavailable();
+                const response = await this.fetch(this.localBridge.statusUrl);
+                if (!response || response.ok === false || typeof response.json !== 'function') return unavailable();
+                const value = await response.json();
+                const status = {
+                    automatic: true,
+                    connected: value?.connected === true,
+                    supported: value?.supported !== false,
+                    name: cleanText(value?.name, 120),
+                    permission: cleanText(value?.permission || 'unavailable', 30)
+                };
+                if (Number.isFinite(Number(value?.registeredCount))) status.registeredCount = Number(value.registeredCount);
+                this._localBridgeStatus = status;
+                return { ...status };
+            } catch (error) {
+                return unavailable();
+            } finally {
+                this._localBridgeStatusPromise = null;
+            }
+        })();
+        return this._localBridgeStatusPromise;
+    }
+
+    async _fetchLocalBridgeFile(id, kind, name = '') {
+        if (!this.localBridge || typeof this.fetch !== 'function') return null;
+        if (!cleanId(id) || !['font', 'license', 'author'].includes(kind)) return null;
+        try {
+            const response = await this.fetch(`${this.localBridge.fileUrl}/${kind}/${encodeURIComponent(id)}`);
+            if (!response || response.ok === false) return null;
+            let file = null;
+            if (typeof response.blob === 'function') {
+                file = await response.blob();
+            } else if (typeof response.arrayBuffer === 'function' && typeof Blob === 'function') {
+                file = new Blob([await response.arrayBuffer()], {
+                    type: response.headers?.get?.('content-type') || ''
+                });
+            }
+            if (!file || typeof file.arrayBuffer !== 'function') return null;
+            const safeName = sanitizeFontLabel(name || `${id}.${kind}`);
+            try {
+                if (!file.name) Object.defineProperty(file, 'name', { value: safeName, configurable: true });
+            } catch (error) { /* File-like response is still usable without a name. */ }
+            return file;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    async _readLocalBridgeFile(path) {
+        if (!this.localBridge) return null;
+        const target = String(path ?? '').replace(/\\/g, '/');
+        if (!target || target.split('/').some(part => !part || part === '.' || part === '..' || part.includes('\u0000'))) return null;
+        const catalog = await this.loadCatalog();
+        const row = catalog.fonts.find(item => item.external === true && [item.file, item.licenseFile, item.authorFile, item.readmeFile].some(value => value && String(value).replace(/\\/g, '/') === target));
+        if (!row) return null;
+        const kind = target === String(row.file).replace(/\\/g, '/')
+            ? 'font'
+            : (target === String(row.licenseFile || '').replace(/\\/g, '/') ? 'license' : 'author');
+        return this._fetchLocalBridgeFile(row.id, kind, target.split('/').at(-1));
+    }
+
     /**
      * クリックイベントから同期的にpickerを呼び出してから、結果をIndexedDBへ保存する。
      * pickerの呼び出しより前にawaitを置かないことがユーザー操作権限の契約になる。
      */
     connectExternalDirectory() {
+        if (this.localBridge) {
+            return this.getExternalStatus().then(status => ({ ok: false, automatic: true, reason: 'automatic', status }));
+        }
         const picker = this.directoryPicker || globalThis.showDirectoryPicker;
         if (typeof picker !== 'function') return Promise.resolve({ ok: false, reason: 'unsupported' });
         let picked;
@@ -494,6 +612,7 @@ export class FontLibrary {
 
     /** 保存handleの存在とqueryPermissionの結果だけを返す。自動requestPermissionは行わない。 */
     async getExternalStatus() {
+        if (this.localBridge) return this._getLocalBridgeStatus();
         const picker = this.directoryPicker || globalThis.showDirectoryPicker;
         const record = await this._getExternalRecord();
         const handle = record?.handle || null;
@@ -516,6 +635,7 @@ export class FontLibrary {
 
     /** 保存済みroot handleから、Library/ID/file.ttfのような相対pathを読む。 */
     async readExternalFile(path) {
+        if (this.localBridge) return this._readLocalBridgeFile(path);
         const record = await this._getExternalRecord();
         const handle = record?.handle;
         if (!handle || typeof handle.getFileHandle !== 'function') return null;

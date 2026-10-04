@@ -1,6 +1,8 @@
 # Tegaki — 再開checkpoint
 
-フォント案A（2026-10-04）: [WP-022](work/WP-022-font-organization.md) ACTIVE。Ownerが外部実体＋一軸表示ツリーを承認。漫画の場面別分類、wheelジョグ、手動順/収納先、外部root接続を限定実装中。27実体/作者資料83ファイルと取得archive101ファイルはEへ複製・hash一致。公開側除去は外部参照検証後。追加DLは保留。[分類と検証記録](ai/2026-10-04-font-organization-result.md)。既存QTP差分保持、未commit/未push。Project/History保存契約を維持。
+個人用フォント自動参照（2026-10-04）: [WP-023](work/WP-023-font-auto-local.md) ACTIVE。Owner指定で接続操作をなくし、通常接続UIを隠す。固定E rootの登録済みfont/作者資料だけを開発serverのloopback経由で読む。公開build/previewに経路を含めず、manual picker APIは将来公開版用に保持。開始main/a78263db、既存WP-022差分を保持。追加DL/公開同梱選定/履歴変更は今回の接続修正に混ぜない。
+
+フォント案A（2026-10-04）: [WP-022](work/WP-022-font-organization.md) TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。場面別16表示フォルダ、wheelジョグ、折畳みtree/keyboard/native D&D、手動順/収納先/↑↓、favorite上位の表示切替、外部root接続を実装。Primary源暎アンチックとF910は直下。27実体/作者資料83ファイルと取得cache101ファイルをEへhash照合付きで移設し、public/distの元font/archiveゼロ。構文/関連verifier/harness/build、Chromiumで全27decode・UI操作・実Project/History往復・本人import互換を確認。[分類と検証記録](ai/2026-10-04-font-organization-result.md)。実E picker/OS再許可/液タブ/制作受入は未確認。初回「外部フォルダを接続」でE:\Data\TegakiFontsを選ぶ。作業中の外部commit/pushでHEAD/origin mainは9d8a9f5bを経てa78263dbへ更新、現行GitHub treeはmetadata2個のみ・元fontなし。過去Git履歴には元fontが残る。履歴整理/残る最終差分pushはOwner、agentは未commit/未push。追加DLは保留。QTP既存変更を保持、Project/History保存契約不変。
 
 選定フォント導入（2026-10-03）: [WP-021](work/WP-021-curated-font-library.md) TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。先行8＋追加上位19＝27書体、Primaryは源暎アンチック。吹き出しタブに形の分類・選択見本・短評・自分用メモ・favorite優先・Primary・ライセンスリンク、同梱fontの遅延読み込みを追加。Project schema変更なし。公式条件と元LICENSE/readme/版/hashを保持。500枚OCR済み、全500/851の公式監査完了ではない。[取得・保留リスト/検証記録](ai/2026-10-03-curated-font-audit.md)。コーポレート・ロゴ/ようじょは元実体のBrowser decode NGで保留。構文/関連verifier/harness/buildとChromiumで27実体ロード、縦横確定/再編集/UndoRedo、実Project export/load、本人import/folder、favorite/Primary/メモ保持、失敗表示/retryを確認。Owner液タブ/全字形の制作受入は未実施。文字タブ移設・曲線/WARP/スロットは後段。main / 開始HEAD `b7d7fddf`、既存QTP差分を保持、未commit・未push。RIGの中断点・次Card未発行は維持。
 

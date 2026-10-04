@@ -25,6 +25,8 @@
     "docs/work/WP-018-settings-snapshot.md",
     "docs/work/WP-021-curated-font-library.md",
     "docs/work/WP-022-font-organization.md",
+    "docs/work/WP-023-font-auto-local.md",
+    "docs/ai/2026-10-04-font-auto-local-result.md",
     "docs/ai/2026-10-04-font-organization-result.md",
     "docs/work/WP-007-export-terminal-guard.md",
     "docs/work/WP-003-key-continuation.md",
@@ -47,8 +49,8 @@
   "domains": {
     "fonts": {
       "architecture":"docs/ARCHITECTURE.md",
-      "entrypoints":["tegaki_work/system/font-library.js","tegaki_work/system/font-organization.js","tegaki_work/ui/font-tree.js"],
-      "patterns":["^verify-curated-font-library","^verify-font-organization","^verify-font-publication"]
+      "entrypoints":["tegaki_work/system/font-library.js","tegaki_work/system/font-organization.js","tegaki_work/ui/font-tree.js","tegaki_work/build/local-font-bridge.mjs"],
+      "patterns":["^verify-curated-font-library","^verify-font-organization","^verify-font-publication","^verify-local-font-bridge"]
     },
     "folder-composite": {
       "architecture": "docs/ARCHITECTURE.md",
@@ -233,6 +235,7 @@
     {"id":"WP-019","document":"docs/work/WP-019-inochi-edit-roundtrip-proof.md","status":"BLOCKED","dependsOn":[]},
     {"id":"WP-020","document":"docs/work/WP-020-rig-renewal-first-path.md","status":"BLOCKED","dependsOn":[]},
     {"id":"WP-021","document":"docs/work/WP-021-curated-font-library.md","status":"VERIFIED","dependsOn":[]},
-    {"id":"WP-022","document":"docs/work/WP-022-font-organization.md","status":"ACTIVE","dependsOn":[]}
+    {"id":"WP-022","document":"docs/work/WP-022-font-organization.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-023","document":"docs/work/WP-023-font-auto-local.md","status":"ACTIVE","dependsOn":[]}
   ]
 }

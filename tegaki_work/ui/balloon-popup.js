@@ -236,7 +236,7 @@ export class BalloonPopup {
                     <div class="pl-font-tree" id="balloon-font-tree" data-role="font-tree" hidden></div>
                 </div>
             </div>
-            <div class="pl-row pl-external">
+            <div class="pl-row pl-external" hidden>
                 <button type="button" class="pl-btn" data-action="external-connect">外部フォルダを接続</button>
                 <span class="pl-external-status" data-role="external-status" aria-live="polite"></span>
             </div>
@@ -756,7 +756,8 @@ export class BalloonPopup {
         }
         const status = this._externalStatus || {};
         if (this.elements.externalStatus) {
-            if (!status.supported) this.elements.externalStatus.textContent = 'このブラウザでは外部フォルダを使えません。取り込みを利用してください';
+            if (status.automatic) this.elements.externalStatus.textContent = status.connected ? 'ローカルフォントを自動参照中' : 'ローカルフォントの保管先を確認してください';
+            else if (!status.supported) this.elements.externalStatus.textContent = 'このブラウザでは外部フォルダを使えません。取り込みを利用してください';
             else if (!status.connected) this.elements.externalStatus.textContent = '未接続。E:\\Data\\TegakiFonts を選ぶと元ファイルを読みます';
             else if (status.permission && status.permission !== 'granted') this.elements.externalStatus.textContent = (status.name || '外部フォルダ') + '（権限を確認してください）';
             else this.elements.externalStatus.textContent = (status.name || '外部フォルダ') + 'に接続中';
@@ -963,10 +964,10 @@ export class BalloonPopup {
         if (token !== this._fontPreviewToken) return;
         if (!entry) {
             this.elements.fontLoadStatus.textContent = external
-                ? '外部フォントを読み込めません。外部フォルダを接続し、元ファイルを確認してください'
+                ? '外部フォントを読み込めません。保管先と元ファイルを確認してください'
                 : '見本を読み込めませんでした';
             this.elements.fontLoadStatus.dataset.state = 'error';
-            this.elements.fontSamplePreview.textContent = external ? '外部フォルダの接続または元ファイルを確認してください' : '（フォント未適用）';
+            this.elements.fontSamplePreview.textContent = external ? '保管先と元ファイルを確認してください' : '（フォント未適用）';
             this.elements.fontSamplePreview.dataset.state = 'error';
             this.elements.fontSamplePreview.style.fontFamily = '';
             return;
@@ -1225,7 +1226,7 @@ export class BalloonPopup {
                 if (external) {
                     this.lettering = null;
                     this.textImage = null;
-                    showFeedbackToast('外部フォントを読み込めません。外部フォルダを接続し、元ファイルを確認してください');
+                    showFeedbackToast('外部フォントを読み込めません。保管先と元ファイルを確認してください');
                     this._redraw();
                     return null;
                 }
@@ -1453,7 +1454,7 @@ export class BalloonPopup {
         const selectedExternal = this.params.text.fontKind === 'imported'
             && this._fontData.bundled.find(font => font.id === this.params.text.fontId)?.external === true;
         if (selectedExternal && this.params.text.content.trim() && !lettering) {
-            return { ok: false, reason: '外部フォントを読み込めません。外部フォルダを接続し、元ファイルを確認してください' };
+            return { ok: false, reason: '外部フォントを読み込めません。保管先と元ファイルを確認してください' };
         }
         const size = this._canvasSize();
         return rasterizeBalloon(this.params, size, lettering || (this.params.text.content.trim() ? this.lettering : null));

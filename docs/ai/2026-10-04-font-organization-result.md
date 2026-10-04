@@ -1,6 +1,6 @@
 # WP-022 — 場面別整理と外部保管
 
-状態: 実装中。Owner実機受入・push未実施。現在地はSTATUS、実装範囲は[WP-022](../work/WP-022-font-organization.md)。
+状態: TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。Owner実機受入・push未実施。現在地はSTATUS、実装範囲は[WP-022](../work/WP-022-font-organization.md)。
 
 ## 初期分類の判断
 
@@ -18,6 +18,23 @@ Primary源暎アンチックと比較用F910新コミック体は直下。漫画
 
 作業中の外部commitでHEADが `b7d7fddf` から `9d8a9f5b` へ更新され、元font/資料を含む公開側85ファイルがtrackedになった。読み取り専用 `git ls-remote origin refs/heads/main` でも2026-10-04に同HEADを確認。今回の移設で現在の公開側から除去するが、過去Git履歴の実体は消えない。履歴書換え・remote更新は行わずOwnerへ返す。追加DLは保留を維持。
 
+最終照合: 外部commit/pushでHEAD/origin mainが `a78263db82fee54eeb48fd6323b48c24a44b538d` へ更新。remote SHAを再確認し、その現行treeのpublic/fontsはcatalog.jsonとinspection.jsonの2個だけ、元font/作者資料の削除は反映済み。過去履歴の実体は残る。agentからcommit/pushは行っていない。最終の手動favorite順投影と完了文書等5fileの差分はlocalで保持。
+
 ## 検証
 
-製品/Browser/公開側除去の結果は完了時に追記。初回の本物のWindowsフォルダpickerと液タブの手応えはOwner操作で確認する。
+### 結果
+
+- syntax: font-library/font-organization/balloon-popup/font-tree/keyboard-handler PASS。Python/移設PowerShell構文 PASS。
+- metadata/lazy load/重複排除/再試行/prefs: curated verifier PASS。model/bridge/legacy seed/permission/安全path/read/hash/retry: organization verifier PASS。native IDBRequest.resultの継承accessorを読む回帰caseを追加。
+- balloon verifier、shortcut-learning-boundary、harness（58 documents / 224 local links / 13 packages）PASS。
+- Chromium: E原本のbytesを隔離したブラウザproof directoryへ読み込み、実DirectoryHandle/IDB/FontFaceで全27書体decode PASS。Windowsのpickerだけをproof rootへの返却に置換している。本物のE picker/OS許可画面の成功を意味しない。
+- 実製品Browser: 接続button、保存handle再読込み、wheel前後/端停止/ctrl/微小入力、折畳み/keyboard Enter/Escape、native HTML drag/drop、収納先select、↑による手動順、favoriteの全体上位表示と元配置/手動順保持、コメントreload PASS。folderはmodel verifierで作成/rename/delete/cycle拒否を検証。
+- 外部fontで縦/横の実文字確定、再編集/更新、Undo/Redo、実Project export→loadでfontId保持 PASS。未接続でApplyが別書体のLayerを作らないこともBrowser確認。
+- 従来本人import: 実IDB保存/フォルダ/reload/ロード/deleteとcatalog delete禁止 PASS。
+- 公開側83ファイルをEと再hash照合して削除、取得cache29件101ファイルも外部へ集約。public/fontsとdist/fontsはcatalog/inspectionだけ、元font/archiveゼロ。build PASS。npm prebuildが今後のpublic混入を拒否、gitignoreでもmetadata以外を除外。
+
+Browserで見つけたhandle復元の誤り、Canvasキー競合、popup移動によるnative D&D阻害、keyboard callbackのoptions落ちをleadが修正し再検証した。favorite上位は元の手動順で安定した投影とし、物理/論理収納先を動かさない。
+
+証拠はignored `.cache/font-acquisition/browser-organization-results.json`（全27）とquick/UI/native import試験、画像。第三者画像や元fontを成果へ追加しない。初回の本物のWindowsフォルダpicker、権限再許可画面、液タブの手応え、全字形の制作受入はOwner操作で確認する。外部実体をHTTP配信する設定は追加していない。
+
+今回LUNA maxのbackend/UI限定Sliceを分け、完了通知を受けて統合。親は移設・分類・検証を担当し、全文logの巡回を繰り返さなかった。変更後/不具合再現後の関係する検証だけを追加。

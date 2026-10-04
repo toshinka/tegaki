@@ -1,6 +1,8 @@
 # WP-022 — 外部フォントと場面別の一軸整理
 
-状態: ACTIVE / Ownerが案A実装を承認。WP-021の既存差分を保持。
+状態: VERIFIED / TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。Ownerが案A実装を承認。WP-021の既存差分を保持。
+
+接続操作・通常接続UIの後続変更は [WP-023](WP-023-font-auto-local.md)。以下のpicker契約は保持する公開版用APIの説明で、個人開発時は自動bridgeを優先する。
 
 ## Goal
 
@@ -44,4 +46,4 @@ Project/History/renderer保存正本の変更、物理実体の独自改変、�
 
 ## Completion
 
-実装・技術検証中。Owner未受入。
+関連verifier/buildとChromium（全27decode、tree/wheel/D&D/収納、実Project/History、本人import）技術確認済み。公開元実体83ファイル・取得cache101ファイルはEへhash照合付きで移設。public/distの元fontゼロ。実E picker・OS再許可・液タブ・制作受入は未確認。[結果](../ai/2026-10-04-font-organization-result.md)。外部commit/push a78263dbの現行GitHub treeも元fontなし。9d8a9f5bの過去履歴には元fontが残り、履歴書換え/残る最終差分pushはOwnerへ返す。agentからcommit/pushなし。

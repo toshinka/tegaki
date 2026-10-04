@@ -27,6 +27,7 @@ READYは委任可能という意味で、現在の製品実装停止を解除す
 | WP-020 | 旧系隔離・新RIGの最初の実行経路 | [RIG renewal](WP-020-rig-renewal-first-path.md) |
 | WP-021 | 選定フォント・見本・短評・Primary | [Curated fonts](WP-021-curated-font-library.md) |
 | WP-022 | 外部フォント・場面別ツリー・ジョグ選択 | [Font organization](WP-022-font-organization.md) |
+| WP-023 | 個人開発用ローカルフォント自動参照 | [Automatic local fonts](WP-023-font-auto-local.md) |
 
 先の機能すべてへ未確定の詳細カードを作らない。新カードはGoal / Scope / Contract / Tasks / Acceptance / Verification / Stop / Completionを持ち、同じ概念の第二正本を作らない。
 カードを渡す前に対象fileの存在とbaseline、依存の完了状態を確認する。
