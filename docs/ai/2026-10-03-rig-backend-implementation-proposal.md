@@ -1,6 +1,7 @@
 # RIG backend — 実装方針の提案
 
 状態: REFERENCE / DESIGN PROPOSAL。2026-10-03。
+2026-10-04の[設計再精査](2026-10-04-rig-architecture-reassessment.md)で、評価器だけを借りる第一案とnative roundtripを先行する順序を見直した。以下は当時の提案根拠。次の限定実行は[WP-026](../work/WP-026-rive-authoring-browser-proof.md)、製品の現行契約はTECHNICALのまま。
 Owner依頼「調査を深くしすぎず、どう実装するか考える」に対する司令の判断材料。実装指示・採用決定・schema変更の承認ではない。
 baseline: main / `7765fde4573492478d5dede545c295116592f63a`、開始時worktree clean。前件の文書はOwner側でcommit済み。製品変更なし。
 

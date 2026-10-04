@@ -17,10 +17,12 @@ import { createPillTabs } from './pill-tabs.js';
 export const MANGA_TABS = Object.freeze([
     { id: 'panelLayout', label: 'コマ', popupId: 'panel-layout-popup', title: 'コマ割り（Shift+K）' },
     { id: 'balloon', label: '吹き出し', popupId: 'balloon-popup', title: '吹き出し（Shift+B）' },
+    { id: 'lettering', label: '文字', popupId: 'lettering-popup', title: '文字・曲線・変形' },
     { id: 'focusLines', label: '集中線', popupId: 'focus-lines-popup', title: '集中線（Shift+F）' }
 ]);
 
 const STORAGE_KEY = 'tegaki-manga-last-tab-v1';
+let switchingTo = null;
 
 function popupManager() {
     return window.coreEngine?.popupManager || null;
@@ -56,12 +58,18 @@ export function switchMangaTab(targetId) {
     const target = MANGA_TABS.find(tab => tab.id === targetId);
     if (!manager || !target) return false;
     const current = MANGA_TABS.map(tab => document.getElementById(tab.popupId)).find(el => el?.classList.contains('show'));
-    const rect = current?.getBoundingClientRect();
-    manager.show(targetId);
+    // CSS entrance animations scale visual rectangles. Carry the layout
+    // anchor so a fast consecutive tab switch cannot creep across the canvas.
+    const anchor = current ? { left: parseFloat(current.style.left) || 6, top: parseFloat(current.style.top) || 6 } : null;
+    switchingTo = targetId;
+    let shown;
+    try { shown = manager.show(targetId); }
+    finally { switchingTo = null; }
+    if (shown === false) return false;
     const next = document.getElementById(target.popupId);
-    if (next && rect) {
-        next.style.left = `${Math.round(rect.left)}px`;
-        next.style.top = `${Math.round(rect.top)}px`;
+    if (next && anchor) {
+        next.style.left = `${Math.round(Math.max(6, Math.min(anchor.left, window.innerWidth - next.offsetWidth - 6)))}px`;
+        next.style.top = `${Math.round(Math.max(6, Math.min(anchor.top, window.innerHeight - next.offsetHeight - 6)))}px`;
     }
     rememberTab(targetId);
     return true;
@@ -84,5 +92,8 @@ export function mountMangaTabs(host, currentId) {
 
 /** popupを開いた時に最後のタブを記録する(サイドバーが次回同じタブを開くため)。 */
 export function noteMangaTabShown(id) {
+    const tab = MANGA_TABS.find(item => item.id === id);
+    const popup = tab && document.getElementById(tab.popupId);
+    if (popup) popup.dataset.mangaTransition = switchingTo === id ? 'instant' : 'open';
     rememberTab(id);
 }

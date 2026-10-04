@@ -15,6 +15,22 @@
 
 ## 現行入口と互換入口
 
+- `docs/work/WP-027-manga-lettering-workflow.md`: CURRENT。文字パネルの目的別設定・Futaba glass・固定footer・Ctrl+Enter・数値wheel・共通漫画tab即時切替の限定UI契約。WP-025の保存/rendererを変更しない。
+- `docs/work/WP-028-lettering-character-editing.md`: CURRENT。Owner指定の書体集約・4tab・文字別編集・3点サイズ・第二フチ取り。version-1 recipeへoptional属性を追加し、Project/History/確定画素の正本を維持。
+- `docs/ai/2026-10-04-lettering-character-editing-result.md`: REFERENCE EVIDENCE。WP-028の実装・Browser/renderer/保存回帰と未受入範囲。Card/製品コードを上書きしない。
+- `docs/ai/2026-10-04-manga-lettering-workflow-result.md`: REFERENCE EVIDENCE。WP-027の限定UI実装、Browser/数値behavior/保存回帰の証拠とOwner未受入範囲。Card/製品コードを上書きしない。
+
+- `docs/ai/2026-10-04-manga-panel-workflow-design.md`: REFERENCE。漫画パネルの制作動線と、WP-027後の書体比較への情報/整理集約・4目的tab・Transform操作共通化・外へ膨らむ変形・3点サイズ/文字別編集の追加設計。追加機能の製品実装・保存契約承認ではない。
+
+- `docs/ai/2026-10-04-rig-architecture-reassessment.md`: REFERENCE。評価器限定案とnative先行順序を再精査。Riveの独立Browser proofを次候補とし、製品採用/保存/renderer切替は決定しない。
+- `docs/work/WP-026-rive-authoring-browser-proof.md`: CURRENT。Riveの一画像rig・限定GUI・公式build・Browser再読込・PNGの独立proofと司令監査。成立範囲・未実測はCard Completion、漫画/文字との並行導線はDEVELOPMENT、現在地はSTATUS。
+
+- `docs/ai/2026-10-04-text-vector-draft-design.md`: REFERENCE。独自の文字編集骨格、交換可能な専門部品、ペン/図形等との共用範囲と制作例からの検証を仮設計。library採用・保存schema・汎用editorの実装承認ではない。
+
+- `docs/ai/2026-10-04-text-vector-oss-shortlist.md`: REFERENCE。旧文字toolの継承不要を反映したOSS/license/日本語組版・幾何・変形の比較。製品依存導入・保存schema承認ではない。
+
+- `docs/ai/2026-10-04-text-editing-proposal.md`: REFERENCE。QTP文字の漫画tab移植、曲線配置・envelope・将来Anime接点の調査と提案。実装指示・保存schema承認ではない。
+
 - `docs/ai/WP-020-inochi-proof-result.md / WP-020-rig-entry-boundary.md`: REFERENCE。WP-020の実測結果と限定接点調査。実行契約はWP-020。
 
 - `AGENTS.md`: 入口。`docs/TECHNICAL.md`: 技術契約。
@@ -29,6 +45,10 @@
 - `docs/ai/2026-10-04-font-organization-proposal.md`: REFERENCE。ホイール選択・一軸ツリー・Eドライブ保管の比較案。Owner案A承認後の実装範囲はWP-022、現在地はSTATUS。
 - `docs/work/WP-022-font-organization.md`: CURRENT。外部実体・場面別一軸ツリー・wheel/手動順の限定実装カード。
 - `docs/work/WP-023-font-auto-local.md`: CURRENT。個人開発server限定のloopback自動参照。通常接続UI非表示、公開buildへ実体とbridgeを含めない。
+- `docs/work/WP-024-font-comparison.md`: CURRENT。比較page・warm見本・先読みの限定UI/runtime改善。
+- `docs/work/WP-025-editable-manga-lettering.md`: CURRENT。Owner指定の再編集文字・曲線・少点変形。画素の保存/出力正本を維持。
+- `docs/ai/2026-10-04-editable-lettering-result.md`: REFERENCE EVIDENCE。WP-025の実装・実engine/Project/Browser検証とOwner未受入の範囲。Card/製品コードを上書きしない。
+- `docs/ai/2026-10-04-font-comparison-result.md`: REFERENCE。応答時間・比較pageとruntime cacheの検証記録。
 - `docs/ai/2026-10-04-font-auto-local-result.md`: REFERENCE。自動参照の配信範囲と検証記録。
 - `docs/ai/2026-10-04-font-organization-result.md`: REFERENCE。初期場面分類の根拠、外部保管、検証記録。
 - `docs/ai/2026-10-03-manga-font-feasibility.md / 2026-10-03-manga-font-conditions.md`: REFERENCE。漫画用文字タブの事前検討と一次12候補の取得前調査。後続の取得・実装はWP-021と監査記録を参照。

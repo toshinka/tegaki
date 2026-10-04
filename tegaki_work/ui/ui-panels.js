@@ -27,6 +27,7 @@ const SIDEBAR_POPUP_BUTTONS = Object.freeze({
     panelLayout: 'panel-layout-tool',
     focusLines: 'panel-layout-tool',
     balloon: 'panel-layout-tool',
+    lettering: 'panel-layout-tool',
     resize: 'resize-tool',
     quickAccess: 'quick-access-tool',
     animationTable: 'gif-animation-tool',
@@ -453,10 +454,11 @@ export class UIController {
                 !e.target.closest('.panel-layout-overlay') &&
                 !e.target.closest('.focus-lines-overlay') &&
                 !e.target.closest('.balloon-overlay') &&
+                !e.target.closest('.lettering-overlay') &&
                 !e.target.closest('.layer-transform-panel') &&
                 !e.target.closest('.tool-button') &&
                 !e.target.closest('.layer-panel-container')) {
-                this.closeAllPopups(['quickAccess', 'settings', 'animationTable', 'referencePreview', 'panelLayout', 'focusLines', 'ruler', 'balloon']);
+                this.closeAllPopups(['quickAccess', 'settings', 'animationTable', 'referencePreview', 'panelLayout', 'focusLines', 'ruler', 'balloon', 'lettering']);
             }
         });
     }

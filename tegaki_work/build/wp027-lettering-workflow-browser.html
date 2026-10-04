@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>WP027 制作動線検証</title>
+<style>body{background:#ffffee;color:#800000;font:13px system-ui}iframe{width:1280px;height:720px;border:1px solid #b8706b}pre{white-space:pre-wrap}</style></head>
+<body><button id="run" disabled>制作動線を検証</button><span id="status">製品起動待ち</span><pre id="output"></pre><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+const frame=document.querySelector('#product'),output=document.querySelector('#output'),status=document.querySelector('#status'),run=document.querySelector('#run');
+const log=(s)=>output.textContent+=s+'\n';
+const check=(ok,s)=>{if(!ok)throw new Error(s);log('PASS '+s);};
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+let core;
+for(let i=0;i<200;i++){core=frame.contentWindow?.coreEngine;if(core?.popupManager?.get('lettering')?.isReady())break;await delay(100);}
+run.disabled=false;status.textContent='検証可能';
+run.onclick=async()=>{
+ run.disabled=true;output.textContent='';status.textContent='実行中';
+ const popup=core.popupManager.get('lettering'),manager=core.popupManager,layers=core.layerSystem,history=core.history;
+ const doc=frame.contentDocument,win=frame.contentWindow,root=popup.popup;
+ const q=s=>root.querySelector(s),snapshot=()=>JSON.stringify(popup.params);
+ const input=(el,value)=>{el.value=value;el.dispatchEvent(new win.Event('input',{bubbles:true}));};
+ const wheel=(el,deltaY,extra={})=>el.dispatchEvent(new win.WheelEvent('wheel',{deltaY,bubbles:true,cancelable:true,...extra}));
+ const key=(extra={})=>q('[data-role="text"]').dispatchEvent(new win.KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,bubbles:true,cancelable:true,...extra}));
+ const waitCommit=async()=>{for(let i=0;i<160;i++){if(!popup._commitBusy)return;await delay(50);}throw new Error('commit timeout');};
+ const adapter=popup.layerAdapter;
+ let originalApply=adapter.apply;
+ try{
+  manager.show('lettering');popup.newSession();
+  await popup.fonts.ensureLoaded(popup.params.fontId);
+  check(root.offsetWidth===316,'316px幅');
+  check(getComputedStyle(root).fontSize==='11px','本文11px');
+  check(!q('[data-role="font-card"]')&&!popup.fontComparison.isOpen(),'font情報は比較へ集約・初期閉');
+  check(q('.lettering-popup__commit').getBoundingClientRect().bottom<=win.innerHeight,'footerは初めからviewport内');
+  check(q('.lettering-popup__body').scrollHeight===q('.lettering-popup__body').clientHeight,'通常書式はbodyもscroll不要');
+  wheel(q('[data-field="fontSize"]'),-100);check(popup.params.fontSize===65,'range wheel +1');
+  wheel(q('[data-field-number="fontSize"]'),-100,{shiftKey:true});check(popup.params.fontSize===75,'number wheel Shift +10');
+  input(q('[data-field-number="fontSize"]'),'');check(popup.params.fontSize===75,'入力途中の空欄は保持');
+  wheel(q('[data-field-number="fontSize"]'),-100);check(popup.params.fontSize===75,'空欄wheelは値を変えない');
+  input(q('[data-field-number="fontSize"]'),'64');check(popup.params.fontSize===64,'直接数値入力');
+  const last=snapshot();q('[data-mode="curve"]').click();check(snapshot()===last,'mode切替はparams不変');
+  q('[data-role="curve-preset"]').value='wave';q('[data-role="curve-preset"]').dispatchEvent(new win.Event('change',{bubbles:true}));
+  const curve=snapshot();q('[data-mode="envelope"]').click();check(snapshot()===curve,'変形へ移動しても配置線保持');
+  check(!q('[data-mode-panel="envelope"]').hidden&&q('[data-mode-panel="curve"]').hidden,'modeとcontextを同期');
+  q('[data-role="envelope-preset"]').value='points';q('[data-role="envelope-preset"]').dispatchEvent(new win.Event('change',{bubbles:true}));
+  check(q('[data-role="envelope-strength"]').hidden&&q('[data-envelope-amount]').disabled,'9点で効かない強さを隠す');
+  input(q('[data-field-number="endFontSize"]'),'90');const effects=snapshot();q('[data-mode="whole"]').click();check(snapshot()===effects,'書式へ戻っても両効果とサイズ勾配保持');
+  q('[data-role="placement-details"]').open=true;input(q('[data-placement="rotation"]'),'90');check(Math.abs(popup.params.placement.rotation-Math.PI/2)<1e-9,'回転UI度→保存rad');
+  wheel(q('[data-placement="rotation"]'),-100);check(Math.abs(popup.params.placement.rotation-91*Math.PI/180)<1e-9,'回転wheel 1度');
+  q('[data-mode="curve"]').click();await delay(30);
+  const footerTop=q('.lettering-popup__commit').getBoundingClientRect().top;q('.lettering-popup__body').scrollTop=2000;
+  check(Math.abs(q('.lettering-popup__commit').getBoundingClientRect().top-footerTop)<.1,'詳細body scrollでfooter不動');
+  q('[data-role="placement-details"]').open=false;q('.lettering-popup__body').scrollTop=0;
+  const anchor={x:root.offsetLeft,y:root.offsetTop},beforeTab=snapshot();
+  q('[role="tab"][data-tab="balloon"]').click();
+  const balloon=doc.querySelector('#balloon-popup');check(getComputedStyle(balloon).animationName==='none','漫画tab切替animation無し');
+  [...balloon.querySelectorAll('[role="tab"]')].find(e=>e.textContent==='文字').click();
+  check(root.offsetLeft===anchor.x&&root.offsetTop===anchor.y,'漫画tab往復でlayout anchor維持');
+  check(snapshot()===beforeTab,'tab往復は編集を保持');
+  for(const id of ['panelLayout','focusLines','balloon','lettering']){
+   const current=doc.querySelector('.popup-panel.show [role="tablist"][aria-label="漫画ツール"]');
+   current.querySelector(`[data-tab="${id}"]`).click();
+   const active=doc.querySelector('.popup-panel.show'),rect=active.getBoundingClientRect();
+   check(getComputedStyle(active).animationName==='none'&&rect.left>=6&&rect.top>=6&&rect.right<=win.innerWidth&&rect.bottom<=win.innerHeight,'共通漫画tab '+id+'は即時・viewport内');
+  }
+  popup.hide();manager.show('lettering');check(getComputedStyle(root).animationName!=='none','通常open animation保持');
+  popup.newSession();input(q('[data-role="text"]'),'短いタイトル');
+  const before=layers.getLayers().length,historyBefore=history.stack.length;
+  key({isComposing:true});key({repeat:true});await delay(70);check(layers.getLayers().length===before&&!popup._commitBusy,'IME/repeatは確定しない');
+  key();key();await waitCommit();check(layers.getLayers().length===before+1&&history.stack.length===historyBefore+1&&!popup.isVisible,'CtrlEnter追加・閉じる・二重commitなし');
+  manager.show('lettering');await popup.loadFromActiveLayer();
+  check(!q('[data-action="update"]').hidden&&q('[data-action="apply"]').textContent==='別レイヤーに追加','再編集は更新が主操作');
+  const unchanged=history.stack.length;key();await waitCommit();check(history.stack.length===unchanged&&!popup.isVisible,'変更なし再編集はHistoryを増やさない');
+  manager.show('lettering');await popup.loadFromActiveLayer();input(q('[data-role="text"]'),'再編集タイトル');key();await waitCommit();check(history.stack.length===unchanged+1&&!popup.isVisible,'CtrlEnter再編集更新');
+  check(layers.getActiveLayer().layerData.lettering.params.text==='再編集タイトル','recipeも更新');
+  history.undo();check(layers.getActiveLayer().layerData.lettering.params.text==='短いタイトル','更新Undo');history.redo();
+  manager.show('lettering');popup.newSession();input(q('[data-role="text"]'),'');const failCount=layers.getLayers().length;key();await waitCommit();
+  check(popup.isVisible&&layers.getLayers().length===failCount&&q('[data-role="error-status"]').dataset.state==='error','失敗はpanelと文書を保持');
+  popup.newSession();input(q('[data-role="text"]'),'確定前');
+  let release;adapter.apply=async params=>{await new Promise(r=>release=r);return originalApply.call(adapter,params);};
+  key();for(let i=0;i<100&&!release;i++)await delay(20);check(!!release,'遅いcommit開始');input(q('[data-role="text"]'),'確定中の追加入力');release();await waitCommit();
+  check(popup.isVisible&&popup.params.text==='確定中の追加入力','確定中の追加入力は閉じずに保持');
+  adapter.apply=originalApply;
+  await popup.cancel();check(!adapter.previewSource,'取消で元画素表示へ復帰');
+  frame.style.width='360px';frame.style.height='640px';win.dispatchEvent(new win.Event('resize'));await delay(50);
+  check(root.getBoundingClientRect().left>=6&&q('.lettering-popup__commit').getBoundingClientRect().bottom<=640,'360pxでもfixed footerへ到達');
+  frame.style.height='400px';win.dispatchEvent(new win.Event('resize'));await delay(50);
+  check(q('[data-role="text"]').getBoundingClientRect().bottom<400&&q('.lettering-popup__commit').getBoundingClientRect().bottom<=400,'低いviewportでも共通入力とfooterを残す');
+  status.textContent='PASS 全検証完了';
+ }catch(error){status.textContent='FAIL '+error.message;log(error.stack||error);}
+ finally{adapter.apply=originalApply;popup.hide();run.disabled=false;}
+};
+</script></body></html>

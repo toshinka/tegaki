@@ -116,10 +116,9 @@ const [layerSource, qtpSource, coreSource, cameraSource] = await Promise.all([
 ]);
 assert.match(layerSource, /createRasterLayerFromSnapshot\(snapshot, options = \{\}\)/);
 assert.match(layerSource, /historyManager\.record\(\{[\s\S]*name: options\.historyName \|\| 'raster-layer-create'/);
-assert.match(qtpSource, /id="qa-text-raster-toggle"/);
-assert.match(qtpSource, /event\.key === 'Enter'[\s\S]*event\.ctrlKey \|\| event\.metaKey/);
-assert.match(qtpSource, /textRasterService\.createTextLayer/);
-assert.match(coreSource, /new TextRasterService\(\{/);
+assert.doesNotMatch(qtpSource, /qa-text-raster|textRasterService/);
+assert.match(coreSource, /register\('lettering', LetteringPopup/);
+assert.match(coreSource, /new LetteringLayerAdapter\(/);
 assert.match(cameraSource, /getViewportCenterCanvasPoint\(\)/);
 
-console.log('verify-text-to-raster: normalization, layout, placement, Canvas adapter, one-History/QTP wiring OK');
+console.log('verify-text-to-raster: normalization, layout, placement, Canvas adapter, legacy raster helpers and manga migration wiring OK');

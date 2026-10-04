@@ -15,6 +15,7 @@
 import * as PIXI from 'pixi.js';
 import { TegakiEventBus } from './event-bus.js';
 import { TimelineFrameCompositor } from './animation/timeline-frame-compositor.js';
+import { revealLetteringSourcesForCapture } from './lettering-preview-display.js';
 
 const PENDING_LAYER_TRANSFORM_REASON = 'pending-layer-transform';
 const PENDING_LAYER_TRANSFORM_MESSAGE = '変形を確定（V）またはキャンセル（Esc）してから出力してください';
@@ -522,6 +523,8 @@ export class ExportManager {
     }
 
     renderToCanvas(options = {}) {
+        const restoreLetteringDisplay = revealLetteringSourcesForCapture();
+        try {
         const width = options.width || this.getCanvasSize().width;
         const height = options.height || this.getCanvasSize().height;
         const resolution = options.resolution || 1;
@@ -557,6 +560,7 @@ export class ExportManager {
         renderTexture.destroy(true);
         this._unpremultiplyCanvas(canvas);
         return canvas;
+        } finally { restoreLetteringDisplay(); }
     }
     
     arrayBufferToBase64(buffer) {

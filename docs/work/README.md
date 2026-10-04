@@ -28,6 +28,11 @@ READYは委任可能という意味で、現在の製品実装停止を解除す
 | WP-021 | 選定フォント・見本・短評・Primary | [Curated fonts](WP-021-curated-font-library.md) |
 | WP-022 | 外部フォント・場面別ツリー・ジョグ選択 | [Font organization](WP-022-font-organization.md) |
 | WP-023 | 個人開発用ローカルフォント自動参照 | [Automatic local fonts](WP-023-font-auto-local.md) |
+| WP-024 | フォント比較page・応答改善 | [Font comparison](WP-024-font-comparison.md) |
+| WP-025 | 漫画の再編集文字・曲線・少点変形 | [Editable lettering](WP-025-editable-manga-lettering.md) |
+| WP-026 | Rive画像rigの独立Browser proof（VERIFIED / 製品採用・Owner受入未） | [Rive authoring proof](WP-026-rive-authoring-browser-proof.md) |
+| WP-027 | 漫画文字の密度・目的別設定・固定確定欄 | [Lettering workflow](WP-027-manga-lettering-workflow.md) |
+| WP-028 | 文字別編集・3点サイズ・書体集約・第二フチ取り | [Character editing](WP-028-lettering-character-editing.md) |
 
 先の機能すべてへ未確定の詳細カードを作らない。新カードはGoal / Scope / Contract / Tasks / Acceptance / Verification / Stop / Completionを持ち、同じ概念の第二正本を作らない。
 カードを渡す前に対象fileの存在とbaseline、依存の完了状態を確認する。

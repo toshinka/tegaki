@@ -26,11 +26,13 @@
 - Frame/CAF切替だけでHistoryをresetしない。Project全体loadのclearとは別。
 - Raster履歴は変更対象の前後snapshot/patch。無関係なCAF全体を毎stroke複製しない。
 - runtime selection、GPU buffer、評価頂点、scan cacheをProjectへ保存しない。
+- 漫画の独立文字は通常Rasterにoptional `lettering`（version/正規化params/画素fingerprint）を持つ。画素と再編集情報を一回のHistoryで復元し、手描き・外部変形後の更新は拒否する。font実体やoutline cacheを保存しない。再編集previewは表示だけを切替え、出力/合成採取は確定画素を使う。契約は[WP-025](work/WP-025-editable-manga-lettering.md)。
+- 文字別指定は唯一の本文に対するUTF-16 grapheme境界の疎な範囲属性。3点サイズと第二フチは同じversion-1 paramsのoptional属性で、欠損時の旧描画を保持する。外線→内線→fillの全文字passをSVG/CPU/previewへ共通反映。詳細は[WP-028](work/WP-028-lettering-character-editing.md)。
 - Reference / Preview Viewer（資料 / プレビュー）は閲覧専用の補助機能。資料画像はブラウザ内ローカル（IndexedDB）に永続化され、動的プレビューはruntime-only。Project保存、Layer生成、History、Export、Emergency Recoveryへ一切関与しない。Previewタブは既存WebGLレンダラーから有界解像度（最長辺1024px以下）でサンプリングし、第2レンダラーや第2レイヤーツリーを新設しない。大容量参照画像は2048px/4MP以下へ縮小プロキシ化し、元の巨大デコードバッファを保持しない。クリップボード（Ctrl+V）はViewerフォーカス時のみ参照画像追加として扱い、Canvas側の貼り付け権限を横取りしない。
 
 ## Transform / Motion / WARP / Rig
 
-RIG刷新の進め方（Owner承認、2026-10-03）: 旧系は既存作品用の経路として隔離し、新しい土台で制作動線を作る。新系の初期検証は編集/保存/再読込/出力の接点に絞り、旧・旧々RIGとの全機能一致、自動移植、GUI内部コードの維持を必須にしない。既存Project/History/出力の所有は以下の現行契約のまま。新しい保存schemaやproduction切替は個別の確定Cardで扱う。現在の実行範囲はWP-020。
+RIG刷新の進め方（Owner承認、2026-10-03）: 旧系は既存作品用の経路として隔離し、新しい土台で制作動線を作る。新系の初期検証は編集/保存/再読込/出力の接点に絞り、旧・旧々RIGとの全機能一致、自動移植、GUI内部コードの維持を必須にしない。既存Project/History/出力の所有は以下の現行契約のまま。新しい保存schemaやproduction切替は個別の確定Cardで扱う。WP-020は停止済み、現在の独立実行範囲は[WP-026](work/WP-026-rive-authoring-browser-proof.md)。漫画文字との並行write境界は[DEVELOPMENT](DEVELOPMENT.md#漫画文字とrig-proofの並行導線)。外部proofの出力を製品の描画/保存正本へ昇格させない。
 
 - SOURCE変形はpreviewと確定を分離し、確定で一度だけRaster bake。既定Container transformへ戻す。
 - SOURCE Layer Transform中のプレビュー切り出し（V+M Rescue）は、変形プレビューからProject Canvas内の選択矩形だけを新規Raster Layerへ切り出す可逆操作。巨大中間テクスチャの確保を禁止し、切り出し矩形サイズのみを単一Canvas2Dでサンプリングして新規レイヤーを生成、元レイヤーはベースラインへロールバックする。容量上限（16MP/8192px）による確定拒絶時もVセッションを破棄せず保持し、Mキー切り出しへ誘導する。

@@ -33,6 +33,7 @@ import { letteringPlacement, paintBalloon, rasterizeBalloon } from '../system/ba
 import { measureLettering, rasterizeLettering } from '../system/lettering-raster.js';
 import { FONT_FILE_ACCEPT, FONT_SAMPLE_OPTIONS, fontLibrary, sortBundledFonts } from '../system/font-library.js';
 import { BalloonOverlay } from './balloon-overlay.js';
+import { FontComparison } from './font-comparison.js';
 import { FontTree } from './font-tree.js';
 import { mountMangaTabs, noteMangaTabShown } from './manga-tabs.js';
 import { attachNumericField } from './numeric-field.js';
@@ -50,6 +51,8 @@ const GENERIC_FONTS = Object.freeze([
 const BUNDLED_OPTION_PREFIX = 'bundle:';
 const IMPORTED_OPTION_PREFIX = 'imp:';
 const FONT_PREVIEW_DELAY_MS = 120;
+const FONT_PREVIEW_COALESCE_MS = 32;
+const FONT_COMPARE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M9 9v11"/></svg>';
 
 // 数値欄: path は params 内の場所。unit/display は表示用、shape は表示する形(省略=常時)
 const FIELDS = Object.freeze([
@@ -91,6 +94,8 @@ export class BalloonPopup {
         this.elements = {};
         this.params = defaultBalloonParams(this._canvasSize());
         this.showOverlay = true;
+        this.fontDetailsOpen = true;
+        this.previewOpen = false;
         this.editing = null; // { layerId }
         this.drag = null;
         this.lettering = null; // { width, height, pixels, request }
@@ -100,11 +105,14 @@ export class BalloonPopup {
         this._fontData = { folders: [], fonts: [], bundled: [], organization: { folders: [], placements: {}, orders: {}, favoriteFirst: false } };
         this._fontPreviewToken = 0;
         this._fontPreviewTimer = null;
+        this._fontPreviewRenderedId = '';
+        this._fontPreviewRenderedSampleId = '';
         this._fontLicenseToken = 0;
         this._fontRefreshToken = 0;
         this._fontCommentDraft = null;
         this._externalStatus = { connected: false, supported: false, name: '', permission: 'prompt' };
         this.fontTree = null;
+        this.fontComparison = null;
         this._hasStoredParams = false;
         this._paramsTouched = false;
         this._primaryApplied = false;
@@ -134,6 +142,8 @@ export class BalloonPopup {
                 this._hasStoredParams = true;
             }
             if (typeof data?.showOverlay === 'boolean') this.showOverlay = data.showOverlay;
+            this.previewOpen = typeof data?.previewOpen === 'boolean' ? data.previewOpen : !this.showOverlay;
+            if (typeof data?.fontDetailsOpen === 'boolean') this.fontDetailsOpen = data.fontDetailsOpen;
         } catch (error) {
             // 壊れた設定は既定へ戻す(Projectには無関係)
         }
@@ -141,7 +151,7 @@ export class BalloonPopup {
 
     _persist() {
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ params: this.params, showOverlay: this.showOverlay }));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ params: this.params, showOverlay: this.showOverlay, fontDetailsOpen: this.fontDetailsOpen, previewOpen: this.previewOpen }));
         } catch (error) {
             // localStorage不可でも動作は続ける
         }
@@ -169,7 +179,8 @@ export class BalloonPopup {
         this.popup = popup;
         this._build();
         this.popupDragCleanup = attachPopupDrag(popup, {
-            interactiveSelector: 'button, input, select, textarea, a, canvas, summary, .pl-value, .pl-font-tree, .popup-close-btn, .ui-close-button'
+            interactiveSelector: 'button, input, select, textarea, a, canvas, summary, .pl-value, .pl-font-tree, .pl-font-comparison, .popup-close-btn, .ui-close-button',
+            onDragEnd: () => this.fontComparison?.reposition?.()
         });
     }
 
@@ -192,8 +203,13 @@ export class BalloonPopup {
             <div class="manga-tabs-host" data-role="manga-tabs"></div>
             <div class="pl-title">吹き出し <span class="pl-edit-status" data-role="edit-status"></span></div>
             <div class="pl-presets" role="group" aria-label="形">${shapes}</div>
-            <canvas class="pl-preview" width="${PREVIEW_MAX.width}" height="${PREVIEW_MAX.height}" aria-label="吹き出しプレビュー"></canvas>
-            <div class="pl-hint">中心=移動 / 四隅=大きさ / 先端=しっぽの向き。キャンバス上でも同じ操作</div>
+            <details class="pl-details" data-role="preview-details">
+                <summary>吹き出しプレビュー</summary>
+                <div class="pl-fm">
+                    <canvas class="pl-preview" width="${PREVIEW_MAX.width}" height="${PREVIEW_MAX.height}" aria-label="吹き出しプレビュー"></canvas>
+                    <div class="pl-hint">中心=移動 / 四隅=大きさ / 先端=しっぽの向き。キャンバス上でも同じ操作</div>
+                </div>
+            </details>
             <label class="pl-row pl-check">
                 <input type="checkbox" data-role="overlay-toggle">
                 <span>キャンバス上に重ねて表示・操作する</span>
@@ -235,12 +251,17 @@ export class BalloonPopup {
                     <button type="button" class="pl-select pl-font-trigger" data-role="font-trigger" aria-haspopup="tree" aria-expanded="false" aria-controls="balloon-font-tree">フォントを選ぶ</button>
                     <div class="pl-font-tree" id="balloon-font-tree" data-role="font-tree" hidden></div>
                 </div>
+                <button type="button" class="pl-btn pl-btn--small pl-font-compare-toggle" data-role="font-comparison-toggle" title="フォント比較を開く" aria-label="フォント比較を開く" aria-expanded="false" aria-controls="balloon-font-comparison"><span aria-hidden="true">${FONT_COMPARE_ICON}</span></button>
+                <button type="button" class="pl-btn pl-btn--small pl-font-information-toggle" data-role="font-information-toggle" title="フォント情報・整理を開く" aria-label="フォント情報・整理を開く" aria-expanded="false" aria-controls="balloon-font-comparison">情報</button>
             </div>
+            <section class="pl-font-comparison" id="balloon-font-comparison" data-role="font-comparison" hidden></section>
             <div class="pl-row pl-external" hidden>
                 <button type="button" class="pl-btn" data-action="external-connect">外部フォルダを接続</button>
                 <span class="pl-external-status" data-role="external-status" aria-live="polite"></span>
             </div>
-            <div class="pl-font-card" data-role="font-card" hidden>
+            <details class="pl-details pl-font-card" data-role="font-card" hidden>
+                <summary>フォント情報・整理</summary>
+                <div class="pl-fm">
                 <div class="pl-font-card__heading">
                     <strong data-role="font-title"></strong>
                     <span data-role="font-category"></span>
@@ -277,7 +298,8 @@ export class BalloonPopup {
                     <summary>作者資料・ライセンスを表示</summary>
                     <pre data-role="font-license-text"></pre>
                 </details>
-            </div>
+                </div>
+            </details>
             <label class="pl-row pl-check">
                 <input type="checkbox" data-role="auto-fit">
                 <span>吹き出しに合わせて文字サイズを自動調整</span>
@@ -339,6 +361,7 @@ export class BalloonPopup {
         const q = (sel) => this.popup.querySelector(sel);
         this.elements = {
             canvas: q('.pl-preview'),
+            previewDetails: q('[data-role="preview-details"]'),
             editStatus: q('[data-role="edit-status"]'),
             updateBtn: q('[data-role="update-btn"]'),
             loadBtn: q('[data-action="load-active"]'),
@@ -348,6 +371,9 @@ export class BalloonPopup {
             fontSelect: q('[data-role="font-select"]'),
             fontTrigger: q('[data-role="font-trigger"]'),
             fontTree: q('[data-role="font-tree"]'),
+            fontComparisonToggle: q('[data-role="font-comparison-toggle"]'),
+            fontInformationToggle: q('[data-role="font-information-toggle"]'),
+            fontComparison: q('[data-role="font-comparison"]'),
             fontCard: q('[data-role="font-card"]'),
             fontTitle: q('[data-role="font-title"]'),
             fontCategory: q('[data-role="font-category"]'),
@@ -373,12 +399,32 @@ export class BalloonPopup {
             organizationFolderName: q('[data-role="organization-folder-name"]'),
             externalStatus: q('[data-role="external-status"]')
         };
+        this.elements.fontCard.open = this.fontDetailsOpen;
+        this.elements.previewDetails.open = this.previewOpen;
         this.fontTree = new FontTree({
             container: this.elements.fontTree,
+            getLoadedFont: (id) => this._getLoadedFont(id),
             onSelect: (node, options) => this._onTreeFontSelected(node, options),
             onEscape: () => this._closeFontTree(),
             onMove: (placement) => this._moveOrganizationNode(placement)
         });
+        this.fontComparison = new FontComparison({
+            container: this.elements.fontComparison,
+            getLoadedFont: (id) => this.fonts.getLoadedFont?.(id) || null,
+            warmFonts: (ids, options) => this.fonts.warmFonts?.(ids, options),
+            onCommit: (row) => this._onComparisonFontCommitted(row),
+            onMove: (placement) => this._moveOrganizationNode(placement),
+            onClose: () => {
+                this.elements.fontComparisonToggle?.setAttribute('aria-expanded', 'false');
+                this.elements.fontComparisonToggle?.setAttribute('aria-label', 'フォント比較を開く');
+                this.elements.fontComparisonToggle?.setAttribute('title', 'フォント比較を開く');
+                this.elements.fontInformationToggle?.setAttribute('aria-expanded', 'false');
+                this.elements.fontInformationToggle?.setAttribute('aria-label', 'フォント情報・整理を開く');
+                this.elements.fontInformationToggle?.setAttribute('title', 'フォント情報・整理を開く');
+                this.elements.fontComparisonToggle?.focus?.();
+            }
+        });
+        this.fontComparison.attachInformation(this.elements.fontCard);
         this._bind();
         this._renderFontOptions();
         this._renderFontManager();
@@ -412,12 +458,36 @@ export class BalloonPopup {
         this.elements.autoFit.addEventListener('change', (e) => this._setParams(setPath(this.params, ['text', 'autoFit'], e.target.checked)));
         this.elements.fontSelect.addEventListener('change', (e) => this._onFontSelected(e.target.value));
         this.elements.fontTrigger.addEventListener('click', () => this._toggleFontTree());
+        this.elements.fontTree.addEventListener('scroll', () => this._warmFontTreeVisible(), { passive: true });
+        this.elements.fontTree.addEventListener('click', () => this._warmFontTreeVisible());
         this.elements.fontTrigger.addEventListener('wheel', (e) => this._onFontWheel(e), { passive: false });
+        this.elements.fontComparisonToggle.addEventListener('click', () => this._toggleFontComparison());
+        this.elements.fontInformationToggle.addEventListener('click', () => this._toggleFontInformation());
         this.elements.fontStorage.addEventListener('change', (e) => this._setFontFolder(e.target.value || null));
         this.elements.fontFavoriteFirst.addEventListener('change', (e) => this._setFavoriteFirst(e.target.checked));
         this.elements.fontSample.addEventListener('change', (e) => {
             this.fonts.setSample?.(e.target.value);
             this._renderFontDetails();
+        });
+        this.elements.fontCard.addEventListener('toggle', (e) => {
+            if (e.target !== this.elements.fontCard) return;
+            this.fontDetailsOpen = this.elements.fontCard.open;
+            this._persist();
+        });
+        // Native summary activation must not also start Canvas pan/shortcuts.
+        [this.elements.fontCard, this.elements.previewDetails].forEach(details => {
+            ['keydown', 'keyup'].forEach(type => details.querySelector(':scope > summary')
+                .addEventListener(type, e => e.stopPropagation()));
+        });
+        this.elements.previewDetails.addEventListener('toggle', () => {
+            this.previewOpen = this.elements.previewDetails.open;
+            this._persist();
+            if (this.previewOpen) this._redraw();
+        });
+        this.elements.fontLicense.addEventListener('toggle', () => {
+            if (this.elements.fontLicense.open && this._fontLicensePath) {
+                void this._loadExternalLicense(this._fontLicensePath, this._fontLicenseToken);
+            }
         });
         this.elements.fontFavorite.addEventListener('change', async (e) => {
             const id = this._selectedFontId();
@@ -514,7 +584,7 @@ export class BalloonPopup {
         this._persist();
         this._syncControls();
         this._redraw();
-        if (!options.skipLettering) this._scheduleLettering();
+        if (!options.skipLettering) this._scheduleLettering(options.letteringDelay);
     }
 
     _activeBalloon() {
@@ -563,6 +633,7 @@ export class BalloonPopup {
         const fontValue = this._fontOptionValue(p.text);
         if (this.elements.fontSelect.value !== fontValue && [...this.elements.fontSelect.options].some(o => o.value === fontValue)) this.elements.fontSelect.value = fontValue;
         this._syncFontPicker();
+        this.fontComparison?.setCommittedKey(this._selectedTreeKey());
         this._renderFontDetails();
         this.elements.editStatus.textContent = this.editing ? '— 再編集中' : '';
         this.elements.updateBtn.hidden = !this.editing;
@@ -646,6 +717,72 @@ export class BalloonPopup {
         this._renderOrganizationControls();
     }
 
+    _toggleFontComparison(force = null) {
+        const next = force === null ? !this.fontComparison?.isOpen?.() : force === true;
+        this.fontComparison?.setMode('samples');
+        this.fontComparison?.setOpen(next);
+        this.elements.fontComparisonToggle?.setAttribute('aria-expanded', String(next));
+        this.elements.fontComparisonToggle?.setAttribute('aria-label', next ? 'フォント比較を閉じる' : 'フォント比較を開く');
+        this.elements.fontComparisonToggle?.setAttribute('title', next ? 'フォント比較を閉じる' : 'フォント比較を開く');
+        this.elements.fontInformationToggle?.setAttribute('aria-expanded', 'false');
+        this.elements.fontInformationToggle?.setAttribute('aria-label', 'フォント情報・整理を開く');
+        this.elements.fontInformationToggle?.setAttribute('title', 'フォント情報・整理を開く');
+    }
+
+    _toggleFontInformation(force = null) {
+        const open = this.fontComparison?.isOpen?.() === true;
+        const information = this.fontComparison?.getMode?.() === 'information';
+        const next = force === null ? !(open && information) : force === true;
+        if (next) {
+            this.fontComparison?.setMode('information');
+            this.fontComparison?.setOpen(true);
+        } else if (open && information) {
+            this.fontComparison?.setOpen(false);
+        }
+        this.elements.fontInformationToggle?.setAttribute('aria-expanded', String(next));
+        this.elements.fontInformationToggle?.setAttribute('aria-label', next ? 'フォント情報・整理を閉じる' : 'フォント情報・整理を開く');
+        this.elements.fontInformationToggle?.setAttribute('title', next ? 'フォント情報・整理を閉じる' : 'フォント情報・整理を開く');
+        this.elements.fontComparisonToggle?.setAttribute('aria-expanded', 'false');
+        this.elements.fontComparisonToggle?.setAttribute('aria-label', 'フォント比較を開く');
+        this.elements.fontComparisonToggle?.setAttribute('title', 'フォント比較を開く');
+    }
+
+    _onComparisonFontCommitted(row) {
+        if (!row?.selectValue) return;
+        this._onFontSelected(row.selectValue);
+    }
+
+    _renderFontComparison() {
+        this.fontComparison?.setData({
+            folders: this._fontData.organization?.folders || [],
+            rows: this._fontRowsForTree(),
+            placements: this._fontData.organization?.placements || {},
+            orders: this._fontData.organization?.orders || {},
+            favoriteFirst: this._fontData.organization?.favoriteFirst === true
+        });
+        this.fontComparison?.setCommittedKey(this._selectedTreeKey());
+    }
+
+    _fontIdFromSelectValue(value) {
+        const text = String(value || '');
+        if (text.startsWith(BUNDLED_OPTION_PREFIX)) return text.slice(BUNDLED_OPTION_PREFIX.length);
+        if (text.startsWith(IMPORTED_OPTION_PREFIX)) return text.slice(IMPORTED_OPTION_PREFIX.length);
+        return '';
+    }
+
+    _warmFontNeighbors(values, currentIndex) {
+        if (typeof this.fonts.warmFonts !== 'function') return;
+        const ids = values.slice(Math.max(0, currentIndex - 2), currentIndex + 3)
+            .map(value => this._fontIdFromSelectValue(value))
+            .filter(Boolean);
+        if (!ids.length) return;
+        try {
+            void this.fonts.warmFonts([...new Set(ids)], { concurrency: 2, shouldContinue: () => true });
+        } catch (error) {
+            // warmは応答改善の補助で、選択操作を止めない。
+        }
+    }
+
     _toggleFontTree(force = null) {
         const tree = this.elements.fontTree;
         if (!tree) return;
@@ -654,9 +791,30 @@ export class BalloonPopup {
         this.elements.fontTrigger.setAttribute('aria-expanded', String(open));
         if (open) {
             this.fontTree?.setSelected(this._selectedTreeKey(), { focus: true });
+            this._warmFontTreeVisible();
         } else {
+            this._fontTreeWarmToken = (this._fontTreeWarmToken || 0) + 1;
+            clearTimeout(this._fontTreeWarmTimer);
             this.elements.fontTrigger.focus();
         }
+    }
+
+    _warmFontTreeVisible() {
+        clearTimeout(this._fontTreeWarmTimer);
+        const token = this._fontTreeWarmToken = (this._fontTreeWarmToken || 0) + 1;
+        if (this.elements.fontTree.hidden) return;
+        this.fontTree?.updateFontPreviews();
+        this._fontTreeWarmTimer = setTimeout(() => {
+            const tree = this.elements.fontTree;
+            if (tree.hidden || token !== this._fontTreeWarmToken || !this.fonts.warmFonts) return;
+            const bounds = tree.getBoundingClientRect();
+            const ids = [...tree.querySelectorAll('[data-node-type="font"]')].filter(row => {
+                const rect = row.getBoundingClientRect();
+                return rect.bottom > bounds.top && rect.top < bounds.bottom;
+            }).map(row => this.fontTree.getNode(row.dataset.nodeKey)).filter(row => row && !row.system).map(row => row.id).slice(0, 8);
+            void this.fonts.warmFonts(ids, { shouldContinue: () => !tree.hidden && token === this._fontTreeWarmToken })
+                .then(() => { if (!tree.hidden && token === this._fontTreeWarmToken) this.fontTree.updateFontPreviews(); }).catch(() => {});
+        }, 32);
     }
 
     _closeFontTree() {
@@ -687,13 +845,14 @@ export class BalloonPopup {
         const values = rows.map(row => row.selectValue).filter(Boolean);
         const current = values.indexOf(this.elements.fontSelect.value);
         if (current < 0) return;
+        this._warmFontNeighbors(values, current);
         const next = current + (delta > 0 ? steps : -steps);
         if (next < 0 || next >= values.length) {
             event.preventDefault();
             return;
         }
         event.preventDefault();
-        this._onFontSelected(values[next]);
+        this._onFontSelected(values[next], { letteringDelay: 240 });
     }
 
     _onTreeFontSelected(node, { previewOnly = false } = {}) {
@@ -899,6 +1058,7 @@ export class BalloonPopup {
         const bundled = this._selectedBundledFont();
         const imported = this._fontData.fonts.find(font => font.id === id) || null;
         const selected = bundled || imported;
+        this.fontComparison?.setTargetLabel(selected?.label || '');
         card.hidden = !selected;
         if (!selected) {
             this.elements.fontLicense.hidden = true;
@@ -936,28 +1096,56 @@ export class BalloonPopup {
                 licenseFile && this._safeLink('同梱LICENSE', licenseFile)
             ].filter(Boolean).join('　')
             : '';
+        this._fontLicensePath = '';
         this.elements.fontLicense.hidden = true;
         this.elements.fontLicenseText.textContent = '';
         if (bundled?.external && bundled.licenseFile && typeof this.fonts.readExternalFile === 'function') {
+            this._fontLicensePath = bundled.licenseFile;
             this.elements.fontLicense.hidden = false;
-            this.elements.fontLicenseText.textContent = '作者資料を読み込み中…';
-            void this._loadExternalLicense(bundled.licenseFile, token);
+            this.elements.fontLicenseText.textContent = this.elements.fontLicense.open ? '作者資料を読み込み中…' : '詳細を開くと作者資料を読み込みます';
+            if (this.elements.fontLicense.open) void this._loadExternalLicense(this._fontLicensePath, token);
         }
-        this.elements.fontLoadStatus.textContent = '見本を待機中…';
-        this.elements.fontLoadStatus.dataset.state = 'loading';
-        this.elements.fontSamplePreview.textContent = '選択を反映しています…';
-        this.elements.fontSamplePreview.dataset.state = 'loading';
-        this.elements.fontSamplePreview.style.fontFamily = 'sans-serif';
-        this._fontPreviewTimer = setTimeout(() => {
-            this._loadFontPreview(id, sample, token, bundled?.external === true);
-        }, FONT_PREVIEW_DELAY_MS);
+        const loadedEntry = this._getLoadedFont(id);
+        const stableSample = this._fontPreviewRenderedId === id
+            && this._fontPreviewRenderedSampleId === sample.id
+            && this.elements.fontSamplePreview.dataset.state === 'loaded';
+        if (loadedEntry) {
+            this._applyFontPreview(loadedEntry, sample, token);
+        } else {
+            if (!stableSample) {
+                this.elements.fontLoadStatus.textContent = '見本を待機中…';
+                this.elements.fontLoadStatus.dataset.state = 'loading';
+                this.elements.fontSamplePreview.textContent = '選択を反映しています…';
+                this.elements.fontSamplePreview.dataset.state = 'loading';
+                this.elements.fontSamplePreview.style.fontFamily = 'sans-serif';
+            }
+            this._fontPreviewTimer = setTimeout(() => {
+                this._loadFontPreview(id, sample, token, bundled?.external === true);
+            }, typeof this.fonts.getLoadedFont === 'function' ? FONT_PREVIEW_COALESCE_MS : FONT_PREVIEW_DELAY_MS);
+        }
+    }
+
+    _getLoadedFont(id) {
+        if (typeof this.fonts.getLoadedFont !== 'function') return null;
+        try { return this.fonts.getLoadedFont(id) || null; } catch (error) { return null; }
+    }
+
+    _applyFontPreview(entry, sample, token) {
+        if (!entry || token !== this._fontPreviewToken) return;
+        this.elements.fontLoadStatus.textContent = '見本を読み込みました';
+        this.elements.fontLoadStatus.dataset.state = 'loaded';
+        this.elements.fontSamplePreview.textContent = sample.text;
+        this.elements.fontSamplePreview.dataset.state = 'loaded';
+        this.elements.fontSamplePreview.style.fontFamily = "'" + String(entry.family).replaceAll('"', '').replaceAll("'", '').replaceAll(String.fromCharCode(92), '') + "'";
+        this._fontPreviewRenderedId = this._selectedFontId();
+        this._fontPreviewRenderedSampleId = sample.id;
     }
 
     async _loadFontPreview(id, sample, token, external = false) {
         if (token !== this._fontPreviewToken) return;
-        let entry = null;
+        let entry = this._getLoadedFont(id);
         try {
-            entry = typeof this.fonts.ensureLoaded === 'function' ? await this.fonts.ensureLoaded(id) : null;
+            if (!entry) entry = typeof this.fonts.ensureLoaded === 'function' ? await this.fonts.ensureLoaded(id) : null;
         } catch (error) {
             entry = null;
         }
@@ -972,11 +1160,7 @@ export class BalloonPopup {
             this.elements.fontSamplePreview.style.fontFamily = '';
             return;
         }
-        this.elements.fontLoadStatus.textContent = '見本を読み込みました';
-        this.elements.fontLoadStatus.dataset.state = 'loaded';
-        this.elements.fontSamplePreview.textContent = sample.text;
-        this.elements.fontSamplePreview.dataset.state = 'loaded';
-        this.elements.fontSamplePreview.style.fontFamily = "'" + String(entry.family).replaceAll('"', '').replaceAll("'", '').replaceAll(String.fromCharCode(92), '') + "'";
+        this._applyFontPreview(entry, sample, token);
     }
 
     async _loadExternalLicense(path, token) {
@@ -1032,28 +1216,30 @@ export class BalloonPopup {
         ]);
         if (refreshToken !== this._fontRefreshToken) return;
         const valueOrPrevious = (result, fallback) => result.status === 'fulfilled' && Array.isArray(result.value) ? result.value : fallback;
-        this._fontData = {
+        const nextFontData = {
             folders: valueOrPrevious(foldersResult, previous.folders),
             fonts: valueOrPrevious(fontsResult, previous.fonts),
             bundled: valueOrPrevious(bundledResult, previous.bundled)
         };
-        const fontIds = [...this._fontData.bundled, ...this._fontData.fonts].map(font => font.id).filter(Boolean);
+        const fontIds = [...nextFontData.bundled, ...nextFontData.fonts].map(font => font.id).filter(Boolean);
         let organization = previous.organization;
         if (typeof this.fonts.getOrganization === 'function') {
             try {
-                await this.fonts.initializeOrganization?.();
+                await this.fonts.initializeOrganization?.(fontIds);
                 const result = await this.fonts.getOrganization(fontIds);
                 if (result && typeof result === 'object') organization = result;
             } catch (error) {
                 organization = previous.organization;
             }
         }
-        this._fontData.organization = this._normalizeOrganization(organization);
+        if (refreshToken !== this._fontRefreshToken) return;
+        this._fontData = { ...nextFontData, organization: this._normalizeOrganization(organization) };
         this._applyCatalogPrimary();
         if (this.popup) {
             this._renderFontOptions();
             this._renderFontManager();
             this._renderFontTree();
+            this._renderFontComparison();
             this._syncControls();
         }
         void this._refreshExternalStatus();
@@ -1139,15 +1325,15 @@ export class BalloonPopup {
         });
     }
 
-    _onFontSelected(value) {
+    _onFontSelected(value, options = {}) {
         const selectedRow = this._fontRowsForTree().find(row => row.selectValue === value);
         if (selectedRow) this.fontTree?.setSelected(selectedRow.key);
         this._commitFontCommentDraft();
         if (value.startsWith(BUNDLED_OPTION_PREFIX) || value.startsWith(IMPORTED_OPTION_PREFIX)) {
             const prefix = value.startsWith(BUNDLED_OPTION_PREFIX) ? BUNDLED_OPTION_PREFIX : IMPORTED_OPTION_PREFIX;
-            this._setParams({ ...this.params, text: { ...this.params.text, fontKind: 'imported', fontId: value.slice(prefix.length) } });
+            this._setParams({ ...this.params, text: { ...this.params.text, fontKind: 'imported', fontId: value.slice(prefix.length) } }, { letteringDelay: options.letteringDelay });
         } else {
-            this._setParams({ ...this.params, text: { ...this.params.text, fontKind: 'system', fontId: null, fontFamily: value.slice(4) } });
+            this._setParams({ ...this.params, text: { ...this.params.text, fontKind: 'system', fontId: null, fontFamily: value.slice(4) } }, { letteringDelay: options.letteringDelay });
         }
     }
 
@@ -1196,9 +1382,11 @@ export class BalloonPopup {
 
     // ------------------------------------------------------------ 文字の組版(プレビュー/確定共通)
 
-    _scheduleLettering() {
+    _scheduleLettering(delay = 140) {
         clearTimeout(this._letteringTimer);
-        this._letteringTimer = setTimeout(() => this._refreshLettering(), 140);
+        this._letteringToken += 1;
+        const wait = Number.isFinite(Number(delay)) ? Math.max(0, Number(delay)) : 140;
+        this._letteringTimer = setTimeout(() => this._refreshLettering(), wait);
     }
 
     /** 文字領域に収まる文字画像を作る(自動調整ONなら収まる最大サイズを探す)。 */
@@ -1399,6 +1587,10 @@ export class BalloonPopup {
     _redraw() {
         const el = this.elements.canvas;
         if (!el) return;
+        if (!this.elements.previewDetails.open) {
+            this.overlay.schedule();
+            return;
+        }
         const size = this._canvasSize();
         const bw = this.params.rect.x + this.params.rect.w;
         const view = { w: Math.max(size.width, bw), h: size.height };
@@ -1565,7 +1757,10 @@ export class BalloonPopup {
 
     hide() {
         if (!this.popup) return;
+        this._fontTreeWarmToken = (this._fontTreeWarmToken || 0) + 1;
+        clearTimeout(this._fontTreeWarmTimer);
         const wasVisible = this.isVisible === true;
+        if (this.fontComparison?.isOpen?.()) this._toggleFontComparison(false);
         this.popup.classList.remove('show');
         this.isVisible = false;
         this.endDrag();
@@ -1590,6 +1785,7 @@ export class BalloonPopup {
         this._fieldDetachers?.forEach(off => off());
         this._offFonts?.();
         this.eventBus?.off?.('layer:activated', this._layerListener);
+        this.fontComparison?.destroy?.();
         this.overlay.destroy();
     }
 }

@@ -66,6 +66,9 @@ import {
 } from './animation/transform-edit-transaction.js';
 import { LayerTransformWarpController } from '../ui/layer-transform-warp-controller.js';
 import { FolderCompositor, collectCompositedFolderIds } from './folder-composite.js';
+import { sanitizeLetteringData } from './lettering-model.js';
+import { letteringRasterFingerprint } from './lettering-fingerprint.js';
+import { revealLetteringSourcesForCapture } from './lettering-preview-display.js';
 
 export class LayerSystem {
     constructor() {
@@ -3023,7 +3026,10 @@ export class LayerSystem {
         const oldCheckerVisible = this.checkerPattern ? this.checkerPattern.visible : false;
         if (this.checkerPattern) this.checkerPattern.visible = false;
 
+        const restoreLetteringDisplay = revealLetteringSourcesForCapture();
         try {
+            this.flushFolderComposites?.();
+            this._syncAdvancedBlendBackBuffer?.();
             // 合成レンダリング
             this.app.renderer.render({
                 container: this.currentFrameContainer,
@@ -3045,6 +3051,7 @@ export class LayerSystem {
             console.error('❌ LayerSystem: Failed to create composite snapshot', err);
             return null;
         } finally {
+            restoreLetteringDisplay();
             // 状態復元
             if (bgLayer) bgLayer.visible = oldBgVisible;
             if (this.checkerPattern) this.checkerPattern.visible = oldCheckerVisible;
@@ -5585,7 +5592,19 @@ export class LayerSystem {
             paths: structuredClone(snapshot.paths || []),
             pathsData: structuredClone(snapshot.pathsData || [])
         };
-        if (!this.restoreLayerRasterSnapshot(committedSnapshot)) {
+        const restored = this.restoreLayerRasterSnapshot(committedSnapshot);
+        // WP-025: attach the optional re-edit recipe before the single History
+        // notification. GPU readback, not the pre-upload image, defines its hash.
+        let lettering = null;
+        if (restored && options.lettering) {
+            try {
+                lettering = sanitizeLetteringData({ ...options.lettering,
+                    fingerprint: letteringRasterFingerprint(this.createLayerRasterSnapshot(layer)) }, this.config.canvas);
+            } catch (error) {
+                console.warn('[LayerSystem] editable lettering readback failed', error);
+            }
+        }
+        if (!restored || (options.lettering && !lettering)) {
             this.currentFrameContainer.removeChild(layer);
             layer.layerData.destroyMask?.();
             layer.layerData.renderTexture?.destroy?.(true);
@@ -5594,6 +5613,8 @@ export class LayerSystem {
             if (previousIndex >= 0) this.setActiveLayer(previousIndex);
             return null;
         }
+
+        if (lettering) layer.layerData.lettering = lettering;
 
         const finalIndex = this.getLayerIndex(layer);
         this.setActiveLayer(finalIndex);

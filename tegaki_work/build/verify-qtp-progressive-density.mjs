@@ -16,7 +16,7 @@ assert.match(qtpSource, /slot\.classList\.toggle\('is-empty', !preset\)/, 'empty
 assert.match(qtpSource, /sizeValEl\.textContent = preset \? `\$\{this\._roundSize\(size\)\}` : '—'/, 'empty and unsupported slots display a stable placeholder');
 assert.match(qtpSource, /class="qa-preset-status" id="qa-preset-status" role="status" aria-live="polite"/, 'status remains accessible without a visible label row');
 assert.match(qtpSource, /_selectPresetSlot\(index\)/, 'direct preset selection authority remains unchanged');
-assert.match(qtpSource, /id="qa-text-raster-toggle"/, 'Text utility remains independent');
+assert.doesNotMatch(qtpSource, /qa-text-raster/, 'Text editing moved to manga; QTP stays drawing-focused');
 assert.match(qtpSource, /position:\s*'quick-access-position'/, 'free position persistence remains unchanged');
 assert.doesNotMatch(qtpSource, /densityMode|compactMode|qtpMode|quick-access-density/, 'no FULL / COMPACT state or storage key is introduced');
 

@@ -1,6 +1,7 @@
 # WP-020 — RIG刷新の最初の実行経路
 
 状態: BLOCKED / A2後のnative fixture生成例外、B接点調査完了。発行: 2026-10-03。
+2026-10-04司令再精査: 以下の実測・停止は保持。Completionにある「安定版sourceでnative再試行」は優先候補から取り下げた。次は[WP-026](WP-026-rive-authoring-browser-proof.md)の独立Rive Browser proof。評価器限定案とnative先行順序の見直しは[再精査](../ai/2026-10-04-rig-architecture-reassessment.md)を参照。backend採用/production切替は未決定。
 Owner承認: 旧系を隔離し、新しい土台で制作動線を作る方向に必要な調査/改修を進める。既存RIGとの全面整合や自動移行を初期目標にしない。
 開始: main / `386d71877bd6bd237416cca13f72c16be713e874`、worktree clean。
 READ: AGENTS → STATUS → TECHNICAL → 本Card → ARCHITECTURE「Animation評価と出力」。LUNAだけWP-019 capability reportを既知証拠として読む。

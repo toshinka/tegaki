@@ -58,7 +58,7 @@ import { emergencyRecoveryStore } from './system/emergency-recovery-store.js';
 import { PixelSelectionSystem } from './system/pixel-selection-system.js';
 import { ImageImporter } from './system/image-importer.js';
 import { PsdImporter } from './system/psd-importer.js';
-import { TextRasterService } from './system/text-rasterizer.js';
+import { LetteringLayerAdapter } from './system/lettering-layer-adapter.js';
 
 // ポップアップのインポート
 import { SettingsPopup } from './ui/settings-popup.js';
@@ -69,6 +69,7 @@ import { PanelLayoutPopup } from './ui/panel-layout-popup.js';
 import { FocusLinesPopup } from './ui/focus-lines-popup.js';
 import { RulerPopup } from './ui/ruler-popup.js';
 import { BalloonPopup } from './ui/balloon-popup.js';
+import { LetteringPopup } from './ui/lettering-popup.js';
 import { ExportPopup } from './ui/export-popup.js';
 import { AlbumPopup } from './ui/album-popup.js';
 import { ReferencePreviewViewer } from './ui/reference-preview-viewer.js';
@@ -376,12 +377,7 @@ export class CoreEngine {
         QuickAccessPopup.applyStoredActiveSlots(this.brushSettings);
         this.popupManager.register('quickAccess', QuickAccessPopup, {
             brushSettings: this.brushSettings,
-            layerSystem: this.layerSystem,
-            textRasterService: new TextRasterService({
-                layerSystem: this.layerSystem,
-                cameraSystem: this.cameraSystem,
-                eventBus: this.eventBus
-            })
+            layerSystem: this.layerSystem
         });
         // 画面左上のショートカットヘルプ(設定でON/OFF)
         this.shortcutHelp = new ShortcutHelp({ settingsManager: this.settingsManager, eventBus: this.eventBus });
@@ -392,6 +388,14 @@ export class CoreEngine {
         this.popupManager.register('balloon', BalloonPopup, {
             layerSystem: this.layerSystem,
             eventBus: this.eventBus
+        });
+        this.popupManager.register('lettering', LetteringPopup, {
+            layerSystem: this.layerSystem,
+            history: this.history,
+            eventBus: this.eventBus,
+            layerAdapter: new LetteringLayerAdapter({
+                layerSystem: this.layerSystem, history: this.history, eventBus: this.eventBus
+            })
         });
         this.popupManager.register('ruler', RulerPopup, {
             eventBus: this.eventBus,

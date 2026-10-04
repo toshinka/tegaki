@@ -140,7 +140,6 @@ export class QuickAccessPopup {
         this.config = dependencies.config || {};
         this.eventBus = TegakiEventBus;
         this.brushSettings = dependencies.brushSettings || window.brushSettings;
-        this.textRasterService = dependencies.textRasterService || null;
         this.layerSystem = dependencies.layerSystem || null;
         this.tonePanel = null;
 
@@ -1495,45 +1494,6 @@ export class QuickAccessPopup {
                 </div>
             </section>
 
-            <!-- 5. one-shot Text utility: drawing tool / pen settingsの後に必要時だけ展開 -->
-            <section class="qa-section qa-text-raster-utility" aria-label="テキストをRaster Layerへ確定">
-                <button class="qa-text-raster-toggle" id="qa-text-raster-toggle" type="button"
-                    aria-expanded="false" aria-controls="qa-text-raster-panel" title="文字をRaster Layerへ確定">
-                    <span class="qa-text-raster-icon" aria-hidden="true">T</span>
-                    <span>TEXT</span>
-                </button>
-                <div class="qa-text-raster-panel" id="qa-text-raster-panel" hidden>
-                    <textarea class="qa-text-raster-content" id="qa-text-raster-content" rows="3"
-                        maxlength="2000" placeholder="文字を入力" aria-label="Raster化する文字"></textarea>
-                    <div class="qa-text-raster-options">
-                        <label class="qa-text-raster-field qa-text-raster-family-field">
-                            <span>FONT</span>
-                            <select id="qa-text-raster-family" aria-label="フォント種別">
-                                <option value="sans-serif">Sans</option>
-                                <option value="serif">Serif</option>
-                                <option value="monospace">Mono</option>
-                            </select>
-                        </label>
-                        <div class="qa-text-raster-secondary-row">
-                            <label class="qa-text-raster-field qa-text-raster-size-field">
-                                <span>SIZE</span>
-                                <input id="qa-text-raster-size" type="number" min="8" max="256" step="1" value="48"
-                                    inputmode="numeric" aria-label="文字サイズ">
-                            </label>
-                            <label class="qa-text-raster-bold">
-                                <input id="qa-text-raster-bold" type="checkbox">
-                                <span>BOLD</span>
-                            </label>
-                            <span class="qa-text-raster-color" id="qa-text-raster-color" title="現在のメインカラー"></span>
-                        </div>
-                    </div>
-                    <div class="qa-text-raster-status" id="qa-text-raster-status" role="status" aria-live="polite"></div>
-                    <div class="qa-text-raster-actions">
-                        <button id="qa-text-raster-cancel" type="button">CANCEL</button>
-                        <button id="qa-text-raster-confirm" type="button">RASTERIZE</button>
-                    </div>
-                </div>
-            </section>
             </div>
             <div class="qa-view qa-view--tone" data-qa-view="tone" hidden></div>
         `;
@@ -1647,16 +1607,6 @@ export class QuickAccessPopup {
             slotMembers: document.getElementById('qa-slot-members'),
             slotOptions: document.getElementById('qa-slot-options'),
             selectionToolBtn: document.getElementById('qa-selection-tool'),
-            textRasterToggleBtn: document.getElementById('qa-text-raster-toggle'),
-            textRasterPanel: document.getElementById('qa-text-raster-panel'),
-            textRasterContent: document.getElementById('qa-text-raster-content'),
-            textRasterFamily: document.getElementById('qa-text-raster-family'),
-            textRasterSize: document.getElementById('qa-text-raster-size'),
-            textRasterBold: document.getElementById('qa-text-raster-bold'),
-            textRasterColor: document.getElementById('qa-text-raster-color'),
-            textRasterStatus: document.getElementById('qa-text-raster-status'),
-            textRasterCancelBtn: document.getElementById('qa-text-raster-cancel'),
-            textRasterConfirmBtn: document.getElementById('qa-text-raster-confirm'),
             fillRefAllToggleBtn: document.getElementById('qa-fill-ref-all-toggle'),
             sizeSlider: document.getElementById('pen-size-slider'),
             sizeTrack: document.getElementById('pen-size-track'),
@@ -1700,7 +1650,6 @@ export class QuickAccessPopup {
         this._setupShortcutHelpControls();
         this._setupPositionPresetControls();
         this._setupToolButtons();
-        this._setupTextRasterControls();
         this._setupPresetSlots();
         this._setupColorButtons();
         this._setupColorSlotUI();
@@ -1887,82 +1836,6 @@ export class QuickAccessPopup {
         this._bindPointerAction(this.elements.colorCircleToggleBtn, () => {
             this._toggleColorCircle();
         });
-    }
-
-    _setupTextRasterControls() {
-        this._bindPointerAction(this.elements.textRasterToggleBtn, () => {
-            const isOpen = this.elements.textRasterPanel?.hidden === false;
-            this._setTextRasterPanelOpen(!isOpen);
-        });
-        this._bindPointerAction(this.elements.textRasterCancelBtn, () => {
-            if (this.elements.textRasterContent) this.elements.textRasterContent.value = '';
-            this._setTextRasterStatus('');
-            this._setTextRasterPanelOpen(false);
-        });
-        this._bindPointerAction(this.elements.textRasterConfirmBtn, () => this._commitTextRaster());
-
-        const stopShortcutPropagation = (event) => {
-            if (
-                event.type === 'keydown'
-                && event.key === 'Enter'
-                && (event.ctrlKey || event.metaKey)
-            ) {
-                event.preventDefault();
-                this._commitTextRaster();
-            }
-            event.stopPropagation();
-        };
-        [
-            this.elements.textRasterContent,
-            this.elements.textRasterFamily,
-            this.elements.textRasterSize,
-            this.elements.textRasterBold
-        ].forEach((element) => element?.addEventListener('keydown', stopShortcutPropagation));
-    }
-
-    _setTextRasterPanelOpen(open) {
-        const isOpen = open === true;
-        if (this.elements.textRasterPanel) this.elements.textRasterPanel.hidden = !isOpen;
-        this.elements.textRasterToggleBtn?.classList.toggle('active', isOpen);
-        this.elements.textRasterToggleBtn?.setAttribute('aria-expanded', String(isOpen));
-        if (isOpen) {
-            this._updateTextRasterColor();
-            requestAnimationFrame(() => this.elements.textRasterContent?.focus());
-        }
-    }
-
-    _setTextRasterStatus(message, isError = false) {
-        if (!this.elements.textRasterStatus) return;
-        this.elements.textRasterStatus.textContent = message || '';
-        this.elements.textRasterStatus.classList.toggle('is-error', isError && Boolean(message));
-    }
-
-    _updateTextRasterColor() {
-        if (this.elements.textRasterColor) {
-            this.elements.textRasterColor.style.background = this._colorToCss(this.mainColor);
-        }
-    }
-
-    _commitTextRaster() {
-        if (!this.textRasterService?.createTextLayer) {
-            this._setTextRasterStatus('Text Rasterを利用できません', true);
-            return false;
-        }
-        const result = this.textRasterService.createTextLayer({
-            text: this.elements.textRasterContent?.value || '',
-            fontFamily: this.elements.textRasterFamily?.value || 'sans-serif',
-            fontSize: Number(this.elements.textRasterSize?.value),
-            bold: this.elements.textRasterBold?.checked === true,
-            color: this.mainColor
-        });
-        if (!result?.ok) {
-            this._setTextRasterStatus(result?.reason || 'Text Rasterを作成できません', true);
-            return false;
-        }
-        if (this.elements.textRasterContent) this.elements.textRasterContent.value = '';
-        this._setTextRasterStatus('');
-        this._setTextRasterPanelOpen(false);
-        return true;
     }
 
     /** スロット上の■(ALL)の点灯を、バケツ/自動選択それぞれの現在値に合わせる。 */
@@ -2738,7 +2611,6 @@ export class QuickAccessPopup {
         this.eventBus.on('brush:color-changed', (event = {}) => {
             this._updateColorButtons();
             this._updateCurrentColorDot();
-            this._updateTextRasterColor();
         });
 
         this.eventBus.on('color:swap-main-sub', () => {
@@ -4035,7 +3907,6 @@ export class QuickAccessPopup {
         this._closeColorSubPopup();
         this._setShortcutHelpOpen(false);
         this._setPositionDeckOpen(false);
-        this._setTextRasterPanelOpen(false);
         this.panel.classList.remove('show');
         this.isVisible = false;
         if (this.isAtHomePosition) {

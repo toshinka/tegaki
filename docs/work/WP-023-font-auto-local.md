@@ -1,6 +1,6 @@
 # WP-023 — 個人開発用フォントの自動参照
 
-状態: ACTIVE。Ownerが外部接続の自動化と通常接続UIの非表示を指定。
+状態: VERIFIED / TECHNICAL COMPLETE / OWNER ACCEPTANCE PENDING。Ownerが外部接続の自動化と通常接続UIの非表示を指定。
 
 ## Goal
 
@@ -38,4 +38,4 @@ JS構文、bridge拒否fixtureと実HTTP、既存fonts関連verifier、build/har
 
 ## Completion
 
-実装・技術検証中。
+構文・fonts/balloon verifier・harness/build PASS。実Eの27書体をChromiumでpicker呼出0でdecode、wheel/keyboard/D&D/収納、文字確定とProject/History往復を確認。実HTTPの異origin/Host/未登録ID/path拒否、公開previewで実体と自動設定なし、LAN host指定起動失敗を確認。Vite preflightがpluginより前で応答するためserveのCORSを無効化。Owner制作受入は別判定。切替の応答改善は後続WP-024。

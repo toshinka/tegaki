@@ -25,9 +25,11 @@ function parentKey(parentId) {
  * 一軸の表示tree。DOMイベントをここへ閉じ込め、分類の保存は呼び出し元へ委譲する。
  */
 export class FontTree {
-    constructor({ container, onSelect, onEscape, onMove } = {}) {
+    constructor({ container, onSelect, onFolderSelect, onEscape, onMove, getLoadedFont } = {}) {
         this.container = container || null;
+        this.getLoadedFont = typeof getLoadedFont === 'function' ? getLoadedFont : () => null;
         this.onSelect = typeof onSelect === 'function' ? onSelect : () => {};
+        this.onFolderSelect = typeof onFolderSelect === 'function' ? onFolderSelect : () => {};
         this.onEscape = typeof onEscape === 'function' ? onEscape : () => {};
         this.onMove = typeof onMove === 'function' ? onMove : () => {};
         this._folders = [];
@@ -69,7 +71,7 @@ export class FontTree {
                 type: 'folder',
                 label: String(folder.label ?? folder.name ?? id),
                 parentId: folder.parentId || null,
-                canMove: true
+                canMove: folder.canMove !== false
             });
         });
         this._fonts.forEach((font, index) => {
@@ -209,6 +211,18 @@ export class FontTree {
         this._childrenFor(null).forEach(node => fragment.append(this._renderNode(node, 1)));
         this.container.append(fragment);
         this.setSelected(this._selectedKey);
+        this.updateFontPreviews();
+    }
+
+    updateFontPreviews() {
+        this.container?.querySelectorAll('.pl-font-tree__sample').forEach(sample => {
+            const node = this._nodes.get(sample.closest('[data-node-key]')?.dataset.nodeKey);
+            const entry = node?.system ? { family: node.family || node.id } : this.getLoadedFont(node?.id);
+            sample.textContent = entry?.family ? 'Aあ1' : '…';
+            sample.dataset.state = entry?.family ? 'loaded' : 'unloaded';
+            sample.style.fontFamily = entry?.family ? `'${String(entry.family).replace(/["'\\]/g, '')}'` : '';
+            sample.title = entry?.family ? '書体の見本' : '見本を準備中';
+        });
     }
 
     _renderNode(node, level) {
@@ -236,12 +250,16 @@ export class FontTree {
             const marker = document.createElement('span');
             marker.className = 'pl-font-tree__marker';
             marker.setAttribute('aria-hidden', 'true');
-            marker.textContent = node.favorite ? '★' : '·';
+            marker.textContent = node.favorite ? '★' : '';
             row.append(marker);
+            const sample = document.createElement('span');
+            sample.className = 'pl-font-tree__sample';
+            sample.setAttribute('aria-hidden', 'true');
+            row.append(sample);
         }
         const label = document.createElement('span');
         label.className = 'pl-font-tree__label';
-        label.textContent = node.label;
+        label.textContent = node.type === 'font' ? node.label.replace(/^[［\[][^］\]]+[］\]]\s*/, '') : node.label;
         row.append(label);
         if (node.external) {
             const badge = document.createElement('span');
@@ -296,6 +314,7 @@ export class FontTree {
         if (!node) return;
         this.setSelected(node.key);
         if (node.type === 'folder') {
+            this.onFolderSelect(node);
             this.toggleFolder(node.id, null, { focus: true });
         } else if (!node.disabled) {
             this.onSelect(node);
@@ -345,7 +364,10 @@ export class FontTree {
             }
         } else if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
-            if (node.type === 'folder') this.toggleFolder(node.id, null, { focus: true });
+            if (node.type === 'folder') {
+                this.onFolderSelect(node);
+                this.toggleFolder(node.id, null, { focus: true });
+            }
             else if (!node.disabled) this.onSelect(node);
         }
     }

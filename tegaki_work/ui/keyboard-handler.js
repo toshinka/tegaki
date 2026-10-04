@@ -35,7 +35,7 @@ export const KeyboardHandler = (function() {
             activeElement.tagName === 'TEXTAREA' ||
             activeElement.tagName === 'SELECT' ||
             activeElement.isContentEditable ||
-            Boolean(activeElement.closest?.('#balloon-font-tree, #balloon-popup [data-role="font-picker"]'))
+            Boolean(activeElement.closest?.('#balloon-font-tree, #balloon-font-comparison, #balloon-popup [data-role="font-picker"], #lettering-popup, #lettering-font-comparison'))
         );
     }
 
@@ -70,6 +70,8 @@ export const KeyboardHandler = (function() {
         const keymap = TEGAKI_KEYMAP;
         
         if (!eventBus || !keymap) return;
+        const lettering = window.PopupManager?.get?.('lettering') || window.coreEngine?.popupManager?.get?.('lettering');
+        if (lettering?.handleCanvasShortcut?.(e)) return;
         if (isInputFocused()) return;
         if (e.target?.closest?.('.reference-preview-viewer') || document.activeElement?.closest?.('.reference-preview-viewer')) {
             const isTargetEditable = e.target?.tagName === 'INPUT'

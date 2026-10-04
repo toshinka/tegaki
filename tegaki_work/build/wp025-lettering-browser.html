@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>WP-025 実ブラウザ検証</title>
+<style>body{margin:12px;background:#ffffee;color:#800000;font:14px system-ui}button{font:inherit;padding:8px}pre{white-space:pre-wrap}iframe{width:100%;height:720px;border:1px solid #ca9590}#samples{display:flex;flex-wrap:wrap;gap:8px}canvas{max-width:360px;max-height:180px;border:1px solid #ca9590;background:#f0e0d6}</style></head>
+<body><button id="run">検証を実行</button> <span id="status">製品の起動待ち</span>
+<p>この専用タブ内のテスト作品にのみ、通常Canvasの実LayerSystem・History・ProjectManagerを使用します。外部保存・ダウンロード・公開は行いません。</p>
+<pre id="output"></pre><div id="samples"></div><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+import { defaultLetteringParams } from '../system/lettering-model.js';
+import { createCurvePreset } from '../system/editable-curve-geometry.js';
+import { renderLettering } from '../system/lettering-vector-renderer.js';
+import { letteringRasterFingerprint } from '../system/lettering-fingerprint.js';
+const frame=document.querySelector('#product'), out=document.querySelector('#output'), status=document.querySelector('#status');
+const log=message=>{out.textContent+=message+'\n';};
+const check=(condition,message)=>{if(!condition)throw new Error(message);log('PASS '+message);};
+const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+async function ready(){for(let i=0;i<200;i++){const core=frame.contentWindow?.coreEngine;
+ if(core?.popupManager?.get('lettering')?.isReady())return core;
+ await new Promise(resolve=>setTimeout(resolve,100));}throw new Error('製品起動タイムアウト');}
+ready().then(()=>{if(!document.querySelector('#run').disabled)status.textContent='検証できます';}).catch(error=>status.textContent=error.message);
+document.querySelector('#run').onclick=async()=>{
+ document.querySelector('#run').disabled=true;out.textContent='';document.querySelector('#samples').replaceChildren();status.textContent='実行中';
+ try{
+ const core=await ready(), popup=core.popupManager.get('lettering'), adapter=popup.layerAdapter, history=core.history, layers=core.layerSystem;
+ const inProduct=value=>frame.contentWindow.JSON.parse(JSON.stringify(value));
+ // This page and its iframe have distinct JS realms. Keep strict saved-object
+ // validation intact, and transfer test inputs/ArrayBuffers explicitly.
+ const parentFonts={ensureLoaded:async id=>{const entry=await popup.fonts.ensureLoaded(id);return entry?{...entry,data:Uint8Array.from(new frame.contentWindow.Uint8Array(entry.data)).buffer}:null;}};
+ const catalog=await popup.fonts.listBundledFonts();
+ const selected=catalog.find(font=>font.primary)||catalog[0];check(!!selected,'ローカル選定フォント一覧');
+ const coldEntry=catalog.find(font=>font.id!==selected.id&&!popup.fonts.getLoadedFont(font.id));
+ if(coldEntry){const began=performance.now();const fresh=await popup.fonts.ensureLoaded(coldEntry.id);const coldMs=performance.now()-began;const warmBegan=performance.now();const again=await popup.fonts.ensureLoaded(coldEntry.id);const warmMs=performance.now()-warmBegan;check(!!fresh?.data&&!!again?.data,'未読込fontの取得と再利用');log('MEASURE font '+coldEntry.id+' cold-entry '+coldMs.toFixed(2)+'ms / warm '+warmMs.toFixed(2)+'ms (HTTP/OS cache not separated)');}
+ const loaded=await popup.fonts.ensureLoaded(selected.id);check(!!loaded?.data,'ローカルフォントの実体');
+ const p=defaultLetteringParams({width:400,height:400});Object.assign(p,{text:'漫画の文字！',fontId:selected.id,fontKind:'imported',fontSize:42});p.placement={x:70,y:110,rotation:0,scaleX:1,scaleY:1};
+ let recipeAtNotification=false;const notification=()=>{if(history.stack.at(-1)?.name==='lettering-apply')recipeAtNotification=adapter.loadActive().intact===true;};
+ core.eventBus.on('history:changed',notification);
+ const start=history.stack.length; const added=await adapter.apply(inProduct(p));core.eventBus.off('history:changed',notification);check(added.ok,'文字レイヤー追加: '+(added.reason||selected.label||selected.id));
+ check(recipeAtNotification,'History通知の時点で画素・文字情報が揃う');
+ check(history.stack.length===start+1,'追加はHistory 1件');
+ const first=structuredClone(adapter.loadActive().params);check(adapter.loadActive().intact,'追加の画素・文字情報整合');
+ history.undo();check(!layers.getLayers().some(l=>l.layerData?.id===added.layerId),'追加Undo');
+ history.redo();check(adapter.loadActive().intact&&equal(adapter.loadActive().params,first),'追加Redoで画素・文字情報が一緒に戻る');
+ const beforeUpdate=history.stack.length;p.text='ドンッ！';p.baseline={kind:'wave',path:createCurvePreset('wave',210,48)};p.strokeWidth=1.5;
+ const updated=await adapter.update(added.layerId,inProduct(p));check(updated.ok,'波線文字への更新: '+(updated.reason||''));check(history.stack.length===beforeUpdate+1,'更新はHistory 1件');
+ const revised=structuredClone(adapter.loadActive().params);
+ history.undo();check(adapter.loadActive().intact&&equal(adapter.loadActive().params,first),'更新Undoで画素・元文字が一緒に戻る');
+ history.redo();check(adapter.loadActive().intact&&equal(adapter.loadActive().params,revised),'更新Redoで画素・波線情報が一緒に戻る');
+ for(const kind of ['straight','ellipse','polyline']){const q=structuredClone(p);q.baseline={kind,path:createCurvePreset(kind,220,70)};
+ const r=await renderLettering(q,{fontLibrary:parentFonts});check(r.ok,kind+'配置の実描画: '+(r.reason||''));show(r,kind);}
+ for(const kind of ['skew','perspective','arc','wave','bulge','taper','points']){const q=structuredClone(p);q.baseline.kind='none';q.envelope={kind,amount:.35,points:kind==='points'?Array.from({length:9},(_,i)=>({x:(i%3)/2,y:Math.floor(i/3)/2+(i===4?.2:0)})):null};
+ const r=await renderLettering(q,{fontLibrary:parentFonts});check(r.ok,kind+'変形の実描画: '+(r.reason||''));show(r,kind);}
+ const size=structuredClone(p);size.fontSize=12;size.endFontSize=20;const gradient=await renderLettering(size,{fontLibrary:parentFonts});check(gradient.ok,'12→20サイズ勾配');show(gradient,'12→20');
+ const vertical=structuredClone(p);vertical.baseline.kind='none';vertical.vertical=true;vertical.text='「漫画」\n回想…';const vr=await renderLettering(vertical,{fontLibrary:parentFonts});check(vr.ok,'縦書き・改行・約物');show(vr,'縦書き');
+ const warm=structuredClone(p);warm.text='ゴゴゴ';warm.fontSize=64;warm.baseline={kind:'wave',path:createCurvePreset('wave',220,60)};
+ await renderLettering(warm,{fontLibrary:parentFonts,previewOnly:true});const timings=[];
+ for(let i=0;i<12;i++){warm.baseline.path.nodes[1].y+=.5;const began=performance.now();const r=await renderLettering(warm,{fontLibrary:parentFonts,previewOnly:true});timings.push(performance.now()-began);check(r.ok&&!r.pixels,'輪郭previewは画素生成なし '+(i+1));}
+ timings.sort((a,b)=>a-b);log('MEASURE warm curve preview median '+timings[6].toFixed(2)+'ms / max '+timings.at(-1).toFixed(2)+'ms (cold font load excluded)');
+ const getOutput=()=>{const c=core.exportManager.renderToCanvas({transparent:true});return Array.from(c.getContext('2d').getImageData(0,0,c.width,c.height).data);};
+ const originalOutput=getOutput();const originalComposite=await layers.createCompositeDrawingSnapshot();
+ const committedLayer=layers.getActiveLayer();const visibleBefore=committedLayer.layerData.visible;
+ check(adapter.beginPreview(added.layerId)&&committedLayer.layerData.layerSprite.renderable===false,'再編集中は元文字を重ねて表示しない');
+ check(equal(getOutput(),originalOutput),'編集中でも通常PNG captureは確定画素を出力');
+ check(equal(Array.from((await layers.createCompositeDrawingSnapshot()).pixels),Array.from(originalComposite.pixels)),'編集中でも合成snapshotは確定画素を採取');
+ check(committedLayer.layerData.layerSprite.renderable===false&&committedLayer.layerData.visible===visibleBefore,'capture後はpreviewに戻り、保存visibilityは不変');
+ adapter.endPreview();check(committedLayer.layerData.layerSprite.renderable===true,'閉じる・取消で元表示に戻る');
+ const beforeSavePixels=layers.createLayerRasterSnapshot(layers.getActiveLayer()).pixels;
+ const saved=await core.projectManager.exportProject();const savedLayer=saved.layers.find(l=>l.id===added.layerId);check(!!savedLayer?.lettering&&!!savedLayer?.image,'Projectは文字情報とPNGを保存');
+ check(!JSON.stringify(savedLayer.lettering).includes('data:')&&!('pixels' in savedLayer.lettering),'文字metadataへfont・画素・cacheを混入しない');
+ await core.projectManager.loadProject(inProduct(saved));
+ const restored=layers.getLayers().find(l=>l.layerData?.id===added.layerId);check(!!restored,'ProjectManager.loadProject実行');
+ layers.setActiveLayer(layers.getLayerIndex(restored));const loadedRecipe=adapter.loadActive();
+ if(!loadedRecipe.intact){const after=layers.createLayerRasterSnapshot(restored).pixels;let count=0,max=0,alpha=0;const examples=[];for(let i=0;i<after.length;i+=4){if(after[i+3]!==beforeSavePixels[i+3])alpha++;const diff=Math.max(...[0,1,2].map(c=>Math.abs(Math.round(after[i+c]*after[i+3]/255)-Math.round(beforeSavePixels[i+c]*beforeSavePixels[i+3]/255))));if(diff){count++;max=Math.max(max,diff);if(examples.length<4)examples.push({before:Array.from(beforeSavePixels.slice(i,i+4)),after:Array.from(after.slice(i,i+4))});}}log('Pixel diagnostic '+JSON.stringify({count,max,alpha,examples}));}
+ if(!loadedRecipe.intact||!equal(loadedRecipe.params,revised))log('Roundtrip diagnostic '+JSON.stringify({intact:loadedRecipe.intact,reason:loadedRecipe.reason,paramsEqual:equal(loadedRecipe.params,revised),metadata:restored.layerData.lettering?.fingerprint,actual:letteringRasterFingerprint(layers.createLayerRasterSnapshot(restored)),transform:{x:restored.position.x,y:restored.position.y,sx:restored.scale.x,sy:restored.scale.y,rotation:restored.rotation,px:restored.pivot.x,py:restored.pivot.y}}));
+ check(loadedRecipe.intact&&equal(loadedRecipe.params,revised),'PNG保存・再読込後も再編集整合');
+ const afterLoad=history.stack.length;check((await adapter.update(added.layerId,inProduct(revised))).ok,'保存往復後に再更新');check(history.stack.length===afterLoad+1,'保存往復後の更新もHistory 1件');
+ const snap=layers.createLayerRasterSnapshot(restored);let index=snap.pixels.findIndex((value,i)=>i%4===3&&value>200);check(index>=0,'保護検証の可視画素');snap.pixels[index]=100;layers.restoreLayerRasterSnapshot(snap);
+ const painted=layers.createLayerRasterSnapshot(restored);const count=history.stack.length;const refused=await adapter.update(added.layerId,inProduct(revised));check(!refused.ok&&history.stack.length===count,'手描き後の更新を拒否');check(equal(Array.from(layers.createLayerRasterSnapshot(restored).pixels),Array.from(painted.pixels)),'拒否後も描いた画素が変わらない');
+ const bad=structuredClone(p);bad.fontId='missing-wp025-test-font';const oldCount=layers.getLayers().length;check(!(await adapter.apply(inProduct(bad))).ok&&layers.getLayers().length===oldCount,'フォント不足で文書を変更しない');
+ const old=saved;delete old.layers.find(l=>l.id===added.layerId).lettering;await core.projectManager.loadProject(inProduct(old));check(layers.getLayers().some(l=>l.layerData?.id===added.layerId&&!l.layerData.lettering),'旧Projectは通常Rasterとして表示');
+ const originalPreviewRenderer=popup.renderLettering;let previewCalls=0;
+ try{
+  popup.show();popup.newSession();const uiAdded=await popup.apply();await new Promise(resolve=>frame.contentWindow.requestAnimationFrame(resolve));
+  check(uiAdded.ok&&layers.getActiveLayer().layerData.layerSprite.renderable===false,'文字欄の追加直後も元画素を二重表示しない');
+  await popup.cancel();check(layers.getActiveLayer().layerData.layerSprite.renderable===true,'文字欄の取消で確定レイヤーを表示');history.undo();
+  popup.renderLettering=(...args)=>{previewCalls++;return originalPreviewRenderer(...args);};popup.show();
+  for(let i=0;i<12;i++){popup.newSession();await new Promise(resolve=>setTimeout(resolve,15));}
+  check(previewCalls>=2,'継続した編集要求でもpreviewを止めずに更新');
+  popup.renderLettering=async(...args)=>{await new Promise(resolve=>setTimeout(resolve,80));return originalPreviewRenderer(...args);};
+  popup.newSession();await new Promise(resolve=>setTimeout(resolve,40));await popup.cancel();await new Promise(resolve=>setTimeout(resolve,160));
+  check(popup.overlay.svg.querySelectorAll('.lettering-overlay__glyph').length===0&&!adapter.previewSource,'取消後に遅いpreviewが復活しない');
+ }finally{popup.renderLettering=originalPreviewRenderer;popup.hide();}
+ status.textContent='PASS 全検証完了';
+ }catch(error){status.textContent='FAIL '+error.message;log(error.stack||error);}
+ finally{document.querySelector('#run').disabled=false;}
+};
+function show(result,label){const wrap=document.createElement('div');wrap.append(label);const canvas=document.createElement('canvas');canvas.width=result.width;canvas.height=result.height;canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(result.pixels),result.width,result.height),0,0);wrap.append(canvas);document.querySelector('#samples').append(wrap);}
+</script></body></html>

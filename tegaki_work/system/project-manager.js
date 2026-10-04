@@ -27,6 +27,7 @@ import { sanitizeFocusLinesData } from './focus-lines.js';
 import { sanitizeToneData } from './tone-geometry.js';
 import { normalizeLayerBlendMode } from './layer-blend-modes.js';
 import { sanitizeBalloonData } from './balloon-geometry.js';
+import { sanitizeLetteringData } from './lettering-model.js';
 import {
     RASTER_PIXEL_ENCODING_BASE64,
     serializeRasterPixels
@@ -137,16 +138,29 @@ export class ProjectManager {
                 continue;
             }
 
+            const lettering = sanitizeLetteringData(data.lettering, TEGAKI_CONFIG.canvas);
             // 画像データをPNG dataURLとして取得
             let imageData = null;
             if (data.renderTexture && this.app.renderer) {
                 try {
-                    // PixiJS v8 の extract.canvas() を使用
-                    const canvas = this.app.renderer.extract.canvas({
-                        target: data.renderTexture,
-                        clearColor: '#00000000'
-                    });
-                    this._unpremultiplyCanvas(canvas);
+                    let canvas;
+                    if (lettering) {
+                        // WP-025: the integrity hash uses canonical straight-alpha
+                        // LayerSystem pixels. Encode those same pixels directly;
+                        // another alpha conversion would invalidate re-edit data.
+                        const snapshot = this.layerSystem.createLayerRasterSnapshot(layer);
+                        if (!snapshot?.pixels) throw new Error('Lettering raster readback failed');
+                        canvas = document.createElement('canvas');
+                        canvas.width = snapshot.width; canvas.height = snapshot.height;
+                        const context = canvas.getContext('2d');
+                        if (!context) throw new Error('Lettering PNG context unavailable');
+                        context.putImageData(new ImageData(snapshot.pixels, snapshot.width, snapshot.height), 0, 0);
+                    } else {
+                        canvas = this.app.renderer.extract.canvas({
+                            target: data.renderTexture, clearColor: '#00000000'
+                        });
+                        this._unpremultiplyCanvas(canvas);
+                    }
                     imageData = canvas.toDataURL('image/png');
                 } catch (e) {
                     console.error('[ProjectManager] Failed to extract layer image:', e);
@@ -174,6 +188,8 @@ export class ProjectManager {
                 ...(data.tone ? { tone: data.tone } : {}),
                 // 吹き出しLayerの再編集用parameter(optional。フォントの実体はProjectに入れない)
                 ...(data.balloon ? { balloon: data.balloon } : {}),
+                // Independent editable lettering. Pixels remain export/display authority.
+                ...(lettering ? { lettering } : {}),
                 image: imageData
             });
         }
@@ -668,6 +684,10 @@ export class ProjectManager {
                 
                 layer.visible = layer.layerData.visible;
                 layer.alpha = layer.layerData.opacity;
+                if (!layerInfo.isFolder && layerInfo.lettering) {
+                    const lettering = sanitizeLetteringData(layerInfo.lettering, TEGAKI_CONFIG.canvas);
+                    if (lettering) layer.layerData.lettering = lettering;
+                }
                 if (layerInfo.balloon) {
                     const balloon = sanitizeBalloonData(layerInfo.balloon, TEGAKI_CONFIG.canvas);
                     if (balloon) layer.layerData.balloon = balloon;

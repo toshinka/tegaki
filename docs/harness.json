@@ -11,6 +11,8 @@
     "docs/ai/2026-10-03-navigation-audit.md",
     "docs/ai/INOCHI2D_EDIT_ROUNDTRIP_CAPABILITY.md",
     "docs/ai/2026-10-03-rig-backend-implementation-proposal.md",
+    "docs/ai/2026-10-04-rig-architecture-reassessment.md",
+    "docs/work/WP-026-rive-authoring-browser-proof.md",
     "docs/ai/WP-020-inochi-proof-result.md",
     "docs/ai/WP-020-rig-entry-boundary.md",
     "docs/work/README.md",
@@ -26,6 +28,18 @@
     "docs/work/WP-021-curated-font-library.md",
     "docs/work/WP-022-font-organization.md",
     "docs/work/WP-023-font-auto-local.md",
+    "docs/work/WP-024-font-comparison.md",
+    "docs/work/WP-025-editable-manga-lettering.md",
+    "docs/ai/2026-10-04-editable-lettering-result.md",
+    "docs/ai/2026-10-04-manga-panel-workflow-design.md",
+    "docs/work/WP-027-manga-lettering-workflow.md",
+    "docs/ai/2026-10-04-manga-lettering-workflow-result.md",
+    "docs/work/WP-028-lettering-character-editing.md",
+    "docs/ai/2026-10-04-lettering-character-editing-result.md",
+    "docs/ai/2026-10-04-font-comparison-result.md",
+    "docs/ai/2026-10-04-text-editing-proposal.md",
+    "docs/ai/2026-10-04-text-vector-oss-shortlist.md",
+    "docs/ai/2026-10-04-text-vector-draft-design.md",
     "docs/ai/2026-10-04-font-auto-local-result.md",
     "docs/ai/2026-10-04-font-organization-result.md",
     "docs/work/WP-007-export-terminal-guard.md",
@@ -50,7 +64,7 @@
     "fonts": {
       "architecture":"docs/ARCHITECTURE.md",
       "entrypoints":["tegaki_work/system/font-library.js","tegaki_work/system/font-organization.js","tegaki_work/ui/font-tree.js","tegaki_work/build/local-font-bridge.mjs"],
-      "patterns":["^verify-curated-font-library","^verify-font-organization","^verify-font-publication","^verify-local-font-bridge"]
+      "patterns":["^verify-curated-font-library","^verify-font-organization","^verify-font-publication","^verify-local-font-bridge","^verify-font-preview-performance","^verify-font-comparison-information"]
     },
     "folder-composite": {
       "architecture": "docs/ARCHITECTURE.md",
@@ -61,6 +75,11 @@
       "patterns": [
         "^verify-folder-composite"
       ]
+    },
+    "editable-lettering": {
+      "architecture": "docs/ARCHITECTURE.md",
+      "entrypoints": ["tegaki_work/system/editable-curve-geometry.js", "tegaki_work/system/lettering-model.js", "tegaki_work/system/lettering-font-engine.js", "tegaki_work/system/lettering-vector-renderer.js", "tegaki_work/system/lettering-layer-adapter.js", "tegaki_work/ui/lettering-popup.js", "tegaki_work/ui/lettering-overlay.js"],
+      "patterns": ["^verify-editable-lettering", "^verify-lettering-character-styles", "^verify-lettering-font-clusters", "^verify-qtp-text-entry-layout", "^verify-text-to-raster", "^verify-numeric-field"]
     },
     "balloon": {
       "architecture": "docs/ARCHITECTURE.md",
@@ -234,8 +253,13 @@
     {"id":"WP-008","document":"docs/work/WP-008-layer-transform-progressive-controls.md","status":"ACTIVE","dependsOn":["WP-003","WP-007"]},
     {"id":"WP-019","document":"docs/work/WP-019-inochi-edit-roundtrip-proof.md","status":"BLOCKED","dependsOn":[]},
     {"id":"WP-020","document":"docs/work/WP-020-rig-renewal-first-path.md","status":"BLOCKED","dependsOn":[]},
+    {"id":"WP-026","document":"docs/work/WP-026-rive-authoring-browser-proof.md","status":"VERIFIED","dependsOn":[]},
     {"id":"WP-021","document":"docs/work/WP-021-curated-font-library.md","status":"VERIFIED","dependsOn":[]},
     {"id":"WP-022","document":"docs/work/WP-022-font-organization.md","status":"VERIFIED","dependsOn":[]},
-    {"id":"WP-023","document":"docs/work/WP-023-font-auto-local.md","status":"ACTIVE","dependsOn":[]}
+    {"id":"WP-023","document":"docs/work/WP-023-font-auto-local.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-024","document":"docs/work/WP-024-font-comparison.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-025","document":"docs/work/WP-025-editable-manga-lettering.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-027","document":"docs/work/WP-027-manga-lettering-workflow.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-028","document":"docs/work/WP-028-lettering-character-editing.md","status":"VERIFIED","dependsOn":[]}
   ]
 }

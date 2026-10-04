@@ -1,0 +1,108 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>WP028 文字別編集検証</title>
+<style>body{margin:12px;background:#ffffee;color:#800000;font:13px system-ui}iframe{width:1280px;height:720px;border:1px solid #b8706b}pre{white-space:pre-wrap}button{padding:6px}canvas{max-width:420px;background:#f0e0d6}</style>
+<button id="run" disabled>文字別編集を検証</button> <span id="status">製品起動待ち</span><pre id="output"></pre><div id="samples"></div><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+const frame=document.querySelector('#product'),run=document.querySelector('#run'),status=document.querySelector('#status'),out=document.querySelector('#output');
+const log=s=>out.textContent+=s+'\n',check=(ok,s)=>{if(!ok)throw new Error(s);log('PASS '+s);};
+const delay=ms=>new Promise(r=>setTimeout(r,ms)),equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+let core;for(let i=0;i<200;i++){core=frame.contentWindow?.coreEngine;if(core?.popupManager?.get('lettering')?.isReady())break;await delay(100);}run.disabled=false;status.textContent='検証可能';
+run.onclick=async()=>{
+ run.disabled=true;out.textContent='';status.textContent='実行中';
+ const popup=core.popupManager.get('lettering'),layers=core.layerSystem,history=core.history,doc=frame.contentDocument,win=frame.contentWindow;
+ const q=s=>popup.popup.querySelector(s),cmp=s=>popup.elements.fontComparison.querySelector(s),input=(el,value)=>{el.value=value;el.dispatchEvent(new win.Event('input',{bubbles:true}));};
+ const change=(el,value)=>{el.value=value;el.dispatchEvent(new win.Event('change',{bubbles:true}));};
+ const flush=()=>popup._flushCurrent(),realm=v=>win.JSON.parse(JSON.stringify(v));
+ const pixels=()=>{const c=core.exportManager.renderToCanvas({transparent:true});return Array.from(c.getContext('2d').getImageData(0,0,c.width,c.height).data);};
+ try{
+  core.popupManager.show('lettering');popup.newSession();
+  await popup.fonts.ensureLoaded(popup.params.fontId);const catalog=await popup.fonts.listBundledFonts();
+  const other=catalog.find(f=>f.id!==popup.params.fontId&&/F910/.test(f.label));check(!!other,'文字別用の別書体あり');
+  check(q('[data-mode="characters"]')&&q('[data-mode-panel="curve"]').contains(q('[data-field="tracking"]')),'4tab・字間は配置');
+  check(!q('[data-role="font-card"]')&&popup.elements.fontCard.closest('.pl-font-comparison__information'),'情報は比較へ集約');
+  input(q('[data-role="text"]'),'ゴゴゴ');input(q('[data-field-number="fontSize"]'),'48');
+  input(q('[data-field-number="strokeWidth"]'),'5');input(q('[data-field-number="outerStrokeWidth"]'),'3');
+  input(q('[data-color="outerStrokeColor"]'),'#800000');
+  q('[data-mode="curve"]').click();change(q('[data-role="curve-preset"]'),'wave');
+  q('[data-mode="envelope"]').click();change(q('[data-role="size-profile"]'),'three');
+  input(q('[data-profile="start"]'),'0.75');input(q('[data-profile="mid"]'),'1.25');input(q('[data-profile="end"]'),'0.9');
+  change(q('[data-role="envelope-preset"]'),'outward');let rendered=await flush();check(rendered?.ok,'外向き膨らみ・3点サイズ・第二フチpreview');
+  check(popup.params.envelope.points[1].y<0&&popup.params.sizeProfile.mid===1.25,'外向きcontrolと中央sizeを保持');
+  q('[data-mode="characters"]').click();q('[data-character-start="1"]').click();
+  input(q('[data-character="rotation"]'),'15');input(q('[data-role="character-color"]'),'#ff8c42');
+  change(q('[data-role="character-envelope"]'),'skew');input(q('[data-role="character-envelope-amount"]'),'0.2');
+  q('[data-action="character-font"]').click();cmp(`[data-font-id="${other.id}"]`).click();
+  check(popup.params.characterStyles.some(s=>s.start===1&&s.end===2&&s.fontId===other.id&&s.color==='#ff8c42'),'比較clickは中央文字に適用');
+  check(popup.params.fontId!==other.id,'全体標準fontを維持');popup.fontComparison.setMode('information');
+  check(cmp('[data-role="font-comparison-target"]').textContent.includes('選択')&&!cmp('[data-role="font-comparison-information"]').hidden,'比較内に適用対象と情報');
+  const stable=JSON.stringify(popup.params);cmp('[data-font-id]')?.dispatchEvent(new win.MouseEvent('pointerenter',{bubbles:true}));check(JSON.stringify(popup.params)===stable,'情報hoverは文字指定を変更しない');
+  popup.fontComparison.setOpen(false);rendered=await flush();check(rendered?.ok&&rendered.paths.some(p=>p.start===1&&p.fill==='#ff8c42'),'個別書体・色・回転・warp合成');
+  check(rendered.svg.includes('stroke-width="11"')&&popup.overlay.svg.querySelectorAll('.lettering-overlay__character-hit').length>=3,'第二strokeとCanvas文字選択hit');
+  const old=JSON.stringify(popup.params.characterStyles),oldText=popup.params.text;
+  const text=q('[data-role="text"]');text.setSelectionRange(0,0);text.dispatchEvent(new win.InputEvent('beforeinput',{bubbles:true,inputType:'insertText',data:'あ'}));input(text,'あ'+oldText);
+  check(popup.params.characterStyles.some(s=>s.start===2&&s.fontId===other.id),'先頭挿入後も中央指定が追従');
+  text.setSelectionRange(0,1);text.dispatchEvent(new win.InputEvent('beforeinput',{bubbles:true,inputType:'deleteContentBackward'}));input(text,oldText);
+  check(equal(popup.params.characterStyles,JSON.parse(old)),'削除で範囲指定が戻る');
+  text.setSelectionRange(0,0);text.dispatchEvent(new win.CompositionEvent('compositionstart',{bubbles:true}));
+  text.dispatchEvent(new win.InputEvent('beforeinput',{bubbles:true,inputType:'insertCompositionText',data:'あ'}));input(text,'あ'+oldText);
+  text.dispatchEvent(new win.InputEvent('beforeinput',{bubbles:true,inputType:'insertCompositionText',data:'あ゙'}));input(text,'あ゙'+oldText);
+  text.dispatchEvent(new win.CompositionEvent('compositionend',{bubbles:true,data:'あ゙'}));
+  check(popup.params.characterStyles.some(s=>s.start===3&&s.fontId===other.id),'IME途中値から結合字へ変わっても指定が追従');
+  text.setSelectionRange(0,2);text.dispatchEvent(new win.InputEvent('beforeinput',{bubbles:true,inputType:'deleteContentBackward'}));input(text,oldText);
+  check(equal(popup.params.characterStyles,JSON.parse(old)),'IME挿入を削除して元指定へ');
+  q('[data-mode="envelope"]').click();change(q('[data-role="envelope-preset"]'),'points');await flush();
+  const b=popup._envelopeBounds(),placement=popup.params.placement;
+  popup.drag={type:'envelope-point',index:1,startParams:structuredClone(popup.params),envelopeBounds:{...b},startWorld:{x:0,y:0}};
+  popup._applyDrag(popup._localToWorld({x:b.x+b.width/2,y:b.y-b.height*.4},placement));popup._endDrag();
+  check(popup.params.envelope.points[1].y<-.39,'9点を枠外へdrag');
+  q('[data-mode="whole"]').click();await flush();const before=structuredClone(popup.params.placement);
+  popup.handleCanvasShortcut(new win.KeyboardEvent('keydown',{key:'v',code:'KeyV',bubbles:true,cancelable:true}));
+  const canvas=doc.querySelector('#drawing-canvas canvas')||doc.querySelector('canvas');const camera=JSON.stringify({scaleX:core.cameraSystem.worldContainer.scale.x,scaleY:core.cameraSystem.worldContainer.scale.y,rotation:core.cameraSystem.rotation,x:core.cameraSystem.worldContainer.x,y:core.cameraSystem.worldContainer.y});
+  canvas.dispatchEvent(new win.WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}));
+  check(popup.params.placement.scaleX>before.scaleX,'V wheel文字拡縮');check(JSON.stringify({scaleX:core.cameraSystem.worldContainer.scale.x,scaleY:core.cameraSystem.worldContainer.scale.y,rotation:core.cameraSystem.rotation,x:core.cameraSystem.worldContainer.x,y:core.cameraSystem.worldContainer.y})===camera&&core.cameraSystem.vKeyPressed===false&&win.KeyboardHandler.isVKeyPressed()===false&&!layers.isLayerMoveMode,'Canvas/Layer変形を二重実行しない');
+  canvas.dispatchEvent(new win.WheelEvent('wheel',{deltaY:100,shiftKey:true,bubbles:true,cancelable:true}));check(popup.params.placement.rotation!==before.rotation,'V Shift wheel回転');
+  popup.handleCanvasShortcut(new win.KeyboardEvent('keydown',{key:'H',shiftKey:true,cancelable:true}));check(popup.params.placement.scaleY<0,'ShiftH文字反転');
+  popup.handleCanvasShortcut(new win.KeyboardEvent('keydown',{key:'Escape',cancelable:true}));
+  await flush();await new Promise(r=>win.requestAnimationFrame(r));
+  const centerHit=popup.overlay.svg.querySelector('[data-drag-type="whole-center"]')||popup.overlay.svg.querySelector('.lettering-overlay__body-hit');
+  check(!!centerHit,'Canvasに全体移動hitあり');
+  const rect=centerHit.getBoundingClientRect(),cx=rect.x+rect.width/2,cy=rect.y+rect.height/2;
+  const dragBefore=structuredClone(popup.params.placement);
+  centerHit.dispatchEvent(new win.PointerEvent('pointerdown',{pointerId:28,button:0,clientX:cx,clientY:cy,shiftKey:true,bubbles:true,cancelable:true}));
+  win.dispatchEvent(new win.PointerEvent('pointermove',{pointerId:28,clientX:cx+30,clientY:cy+2,shiftKey:true,bubbles:true}));
+  win.dispatchEvent(new win.PointerEvent('pointerup',{pointerId:28,clientX:cx+30,clientY:cy+2,shiftKey:true,bubbles:true}));
+  check(popup.params.placement.rotation!==dragBefore.rotation,'Shift横dragは共通Transform回転');
+  win.dispatchEvent(new win.KeyboardEvent('keydown',{key:' ',code:'Space',bubbles:true}));check(popup._spacePressed&&popup.overlay.svg.classList.contains('is-camera'),'Spaceで文字hitをカメラへ譲る');
+  win.dispatchEvent(new win.KeyboardEvent('keyup',{key:' ',code:'Space',bubbles:true}));check(!popup._spacePressed,'Space解除');
+  q('[data-mode="characters"]').click();q('[data-character-start="1"]').click();await flush();
+  const beforeChar=JSON.stringify(popup.params.characterStyles);q('[data-action="character-flip-horizontal"]').click();check(JSON.stringify(popup.params.characterStyles)!==beforeChar,'選択文字のみ反転');
+  const beforeVertical=structuredClone(popup.params);
+  popup._setParams(realm({...beforeVertical,text:'あ゙ゴ\nゴゴ',vertical:true,baseline:{kind:'none',path:null},envelope:{kind:'none',amount:0,points:null},characterStyles:[]}));
+  let vertical=await flush();check(vertical?.ok&&vertical.paths.some(p=>p.start===4),'3点サイズと多行縦書きの実描画: '+popup.elements.errorStatus.textContent);
+  popup._selectCharacters(2,3);const anchorBefore=vertical.paths.find(p=>p.start===2).anchor;
+  popup._transformDraft({x:12,y:0},'characters');vertical=await flush();const anchorAfter=vertical.paths.find(p=>p.start===2).anchor;
+  check(Math.abs(anchorAfter.x-anchorBefore.x-12)<.1&&Math.abs(anchorAfter.y-anchorBefore.y)<.1,'縦書き文字もCanvas横移動の向きと距離が一致');
+  popup._setParams(realm(beforeVertical));popup._selectCharacters(1,2);await flush();
+  const timings=[];for(let i=0;i<8;i++){const begin=performance.now();await popup.fonts.ensureLoaded(other.id);timings.push(performance.now()-begin);}timings.sort((a,b)=>a-b);log('MEASURE loaded font median '+timings[4].toFixed(2)+'ms / max '+timings.at(-1).toFixed(2)+'ms');
+  const params=structuredClone(popup.params),h=history.stack.length;const added=await popup.apply();check(added.ok&&history.stack.length===h+1,'全新属性を一Layer/一Historyで追加');
+  check(popup.layerAdapter.loadActive().intact&&equal(popup.layerAdapter.loadActive().params,params),'画素とrecipe整合');
+  history.undo();check(!layers.getLayers().some(l=>l.layerData.id===added.layerId),'追加Undo');history.redo();check(popup.layerAdapter.loadActive().intact,'追加Redo');
+  popup.hide();const beforePNG=pixels(),saved=await core.projectManager.exportProject();await core.projectManager.loadProject(realm(saved));
+  const layer=layers.getLayers().find(l=>l.layerData.id===added.layerId);layers.setActiveLayer(layers.getLayerIndex(layer));
+  const loaded=popup.layerAdapter.loadActive();check(loaded.intact&&equal(loaded.params,params),'Project往復で全属性と再編集保持');check(equal(beforePNG,pixels()),'PNG画素が保存前後一致');
+  core.popupManager.show('lettering');await popup.loadFromActiveLayer();q('[data-mode="characters"]').click();q('[data-character-start="1"]').click();input(q('[data-character="rotation"]'),'25');
+  const updateBefore=history.stack.length,updated=await popup.update();check(updated.ok&&history.stack.length===updateBefore+1,'再編集更新はHistory一件');history.undo();check(equal(popup.layerAdapter.loadActive().params,params),'更新Undoで全属性復元');history.redo();
+  await popup.cancel();check(!popup.layerAdapter.previewSource,'取消で元Raster表示');
+  frame.style.width='360px';frame.style.height='640px';win.dispatchEvent(new win.Event('resize'));await delay(60);check(q('.lettering-popup__commit').getBoundingClientRect().bottom<=640,'360pxで固定footer可視');
+  q('[data-action="font-info"]').click();check(cmp('[data-role="font-comparison-information"]').getBoundingClientRect().right<=360,'360pxで情報pane収まる');popup.fontComparison.setOpen(false);
+  q('[data-action="font-info"]').click();const information=cmp('[data-role="font-comparison-information"]');
+  check(information.getBoundingClientRect().bottom<=640&&getComputedStyle(information).overflowY==='auto','狭い画面の情報は独立scroll領域に収まる');
+  information.scrollTop=information.scrollHeight;check(popup.elements.fontPrimary.getBoundingClientRect().bottom<=640,'情報末尾Primaryも到達');popup.fontComparison.setOpen(false);
+  frame.style.height='400px';win.dispatchEvent(new win.Event('resize'));await delay(60);check(q('.lettering-popup__commit').getBoundingClientRect().bottom<=400,'低いviewportでも確定可視');
+  q('[data-action="font-info"]').click();await delay(30);information.scrollTop=information.scrollHeight;
+  check(information.scrollHeight>information.clientHeight&&popup.elements.fontPrimary.getBoundingClientRect().bottom<=400,'400px高でも情報末尾へscroll可能');popup.fontComparison.setOpen(false);
+  status.textContent='PASS 全検証完了';
+ }catch(error){status.textContent='FAIL '+error.message;log(error.stack||error);}
+ finally{run.disabled=false;popup.hide();}
+};
+</script></html>
+

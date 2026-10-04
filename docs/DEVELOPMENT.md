@@ -12,6 +12,24 @@
 - Reviewer: 指定領域の調査・反証・検証。報告を根拠なしに採用しない。
 
 同一file/同じmodelを複数workerで同時変更しない。独立したread-only調査は並列化できる。
+
+### 漫画文字とRIG proofの並行導線
+
+Ownerは2026-10-04、漫画/フォント作業と独立RIG proofの並行を承認。現在の分担は次の通り。現在地はSTATUS、exact write filesはそれぞれのCardが所有する。
+
+| 担当 | WRITE | 共有部分の扱い |
+|---|---|---|
+| 漫画/文字側leadと確定worker | WP-023/024/025のfont/lettering/漫画UIと確定した接続file | 通常Raster/Project/History/Exportへの変更は文字側Cardの限定契約内 |
+| RIG側LUNA | WP-026の`advanced/rive-proof/`指定4files、専用結果report、専用cache | 製品のfont/lettering/WARP/Layer/Project/History/renderer/packageはread-only。production import無し |
+| RIG司令 | WP-026、STATUSのRIG節、案内のRIG節、package登録 | 共通文書fileへの反映は他leadの書込みと直列。全file再生成せず対象節だけpatch |
+
+文字の独自envelopeと既存Anime WARPは現在接続されていない。engineが別でも、保存・History・出力の接続を共有すれば競合し得る。`editable-curve-geometry.js`等の文字用幾何をRIG proofへ共通化/importしない。文字側が既存WARPを触っても、独立proofはその変更へ追従する作業を混ぜない。
+
+後続で共通WARP、`layer-system.js`、`project-manager.js`、`export-manager.js`、History、`core-engine.js`、`index.html`、共通CSS、package/lockを変更する場合は、実行前にlive差分とCardを突き合わせ一つのwrite ownerと順番を決める。同名event/model/propertyの追加もこの接続判断に含む。shared fileが必要になったworkerは結果reportへ必要な接点を返し、自己拡張しない。
+
+各workerは自分の結果reportへ書き、STATUS/TECHNICAL/ARCHITECTURE/登録簿/harness/案内を直接更新しない。共通文書に他leadの進行中変更が見えた場合は差分を保持し、対象行を再読して短いpatchだけを直列反映する。競合したpatchは再読して調整し、他者段落の置換/restore/stashで解決しない。
+
+WP-026は既存Vite/漫画Browserのprocess/tabを共用しない。専用`127.0.0.1:18726`と専用Browser tabを使い、portが占有されていたら停止して返す。既存serviceをkill/restartしない。stopできるのは自分が起動しPIDを記録したproof processだけ。
 既存`.codex/agents/tegaki-luna-worker.toml`は`gpt-5.6-luna` / `max`で、AGENTS → STATUS → TECHNICAL → 指定WPの順を持つ。LUNAの世代は割当時に明示し、チャット名の「LUNA MAX」だけから別世代へ切り替えない。configの変更は別の明示作業で行う。
 workerへは新しい読む順序と対象カードを明示する。利用不能なら状態を報告し、別modelへ黙って切り替えない。
 深いarchitecture判断はCommander / Architecture reviewへ戻すが、既存契約内の技術修正で逐一Owner確認を求めない。
@@ -35,7 +53,7 @@ ExecutorとWorkerは役割名であり、二つの常時稼働チャットを必
 
 - READY: 目標、対象、禁止境界、検証、完了条件が揃っている。自動実行許可や作業中の意味ではない。
 - BLOCKED: prerequisitesまたは重大判断が未解決。blockerを解消してからREADYへ。
-- ACTIVE: STATUSで一つの書込み作業を指定する。
+- ACTIVE: STATUSでCardとwrite ownerを指定する。Ownerが並行を承認した独立Cardは同時ACTIVE可。同一file/modelの並列writeは許可しない。
 - VERIFIED: カードの技術検証が完了。Owner受入が必要なら別欄で未確認を残す。
 - DONE: 定義した完了条件を満たし、leadが差分/証拠/文書を監査した。
 

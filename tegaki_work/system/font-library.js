@@ -9,11 +9,12 @@
  *   fontFamilyCss, buildFontFaceCss, sanitizeFontLabel, sanitizeFontPreferences, sortBundledFonts,
  *   FONT_FILE_ACCEPT, connectExternalDirectory, getExternalStatus, readExternalFile,
  *   initializeOrganization, getOrganization, setFontFolder, createOrganizationFolder,
- *   renameOrganizationFolder, deleteOrganizationFolder, moveOrganizationNode, setFavoriteFirst
+ *   renameOrganizationFolder, deleteOrganizationFolder, moveOrganizationNode, setFavoriteFirst,
+ *   getLoadedFont, warmFonts
  * 保存: 取り込んだフォント実体とフォルダはブラウザ内ローカル(IndexedDB)。Project/History/書き出しへは関与しない。
  *   Layerに残るのは確定した画素と、再編集用のフォント参照(family名 or 取り込みフォントid)だけ。
  * ライセンス: 同梱フォントはcatalogのsource/license情報と親Cardの取得物を正本とする。ユーザー取り込みも維持。
- * 実装状態: ✅実装（WP-021 / WP-022 / WP-023 backend slice）
+ * 関連Card: WP-021 / WP-022 / WP-023 / WP-024。公開font実体の再追加は行わない。
  * ============================================================================
  */
 
@@ -288,6 +289,11 @@ export class FontLibrary {
         this.localBridge = normalizeLocalBridgeConfig(configuredBridge);
         this._localBridgeStatus = null;
         this._localBridgeStatusPromise = null;
+        this._externalDocumentCache = new Map();
+        this._externalDocumentPromises = new Map();
+        this._externalDocumentGeneration = 0;
+        this._warmActive = 0;
+        this._warmWaiters = [];
         this._organization = null;
         this._organizationInitPromise = null;
         this._organizationFontIds = new Set();
@@ -498,6 +504,9 @@ export class FontLibrary {
         try {
             this._externalRecord = await this._tx('external', 'readonly', os => os.get('root')) || null;
             this._externalRecordLoaded = true;
+            this._externalDocumentGeneration += 1;
+            this._externalDocumentCache.clear();
+            this._externalDocumentPromises.clear();
         } catch (error) {
             this._externalRecord = null;
             this._externalRecordLoaded = false;
@@ -635,6 +644,27 @@ export class FontLibrary {
 
     /** 保存済みroot handleから、Library/ID/file.ttfのような相対pathを読む。 */
     async readExternalFile(path) {
+        const key = String(path ?? '').replace(/\\/g, '/');
+        // Font bytes already have ensureLoaded's cache. Small author documents
+        // use a separate bounded runtime cache; no extra persistent copies.
+        if (/\.(?:ttf|otf|woff2?|ttc)$/i.test(key)) return this._readExternalFile(key);
+        if (this._externalDocumentCache.has(key)) return this._externalDocumentCache.get(key);
+        if (this._externalDocumentPromises.has(key)) return this._externalDocumentPromises.get(key);
+        const generation = this._externalDocumentGeneration;
+        const promise = this._readExternalFile(key).then(file => {
+            if (generation === this._externalDocumentGeneration && file && Number(file.size) <= 1024 * 1024) {
+                this._externalDocumentCache.set(key, file);
+                if (this._externalDocumentCache.size > 32) this._externalDocumentCache.delete(this._externalDocumentCache.keys().next().value);
+            }
+            return file;
+        }).finally(() => {
+            if (this._externalDocumentPromises.get(key) === promise) this._externalDocumentPromises.delete(key);
+        });
+        this._externalDocumentPromises.set(key, promise);
+        return promise;
+    }
+
+    async _readExternalFile(path) {
         if (this.localBridge) return this._readLocalBridgeFile(path);
         const record = await this._getExternalRecord();
         const handle = record?.handle;
@@ -806,6 +836,39 @@ export class FontLibrary {
         return promise;
     }
 
+    /** Read-only runtime entry; calling this never loads or changes preferences. */
+    getLoadedFont(id) {
+        return this._loaded.get(String(id ?? '')) || null;
+    }
+
+    /** Warm visible/neighbouring fonts only, with shared loads and bounded concurrency. */
+    async warmFonts(ids, { concurrency = 2, shouldContinue = () => true } = {}) {
+        const queue = [...new Set((Array.isArray(ids) ? ids : []).map(cleanId).filter(Boolean))];
+        const results = new Array(queue.length);
+        let next = 0;
+        const count = Math.min(2, Math.max(1, Math.floor(Number(concurrency) || 1)), queue.length);
+        const worker = async () => {
+            while (next < queue.length && shouldContinue()) {
+                const index = next++;
+                const id = queue[index];
+                if (this._warmActive < 2) this._warmActive++;
+                else await new Promise(resolve => this._warmWaiters.push(resolve));
+                try {
+                    if (!shouldContinue()) return;
+                    const entry = await this.ensureLoaded(id);
+                    results[index] = { id, loaded: !!entry };
+                } finally {
+                    const wake = this._warmWaiters.shift();
+                    if (wake) wake(); else this._warmActive--;
+                }
+                // Give pointer/wheel input a turn before another cold font parse.
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+        };
+        await Promise.all(Array.from({ length: count }, worker));
+        return results.filter(Boolean);
+    }
+
     async _ensureLoaded(id) {
         if (typeof this.FontFace !== 'function') return null;
         const bundled = await this.getBundledFont(id);
@@ -849,7 +912,8 @@ export class FontLibrary {
         const entry = await this.ensureLoaded(id);
         if (!entry) return '';
         entry.base64 ||= bufferToBase64(entry.data);
-        return buildFontFaceCss(entry.family, entry.base64, entry.ext);
+        entry.embedCss ||= buildFontFaceCss(entry.family, entry.base64, entry.ext);
+        return entry.embedCss;
     }
 
     /** 端末にあるフォントのうち、代表的な日本語familyで実際に使えるもの。 */

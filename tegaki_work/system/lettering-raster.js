@@ -10,7 +10,8 @@
  *   - SVGを画像として描く場合は文書のFontFaceが見えないので、取り込みフォントは@font-faceをbase64で埋め込む。
  *     端末のフォントはfamily名だけで使える。dataURLで読み込むことでcanvasは汚染されず、getImageDataできる。
  *   - 測定は文書内の非表示要素(同じCSS)で行う。取り込みフォントは文書側にもFontFace登録済みであること。
- * 実装状態: ✅実装
+ *   - 同一requestのruntime画素cacheは3件/32MiB。返却画素をcopyし、保存正本へ追加しない。
+ * 関連Card: WP-013 / WP-024。SVG組版の正本を維持。
  * ============================================================================
  */
 
@@ -22,6 +23,35 @@ export const LETTERING_LIMITS = Object.freeze({
     maxCharacters: 2000,
     maxDimension: 4096
 });
+
+// Derived runtime pixels only. Keep the SVG/browser typesetting authority and
+// never expose a cached mutable pixel array to callers (History/Project unchanged).
+const rasterCache = new Map();
+const RASTER_CACHE_MAX_ENTRIES = 3;
+const RASTER_CACHE_MAX_BYTES = 32 * 1024 * 1024;
+let rasterCacheBytes = 0;
+
+function cachedRaster(key, req, documentRef) {
+    const entry = rasterCache.get(key);
+    if (!entry || entry.documentRef !== documentRef || entry.result.request.embedCss !== req.embedCss) return null;
+    rasterCache.delete(key);
+    rasterCache.set(key, entry);
+    return { ...entry.result, pixels: new Uint8ClampedArray(entry.result.pixels), request: { ...req } };
+}
+
+function retainRaster(key, result, documentRef) {
+    const size = result.pixels.byteLength;
+    if (size > RASTER_CACHE_MAX_BYTES) return;
+    const previous = rasterCache.get(key);
+    if (previous) { rasterCacheBytes -= previous.result.pixels.byteLength; rasterCache.delete(key); }
+    while (rasterCache.size >= RASTER_CACHE_MAX_ENTRIES || rasterCacheBytes + size > RASTER_CACHE_MAX_BYTES) {
+        const oldest = rasterCache.keys().next().value;
+        rasterCacheBytes -= rasterCache.get(oldest).result.pixels.byteLength;
+        rasterCache.delete(oldest);
+    }
+    rasterCache.set(key, { documentRef, result: { ...result, pixels: new Uint8ClampedArray(result.pixels), request: { ...result.request } } });
+    rasterCacheBytes += size;
+}
 
 function clamp(value, min, max, fallback) {
     const n = Number(value);
@@ -125,6 +155,10 @@ export async function rasterizeLettering(input, options = {}) {
     const documentRef = options.documentRef || globalThis.document;
     if (!documentRef?.createElement) return { ok: false, reason: '文字を描画できない環境です' };
 
+    const cacheKey = JSON.stringify({ ...req, embedCss: undefined });
+    const cached = cachedRaster(cacheKey, req, documentRef);
+    if (cached) return cached;
+
     const size = await measureLettering(req, documentRef);
     const max = LETTERING_LIMITS.maxDimension;
     if (size.width > max || size.height > max) return { ok: false, reason: `文字が大きすぎます（最大${max}px）` };
@@ -153,5 +187,7 @@ export async function rasterizeLettering(input, options = {}) {
     } catch (error) {
         return { ok: false, reason: 'この環境では文字を取り出せません' };
     }
-    return { ok: true, width: size.width, height: size.height, pixels: new Uint8ClampedArray(data.data), request: req };
+    const result = { ok: true, width: size.width, height: size.height, pixels: new Uint8ClampedArray(data.data), request: req };
+    retainRaster(cacheKey, result, documentRef);
+    return result;
 }

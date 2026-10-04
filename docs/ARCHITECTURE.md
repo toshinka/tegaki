@@ -57,6 +57,12 @@ LayerPanelRendererは共通UI、通常LayerとCAFは別data adapterという既�
 reparent、duplicate、deleteはAsset内部IDだけでなく全参照Clipの時間effectへ波及する。
 このlifecycleに今回新たな排他・複製の穴を確認したため、機能を一般化する前に[WP-002](work/WP-002-effect-guards.md)で補修する。
 
+## 漫画の再編集文字（WP-025）
+
+入口: [lettering-popup.js](../tegaki_work/ui/lettering-popup.js)、[lettering-layer-adapter.js](../tegaki_work/system/lettering-layer-adapter.js)。漫画の文字tabから通常Rasterへ追加/更新する。QTPに第二の文字入力を置かない。
+
+`editable-curve-geometry.js`と`lettering-model.js`は純計算・値の検証。FontLibraryのloaded実体を`lettering-font-engine.js`（HarfBuzz）へ渡し、`lettering-vector-renderer.js`が同じ輪郭から曲線/少点変形のSVG previewと最終1x画素を生成する。UI/previewは保存正本を持たない。通常Layerの画素とoptional再編集recipeをadapter/ProjectManagerで扱い、fingerprint/bounds不一致と外部transformを更新前に拒否する。正式Vector LayerとAnimeのmodelには接続していない。詳細は[WP-025](work/WP-025-editable-manga-lettering.md)。
+
 ## Transform session
 
 入口: [layer-transform.js](../tegaki_work/system/layer-transform.js)、LayerSystem、[transform-edit-context.js](../tegaki_work/system/animation/transform-edit-context.js)、[transform-edit-transaction.js](../tegaki_work/system/animation/transform-edit-transaction.js)。

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rive image rig authoring proof</title>
+  <style>
+    :root { color-scheme: dark; font: 14px/1.4 system-ui, sans-serif; }
+    body { margin: 0; padding: 24px; background: #17151b; color: #f6f1ea; }
+    main { max-width: 1060px; margin: 0 auto; }
+    h1 { font-size: 20px; margin: 0 0 16px; }
+    .layout { display: grid; grid-template-columns: minmax(0, 800px) 240px; gap: 20px; align-items: start; }
+    .stage { width: 800px; height: 600px; background-color: #26212d; background-image: linear-gradient(45deg, #30293a 25%, transparent 25%), linear-gradient(-45deg, #30293a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #30293a 75%), linear-gradient(-45deg, transparent 75%, #30293a 75%); background-size: 32px 32px; background-position: 0 0, 0 16px, 16px -16px, -16px 0; }
+    canvas { display: block; width: 800px; height: 600px; }
+    .controls { display: grid; gap: 10px; padding: 14px; background: #211d27; border: 1px solid #4a3d52; border-radius: 8px; }
+    label { display: grid; gap: 4px; }
+    input[type="number"], button { font: inherit; color: inherit; background: #302939; border: 1px solid #685878; border-radius: 5px; padding: 7px 8px; }
+    input[type="range"] { width: 100%; }
+    button { cursor: pointer; text-align: left; }
+    button:hover { background: #41354e; }
+    .group { display: grid; gap: 6px; padding-top: 8px; border-top: 1px solid #4a3d52; }
+    #status { min-height: 6em; white-space: pre-wrap; color: #eacb9b; }
+    #metrics { white-space: pre-wrap; max-height: 18em; overflow: auto; color: #b9d6c0; }
+    .hint { color: #b8aebc; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Rive image rig authoring proof · Artboard / 1x output 400×300 · preview canvas 800×600</h1>
+    <div class="layout">
+      <div class="stage"><canvas id="canvas" width="800" height="600" aria-label="Rive proof preview canvas"></canvas><canvas id="output-canvas" width="400" height="300" hidden aria-hidden="true"></canvas></div>
+      <aside class="controls">
+        <label>End angle (degrees)
+          <input id="angle" type="number" min="-90" max="90" step="1" value="60">
+        </label>
+        <button id="apply" type="button">Compile and apply angle</button>
+        <label>Animation scrub: <output id="scrub-value">0.00</output>
+          <input id="scrub" type="range" min="0" max="1" step="0.01" value="0">
+        </label>
+        <div class="group">
+          <button id="save" type="button">Save source bundle</button>
+          <button id="reopen" type="button">Dispose and reopen saved bundle</button>
+          <button id="cancel" type="button">Cancel to saved good state</button>
+        </div>
+        <div class="group">
+          <button id="reject-angle" type="button">Reject NaN / out-of-range angle</button>
+          <button id="reject-source" type="button">Reject corrupt source bundle</button>
+          <button id="reject-riv" type="button">Reject corrupt .riv bytes</button>
+        </div>
+        <div class="group">
+          <div id="status" role="status">Loading the official Rive Web runtime…</div>
+          <div id="metrics" aria-live="polite"></div>
+          <div class="hint">1x PNG output is 400×300; the visible 800×600 canvas is retained as a separate 2x preview.</div>
+        </div>
+      </aside>
+    </div>
+  </main>
+    <script type="module" src="/proof-client.js?v=wp026-10"></script>
+</body>
+</html>

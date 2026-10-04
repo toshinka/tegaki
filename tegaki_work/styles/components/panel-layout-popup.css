@@ -1,4 +1,5 @@
 /* コマ割りpopup（WP-010）。palette / semantic tokenは main.css を参照し、色を複製しない。 */
+:is(#panel-layout-popup, #balloon-popup, #lettering-popup, #focus-lines-popup).show[data-manga-transition="instant"] { animation: none; }
 :is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) {
     z-index: 4000;
     width: 316px;
@@ -8,20 +9,20 @@
     font-size: 11px;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-title {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-title {
     font-weight: 700;
     font-size: 12px;
     margin: 0 28px 6px 2px;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-presets {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-presets {
     display: flex;
     flex-wrap: wrap;
     gap: 3px;
     margin-bottom: 6px;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-preset {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-preset {
     width: 30px;
     height: 36px;
     padding: 0;
@@ -35,19 +36,19 @@
     cursor: pointer;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-preset:hover {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-preset:hover {
     background: rgba(255, 255, 238, 0.86);
     border-color: var(--futaba-medium);
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-preset:focus-visible,
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-btn:focus-visible,
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-chip:focus-visible {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-preset:focus-visible,
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-btn:focus-visible,
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-chip:focus-visible {
     outline: 2px solid var(--active-border);
     outline-offset: 1px;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-preview {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-preview {
     display: block;
     margin: 0 auto;
     border: 1px solid var(--futaba-medium);
@@ -56,26 +57,26 @@
     max-width: 100%;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-hint {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-hint {
     margin: 3px 0 6px;
     font-size: 10px;
     opacity: 0.8;
     text-align: center;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-actions,
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-footer {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-actions,
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-footer {
     display: flex;
     gap: 4px;
     margin-bottom: 6px;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-footer {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-footer {
     justify-content: flex-end;
     margin: 8px 0 0;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-btn {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-btn {
     flex: 1;
     min-height: 24px;
     padding: 0 6px;
@@ -88,58 +89,58 @@
     cursor: pointer;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-btn:hover {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-btn:hover {
     background: rgba(255, 255, 238, 0.86);
     border-color: var(--futaba-medium);
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-btn--primary {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-btn--primary {
     flex: 2;
     background: var(--futaba-light-maroon);
     border-color: var(--futaba-maroon);
     color: var(--futaba-background);
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-btn--primary:hover {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-btn--primary:hover {
     background: var(--futaba-maroon);
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-btn--small {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-btn--small {
     flex: none;
     min-height: 20px;
     margin-bottom: 4px;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-row {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-row {
     display: flex;
     align-items: center;
     gap: 6px;
     margin-bottom: 4px;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-label {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-label {
     flex: 0 0 74px;
     font-weight: 700;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-range {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-range {
     flex: 1;
     min-width: 0;
     accent-color: var(--futaba-light-maroon);
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-value {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-value {
     flex: 0 0 44px;
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-chips {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-chips {
     display: inline-flex;
     gap: 3px;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-chip {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-chip {
     min-width: 28px;
     height: 22px;
     border: 1px solid rgba(207, 156, 151, 0.78);
@@ -151,19 +152,19 @@
     cursor: pointer;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-chip.is-selected {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-chip.is-selected {
     background: var(--futaba-light-maroon);
     border-color: var(--futaba-maroon);
     color: var(--futaba-background);
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-sep {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-sep {
     height: 1px;
     margin: 6px 0;
     background: rgba(207, 156, 151, 0.52);
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-color {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-color {
     width: 44px;
     height: 22px;
     padding: 0;
@@ -172,7 +173,7 @@
     background: transparent;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-warning {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-warning {
     margin-top: 6px;
     padding: 3px 6px;
     border: 1px solid var(--futaba-medium);
@@ -181,11 +182,11 @@
 }
 
 @media (pointer: coarse) {
-    :is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) { font-size: 13px; }
-    :is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-btn,
-    :is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-chip { min-height: 38px; font-size: 12px; }
-    :is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-preset { width: 40px; height: 46px; }
-    :is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-label { flex-basis: 88px; }
+    :is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) { font-size: 13px; }
+    :is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-btn,
+    :is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-chip { min-height: 38px; font-size: 12px; }
+    :is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-preset { width: 40px; height: 46px; }
+    :is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-label { flex-basis: 88px; }
 }
 
 /* ===== キャンバス重ね表示（ui/panel-layout-overlay.js）===== */
@@ -254,14 +255,14 @@
     cursor: move;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-edit-status { font-weight: 400; color: var(--active-border); }
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-check { font-size: 10px; margin: 2px 0 6px; }
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-chip--wide { min-width: 0; padding: 0 8px; }
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-label--inline { flex: 0 0 auto; }
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-btn:disabled { opacity: 0.45; cursor: default; }
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-panel-group { margin-bottom: 4px; }
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) [hidden] { display: none !important; }
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) { max-height: calc(100vh - 80px); overflow-y: auto; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-edit-status { font-weight: 400; color: var(--active-border); }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-check { font-size: 10px; margin: 2px 0 6px; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-chip--wide { min-width: 0; padding: 0 8px; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-label--inline { flex: 0 0 auto; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-btn:disabled { opacity: 0.45; cursor: default; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-panel-group { margin-bottom: 4px; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) [hidden] { display: none !important; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) { max-height: calc(100vh - 80px); overflow-y: auto; }
 
 .panel-layout-overlay .pl-ov-panel.is-deleted {
     fill: none;
@@ -283,7 +284,7 @@
 }
 
 /* ===== ふたば配色のform部品（native既定の白/灰を使わない）===== */
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="range"].pl-range {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="range"].pl-range {
     -webkit-appearance: none;
     appearance: none;
     height: 16px;
@@ -291,7 +292,7 @@
     cursor: pointer;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="range"].pl-range::-webkit-slider-runnable-track {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="range"].pl-range::-webkit-slider-runnable-track {
     height: 6px;
     border: 1px solid var(--futaba-medium);
     border-radius: 4px;
@@ -300,20 +301,20 @@
         var(--futaba-light-medium) var(--pl-fill, 0%));
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="range"].pl-range::-moz-range-track {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="range"].pl-range::-moz-range-track {
     height: 6px;
     border: 1px solid var(--futaba-medium);
     border-radius: 4px;
     background: var(--futaba-light-medium);
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="range"].pl-range::-moz-range-progress {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="range"].pl-range::-moz-range-progress {
     height: 6px;
     border-radius: 4px;
     background: var(--futaba-light-maroon);
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="range"].pl-range::-webkit-slider-thumb {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="range"].pl-range::-webkit-slider-thumb {
     -webkit-appearance: none;
     width: 14px;
     height: 14px;
@@ -323,7 +324,7 @@
     background: var(--futaba-light-maroon);
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="range"].pl-range::-moz-range-thumb {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="range"].pl-range::-moz-range-thumb {
     width: 10px;
     height: 10px;
     border: 2px solid var(--futaba-maroon);
@@ -331,11 +332,11 @@
     background: var(--futaba-light-maroon);
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="range"].pl-range:hover::-webkit-slider-thumb { background: var(--futaba-maroon); }
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="range"].pl-range:hover::-moz-range-thumb { background: var(--futaba-maroon); }
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="range"].pl-range:focus-visible { outline: 2px solid var(--active-border); outline-offset: 2px; border-radius: 4px; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="range"].pl-range:hover::-webkit-slider-thumb { background: var(--futaba-maroon); }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="range"].pl-range:hover::-moz-range-thumb { background: var(--futaba-maroon); }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="range"].pl-range:focus-visible { outline: 2px solid var(--active-border); outline-offset: 2px; border-radius: 4px; }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="checkbox"] {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="checkbox"] {
     -webkit-appearance: none;
     appearance: none;
     flex: 0 0 auto;
@@ -348,31 +349,31 @@
     cursor: pointer;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="checkbox"]:hover { border-color: var(--futaba-light-maroon); }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="checkbox"]:hover { border-color: var(--futaba-light-maroon); }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="checkbox"]:checked {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="checkbox"]:checked {
     border-color: var(--futaba-maroon);
     background: var(--futaba-light-maroon)
         url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ffffee' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3.5 8.5 3 3 6-7'/%3E%3C/svg%3E")
         center / 12px no-repeat;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="checkbox"]:focus-visible { outline: 2px solid var(--active-border); outline-offset: 2px; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="checkbox"]:focus-visible { outline: 2px solid var(--active-border); outline-offset: 2px; }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="color"].pl-color {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="color"].pl-color {
     border: 1.5px solid var(--futaba-medium);
     background: var(--futaba-background);
     padding: 2px;
     cursor: pointer;
 }
 
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="color"].pl-color::-webkit-color-swatch-wrapper { padding: 0; }
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="color"].pl-color::-webkit-color-swatch { border: 1px solid var(--futaba-maroon); border-radius: 2px; }
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) input[type="color"].pl-color::-moz-color-swatch { border: 1px solid var(--futaba-maroon); border-radius: 2px; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="color"].pl-color::-webkit-color-swatch-wrapper { padding: 0; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="color"].pl-color::-webkit-color-swatch { border: 1px solid var(--futaba-maroon); border-radius: 2px; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) input[type="color"].pl-color::-moz-color-swatch { border: 1px solid var(--futaba-maroon); border-radius: 2px; }
 
 /* 数値の直接入力欄（ui/numeric-field.js）。native既定の白/灰を使わない */
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .pl-value { cursor: text; }
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .numeric-field-input {
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .pl-value { cursor: text; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .numeric-field-input {
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
@@ -386,7 +387,7 @@
     font-weight: 700;
     text-align: right;
 }
-:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #quick-access-popup .qa-tone-view) .numeric-field-input:focus { outline: 2px solid var(--active-border); outline-offset: 0; }
+:is(#panel-layout-popup, #focus-lines-popup, #ruler-popup, #balloon-popup, #balloon-font-comparison, #quick-access-popup .qa-tone-view) .numeric-field-input:focus { outline: 2px solid var(--active-border); outline-offset: 0; }
 
 /* ===== 集中線のキャンバス重ね表示（ui/focus-lines-overlay.js）===== */
 .focus-lines-overlay {
@@ -553,7 +554,7 @@
     cursor: pointer;
 }
 #balloon-popup .pl-font-trigger::after { content: '▾'; position: absolute; right: 7px; top: 50%; transform: translateY(-50%); }
-#balloon-popup .pl-font-tree {
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree {
     position: absolute;
     z-index: 5;
     top: calc(100% + 2px);
@@ -567,8 +568,8 @@
     background: var(--futaba-background);
     color: var(--futaba-maroon);
 }
-#balloon-popup .pl-font-tree[hidden] { display: none; }
-#balloon-popup .pl-font-tree__item {
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree[hidden] { display: none; }
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree__item {
     display: flex;
     align-items: center;
     gap: 4px;
@@ -579,18 +580,20 @@
     cursor: grab;
     outline: none;
 }
-#balloon-popup .pl-font-tree__item:hover,
-#balloon-popup .pl-font-tree__item:focus-visible { border-color: var(--active-border); background: var(--futaba-cream); }
-#balloon-popup .pl-font-tree__item.is-selected { border-color: var(--futaba-maroon); background: rgba(212, 168, 160, 0.48); }
-#balloon-popup .pl-font-tree__item.is-folder { font-weight: 700; }
-#balloon-popup .pl-font-tree__item.is-disabled { opacity: 0.58; cursor: default; }
-#balloon-popup .pl-font-tree__item.is-drop-target { border-color: var(--active-border); background: rgba(255, 140, 66, 0.18); }
-#balloon-popup .pl-font-tree.is-drop-root { outline: 2px solid var(--active-border); outline-offset: -2px; }
-#balloon-popup .pl-font-tree__group { margin-left: 12px; }
-#balloon-popup .pl-font-tree__chevron,
-#balloon-popup .pl-font-tree__marker { flex: 0 0 14px; text-align: center; color: var(--futaba-light-maroon); }
-#balloon-popup .pl-font-tree__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#balloon-popup .pl-font-tree__badge { flex: 0 0 auto; margin-left: auto; white-space: nowrap; color: var(--futaba-light-maroon); font-size: 9px; }
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree__item:hover,
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree__item:focus-visible { border-color: var(--active-border); background: var(--futaba-cream); }
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree__item.is-selected { border-color: var(--futaba-maroon); background: rgba(212, 168, 160, 0.48); }
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree__item.is-folder { font-weight: 700; }
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree__item.is-disabled { opacity: 0.58; cursor: default; }
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree__item.is-drop-target { border-color: var(--active-border); background: rgba(255, 140, 66, 0.18); }
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree.is-drop-root { outline: 2px solid var(--active-border); outline-offset: -2px; }
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree__group { margin-left: 12px; }
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree__chevron,
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree__marker { flex: 0 0 14px; text-align: center; color: var(--futaba-light-maroon); }
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree__sample { flex: 0 0 38px; font-size: 13px; white-space: nowrap; }
+#balloon-font-comparison .pl-font-tree__sample { display: none; }
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(#balloon-popup, #balloon-font-comparison) .pl-font-tree__badge { flex: 0 0 auto; margin-left: auto; white-space: nowrap; color: var(--futaba-light-maroon); font-size: 9px; }
 #balloon-popup .pl-font-placement { align-items: center; }
 #balloon-popup .pl-font-placement .pl-label { flex: 0 0 48px; }
 #balloon-popup .pl-font-placement .pl-select { flex: 1; min-width: 0; }
@@ -617,3 +620,302 @@
 #balloon-popup .pl-font-links { margin-top: 4px; line-height: 1.45; }
 #balloon-popup .pl-font-links a { color: var(--futaba-maroon); text-decoration: underline; }
 #balloon-popup .pl-font-links a:focus-visible { outline: 2px solid var(--active-border); outline-offset: 1px; }
+
+/* ===== 吹き出し: 右側フォント比較page（WP-024） ===== */
+#balloon-popup .pl-font-compare-toggle {
+    flex: 0 0 28px;
+    width: 28px;
+    min-width: 28px;
+    padding: 2px;
+}
+#balloon-popup .pl-font-compare-toggle svg {
+    display: block;
+    width: 16px;
+    height: 16px;
+    margin: 0 auto;
+}
+#balloon-popup .pl-font-information-toggle {
+    flex: 0 0 auto;
+    min-width: 36px;
+    padding: 2px 5px;
+}
+#balloon-font-comparison {
+    position: fixed;
+    font-size: 11px;
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    height: min(660px, calc(100vh - 16px));
+    max-width: calc(100vw - 16px);
+    z-index: 4010;
+    box-sizing: border-box;
+    width: min(640px, calc(100vw - 16px));
+    max-height: min(720px, calc(100vh - 16px));
+    padding: 10px;
+    overflow: hidden;
+    border: 1.5px solid var(--futaba-medium);
+    border-radius: 8px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    box-shadow: 0 10px 26px rgba(128, 0, 0, 0.2);
+}
+#balloon-font-comparison[hidden] { display: none; }
+#balloon-font-comparison .pl-font-comparison__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+#balloon-font-comparison .pl-font-comparison__title { font-size: 13px; }
+#balloon-font-comparison .pl-font-comparison__count,
+#balloon-font-comparison .pl-font-comparison__hero-state,
+#balloon-font-comparison .pl-font-comparison__status {
+    margin-left: 6px;
+    color: var(--futaba-light-maroon);
+    font-size: 10px;
+}
+#balloon-font-comparison .pl-font-comparison__close { flex: 0 0 auto; }
+#balloon-font-comparison .pl-font-comparison__tabs {
+    display: flex;
+    gap: 4px;
+    flex: 0 0 auto;
+    margin-bottom: 7px;
+    border-bottom: 1px solid var(--futaba-light-medium);
+}
+#balloon-font-comparison .pl-font-comparison__tab {
+    min-height: 24px;
+    padding: 2px 9px;
+    border: 1px solid transparent;
+    border-bottom: 0;
+    border-radius: 5px 5px 0 0;
+    background: transparent;
+    color: var(--futaba-light-maroon);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+#balloon-font-comparison .pl-font-comparison__tab:hover,
+#balloon-font-comparison .pl-font-comparison__tab:focus-visible { border-color: var(--futaba-light-medium); background: var(--futaba-cream); color: var(--futaba-maroon); }
+#balloon-font-comparison .pl-font-comparison__tab.is-selected { border-color: var(--futaba-medium); background: var(--futaba-cream); color: var(--futaba-maroon); }
+#balloon-font-comparison .pl-font-comparison__hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 6px;
+    min-height: 52px;
+    margin-bottom: 7px;
+    padding: 6px 8px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 5px;
+    background: var(--futaba-cream);
+}
+#balloon-font-comparison .pl-font-comparison__hero-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#balloon-font-comparison .pl-font-comparison__hero-sample {
+    grid-column: 1 / -1;
+    min-height: 28px;
+    color: var(--futaba-maroon);
+    font-size: 17px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+#balloon-font-comparison .pl-font-comparison__hero-sample[data-state="unloaded"] { color: var(--futaba-light-maroon); }
+#balloon-font-comparison .pl-font-comparison__hero-hint {
+    grid-column: 1 / -1;
+    color: var(--futaba-light-maroon);
+    font-size: 10px;
+}
+#balloon-font-comparison .pl-font-comparison__body {
+    display: grid;
+    grid-template-columns: minmax(120px, 150px) minmax(0, 1fr);
+    gap: 8px;
+    min-height: 0;
+}
+#balloon-font-comparison .pl-font-comparison__panels {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+#balloon-font-comparison .pl-font-comparison__classification { min-width: 0; }
+#balloon-font-comparison .pl-font-comparison__root {
+    width: 100%;
+    min-height: 24px;
+    margin-bottom: 4px;
+    padding: 2px 5px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+#balloon-font-comparison .pl-font-comparison__root.is-selected,
+#balloon-font-comparison .pl-font-comparison__root:hover,
+#balloon-font-comparison .pl-font-comparison__root:focus-visible { border-color: var(--active-border); background: var(--futaba-cream); }
+#balloon-font-comparison .pl-font-tree {
+    position: relative;
+    top: auto;
+    left: auto;
+    right: auto;
+    max-height: 330px;
+    overflow-y: auto;
+    border: 1px solid var(--futaba-light-medium);
+}
+#balloon-font-comparison .pl-font-tree__item { cursor: pointer; }
+#balloon-font-comparison .pl-font-comparison__cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    gap: 6px;
+    min-width: 0;
+    max-height: 430px;
+    padding: 1px 2px 4px 0;
+    overflow-y: auto;
+}
+#balloon-font-comparison .pl-font-comparison__information {
+    min-width: 0;
+    min-height: 0;
+    padding: 1px 2px 4px 0;
+    overflow-y: auto;
+}
+#balloon-font-comparison .pl-font-comparison__information-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 5px;
+    color: var(--futaba-maroon);
+}
+#balloon-font-comparison .pl-font-comparison__information-heading span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--futaba-light-maroon);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#balloon-font-comparison .pl-font-comparison__information-host { min-width: 0; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] {
+    margin: 0;
+    max-height: none;
+    overflow: visible;
+}
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] > summary { display: none; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-card__sample { margin-top: 2px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-sample { min-height: 34px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-license pre { max-height: 120px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-fm { margin-top: 6px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-card__heading { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-card__heading strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-card__heading span,
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-card__meta { color: var(--futaba-light-maroon); font-size: 10px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-card__comment { margin: 4px 0; color: var(--futaba-maroon); line-height: 1.35; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-card__sample > .pl-label { display: block; margin-bottom: 2px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-sample {
+    min-height: 38px;
+    margin-top: 4px;
+    padding: 5px 6px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-load-status { display: block; margin-top: 3px; color: var(--futaba-light-maroon); font-size: 10px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-load-status[data-state="loaded"] { color: var(--futaba-maroon); }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-sample[data-state="loading"],
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-sample[data-state="error"] { color: var(--futaba-light-maroon); }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-card__favorite { margin-top: 5px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-card__user-comment { align-items: center; margin: 3px 0; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-card__user-comment .pl-label { flex: 0 0 72px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-card__user-comment .pl-text { min-width: 0; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-primary { margin: 3px 0; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-placement { align-items: center; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-placement .pl-label { flex: 0 0 48px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-placement .pl-select { flex: 1; min-width: 0; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-placement .pl-btn--icon { min-width: 24px; padding: 0 3px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-favorite-first { margin: 2px 0 4px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-license { margin-top: 4px; border-top: 1px solid rgba(207, 156, 151, 0.52); padding-top: 4px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-license > summary { cursor: pointer; font-size: 10px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-license pre {
+    max-height: 120px;
+    margin: 4px 0 0;
+    padding: 4px;
+    overflow: auto;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-links { margin-top: 4px; line-height: 1.45; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-font-links a { color: var(--futaba-maroon); text-decoration: underline; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-select,
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-text {
+    min-width: 0;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font: inherit;
+}
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-select { height: 24px; padding: 0 4px; }
+#balloon-font-comparison .pl-font-card[data-font-comparison-mounted] .pl-text { height: 24px; padding: 0 6px; }
+#balloon-font-comparison .pl-font-comparison__card {
+    min-width: 0;
+    padding: 6px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 5px;
+    background: rgba(240, 224, 214, 0.3);
+    outline: none;
+    cursor: pointer;
+}
+#balloon-font-comparison .pl-font-comparison__card:hover,
+#balloon-font-comparison .pl-font-comparison__card:focus-visible,
+#balloon-font-comparison .pl-font-comparison__card.is-preview { border-color: var(--active-border); background: var(--futaba-cream); }
+#balloon-font-comparison .pl-font-comparison__card.is-selected { border-color: var(--futaba-maroon); box-shadow: inset 0 0 0 1px var(--futaba-maroon); }
+#balloon-font-comparison .pl-font-comparison__card-heading { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+#balloon-font-comparison .pl-font-comparison__card-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#balloon-font-comparison .pl-font-comparison__card-category { flex: 0 1 auto; max-width: 34%; }
+#balloon-font-comparison .pl-font-comparison__favorite { flex: 0 0 auto; color: var(--active-border); }
+#balloon-font-comparison .pl-font-comparison__card-category { min-width: 0; margin-left: auto; overflow: hidden; color: var(--futaba-light-maroon); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+#balloon-font-comparison .pl-font-comparison__card-samples { margin-top: 4px; }
+#balloon-font-comparison .pl-font-comparison__sample { min-height: 21px; overflow: hidden; color: var(--futaba-maroon); line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+#balloon-font-comparison .pl-font-comparison__sample--headline { font-size: 22px; }
+#balloon-font-comparison .pl-font-comparison__sample--body { font-size: 14px; }
+#balloon-font-comparison .pl-font-comparison__sample[data-state="unloaded"] { color: var(--futaba-light-maroon); }
+#balloon-font-comparison .pl-font-comparison__status { display: block; margin: 3px 0 0; }
+#balloon-font-comparison .pl-font-comparison__card[data-state="loaded"] .pl-font-comparison__status { color: var(--futaba-maroon); }
+#balloon-font-comparison .pl-font-comparison__comment { min-height: 1.2em; margin: 3px 0 0; color: var(--futaba-light-maroon); font-size: 10px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#balloon-font-comparison button:focus-visible,
+#balloon-font-comparison [role="treeitem"]:focus-visible { outline: 2px solid var(--active-border); outline-offset: 1px; }
+
+@media (max-width: 640px) {
+    #balloon-font-comparison { width: calc(100vw - 16px); }
+    #balloon-font-comparison .pl-font-comparison__body { grid-template-columns: 120px minmax(0, 1fr); }
+    #balloon-font-comparison .pl-font-comparison__cards { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 440px) {
+    #balloon-font-comparison .pl-font-comparison__body { grid-template-columns: minmax(0, 1fr); }
+    #balloon-font-comparison .pl-font-tree { max-height: 150px; }
+    #balloon-font-comparison .pl-font-comparison__cards { max-height: 300px; }
+}
+
+/* Each page has its own scroll regions, including short/narrow viewports. */
+#balloon-font-comparison .pl-font-comparison__header,
+#balloon-font-comparison .pl-font-comparison__hero { flex: 0 0 auto; }
+#balloon-font-comparison .pl-font-comparison__body { flex: 1 1 auto; grid-template-rows: minmax(0, 1fr); }
+#balloon-font-comparison .pl-font-comparison__classification { display: flex; flex-direction: column; min-height: 0; }
+#balloon-font-comparison .pl-font-comparison__root { flex: 0 0 auto; }
+#balloon-font-comparison .pl-font-comparison__tree { flex: 1 1 auto; min-height: 0; }
+#balloon-font-comparison .pl-font-comparison__cards { max-height: none; }
+#balloon-font-comparison.is-compact .pl-font-comparison__cards { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 440px) {
+    #balloon-font-comparison .pl-font-comparison__body { grid-template-rows: minmax(80px, 30%) minmax(0, 1fr); }
+}
