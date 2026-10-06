@@ -5,6 +5,7 @@ READYは委任可能という意味で、現在の製品実装停止を解除す
 
 | ID | 目的 | カード |
 |---|---|---|
+| WP-039 | 多関節・共通ポーズ・45点変形の編集道具（技術VERIFIED / Owner未受入） | [Multi-joint workbench](WP-039-rive-multijoint-workbench.md) |
 | WP-001 | History redo例外後のindex維持 | [History failure](WP-001-history-failure.md) |
 | WP-002 | Layer effectとRigの双方向排他・安全な解除 | [Effect guards](WP-002-effect-guards.md) |
 | WP-003 | KEY確定後のpanel保持とFrame継続 | [KEY continuation](WP-003-key-continuation.md) |
@@ -38,7 +39,11 @@ READYは委任可能という意味で、現在の製品実装停止を解除す
 | WP-031 | 新RIG入口のlazy起動・接続・失敗表示と復帰 | [Rive operational entry](WP-031-rive-editor-operational-entry.md) |
 | WP-032 | 既存End骨の直接編集/native保存往復VERIFIED、Project HOLDはWP033で解消 | [Rive direct bone edit](WP-032-rive-direct-bone-edit.md) |
 | WP-033 | 通常Rasterの半透明PNGをProject往復で保持・実画素差0 | [Raster alpha roundtrip](WP-033-raster-project-alpha-roundtrip.md) |
-| WP-034 | 新RIG四隅weight編集→監査後に既存EndPoseの再生。HOLDの根拠/再開条件はCard/STATUS | [Rive weights / playback](WP-034-rive-weights-playback.md) |
+| WP-034 | 四隅weight保存往復・native再生/停止・通常Raster/Projectの限定技術監査VERIFIED、Owner受入未 | [Rive weights / playback](WP-034-rive-weights-playback.md) |
+| WP-035 | 9点native編集/保存再現・未保存保全更新・通常Raster/実Project受渡しVERIFIED、Owner制作受入未 | [Rive grid mesh editing](WP-035-rive-grid-mesh-editing.md) |
+| WP-036 | 素材上の4/9点選択・追従可視化、未保存保全更新と通常Raster受渡しの限定技術VERIFIED、Owner受入未 | [Rive influence map](WP-036-rive-influence-map.md) |
+| WP-037 | local CSS数値可読性・実Browser各列寸法/raw/native不変VERIFIED、Owner受入未 | [Rive weight readability](WP-037-rive-weight-readability.md) |
+| WP-038 | 一枚PNGの回転中心/保存再現/通常Raster・Project往復を技術検証済み、制作受入未 | [Rive pivot authoring](WP-038-rive-pivot-authoring.md) |
 
 先の機能すべてへ未確定の詳細カードを作らない。新カードはGoal / Scope / Contract / Tasks / Acceptance / Verification / Stop / Completionを持ち、同じ概念の第二正本を作らない。
 カードを渡す前に対象fileの存在とbaseline、依存の完了状態を確認する。

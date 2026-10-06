@@ -1,0 +1,12 @@
+/* Static skin for the explicit entry prototype; no document or History ownership. */
+.anim-canvas-workflow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--futaba-maroon); font-size: 10px; }
+.anim-canvas-workflow button { flex: 0 0 auto; border: 1px solid var(--ui-border-float); border-radius: 5px; padding: 4px 8px; background: var(--futaba-background); color: var(--futaba-maroon); font: inherit; cursor: pointer; }
+.anim-canvas-workflow button[data-start] { background: var(--futaba-light-maroon); color: var(--futaba-background); }
+.anim-canvas-workflow button:disabled { opacity: .5; cursor: default; }
+.anim-canvas-workflow button:focus-visible { outline: 2px solid var(--active-border); }
+.anim-canvas-workflow [hidden] { display: none; }
+.animation-table-panel.is-awaiting-animation .anim-table-header-row,
+.animation-table-panel.is-awaiting-animation .anim-table-content,
+.animation-table-panel.is-awaiting-animation .anim-asset-library { display: none !important; }
+.manga-target-status { color: var(--futaba-maroon); font-size: 10px; line-height: 1.4; padding: 3px 0; }
+.manga-target-status[hidden] { display: none; }

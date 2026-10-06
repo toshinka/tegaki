@@ -6,7 +6,7 @@
  * 依存: system/balloon-geometry.js, system/balloon-text-layout.js, system/balloon-raster.js,
  *   system/lettering-paragraph.js, system/font-library.js, system/balloon-gestures.js,
  *   system/history.js, system/event-bus.js, ui/balloon-overlay.js, ui/manga-tabs.js, ui/numeric-field.js,
- *   ui/manga-canvas-navigation.js, ui/manga-input-focus.js, ui/popup-drag-helper.js, ui/feedback-toast.js
+ *   ui/manga-canvas-navigation.js, ui/manga-input-focus.js, ui/popup-drag-helper.js, ui/feedback-toast.js, ui/manga-edit-actions.js
  * 被依存: core-engine.js, system/popup-manager.js
  * 公開API: BalloonPopup
  * イベント発火: popup:shown, popup:hidden, layer:content-changed
@@ -22,6 +22,7 @@
  */
 
 import { TegakiEventBus } from '../system/event-bus.js';
+import { cafMangaTarget, appendMangaRaster, restoreMangaTargetControls, syncMangaTargetControls } from './caf-manga-target.js';
 import { historyManager } from '../system/history.js';
 import {
     BALLOON_LIMITS,
@@ -45,6 +46,9 @@ import { BalloonOverlay } from './balloon-overlay.js';
 import { FontComparison } from './font-comparison.js';
 import { FontTree } from './font-tree.js';
 import { mountMangaTabs, noteMangaTabShown } from './manga-tabs.js';
+import { mountMangaEditActions } from './manga-edit-actions.js';
+import { ghostMangaPreviewSource, restoreLetteringPreviewSource } from '../system/lettering-preview-display.js';
+import { MangaPanelTarget } from './manga-panel-target.js';
 import { isMangaInputPrimary } from './manga-input-focus.js';
 import { transformBalloon } from '../system/balloon-gestures.js';
 import { attachNumericField } from './numeric-field.js';
@@ -113,6 +117,8 @@ export class BalloonPopup {
         this.fontDetailsOpen = true;
         this.previewOpen = false;
         this.editing = null; // { layerId }
+        this.draftActive = true;
+        this.previewSource = null;
         this.drag = null;
         this.lettering = null; // { width, height, pixels, request }
         this.textImage = null; // overlay用 { url, x, y, width, height }
@@ -137,10 +143,18 @@ export class BalloonPopup {
         this.overlay = new BalloonOverlay({
             eventBus: this.eventBus,
             onPointerDown: (target, event) => this._beginDrag(target, event, (e) => this.overlay.clientToCanvas(e.clientX, e.clientY)),
-            getState: () => this.isVisible ? { params: this.params, canvas: this._canvasSize(), textImage: this.textImage, editor: { context: this.context, selectedPoint: this.selectedPoint, textIndex: this.textIndex || 0, tailIndex: this.tailIndex || 0, grid: this.editorGrid, gridSize: this.editorGridSize } } : null
+            getState: () => this.isVisible ? { params: this.params, canvas: this._canvasSize(), textImage: this.textImage, draftActive: this.draftActive, editor: { context: this.context, selectedPoint: this.selectedPoint, textIndex: this.textIndex || 0, tailIndex: this.tailIndex || 0, grid: this.editorGrid, gridSize: this.editorGridSize } } : null
         });
         this._layerListener = () => this._syncControls();
         this.eventBus?.on?.('layer:activated', this._layerListener);
+        this._sourceChanged = payload => {
+            if (payload?.layerId === this.previewSource?.layerData?.id && !String(payload.source || '').startsWith('balloon')) {
+                this._endPreview(); this.draftActive = false;
+            }
+        };
+        this._sourceHistory = payload => { if (['undo', 'redo', 'clear'].includes(payload?.action)) { this._endPreview(); this.draftActive = false; } };
+        this.eventBus?.on?.('layer:content-changed', this._sourceChanged);
+        this.eventBus?.on?.('history:changed', this._sourceHistory);
         this._offFonts = this.fonts.onChange(() => this._refreshFontData());
 
         this._restore();
@@ -398,6 +412,8 @@ export class BalloonPopup {
             </div>
             </div>
         `;
+        mountMangaEditActions(this.popup, { before: this.popup.querySelector('.pl-title') });
+        this.panelTarget = new MangaPanelTarget({ root: this.popup, layerSystem: this.layerSystem, history: this.history });
         const q = (sel) => this.popup.querySelector(sel);
         this.elements = {
             canvas: q('.pl-preview'),
@@ -659,6 +675,7 @@ export class BalloonPopup {
     }
 
     _setParams(next, options = {}) {
+        this.draftActive = true;
         this.params = normalizeBalloonParams(next, this._canvasSize());
         if (!options.fromCatalogPrimary) this._paramsTouched = true;
         this._persist();
@@ -673,6 +690,7 @@ export class BalloonPopup {
     }
 
     _syncControls() {
+        restoreMangaTargetControls(this.popup);
         if (!this.popup || !this.elements.canvas) return;
         const p = this.params;
         this.tailIndex = Math.min(this.tailIndex || 0, p.extraTails?.length || 0);
@@ -744,6 +762,8 @@ export class BalloonPopup {
         this.elements.editStatus.textContent = this.editing ? '— 再編集中' : '';
         this.elements.updateBtn.hidden = !this.editing;
         this.elements.loadBtn.disabled = !this._activeBalloon();
+        syncMangaTargetControls(this.popup, this.layerSystem, 'balloon');
+        this.panelTarget?.sync();
     }
 
     _press(btn, on) {
@@ -1721,6 +1741,7 @@ export class BalloonPopup {
     // ------------------------------------------------------------ プレビュー描画
 
     _redraw() {
+        this._syncPreviewSource();
         const el = this.elements.canvas;
         if (!el) return;
         if (!this.elements.previewDetails.open) {
@@ -1779,12 +1800,24 @@ export class BalloonPopup {
 
     // ------------------------------------------------------------ 確定
 
-    _guard() {
+    _endPreview() {
+        if (this.previewSource) restoreLetteringPreviewSource(this.previewSource);
+        this.previewSource = null;
+    }
+
+    _syncPreviewSource() {
+        const layer = this.layerSystem?.getLayers?.().find(item => item.layerData?.id === this.editing?.layerId);
+        if (!this.isVisible || !this.showOverlay || !this.draftActive || !layer) return this._endPreview();
+        if (this.previewSource !== layer) this._endPreview();
+        if (ghostMangaPreviewSource(layer, () => this.layerSystem._folderCompositor?.markDirty?.())) this.previewSource = layer;
+    }
+
+    _guard(allowCaf = false) {
         if (!this.layerSystem?.createRasterLayerFromSnapshot) {
             showFeedbackToast('Raster Layerを作成できません');
             return false;
         }
-        if (this.layerSystem.getActiveLayer?.()?.layerData?.isAnimationWorkingLayer === true) {
+        if (this.layerSystem.getActiveLayer?.()?.layerData?.isAnimationWorkingLayer === true && !allowCaf) {
             showFeedbackToast('吹き出しは通常CanvasのRaster Layer専用です');
             return false;
         }
@@ -1810,32 +1843,50 @@ export class BalloonPopup {
     }
 
     async apply() {
-        if (!this._guard()) return { ok: false };
+        if (this._applyBusy) return { ok: false, reason: '吹き出しを処理中です' };
+        this._applyBusy = true;
+        try { return await this._applyNewRaster(); }
+        finally { this._applyBusy = false; this._syncControls(); }
+    }
+
+    async _applyNewRaster() {
+        const caf = cafMangaTarget(this.layerSystem), frame = this.layerSystem.currentFrameContainer;
+        const token = !caf ? this.panelTarget?.token() : null;
+        if (!this._guard(!!caf)) return { ok: false };
         const raster = await this._raster();
         if (!raster.ok) {
             showFeedbackToast(raster.reason);
             return { ok: false };
         }
+        if (caf) {
+            const result = appendMangaRaster(this.layerSystem, raster, '吹き出し', 'balloon', caf);
+            if (result.ok) { this.editing = null; this.hide(); }
+            this._syncControls();
+            showFeedbackToast(result.ok ? 'CAFへ吹き出しを追加しました' : result.reason);
+            return result;
+        }
+        if (frame !== this.layerSystem.currentFrameContainer || !this._guard()) return { ok: false };
         let created = null;
         try {
-            created = this.layerSystem.createRasterLayerFromSnapshot({
+            created = this.panelTarget.create({
                 width: raster.width,
                 height: raster.height,
                 pixels: raster.pixels,
                 rasterBounds: raster.rasterBounds,
                 paths: [],
                 pathsData: []
-            }, { name: '吹き出し', historyName: 'balloon-apply', source: 'balloon' });
+            }, { name: '吹き出し', historyName: 'balloon-apply', source: 'balloon' }, 'balloon', token);
         } catch (error) {
             created = null;
         }
         if (!created?.layer?.layerData) {
-            showFeedbackToast('吹き出しレイヤーを作成できません');
+            showFeedbackToast(created?.reason || '吹き出しレイヤーを作成できません');
             return { ok: false };
         }
         created.layer.layerData.balloon = this._meta();
         this.eventBus?.emit('layer:content-changed', { layerId: created.layer.layerData.id, source: 'balloon' });
         this.editing = { layerId: created.layer.layerData.id };
+        this._endPreview(); this.draftActive = false;
         this._syncControls();
         showFeedbackToast('吹き出しを追加しました');
         return { ok: true, layerId: created.layer.layerData.id };
@@ -1865,6 +1916,7 @@ export class BalloonPopup {
             layer.layerData.balloon = useAfter ? metaAfter : metaBefore;
             this.eventBus?.emit('layer:content-changed', { layerId, source: 'balloon-update' });
         };
+        this._endPreview();
         apply(true);
         this.history.record({
             name: 'balloon-update',
@@ -1873,11 +1925,13 @@ export class BalloonPopup {
             byteSize: (before.pixels?.byteLength || 0) + (after.pixels?.byteLength || 0),
             meta: { type: 'balloon-update', layerId }
         });
+        this.draftActive = false;
         showFeedbackToast('吹き出しを更新しました');
         return { ok: true, layerId };
     }
 
     loadFromActiveLayer() {
+        if (!this._guard()) return { ok: false };
         const data = this._activeBalloon();
         if (!data) {
             showFeedbackToast('選択中のレイヤーに吹き出しの情報がありません');
@@ -1920,6 +1974,7 @@ export class BalloonPopup {
     }
 
     hide() {
+        this._endPreview();
         if (!this.popup) return;
         this._fontTreeWarmToken = (this._fontTreeWarmToken || 0) + 1;
         clearTimeout(this._fontTreeWarmTimer);
@@ -1943,6 +1998,9 @@ export class BalloonPopup {
     }
 
     destroy() {
+        this._endPreview();
+        this.eventBus?.off?.('layer:content-changed', this._sourceChanged);
+        this.eventBus?.off?.('history:changed', this._sourceHistory);
         this.endDrag();
         this._navigation.destroy();
         window.removeEventListener('resize', this._onViewportResize);

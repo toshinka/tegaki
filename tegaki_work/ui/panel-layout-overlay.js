@@ -1,13 +1,13 @@
 /**
  * ============================================================================
  * ファイル名: ui/panel-layout-overlay.js
- * 責務: コマ割りのSVG表示。通常は外周/頂点、分割mode・Ctrl対象操作は本体内も操作する
+ * 責務: コマ割りのSVG表示。編集時は本体選択/外周/頂点、明示描画では入力を譲る
  * 依存: coordinate-system.js, system/event-bus.js
  * 被依存: ui/panel-layout-popup.js
  * 公開API: PanelLayoutOverlay
  * イベント受信: camera:transform-changed, canvas:resized
  * 設計: svg本体はpointer-events:none。操作要素(分割線 / コマ外周 / 頂点)だけがeventを受け、
- *   通常の連動コマ内側は描画へ透過。Space/global Vでは全hitをCamera/Transformへ譲る。
+ *   コマ内側は選択面。共通の描画切替・Space/global Vでは全hitを既存入力へ譲る。
  *   保存・Historyには関与しない(表示専用)。
  * 実装状態: ✅実装（WP-010）
  * ============================================================================
@@ -78,7 +78,7 @@ export class PanelLayoutOverlay {
         const a = this.clientToCanvas(0, 0);
         const b = this.clientToCanvas(100, 0);
         if (!a || !b) return 1;
-        return Math.max(1e-6, Math.abs(b.x - a.x) / 100) || 1;
+        return Math.max(1e-6, Math.hypot(b.x - a.x, b.y - a.y) / 100) || 1;
     }
 
     _toScreen(p) {
@@ -91,7 +91,7 @@ export class PanelLayoutOverlay {
         const state = this.getState?.();
         this.svg.replaceChildren();
         if (!state?.resolved) return;
-        const { resolved, selectedId, hoverSplitId, dragSplitId, cutPreview, splitMode } = state;
+        const { resolved, selectedId, hoverSplitId, dragSplitId, cutPreview, splitMode, snapGuides = [] } = state;
         this.svg.classList.toggle('is-splitting', splitMode === true);
 
         for (const panel of resolved.panels) {
@@ -121,6 +121,10 @@ export class PanelLayoutOverlay {
             const hit = el('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: 'pl-ov-cut-hit', 'data-kind': 'split' });
             hit.addEventListener('pointerdown', e => this._down({ type: 'split', id: split.id }, e));
             this.svg.appendChild(hit);
+        }
+        for (const guide of snapGuides) {
+            const a = this._toScreen(guide[0]), b = this._toScreen(guide[1]);
+            if (a && b) this.svg.appendChild(el('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: 'pl-ov-snap-guide' }));
         }
         const selectedPanel = resolved.panels.find(p => p.id === selectedId);
         if (selectedPanel) {

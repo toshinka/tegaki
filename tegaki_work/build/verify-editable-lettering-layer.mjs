@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { LetteringLayerAdapter, letteringRasterFingerprint } from '../system/lettering-layer-adapter.js';
 import { defaultLetteringParams, sanitizeLetteringData } from '../system/lettering-model.js';
-import { hideLetteringPreviewSource, restoreLetteringPreviewSource, revealLetteringSourcesForCapture } from '../system/lettering-preview-display.js';
+import { hideLetteringPreviewSource, ghostMangaPreviewSource, restoreLetteringPreviewSource, revealLetteringSourcesForCapture } from '../system/lettering-preview-display.js';
 
 const clone = value => structuredClone(value);
 const basePixels = new Uint8ClampedArray([128, 40, 10, 255, 255, 0, 0, 0]);
@@ -117,4 +117,24 @@ assert.equal(previewLayer.layerData.layerSprite.renderable, true, 'canonical cap
 resume(); assert.equal(previewLayer.layerData.layerSprite.renderable, false);
 restoreLetteringPreviewSource(previewLayer);
 assert.equal(previewLayer.layerData.layerSprite.renderable, true, 'hide/cancel restores original display');
+const toneDisplay = { renderable: true };
+previewLayer.layerData.layerSprite.alpha = 0.6;
+ghostMangaPreviewSource(previewLayer);
+assert.equal(previewLayer.layerData.layerSprite.alpha, 0.12, 'ghost multiplies the original Sprite alpha');
+const outerCapture = revealLetteringSourcesForCapture();
+const innerCapture = revealLetteringSourcesForCapture();
+innerCapture();
+assert.equal(previewLayer.layerData.layerSprite.alpha, 0.6, 'nested capture stays canonical until its outer capture ends');
+outerCapture();
+assert.equal(previewLayer.layerData.layerSprite.alpha, 0.12, 'capture resumes ghost display');
+restoreLetteringPreviewSource(previewLayer);
+assert.equal(previewLayer.layerData.layerSprite.alpha, 0.6, 'end restores original alpha');
+hideLetteringPreviewSource(previewLayer, () => {}, toneDisplay);
+const resumeTone = revealLetteringSourcesForCapture();
+assert.equal(toneDisplay.renderable, false, 'canonical capture excludes transient tone Sprite');
+assert.equal(previewLayer.layerData.layerSprite.renderable, true);
+resumeTone();
+assert.equal(toneDisplay.renderable, true);
+assert.equal(previewLayer.layerData.layerSprite.renderable, false);
+restoreLetteringPreviewSource(previewLayer);
 console.log('verify-editable-lettering-layer: one History, pixel/recipe undo-redo, stale/bounds/async/failure/CAF guards OK');

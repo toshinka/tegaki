@@ -87,7 +87,7 @@ export function resolveClosedShapePaint(options = {}, colors = {}, { legacyMode 
     return {
         requested,
         mode,
-        strokeRgb,
+        strokeRgb: options.outline === false && mode !== 'line' ? null : strokeRgb,
         fillRgb,
         fillColor: fillRgb ? `#${fillRgb.map(v => v.toString(16).padStart(2, '0')).join('')}` : null,
         followsBackground: mode === 'custom' && options.fillColor == null
@@ -268,7 +268,7 @@ function selectionAllows(selection, projectX, projectY) {
 }
 
 /** source alphaへopacityを一回だけ適用し、既存RGBAへstraight-alpha合成する。 */
-export function blendClosedShapePixels(target, source, region, opacity = 1, selection = null) {
+export function blendClosedShapePixels(target, source, region, opacity = 1, selection = null, blendMode = 'normal') {
     if (!target?.pixels || !source || !region) return 0;
     const alphaScale = Math.max(0, Math.min(1, Number(opacity))); 
     const rasterBounds = normalizeRasterBounds(target.rasterBounds, {
@@ -289,6 +289,21 @@ export function blendClosedShapePixels(target, source, region, opacity = 1, sele
             if (targetX < 0 || targetY < 0 || targetX >= target.width || targetY >= target.height) continue;
             const targetIndex = (targetY * target.width + targetX) * 4;
             const targetAlpha = target.pixels[targetIndex + 3] / 255;
+            if (blendMode === 'erase') {
+                // destination-out: preserve surviving RGB; clear fully transparent
+                // pixels. The source color never paints the background over artwork.
+                const alpha = Math.round(target.pixels[targetIndex + 3] * (1 - sourceAlpha));
+                if (alpha === 0) {
+                    for (let channel = 0; channel < 4; channel += 1) {
+                        if (target.pixels[targetIndex + channel] !== 0) changed += 1;
+                        target.pixels[targetIndex + channel] = 0;
+                    }
+                } else if (target.pixels[targetIndex + 3] !== alpha) {
+                    changed += 1;
+                    target.pixels[targetIndex + 3] = alpha;
+                }
+                continue;
+            }
             const outputAlpha = sourceAlpha + targetAlpha * (1 - sourceAlpha);
             if (outputAlpha <= 0) continue;
             const next = [
@@ -331,6 +346,7 @@ export function paintClosedShapeToLayer({
     strokePolygons,
     paint,
     opacity = 1,
+    blendMode = 'normal',
     selection,
     beforeSnapshot: suppliedBeforeSnapshot,
     source = 'shape-line',
@@ -338,7 +354,7 @@ export function paintClosedShapeToLayer({
     meta = {}
 } = {}) {
     const layerData = layer?.layerData;
-    if (!layerData?.renderTexture || layerData.isAnimationWorkingLayer === true) return { ok: false, reason: 'unsupported-layer' };
+    if (!layerData?.renderTexture || layerData.isAnimationWorkingLayer === true || layerData.isBackground || layerData.isFolder) return { ok: false, reason: 'unsupported-layer' };
     const bounds = closedShapeBounds(contours, strokePolygons);
     if (!bounds) return { ok: false, reason: 'empty-shape' };
     const before = suppliedBeforeSnapshot || layerSystem?.createLayerRasterSnapshot?.(layer);
@@ -356,13 +372,23 @@ export function paintClosedShapeToLayer({
         width: Math.min(frame.width, raw.x + raw.width) - Math.max(0, raw.x),
         height: Math.min(frame.height, raw.y + raw.height) - Math.max(0, raw.y)
     };
+    if (blendMode === 'erase') {
+        const rb = normalizeRasterBounds(before.rasterBounds, { width: before.width, height: before.height });
+        const right = Math.min(region.x + region.width, rb.x + before.width);
+        const bottom = Math.min(region.y + region.height, rb.y + before.height);
+        region.x = Math.max(region.x, rb.x);
+        region.y = Math.max(region.y, rb.y);
+        region.width = right - region.x;
+        region.height = bottom - region.y;
+    }
     if (!(region.width > 0 && region.height > 0)) return { ok: false, reason: 'outside-canvas' };
     // Canvas2Dのsource生成が失敗しても、先にレイヤー範囲だけを広げて残さない。
     const sourcePixels = rasterizeClosedShape({ region, contours, strokePolygons, paint });
     if (!sourcePixels) return { ok: false, reason: 'raster-unavailable' };
 
     // beforeはbounds拡張前に保持する。undo時にblank expansionまで巻き戻す。
-    const expanded = layerSystem.ensureLayerRasterBoundsForRect?.(layer, region, { padding: 0 });
+    // Erase only existing artwork. Never allocate blank expansion for an eraser.
+    const expanded = blendMode === 'erase' ? null : layerSystem.ensureLayerRasterBoundsForRect?.(layer, region, { padding: 0 });
     if (expanded?.ok === false) return { ok: false, reason: 'bounds-limit' };
     const rollbackExpansion = () => {
         const restored = layerSystem.restoreLayerRasterSnapshot?.(before);
@@ -372,7 +398,7 @@ export function paintClosedShapeToLayer({
         }
         return restored;
     };
-    const current = layerSystem.createLayerRasterSnapshot?.(layer);
+    const current = blendMode === 'erase' ? before : layerSystem.createLayerRasterSnapshot?.(layer);
     if (!current?.pixels) {
         rollbackExpansion();
         return { ok: false, reason: 'no-after-snapshot' };
@@ -383,9 +409,9 @@ export function paintClosedShapeToLayer({
             ? { bounds: { ...system.state.bounds }, mask: system.state.mask || null }
             : null)
         : selection;
-    const changed = blendClosedShapePixels(after, sourcePixels, region, opacity, selected);
+    const changed = blendClosedShapePixels(after, sourcePixels, region, opacity, selected, blendMode);
     if (changed === 0) {
-        rollbackExpansion();
+        if (blendMode !== 'erase') rollbackExpansion();
         return { ok: false, reason: 'empty-selection', before, after, region };
     }
     if (!layerSystem.restoreLayerRasterSnapshot(after)) {

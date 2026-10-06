@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * ファイル名: ui/focus-lines-overlay.js
- * 責務: 集中線/閉輪郭の仕上がりをCanvas上へSVGで半透明に重ね、編集ハンドルを出す
+ * 責務: 集中線/閉輪郭の仕上がりをCanvas上へSVGで出力濃度で重ね、編集ハンドルを出す
  * 依存: coordinate-system.js, system/event-bus.js, system/focus-lines.js
  * 被依存: ui/focus-lines-popup.js
  * 公開API: FocusLinesOverlay
@@ -18,7 +18,12 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 
 function el(name, attrs = {}) {
     const node = document.createElementNS(SVG_NS, name);
-    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+    for (const [key, value] of Object.entries(attrs)) {
+        node.setAttribute(key, String(value));
+        // Old shared overlay CSS supplies translucent maroon. Recipe paint
+        // must win over that stylesheet, including none/ellipse stroke.
+        if (key === 'fill' || key === 'stroke') node.style[key] = String(value);
+    }
     return node;
 }
 
@@ -26,7 +31,7 @@ function pathForContour(points, toScreen) {
     if (!Array.isArray(points) || points.length < 3) return '';
     const screen = points.map(toScreen);
     if (screen.some(point => !point)) return '';
-    return `M${screen.map(point => `${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join('L')}Z`;
+    return `M${screen.map(point => `${point.x.toFixed(3)} ${point.y.toFixed(3)}`).join('L')}Z`;
 }
 
 export class FocusLinesOverlay {
@@ -123,7 +128,26 @@ export class FocusLinesOverlay {
         const drawRoot = el('g', clip ? { 'clip-path': `url(#${this._clipId})` } : {});
         const color = /^#[0-9a-f]{6}$/i.test(state.params.color || '') ? state.params.color : '#800000';
 
-        if (state.body?.outer) {
+        if (state.placeMode && clip) {
+            const hit = el('path',{d:clip.d,class:'fl-ov-place-hit',fill:'transparent'});
+            hit.addEventListener('pointerdown',event=>{
+                if (event.pointerType === 'mouse' && event.button !== 0) return;
+                event.preventDefault(); event.stopPropagation(); this.onPointerDown?.({type:'place'},event);
+            });
+            this.svg.appendChild(hit);
+        }
+        if (state.flash) {
+            const flash = state.flash;
+            const boundary = pathForContour(flash.boundary,point=>this._toScreen(point));
+            if (flash.fill !== 'none' && boundary) {
+                drawRoot.appendChild(el('path',{d:(flash.fill === 'outside' ? clip?.d || '' : '')+boundary,fill:color,'fill-rule':'evenodd',class:'fl-ov-lines'}));
+            }
+            const d=flash.polygons.map(poly=>pathForContour(poly,point=>this._toScreen(point))).filter(Boolean).join('');
+            if (d) drawRoot.appendChild(el('path',{d,fill:color,class:'fl-ov-lines'}));
+            if (flash.ellipse !== 'none') {
+                drawRoot.appendChild(el('path', {d:pathForContour(flash.opening,point=>this._toScreen(point)),fill:flash.ellipse==='fill'?flash.paperColor:'none',stroke:flash.ellipse==='outline'?color:'none','stroke-width':flash.ellipseWidth*this._screenScale(),'stroke-linejoin':'round',class:'fl-ov-lines'}));
+            }
+        } else if (state.body?.outer) {
             const outer = pathForContour(state.body.outer, point => this._toScreen(point));
             const inner = pathForContour(state.body.inner, point => this._toScreen(point));
             if (outer) {
@@ -176,6 +200,7 @@ export class FocusLinesOverlay {
             });
             this.svg.appendChild(handle);
         };
+        // Placement hit surface stays behind these handles; both entry paths work.
         addHandle(rx, 'rx', 'is-axis');
         addHandle(ry, 'ry', 'is-axis');
         addHandle(c, 'center', 'is-center');

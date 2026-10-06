@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WP034 Rive native playback Browser fixture</title>
+  <style>
+    :root { color-scheme: light; font: 13px/1.45 system-ui, sans-serif; }
+    body { margin: 12px; color: #800000; background: #ffffee; }
+    button { margin-right: 6px; padding: 6px 9px; color: #800000; background: #f0e0d6; border: 1px solid #9c3835; border-radius: 4px; }
+    iframe { display: block; width: min(1280px, calc(100vw - 24px)); height: min(820px, calc(100vh - 170px)); min-height: 520px; margin-top: 10px; border: 1px solid #b8706b; background: #ffffee; }
+    #status { display: inline-block; margin-left: 6px; }
+    #output { max-width: 1280px; min-height: 100px; white-space: pre-wrap; overflow-wrap: anywhere; background: #f0e0d6; padding: 8px; }
+    .instructions { max-width: 1280px; padding: 8px; border: 1px solid #d4a8a0; }
+  </style>
+</head>
+<body>
+  <h1>WP034 — native playback</h1>
+  <div class="instructions">
+    <strong>trusted操作:</strong> 「editorを開く」を押した後、実editorの <code>rive-play</code>、<code>rive-pause</code>、<code>rive-start</code>、<code>rive-end</code> を手動で確認します。ループを必要な時だけONにし、再生中のsnapshotの <code>playbackState</code>/<code>progress</code>、scrub、骨操作、weight draft、保存、frame要求、タブ非表示/blur後の停止を目視してください。fixtureはeditorへ入力イベントを生成しません。
+  </div>
+  <p>
+    <button id="open" data-testid="wp034-playback-open">editorを開く</button>
+    <button id="inspect" data-testid="wp034-playback-inspect">状態を確認</button>
+    <span id="status" role="status">editor起動待ち</span>
+  </p>
+  <pre id="output" data-testid="wp034-playback-output"></pre>
+  <iframe id="product" title="WP034 Rive playback fixture" src="http://127.0.0.1:18729/editor.html"></iframe>
+  <script type="module">
+    // ROLE: Visible WP034 Browser fixture. It provides ordinary trusted user actions only.
+    // TRUST: This page never dispatches input, click, pointer, or keyboard events into the editor.
+    const frame = document.querySelector('#product');
+    const open = document.querySelector('#open');
+    const inspect = document.querySelector('#inspect');
+    const status = document.querySelector('#status');
+    const output = document.querySelector('#output');
+    let latestState = null;
+    const log = value => { output.textContent += String(value) + '\n'; };
+    window.addEventListener('message', event => {
+      if (event.source !== frame.contentWindow || event.origin !== new URL(frame.src).origin) return;
+      if (event.data?.type !== 'tegaki:rive-editor:state') return;
+      latestState = event.data.state || null;
+      status.textContent = 'editor state: ' + (latestState?.status || 'unknown') + ' / playback ' + (latestState?.playbackState || 'idle') + ' / ' + Number(latestState?.progress || 0).toFixed(2);
+    });
+    open.addEventListener('click', () => {
+      const parent = encodeURIComponent(window.location.origin);
+      frame.src = 'http://127.0.0.1:18729/editor.html#session=wp034-playback-browser&parent=' + parent;
+      status.textContent = 'editorを開きました。playback操作はtrusted手動操作です';
+      log('editorを通常loopback経路で開いた。再生/停止/先頭/終端/loopとsnapshotをtrusted操作で確認する。');
+    });
+    inspect.addEventListener('click', () => {
+      if (!latestState) { status.textContent = 'FAIL snapshotがまだありません'; return; }
+      log('SNAPSHOT ' + JSON.stringify(latestState, null, 2));
+      status.textContent = 'editor snapshotを記録しました。playback停止境界とnative frameを目視確認してください';
+    });
+  </script>
+</body>
+</html>
+

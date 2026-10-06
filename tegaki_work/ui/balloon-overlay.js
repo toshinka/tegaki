@@ -87,16 +87,17 @@ export class BalloonOverlay {
         if (!state?.params) return;
         const { params, canvas, editor } = state;
         const { body, tails } = buildBalloonParts(params, canvas);
+        const previewParts = state.draftActive === false ? [] : [body, ...tails];
 
         // 本体+しっぽ(本体の縁を2×線幅 → 塗り の順は、popupのプレビュー/確定と同じ見え方になるよう半透明で重ねる)
         const lineWidthScreen = Math.max(1, params.lineWidth * this._scale());
-        for (const poly of [body, ...tails]) {
+        for (const poly of previewParts) {
             const pts = poly.map(p => this._toScreen(p));
             if (pts.some(p => !p)) continue;
             const d = `M${pts.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z`;
             this.svg.appendChild(el('path', { d, class: 'bl-ov-line', style: `stroke:${params.lineColor}`, 'stroke-width': lineWidthScreen * 2 }));
         }
-        for (const poly of [body, ...tails]) {
+        for (const poly of previewParts) {
             const pts = poly.map(p => this._toScreen(p));
             if (pts.some(p => !p)) continue;
             this.svg.appendChild(el('path', { d: `M${pts.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z`, class: 'bl-ov-fill', style: `fill:${params.fillColor}` }));
@@ -115,7 +116,7 @@ export class BalloonOverlay {
             for (let y = Math.ceil(r.y / spacing) * spacing; y <= r.y + r.h; y += spacing) segment({ x: r.x, y }, { x: r.x + r.w, y });
             this.svg.appendChild(el('path', { d, class: 'bl-ov-grid' }));
         }
-        for (const textImage of (Array.isArray(state.textImage) ? state.textImage : [state.textImage])) {
+        for (const textImage of (state.draftActive === false ? [] : Array.isArray(state.textImage) ? state.textImage : [state.textImage])) {
             if (!textImage?.url) continue;
             const o = this._toScreen({ x: textImage.x, y: textImage.y });
             const ex = this._toScreen({ x: textImage.x + 1, y: textImage.y });

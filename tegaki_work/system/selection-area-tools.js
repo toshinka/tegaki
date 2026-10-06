@@ -17,6 +17,7 @@ import { floodSelectRegion, traceMaskOutline, AUTO_SELECT_LIMITS } from './auto-
 import { applyGradientToPixels } from './gradient-fill.js';
 import { ShapeEditor } from './shape-tool.js';
 import { PolygonShapeEditor } from './polygon-shape-tool.js';
+import { LassoEraseEditor } from './lasso-erase-tool.js';
 import { BorderEditor } from './border-tool.js';
 import { CLOSED_SHAPE_PAINTS, normalizeHexColor, normalizePaintMode } from './closed-shape-paint.js';
 import { normalizeRasterBounds } from './raster-bounds.js';
@@ -26,11 +27,12 @@ import { showFeedbackToast } from '../ui/feedback-toast.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const STORAGE_KEY = 'tegaki-area-tools-v1';
 
-export const SELECTION_TOOL_MODES = Object.freeze(['rect', 'auto', 'gradient', 'shape-rect', 'shape-ellipse', 'shape-polygon', 'border']);
+export const SELECTION_TOOL_MODES = Object.freeze(['rect', 'auto', 'gradient', 'shape-rect', 'shape-ellipse', 'shape-polygon', 'erase-polygon', 'erase-lasso', 'border']);
 
 const TOOL_TO_MODE = Object.freeze({
     selection: 'rect', 'auto-select': 'auto', gradient: 'gradient',
-    'shape-rect': 'shape-rect', 'shape-ellipse': 'shape-ellipse', 'shape-polygon': 'shape-polygon', border: 'border'
+    'shape-rect': 'shape-rect', 'shape-ellipse': 'shape-ellipse', 'shape-polygon': 'shape-polygon',
+    'erase-polygon': 'erase-polygon', 'erase-lasso': 'erase-lasso', border: 'border'
 });
 export function toolNameToSelectionMode(tool) {
     return TOOL_TO_MODE[tool] || null;
@@ -47,12 +49,13 @@ export class AreaToolController {
         this.options = {
             auto: { tolerance: AUTO_SELECT_LIMITS.tolerance.default, referenceAll: false, contiguous: true },
             gradient: { kind: 'linear', fade: 'sub' }, // fade: 'sub'=メイン→サブ色 / 'transparent'=メイン→透明
-            shape: { join: 'miter', width: null, paint: 'legacy', fillColor: null }, // 線/内側: 欠損legacy、幅null=ペンSIZE
+            shape: { join: 'miter', width: null, paint: 'custom', fillColor: null, lassoOutline: true, lassoOutlineUserSet: false, erasePolygonMode: 'line' }, // 幅null=SIZE、内側null=Canvas色
             border: { radius: 4, position: 'outside' } // フチ: 太さ(px) / 位置 outside=外 inside=内
         };
         this.gradientDrag = null;
         this.shape = new ShapeEditor(this);
         this.polygon = new PolygonShapeEditor(this);
+        this.lassoErase = new LassoEraseEditor(this);
         this.border = new BorderEditor(this);
         this.maskImage = null;
         this.guideLine = null;
@@ -73,6 +76,13 @@ export class AreaToolController {
             const shapeWidth = Number(data.shape?.width);
             if (Number.isFinite(shapeWidth) && shapeWidth >= 1) this.options.shape.width = Math.min(400, Math.round(shapeWidth * 10) / 10);
             if (CLOSED_SHAPE_PAINTS.includes(data.shape?.paint)) this.options.shape.paint = data.shape.paint;
+            if (['line', 'fill'].includes(data.shape?.erasePolygonMode)) this.options.shape.erasePolygonMode = data.shape.erasePolygonMode;
+            // The old UI always wrote false when choosing fill. Only the new
+            // explicit switch distinguishes a deliberate OFF from that default.
+            if (data.shape?.lassoOutlineUserSet === true && typeof data.shape.lassoOutline === 'boolean') {
+                this.options.shape.lassoOutline = data.shape.lassoOutline;
+                this.options.shape.lassoOutlineUserSet = true;
+            }
             if (data.shape?.fillColor === null) this.options.shape.fillColor = null;
             else {
                 const fillColor = normalizeHexColor(data.shape?.fillColor);
@@ -99,6 +109,9 @@ export class AreaToolController {
         if (patch.gradient) Object.assign(this.options.gradient, patch.gradient);
         if (patch.shape) {
             const shapePatch = { ...patch.shape };
+            if (shapePatch.erasePolygonMode !== undefined && !['line', 'fill'].includes(shapePatch.erasePolygonMode)) delete shapePatch.erasePolygonMode;
+            if (typeof shapePatch.lassoOutline !== 'boolean') delete shapePatch.lassoOutline;
+            if (typeof shapePatch.lassoOutlineUserSet !== 'boolean') delete shapePatch.lassoOutlineUserSet;
             if (shapePatch.paint !== undefined) shapePatch.paint = normalizePaintMode(shapePatch.paint, this.options.shape.paint);
             if (shapePatch.fillColor !== undefined) {
                 if (shapePatch.fillColor === null) shapePatch.fillColor = null;
@@ -152,7 +165,7 @@ export class AreaToolController {
 
     /** ドラッグ中の操作があるか（グラデーションの範囲指定 / 図形の作成・編集） */
     hasActiveDrag() {
-        return !!this.gradientDrag || this.shape.hasActiveDrag() || this.polygon.hasActiveDrag();
+        return !!this.gradientDrag || this.shape.hasActiveDrag() || this.polygon.hasActiveDrag() || this.lassoErase.hasActiveDrag();
     }
 
     pointerDown(event, target, point) {
@@ -160,7 +173,8 @@ export class AreaToolController {
         if (mode === 'shape-rect' || mode === 'shape-ellipse') {
             return this.shape.pointerDown(event, target);
         }
-        if (mode === 'shape-polygon') return this.polygon.pointerDown(event, target);
+        if (mode === 'shape-polygon' || mode === 'erase-polygon') return this.polygon.pointerDown(event, target);
+        if (mode === 'erase-lasso') return this.lassoErase.pointerDown(event, target);
         if (mode === 'border') return true; // フチは操作盤で行う。キャンバスのドラッグは何もしない
         if (target.kind !== 'layer') {
             showFeedbackToast('フォルダでは使えません。Raster Layerを選んでください');
@@ -180,6 +194,7 @@ export class AreaToolController {
     }
 
     pointerMove(event) {
+        if (this.lassoErase.hasActiveDrag()) return this.lassoErase.pointerMove(event);
         if (this.shape.hasActiveDrag()) return this.shape.pointerMove(event);
         if (this.polygon.hasActiveDrag()) return this.polygon.pointerMove(event);
         const drag = this.gradientDrag;
@@ -191,6 +206,7 @@ export class AreaToolController {
     }
 
     pointerUp(event) {
+        if (this.lassoErase.hasActiveDrag()) return this.lassoErase.pointerUp(event);
         if (this.shape.hasActiveDrag()) return this.shape.pointerUp(event);
         if (this.polygon.hasActiveDrag()) return this.polygon.pointerUp(event);
         const drag = this.gradientDrag;
@@ -205,6 +221,7 @@ export class AreaToolController {
     }
 
     pointerCancel(event) {
+        if (this.lassoErase.hasActiveDrag()) return this.lassoErase.pointerCancel(event);
         if (this.shape.hasActiveDrag() && this.shape.pointerCancel(event)) return true;
         if (this.polygon.hasActiveDrag() && this.polygon.pointerCancel(event)) return true;
         const drag = this.gradientDrag;
@@ -215,6 +232,7 @@ export class AreaToolController {
     }
 
     commitActive() {
+        this.lassoErase.cancel(); // A tool switch never completes an unfinished freehand erase.
         let changed = false;
         if (this.shape.isEditing()) changed = this.shape.commit() || changed;
         if (this.polygon.isEditing()) {
@@ -226,11 +244,13 @@ export class AreaToolController {
     }
 
     cancelActive() {
+        this.lassoErase.cancel();
         this.shape.cancel();
         this.polygon.cancel();
     }
 
     destroy() {
+        this.lassoErase.destroy();
         this.shape.destroy();
         this.polygon.destroy();
         this.border.destroy?.();
@@ -425,6 +445,7 @@ export class AreaToolController {
     }
 
     renderOverlay() {
+        this.lassoErase.render();
         this._ensureOverlayParts();
         const line = this.guideLine;
         if (!line) return;

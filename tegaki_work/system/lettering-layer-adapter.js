@@ -3,14 +3,15 @@
  * AUTHORITY: LayerSystem pixels remain display/save/export authority; lettering
  *            is optional sanitized re-edit data, never a font or renderer cache.
  * INVARIANTS: one History per commit, verify current pixels before replacement,
- *             failed/stale render leaves the document unchanged; normal Canvas only.
+ *             failed/stale render leaves the document unchanged; recipes are normal Canvas only.
+ * CAF: popup-injected target/append callbacks delegate new baked rasters to existing asset History.
  * RELATED: WP-025, lettering-model, ProjectManager, createRasterLayerFromSnapshot.
  */
 import { normalizeLetteringParams, sanitizeLetteringData } from './lettering-model.js';
 import { renderLettering } from './lettering-vector-renderer.js';
 import { fontLibrary as defaultFontLibrary } from './font-library.js';
 import { letteringRasterFingerprint, letteringFingerprintMatches } from './lettering-fingerprint.js';
-import { hideLetteringPreviewSource, restoreLetteringPreviewSource } from './lettering-preview-display.js';
+import { ghostMangaPreviewSource, restoreLetteringPreviewSource } from './lettering-preview-display.js';
 export { letteringRasterFingerprint, letteringFingerprintMatches } from './lettering-fingerprint.js';
 
 export class LetteringLayerAdapter {
@@ -32,7 +33,7 @@ export class LetteringLayerAdapter {
         if (!recipe || !letteringFingerprintMatches(recipe.fingerprint,
             letteringRasterFingerprint(this.layerSystem.createLayerRasterSnapshot(layer)))) return false;
         const dirty = () => this.layerSystem._folderCompositor?.markDirty?.();
-        if (!hideLetteringPreviewSource(layer, dirty)) return false;
+        if (!ghostMangaPreviewSource(layer, dirty)) return false;
         this.previewSource = layer; return true;
     }
     endPreview() {
@@ -44,10 +45,10 @@ export class LetteringLayerAdapter {
         return { width: this.layerSystem?.config?.canvas?.width || this.layerSystem?.canvasWidth || 400,
             height: this.layerSystem?.config?.canvas?.height || this.layerSystem?.canvasHeight || 400 };
     }
-    _guard() {
+    _guard(allowCaf = false) {
         if (!this.layerSystem?.createRasterLayerFromSnapshot) return '文字レイヤーを作成できません';
         if (!this.history?.record || this.history.isApplying || this.history.isRecordingSuppressed?.()) return '履歴処理が終わってから文字を適用してください';
-        if (this.layerSystem.getActiveLayer?.()?.layerData?.isAnimationWorkingLayer) return '文字は通常Canvasで編集してください';
+        if (this.layerSystem.getActiveLayer?.()?.layerData?.isAnimationWorkingLayer && !allowCaf) return '文字は通常Canvasで編集してください';
         return '';
     }
     _find(id) { return this.layerSystem?.getLayers?.().find(layer => layer.layerData?.id === id); }
@@ -67,10 +68,12 @@ export class LetteringLayerAdapter {
         return { ok: true, params: structuredClone(meta.params), layerId: layer.layerData.id, intact,
             reason: intact ? '' : '画素が変更されています。「追加」で別の文字レイヤーを作成できます' };
     }
-    async apply(input) { return this._commit(null, input); }
+    async apply(input, normalTarget) { return this._commit(null, input, normalTarget); }
     async update(layerId, input) { return this._commit(layerId, input); }
-    async _commit(layerId, input) {
-        const reason = this._guard();
+    async _commit(layerId, input, normalTarget) {
+        const caf = !layerId ? this.cafTarget?.() : null;
+        const target = !layerId && !caf ? normalTarget ?? this.normalTarget?.() : null;
+        const reason = caf?.reason || this._guard(!!caf && !!this.cafAppend);
         if (reason) return { ok: false, reason };
         if (this.busy) return { ok: false, reason: '文字を処理中です' };
         this.busy = true;
@@ -90,7 +93,7 @@ export class LetteringLayerAdapter {
             if (!intact()) return { ok: false, reason: '手描き・変形後の画素は上書きできません。「追加」で別レイヤーを作成してください' };
             const raster = await this.render(params, { fontLibrary: this.fontLibrary });
             if (!raster?.ok) return { ok: false, reason: raster?.reason || '文字を描画できません' };
-            if (this._guard() || frame !== this.layerSystem.currentFrameContainer || JSON.stringify(canvas) !== JSON.stringify(this._canvas())) {
+            if (this._guard(!!caf) || frame !== this.layerSystem.currentFrameContainer || JSON.stringify(canvas) !== JSON.stringify(this._canvas())) {
                 return { ok: false, reason: 'Canvasが切り替わりました。もう一度適用してください' };
             }
             if (layerId && (this._find(layerId) !== layer || !intact())) {
@@ -100,14 +103,17 @@ export class LetteringLayerAdapter {
             if (pixels.length !== raster.width * raster.height * 4) return { ok: false, reason: '文字画像のサイズが不正です' };
             const content = { width: raster.width, height: raster.height, pixels,
                 rasterBounds: raster.rasterBounds, paths: [], pathsData: [] };
+            if (caf) return this.cafAppend({ ...content, ok: true }, `文字 ${params.text.replace(/\s+/g, ' ').slice(0, 16)}`, caf);
             if (!layerId) {
-                const created = this.layerSystem.createRasterLayerFromSnapshot(content, {
+                const options = {
                     name: `文字 ${params.text.replace(/\s+/g, ' ').slice(0, 16)}`,
                     historyName: 'lettering-apply', source: 'lettering',
                     lettering: { version: 1, params: structuredClone(params) }
-                });
+                };
+                const created = this.normalAppend ? this.normalAppend(content, options, target)
+                    : this.layerSystem.createRasterLayerFromSnapshot(content, options);
                 layer = created?.layer;
-                if (!layer?.layerData) return { ok: false, reason: '文字レイヤーを作成できません' };
+                if (!layer?.layerData) return { ok: false, reason: created?.reason || '文字レイヤーを作成できません' };
                 // LayerSystem attaches and validates the pixel/recipe pair before
                 // its one History notification; no second GPU readback is needed.
                 this._changed(layer.layerData.id, 'lettering-apply');
@@ -115,6 +121,7 @@ export class LetteringLayerAdapter {
             }
             const before = this.layerSystem.createLayerRasterSnapshot(layer);
             const after = { ...before, ...content };
+            this.endPreview();
             rollback = () => {
                 this.layerSystem.restoreLayerRasterSnapshot(before);
                 layer.layerData.lettering = structuredClone(metaBefore);

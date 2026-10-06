@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WP-036 source influence map fixture</title>
+  <style>
+    :root { color-scheme: light; font: 13px/1.45 system-ui, sans-serif; --maroon:#800000; --orange:#ff8c42; --cream:#f0e0d6; --paper:#ffffee; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--maroon); background: var(--paper); }
+    main { width: min(100%, 560px); margin: 0 auto; padding: 14px; display: grid; gap: 10px; }
+    section { display: grid; gap: 6px; padding: 10px; border: 1px solid #9c3835; background: var(--cream); min-width: 0; }
+    button, select, input { font: inherit; color: var(--maroon); background: var(--paper); border: 1px solid #9c3835; border-radius: 4px; padding: 6px; }
+    button:disabled { opacity: .55; }
+    .map-viewport { width: min(100%, 360px); margin: 0 auto; overflow: hidden; }
+    #map-svg { display: block; width: 100%; height: auto; border: 1px solid #9c3835; background: rgba(255,255,255,.45); }
+    .buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
+    .buttons button { min-width: 0; padding: 4px 2px; font-size: 10px; overflow-wrap: anywhere; }
+    .buttons button[hidden] { display: none; }
+    .value { display: block; font-size: 10px; color: #9c3835; }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px; font-size: 10px; }
+    .end { color: var(--orange); } .root { color: var(--maroon); }
+    pre { max-height: 220px; overflow: auto; white-space: pre-wrap; background: rgba(255,255,255,.6); padding: 6px; }
+  </style>
+</head>
+<body>
+  <main data-testid="wp036-influence-fixture">
+    <h1>WP-036 素材上の点（変形前）</h1>
+    <section aria-label="素材上の点（変形前）">
+      <label>メッシュ
+        <select id="profile"><option value="quad">四隅</option><option value="grid3">9点</option></select>
+      </label>
+      <div class="map-viewport">
+        <svg id="map-svg" viewBox="0 0 300 180" role="group" aria-label="変形前の素材上の点案内図" data-testid="wp036-map-svg">
+          <image id="map-image" width="300" height="180" preserveAspectRatio="none" aria-hidden="true"></image>
+          <g id="map-points" aria-label="変形前の素材上の点"></g>
+        </svg>
+      </div>
+      <p id="map-status" role="status">fixtureの素材画像を読み込み中です。</p>
+      <output id="selection">未選択</output>
+      <div id="map-buttons" class="buttons" role="group" aria-label="変形前の点の選択">
+        <button type="button" data-influence-point="TopLeft"><span data-influence-label>左上 / TopLeft</span><span class="value" data-influence-value>未確定</span></button>
+        <button type="button" data-influence-point="TopCenter"><span data-influence-label>上中央 / TopCenter</span><span class="value" data-influence-value>未確定</span></button>
+        <button type="button" data-influence-point="TopRight"><span data-influence-label>右上 / TopRight</span><span class="value" data-influence-value>未確定</span></button>
+        <button type="button" data-influence-point="MiddleLeft"><span data-influence-label>左中央 / MiddleLeft</span><span class="value" data-influence-value>未確定</span></button>
+        <button type="button" data-influence-point="Center"><span data-influence-label>中央 / Center</span><span class="value" data-influence-value>未確定</span></button>
+        <button type="button" data-influence-point="MiddleRight"><span data-influence-label>右中央 / MiddleRight</span><span class="value" data-influence-value>未確定</span></button>
+        <button type="button" data-influence-point="BottomLeft"><span data-influence-label>左下 / BottomLeft</span><span class="value" data-influence-value>未確定</span></button>
+        <button type="button" data-influence-point="BottomCenter"><span data-influence-label>下中央 / BottomCenter</span><span class="value" data-influence-value>未確定</span></button>
+        <button type="button" data-influence-point="BottomRight"><span data-influence-label>右下 / BottomRight</span><span class="value" data-influence-value>未確定</span></button>
+      </div>
+      <div class="legend"><span class="end">End（橙）</span><span class="root">Root（えんじ）</span><span>素材上の固定点・数値はEnd% / Root%</span></div>
+    </section>
+    <section aria-label="trusted native receipt">
+      <button id="trusted-open" type="button" data-testid="wp036-trusted-open">trusted source/stateを開く</button>
+      <button id="trusted-native" type="button" data-testid="wp036-trusted-native">trusted native RGBA receipt</button>
+      <p id="native-status" role="status">native receipt未取得</p>
+      <pre id="native-receipt" data-testid="wp036-native-receipt">{}</pre>
+    </section>
+  </main>
+  <script type="module">
+    const params = new URLSearchParams(location.search);
+    const base = params.get('base') || (location.protocol === 'file:' ? 'http://127.0.0.1:18838' : location.origin);
+    const influence = await import(new URL('/influence-map.js', base));
+    const runtimeModule = await import(new URL('/runtime.js', base));
+    const { InfluenceMapController } = influence;
+    const { RiveNativeRuntime, imageMetrics } = runtimeModule;
+    const profileNode = document.querySelector('#profile');
+    const imageNode = document.querySelector('#map-image');
+    const runtimeCanvas = document.createElement('canvas');
+    const runtime = new RiveNativeRuntime(runtimeCanvas);
+    let apiState = null;
+    let imageWidth = 300;
+    let imageHeight = 180;
+    let currentProfile = 'quad';
+    const weights = {
+      quad: [0, 128, 255, 0],
+      grid3: [0, 128, 255, 255, 255, 128, 0, 0, 128],
+    };
+    const percentages = {
+      quad: [0, 50.2, 100, 0],
+      grid3: [0, 50.2, 100, 100, 100, 50.2, 0, 0, 50.2],
+    };
+    const controller = new InfluenceMapController({
+      root: document.querySelector('main'),
+      svg: document.querySelector('#map-svg'),
+      imageNode,
+      pointLayer: document.querySelector('#map-points'),
+      buttonRoot: document.querySelector('#map-buttons'),
+      selectionNode: document.querySelector('#selection'),
+      statusNode: document.querySelector('#map-status'),
+      onSelectionChanged: name => { document.querySelector('#selection').dataset.selected = name; },
+    });
+    controller.attach();
+    function syncMap(imageUrl = apiState?.imageUrl || params.get('image')) {
+      controller.sync({
+        imageUrl,
+        snapshot: { status: 'ready', image: { width: imageWidth, height: imageHeight }, meshProfile: currentProfile },
+        weightView: { profile: currentProfile, endWeights: weights[currentProfile], percentages: percentages[currentProfile], selectedVertex: controller.getView().selectedVertex },
+      });
+    }
+    async function openTrustedState() {
+      const response = await fetch(new URL('/api/state?ts=' + Date.now(), base), { cache: 'no-store' });
+      apiState = await response.json();
+      imageWidth = Number(apiState.snapshot?.image?.width || 300);
+      imageHeight = Number(apiState.snapshot?.image?.height || 180);
+      currentProfile = apiState.snapshot?.meshProfile || 'quad';
+      profileNode.value = currentProfile;
+      syncMap(apiState.imageUrl);
+      document.querySelector('#native-status').textContent = 'source/stateをtrusted APIから読み込みました。';
+    }
+    async function nativeReceipt() {
+      if (!apiState) await openTrustedState();
+      if (!apiState?.artifactUrl) throw new Error('native artifactUrl unavailable');
+      await runtime.load(apiState.artifactUrl, imageWidth, imageHeight);
+      const frame = runtime.render(Number(apiState.snapshot?.progress || 0));
+      const imageData = runtime.context.getImageData(0, 0, runtime.width, runtime.height);
+      const metrics = imageMetrics(imageData);
+      const receipt = { width: imageData.width, height: imageData.height, alphaPixels: metrics.alphaPixels, bbox: metrics.bbox, pngBytes: frame.png.byteLength, rgbaReceipt: true };
+      document.querySelector('#native-receipt').textContent = JSON.stringify(receipt, null, 2);
+      document.querySelector('#native-status').textContent = 'native RGBA receiptを取得しました。';
+      runtime.dispose();
+    }
+    profileNode.addEventListener('change', () => { currentProfile = profileNode.value; syncMap(apiState?.imageUrl || params.get('image')); });
+    document.querySelector('#trusted-open').addEventListener('click', () => void openTrustedState().catch(error => { document.querySelector('#native-status').textContent = error.message; }));
+    document.querySelector('#trusted-native').addEventListener('click', () => void nativeReceipt().catch(error => { document.querySelector('#native-status').textContent = error.message; }));
+    if (params.get('image')) syncMap(params.get('image'));
+    window.addEventListener('pagehide', () => { controller.dispose(); runtime.dispose(); });
+  </script>
+</body>
+</html>

@@ -1,6 +1,35 @@
-# WP-034 Slice A — 四隅 weight 実装結果
+# WP-034 Slice A/B — 四隅 weight と native playback 実装結果
 
-状態: **Slice A 実装完了 / static・pure PASS / native・Browser・Owner 未受入**。Slice B の playback-controller は実装していない。
+状態: **Slice A/B 実装完了 / static・pure/controller PASS / native・Browser・Owner 未受入**。Slice B は native runtime の `seek` を注入する再生スケジューラまでを実装し、実機受入は行っていない。
+
+## Slice B — native playback
+
+- `advanced/rive-editor/playback-controller.js` を追加した。既定は `idle`・loop OFF・autoplayなし。`runtime.seek(progress)` だけを最大30fpsで呼び、RAF chainは常に一本に制限する。状態 snapshot は再生中最大10Hz、開始・停止・pause・終端では即時通知する。Playを終端から押すと0へ戻り、loop OFFは1で終了、loop ONは0へ折り返す。
+- `editor.js` は Play/Pause/先頭/終端/loop を接続し、AI snapshotへ `playbackState`、`playbackLoop`、`progress` を追加した。再生tickには画素読出し、PNG化、API、record、Historyを置かず、pause/scene load/visibility/blurとscrub、bone、weight draft/commit、compile、image、save/reopen/cancel、PNG、frame requestの境界で停止して同じprogressのnative frameを取得する。
+- `editor.html` は4操作とloop checkboxを追加した。再生部品は `min-width: 0` と `minmax(0, 1fr)` を使い、既存の狭幅制約内に収めた。server static routeは `/playback-controller.js` の1件だけを追加した。
+- `build/verify-rive-editor-playback.mjs` はclock/RAF/seek/captureを注入した純粋検証、static配線、loop/終端/停止・stale RAF・30fps・10Hz契約を確認する。`build/wp034-rive-playback-browser.html` はtrustedな手動Play/Pause/先頭/終端/loop/scrub/visibility確認を案内し、synthetic eventを生成しない。
+
+### B司令監査追補への限定修正
+
+- 修正前は clock `0→990→1000ms` の終端で `controller=ended/progress=1` でも注入runtimeが `0.99` のままになり、最後のnative seekが欠けていた。終端だけは30fps capを越えて `seek(1)` を明示同期し、seek失敗時は `ended` を出さず停止するようにした。
+- 修正前は stop→start後の旧RAF callbackが世代不一致でも共有 `rafId` を `null` にし、pause後の注入RAF mapに現行一件が残った。callback自身のframe idが現行所有ならnull化する条件へ変更し、旧世代callbackは新chainの所有権を保持する。
+- `onPlaybackState` のnative seek後に既存 `boneController.refresh()` を呼び、再生通知（最大10Hz）と停止通知で投影を追従させた。新しい投影計算、PNG/readback、API呼出しは追加していない。
+- 追補後の純粋/static verifierは48 checks PASS。実配信 `/playback-controller.js` は司令確認で404の世代が残っているため、Browser/native/Ownerの受入は引き続き **UNVERIFIED** と分離する。
+
+## Slice B 検証
+
+| 検証 | 結果 |
+|---|---|
+| `node --check`（playback-controller/verify/editor/server） | PASS |
+| `node tegaki_work/build/verify-rive-editor-playback.mjs` | PASS (48 checks; fixed cache valid; native/browser UNVERIFIED) |
+| `node tegaki_work/build/verify-rive-editor-weights.mjs` | PASS (63 checks) |
+| `node tegaki_work/build/verify-rive-editor-model.mjs` / `verify-rive-bone-editor.mjs` | PASS / PASS (54 checks) |
+| `npm.cmd run build` (`tegaki_work`) | PASS |
+| `node tegaki_work/build/development-harness.mjs check` | PASS (90 documents / 342 links) |
+| `node tegaki_work/build/development-harness.mjs test transform` | 20 selected中19 PASS。既存の別lead `shape-tool.js` mock mismatch（`paint.append is not a function`）で1件FAIL、Slice B変更による失敗ではない。 |
+| Browser/native runtime・実frame・GPU・Owner acceptance | **UNVERIFIED** |
+
+固定専用 port の既存 server `127.0.0.1:18729`（親司令確認の PID 43016）と product `5174`（PID 16008）は停止・再起動・置換していない。新しい static route の実HTTP receipt、Browserでの trusted操作、native frame一致、狭幅のページ全体 `scrollWidth` は未確認である。BのUI部品自体は幅を増やさない静的制約を持つが、既存の90° sceneとdiagnostics展開による `scrollWidth=414 / clientWidth=345` は残り、ページ全体360px PASSとは判定しない。
 
 ## 実装
 
@@ -31,7 +60,7 @@
 | `node tegaki_work/build/development-harness.mjs test transform` | 20 selected中19 PASS。既存の別lead `shape-tool.js` mock mismatch（`paint.append is not a function`）で1件FAIL、WP-034変更による失敗ではない。 |
 | native CLI/inspect・native pixels・実Browser・通常host Project/History | **UNVERIFIED** |
 
-固定専用 port `127.0.0.1:18729` は既存 PID `32532` が `/health` を返していた。CIM identity が Access Denied で、own start/receipt/listener を証明できないため、既存 process を停止・再利用せず、このSliceでは own server を起動していない。したがって own PID cleanup は不要で、listener も変更していない。専用 Browser/native と Owner acceptance は司令の監査へ返す。
+固定専用 port `127.0.0.1:18729` は親司令が確認した既存 PID `43016`（product `5174` は PID `16008`）を停止・再利用せず、このSliceでは own server を起動していない。CIM identity が Access Denied で、own start/receipt/listener を証明できないため、listenerも変更していない。専用 Browser/native と Owner acceptance は司令の監査へ返す。
 
 この観測は `tegaki_work/.cache/rive-editor/wp034-server-observation.json` に保存した。
 

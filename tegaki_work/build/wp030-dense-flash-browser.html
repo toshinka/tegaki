@@ -1,0 +1,65 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>WP030 密ウニ・制作動線検証</title>
+<style>body{background:#ffffee;color:#800000;font:12px system-ui;margin:6px}iframe{width:1280px;height:720px;border:1px solid #b8706b}pre{white-space:pre-wrap}</style>
+<button id="run" disabled>密ウニを検証</button><button id="inspect" disabled>確認画面</button><span id="state">製品起動中</span><pre id="output"></pre><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+const frame=document.querySelector('#product'),out=document.querySelector('#output'),state=document.querySelector('#state');
+const delay=ms=>new Promise(r=>setTimeout(r,ms)),check=(ok,label)=>{if(!ok)throw Error(label);out.textContent+='PASS '+label+'\n';};
+let core;for(let i=0;i<200;i++){core=frame.contentWindow?.coreEngine;if(core?.popupManager?.get('focusLines')?.isReady())break;await delay(100);}
+const win=frame.contentWindow,f=core.popupManager.get('focusLines'),q=s=>f.popup.querySelector(s),realm=v=>win.JSON.parse(JSON.stringify(v));
+const equal=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
+const image=()=>{const c=core.exportManager.renderToCanvas({transparent:true});return [...c.getContext('2d').getImageData(0,0,c.width,c.height).data];};
+const pixel=(r,x,y)=>{x-=r.rasterBounds.x;y-=r.rasterBounds.y;return x<0||y<0||x>=r.width||y>=r.height?[0,0,0,0]:[...r.pixels.slice((Math.floor(y)*r.width+Math.floor(x))*4,(Math.floor(y)*r.width+Math.floor(x))*4+4)];};
+const drag=async(type,start,end)=>{f.overlay.render();const hit=f.overlay.svg.querySelector(type==='place'?'.fl-ov-place-hit':`[data-kind="${type}"]`),a=f.overlay._toScreen(start),b=f.overlay._toScreen(end);hit.dispatchEvent(new win.PointerEvent('pointerdown',{pointerId:53,pointerType:'mouse',button:0,clientX:a.x,clientY:a.y,bubbles:true}));win.dispatchEvent(new win.PointerEvent('pointermove',{pointerId:53,pointerType:'mouse',clientX:b.x,clientY:b.y}));win.dispatchEvent(new win.PointerEvent('pointerup',{pointerId:53,pointerType:'mouse',clientX:b.x,clientY:b.y}));await delay(30);};
+const inspect=()=>{frame.style.width='1280px';frame.style.height='720px';out.hidden=true;win.dispatchEvent(new win.Event('resize'));core.popupManager.hideAll();core.layerSystem.getLayers().forEach((l,i)=>{if(!l.layerData.isBackground&&l.layerData.visible)core.layerSystem.toggleLayerVisibility(i);});core.cameraSystem.setZoom(1);core.popupManager.show('focusLines');f._onAction('reset');q('[data-preset="uni"]').click();f.placeMode=false;f._setParams({...f.params,center:{x:200,y:200},innerRx:115,innerRy:140,color:'#800000'});};
+state.textContent='検証可能';document.querySelectorAll('button').forEach(b=>b.disabled=false);document.querySelector('#inspect').onclick=inspect;
+document.querySelector('#run').onclick=async()=>{
+const original=structuredClone(f.params),prefs=win.localStorage.getItem('tegaki-focus-lines-v1');state.textContent='実行中';out.hidden=false;out.textContent='';document.querySelector('#run').disabled=true;
+try{
+ core.popupManager.show('focusLines');q('[data-preset="uni"]').click();check(f.params.flash?.kind==='tapered'&&f.params.count===150&&f.polygons.length===150,'密ウニを選ぶだけで両端taper150本');
+ check(q('[data-row="count"]').closest('.fl-common')&&q('[data-row="widthMax"]').closest('.fl-common')&&q('[data-row="flashDepth"]').closest('.fl-common'),'本数/太さ/帯の深さを同じ基本領域へ');
+ f.overlay.render();check(f.overlay.svg.querySelectorAll('.fl-ov-handle').length===3,'preset選択直後から範囲配置中も3つのGuide点を表示');
+ const initialCenter={...f.params.center};await drag('center',initialCenter,{x:initialCenter.x+8,y:initialCenter.y+6});check(!f.placeMode&&f.params.center.x===initialCenter.x+8,'範囲配置中でも中心点を動かせる・描画へ透過');
+ q('[data-action="place"]').click();
+ check(f.placeMode&&f.overlay.visible,'preset選択でCanvas範囲配置へ');await drag('place',{x:70,y:50},{x:330,y:350});check(!f.placeMode&&Math.abs(f.params.center.x-200)<.01&&Math.abs(f.params.center.y-200)<.01&&f.params.innerRy>f.params.innerRx,'範囲dragで縦長ウニを配置・終了後penへ透過');
+ f._setParams({...f.params,color:'#123456',flash:{...f.params.flash,paperColor:'#abcdef',fill:'none',ellipse:'none'}});
+ let r=f._raster();check(r.ok&&r.width<400&&r.height<400&&pixel(r,200,200)[3]===0,'局所ウニは有界Raster・中央透明');
+ q('[data-fill="inside"]').click();r=f._raster();check(equal(pixel(r,200,200),[18,52,86,255])&&pixel(r,0,0)[3]===0,'中ベタは線色で中心を塗り外は透明');
+ q('[data-fill="outside"]').click();r=f._raster();check(equal(pixel(r,0,0),[18,52,86,255])&&pixel(r,200,200)[3]===0&&r.width===400,'外ベタはCanvas全面/中心は透明');
+ q('[data-action="swap-colors"]').click();check(f.params.color==='#abcdef'&&f.params.flash.paperColor==='#123456','二つの色slotを交換');
+ f.overlay.render();check([...f.overlay.svg.querySelectorAll('.fl-ov-lines')].every(el=>win.getComputedStyle(el).opacity==='1'&&win.getComputedStyle(el).fill==='rgb(171, 205, 239)'),'作業中も出力濃度で表示');
+ q('[data-role="ellipse"]').value='fill';q('[data-role="ellipse"]').dispatchEvent(new win.Event('change',{bubbles:true}));r=f._raster();check(equal(pixel(r,200,200),[18,52,86,255]),'追加楕円は下地色で中心を隠せる');
+ q('[data-role="ellipse"]').value='outline';q('[data-role="ellipse"]').dispatchEvent(new win.Event('change',{bubbles:true}));check(!q('[data-row="ellipseWidth"]').hidden&&pixel(f._raster(),200,200)[3]===0,'追加楕円を輪郭線へ・線幅を表示');
+ q('[data-action="canvas-color"]').click();check(f.params.flash.paperColor===f._backgroundColorHex(),'第二色はUIクリームでなく作品Background色');
+ const bg=core.layerSystem.getLayers().find(l=>l.layerData.isBackground),oldBg=bg.layerData.backgroundColor;bg.layerData.backgroundColor=0;q('[data-action="canvas-color"]').click();check(f.params.flash.paperColor==='#000000','Canvas背景色の黒0も有効');bg.layerData.backgroundColor=oldBg;
+ const count=f.params.count;q('input[data-field="count"]').dispatchEvent(new win.WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}));check(f.params.count===count+1,'基本本数rangeのwheel');
+ // Actual SVG painting in document coordinates must match the completion compositor.
+ q('[data-fill="none"]').click();q('[data-role="ellipse"]').value='none';q('[data-role="ellipse"]').dispatchEvent(new win.Event('change',{bubbles:true}));
+ core.cameraSystem.worldContainer.rotation=0;core.cameraSystem.setZoom(1);core.cameraSystem.updateTransformDisplay();f.overlay.render();
+ const origin=f.overlay._toScreen({x:0,y:0}),axis=f.overlay._toScreen({x:1,y:0}),scale=Math.hypot(axis.x-origin.x,axis.y-origin.y),svg=f.overlay.svg.cloneNode(true);
+ svg.querySelectorAll('.fl-ov-hole,.fl-ov-handle,.fl-ov-place-hit').forEach(el=>el.remove());svg.setAttribute('xmlns','http://www.w3.org/2000/svg');svg.setAttribute('width','400');svg.setAttribute('height','400');svg.setAttribute('viewBox',`${origin.x} ${origin.y} ${400*scale} ${400*scale}`);
+ const url=URL.createObjectURL(new Blob([svg.outerHTML],{type:'image/svg+xml'})),img=new Image();img.src=url;await img.decode();const comparison=document.createElement('canvas');comparison.width=400;comparison.height=400;const ctx=comparison.getContext('2d');ctx.drawImage(img,0,0);URL.revokeObjectURL(url);const svgPixels=ctx.getImageData(0,0,400,400).data,now=f._raster();let edgeDifferences=0;
+ for(let y=0;y<400;y++)for(let x=0;x<400;x++){const a=pixel(now,x,y),offset=(y*400+x)*4;if(Math.abs(a[3]-svgPixels[offset+3])>12)edgeDifferences++;}
+ check(edgeDifferences<400,'実SVGと確定Rasterのalpha形状差は全体の0.25%未満');
+ const {rasterizeFocusLines}=await import('../system/focus-lines-raster.js');
+ const large=rasterizeFocusLines(f.flash,{width:4960,height:7016,color:f.params.color});check(large.ok&&large.width<400&&large.height<400,'7k原稿でも局所ウニの確保はeffect周囲だけ');
+ q('[data-preset="rough"]').click();check(f.params.count===150&&f.params.lengthJitter>.5,'荒ウニも150本の完成形から調整');f.placeMode=false;
+ const depthInput=q('input[data-field="flashDepth"]');depthInput.value='2';depthInput.dispatchEvent(new win.Event('input',{bubbles:true}));check(f.params.flash.depth===2&&f.flash.polygons.every(poly=>poly.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)))&&f._raster().ok,'深さ200%をUIから出力・有界geometry');
+ q('[data-fill="none"]').click();const history=core.history.stack.length,added=f.apply();check(added.ok&&core.history.stack.length===history+1,'密ウニは通常Raster/一History');f.overlay.render();check(!f.draftActive&&!f.overlay.svg.querySelector('.fl-ov-lines'),'確定後draftの二重表示なし');
+ q('[data-action="guide"]').click();f.overlay.render();check(f.draftActive&&!f.placeMode&&f.overlay.svg.querySelectorAll('.fl-ov-handle').length===3,'確定後もGuideを戻す1回で編集点を復帰');
+ const png=image(),project=await core.projectManager.exportProject();await core.projectManager.loadProject(realm(project));check(equal(png,image()),'密ウニの実Project/PNG全画素一致');
+ const layer=core.layerSystem.getLayers().find(l=>l.layerData.id===added.layerId);core.layerSystem.setActiveLayer(core.layerSystem.getLayerIndex(layer));check(f.loadFromActiveLayer().ok&&f.params.flash.kind==='tapered'&&f.params.flash.depth===2,'v1 optional flashから再編集・拡張深さをProject往復');
+ check(layer.layerData.layerSprite.renderable&&layer.layerData.layerSprite.alpha===.2&&f.previewSource===layer,'再編集元の表示だけを20%に');check(equal(png,image()),'ghost編集中のExportは元の確定画素');
+ const exportedWhileEditing=await core.projectManager.exportProject();check(exportedWhileEditing,'preview抑制中でもProjectを採取');
+ const oldRaster=core.layerSystem.createLayerRasterSnapshot(layer),oldDepth=f.params.flash.depth;
+ f._setParams({...f.params,flash:{...f.params.flash,depth:.8}});check(f.update().ok&&!f.draftActive&&layer.layerData.layerSprite.renderable,'更新確定で表示を復帰');
+ core.history.undo();check(layer.layerData.focusLines.params.flash.depth===oldDepth&&equal(oldRaster.pixels,core.layerSystem.createLayerRasterSnapshot(layer).pixels),'Undoはrecipeと全Raster画素を復元');core.history.redo();check(layer.layerData.focusLines.params.flash.depth===.8,'Redoで新しい帯を復元');
+ check(f.loadFromActiveLayer().ok,'再編集を再開');core.history.undo();check(!f.draftActive&&layer.layerData.layerSprite.renderable&&f.params.flash.depth===oldDepth,'編集中Undoはdraftを解除し復元recipeへ同期');core.history.redo();check(f.loadFromActiveLayer().ok,'Redo後も再編集できる');f.hide();check(layer.layerData.layerSprite.renderable&&f.previewSource===null,'閉じると元表示を必ず復帰');f.show();
+ f._setParams({...f.params,center:{x:-1000,y:-1000},count:4,flash:{...f.params.flash,depth:3}});q('[data-action="guide"]').click();check(f.params.center.x===200&&f.params.count===4,'画面外のGuideは中央へ復帰・表現数値は保持');
+ q('[data-action="reset"]').click();f.overlay.render();check(f.params.count===150&&f.params.flash.depth===.45&&!f.placeMode&&f.editing===null&&f.overlay.svg.querySelectorAll('.fl-ov-handle').length===3,'初期化で壊れた数値と配置を標準へ戻す・確定Layer不変');
+ const camera=core.cameraSystem,originalScale=camera.worldContainer.scale.x,draft=JSON.stringify(f.params),renderer=win.document.querySelector('.canvas-area canvas');win.document.body.dispatchEvent(new win.KeyboardEvent('keydown',{code:'Space',key:' ',bubbles:true,cancelable:true}));renderer.dispatchEvent(new win.WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}));win.document.body.dispatchEvent(new win.KeyboardEvent('keyup',{code:'Space',key:' ',bubbles:true,cancelable:true}));check(camera.worldContainer.scale.x!==originalScale&&JSON.stringify(f.params)===draft,'Space wheelはCameraへ・作品値不変');
+ for(const [width,height]of [[1280,720],[360,640]]){frame.style.width=width+'px';frame.style.height=height+'px';win.dispatchEvent(new win.Event('resize'));await delay(60);q('[data-context="shape"]').click();const p=f.popup.getBoundingClientRect(),actions=q('.manga-edit-actions').getBoundingClientRect(),scroll=q('.focus-lines-body-scroll');check(p.left>=0&&p.right<=width&&actions.bottom<=height&&actions.height>0,'狭幅と上部固定確定 '+width+'x'+height);check(scroll.scrollHeight<=scroll.clientHeight+1,'基本操作はscroll不要 '+width+'x'+height);}
+ state.textContent='PASS';
+}catch(e){state.textContent='FAIL '+e.message;out.textContent+=e.stack;}
+finally{f.hide();f.editing=null;f._setParams(original);if(prefs===null)win.localStorage.removeItem('tegaki-focus-lines-v1');else win.localStorage.setItem('tegaki-focus-lines-v1',prefs);document.querySelector('#run').disabled=false;}
+};
+</script></html>

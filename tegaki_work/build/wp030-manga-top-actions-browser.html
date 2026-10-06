@@ -1,0 +1,66 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>WP030 上部操作・吸着・登録サイズ</title>
+<style>body{margin:8px;background:#ffffee;color:#800000;font:12px system-ui}iframe{width:1280px;height:720px;border:1px solid #b8706b}pre{white-space:pre-wrap}</style>
+<button id="run" disabled>上部操作・吸着・サイズを検証</button><button id="inspect" disabled>文字の上部操作を表示</button><button id="panel" disabled>フリーコマを表示</button><span id="state">製品起動中</span><details><summary>検証記録</summary><pre id="output"></pre></details><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+// Actual product fixture; synthetic dispatch tests are separate from trusted pointer checks.
+import { buildPresetById, findNode, resolvePanelLayout } from '../system/panel-layout.js';
+import { normalizeLetteringSizeSlots } from '../ui/lettering-size-slots.js';
+const frame=document.querySelector('#product'),out=document.querySelector('#output'),state=document.querySelector('#state');
+const delay=ms=>new Promise(r=>setTimeout(r,ms)),check=(ok,label)=>{if(!ok)throw Error(label);out.textContent+='PASS '+label+'\n';},near=(a,b)=>Math.abs(a-b)<1e-6;
+let core,win;const ready=async()=>{for(let i=0;i<200;i++){win=frame.contentWindow;core=win?.coreEngine;if(core?.popupManager?.get('lettering')?.isReady())return;await delay(100);}throw Error('product not ready');};await ready();
+const q=(p,s)=>p.popup.querySelector(s), input=(el,value)=>{el.value=value;el.dispatchEvent(new win.Event('input',{bubbles:true}));};
+const showLetter=async()=>{frame.style.width='1280px';frame.style.height='720px';win.dispatchEvent(new win.Event('resize'));core.popupManager.show('lettering');const l=core.popupManager.get('lettering');l.newSession();input(q(l,'[data-role="text"]'),'コトバ');q(l,'[data-mode="whole"]').click();await l._flushCurrent();};
+const preparePanel=()=>{const p=core.popupManager.get('panelLayout');core.popupManager.show('panelLayout');p.tree=buildPresetById('grid4');p.params={...p.params,margin:40,gapV:12,gapH:20};p.selectedId=resolvePanelLayout(p.tree,{width:400,height:400},p.params).panels[0].id;p._changed();p._onAction('toggle-free');p._resetDraftHistory();p._syncControls();p.overlay.render();return p;};
+document.querySelector('#inspect').onclick=showLetter;document.querySelector('#panel').onclick=preparePanel;
+state.textContent='検証可能';document.querySelectorAll('button').forEach(b=>b.disabled=false);
+document.querySelector('#run').onclick=async()=>{
+ const keys=['tegaki-lettering-ui-v1','tegaki-panel-layout-v1','tegaki-lettering-v1','tegaki-qa-tab'];const prefs=Object.fromEntries(keys.map(k=>[k,win.localStorage.getItem(k)]));
+ state.textContent='実行中';out.textContent='';document.querySelector('#run').disabled=true;
+ try{
+  check(JSON.stringify(normalizeLetteringSizeSlots([NaN,-10,2048,'24',null,33.5]))===JSON.stringify([16,8,512,48,64,34]),'壊れた登録サイズ・範囲外・小数を正規化');
+  const l=core.popupManager.get('lettering');await showLetter();
+  check(q(l,'[data-action="load-active"]').closest('.manga-edit-actions')&&q(l,'[data-action="apply"]').closest('.manga-edit-actions'),'文字の再編集と確定を上部に集約');
+  const slot=q(l,'[data-size-slot="2"]');slot.click();check(l.params.fontSize===l.sizeSlots.values[2]&&slot.getAttribute('aria-pressed')==='true','登録サイズをクリックで選択');
+  input(q(l,'[data-field="fontSize"]'),'77');check(l.sizeSlots.values[2]===77&&l.params.fontSize===77,'既存sliderで選択枠を書き換え');
+  input(q(l,'[data-field-number="fontSize"]'),'83');check(l.sizeSlots.values[2]===83&&l.params.fontSize===83,'既存数値で同じ枠を書き換え');
+  q(l,'[data-field-number="fontSize"]').dispatchEvent(new win.WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}));check(l.sizeSlots.values[2]===84&&l.params.fontSize===84,'数値wheelも登録枠に反映');
+  const savedSlots=JSON.stringify(l.sizeSlots.values);l.newSession();check(JSON.stringify(l.sizeSlots.values)===savedSlots&&l.sizeSlots.active===-1,'新規は登録枠を保持して選択を解除');
+  await l._flushCurrent();const added=await l.apply();check(added.ok,'上部確定の文字adapterが動作');await l.loadFromActiveLayer();check(JSON.stringify(l.sizeSlots.values)===savedSlots&&l.sizeSlots.active===-1,'レイヤー再編集は登録枠を上書きしない');await l.cancel();
+  let p=preparePanel(),id=p.selectedId,neighbor=p.resolved.panels.find(n=>n.id!==id&&n.quad[0].x>p.resolved.panels[0].quad[0].x),start=findNode(p.tree,id).quad[1];
+  const before=JSON.stringify(p.tree),history=core.history.stack.length,target={x:neighbor.quad[0].x-p.params.gapV+2,y:neighbor.quad[0].y+45};
+  const dragCorner=(point,mods={})=>{const a=p.overlay._toScreen(start),b=p.overlay._toScreen(point);p.overlay.svg.querySelectorAll('[data-kind="corner"]')[1].dispatchEvent(new win.PointerEvent('pointerdown',{pointerId:71,pointerType:'mouse',button:0,clientX:a.x,clientY:a.y,bubbles:true}));win.dispatchEvent(new win.PointerEvent('pointermove',{pointerId:71,pointerType:'mouse',clientX:b.x,clientY:b.y,...mods}));p.overlay.render();};
+  const release=()=>win.dispatchEvent(new win.PointerEvent('pointerup',{pointerId:71,pointerType:'mouse'}));
+  dragCorner(target);check(near(findNode(p.tree,id).quad[1].x,neighbor.quad[0].x-p.params.gapV)&&p.overlay.svg.querySelector('.pl-ov-snap-guide'),'フリー角は隣コマから既定間隔へ吸着・橙guide');release();const snapped=JSON.stringify(p.tree);
+  check(core.history.stack.length===history&&!q(p,'[data-action="draft-undo"]').disabled,'draft編集はcommitted Historyに追加しない');
+  q(p,'[data-action="draft-undo"]').click();check(JSON.stringify(p.tree)===before,'SVG戻すでドラッグ前へ復元');q(p,'[data-action="draft-redo"]').click();check(JSON.stringify(p.tree)===snapped,'SVGやり直すでドラッグ後へ復元');
+  dragCorner(target,{altKey:true});check(near(findNode(p.tree,id).quad[1].x,target.x)&&!p.overlay.svg.querySelector('.pl-ov-snap-guide'),'Altでフリー角吸着を解除');release();
+  const camera=core.cameraSystem,rotation=camera.worldContainer.rotation;camera.worldContainer.rotation=Math.PI/2;core.eventBus.emit('camera:transform-changed');p.overlay.render();
+  check(p.overlay.canvasPerScreenPixel()>.1,'Camera90度でも画面pxの許容距離がゼロにならない');dragCorner(target);check(near(findNode(p.tree,id).quad[1].x,neighbor.quad[0].x-p.params.gapV),'Camera回転中も隣コマ間隔へ吸着');release();camera.worldContainer.rotation=rotation;core.eventBus.emit('camera:transform-changed');
+  p=preparePanel();id=p.selectedId;const quad=findNode(p.tree,id).quad.map(v=>({...v})),center=quad.reduce((c,v)=>({x:c.x+v.x/4,y:c.y+v.y/4}),{x:0,y:0});
+  const at=p.overlay._toScreen(center),end=p.overlay._toScreen({x:center.x+2,y:center.y+35});p.overlay.svg.querySelector(`[data-panel-id="${id}"]`).dispatchEvent(new win.PointerEvent('pointerdown',{pointerId:72,pointerType:'mouse',button:0,ctrlKey:true,clientX:at.x,clientY:at.y,bubbles:true}));win.dispatchEvent(new win.PointerEvent('pointermove',{pointerId:72,pointerType:'mouse',ctrlKey:true,clientX:end.x,clientY:end.y}));
+  const moved=findNode(p.tree,id).quad;check(near(moved[0].x,quad[0].x)&&moved.every((v,i)=>near(v.x-quad[i].x,moved[0].x-quad[0].x)&&near(v.y-quad[i].y,moved[0].y-quad[0].y))&&p.snapGuides.length,'本体Ctrl dragでも吸着・四辺の形を保持');win.dispatchEvent(new win.PointerEvent('pointerup',{pointerId:72,pointerType:'mouse'}));
+  const preparedTree=JSON.stringify(p.tree),preparedHistory=core.history.stack.length;const applied=p.apply();check(applied.ok&&!p._draftUndo.length&&core.history.stack.length===preparedHistory+1,'確定は一History・draftやり直しを区切る');
+  q(p,'[data-action="load-active"]').click();check(!p._draftUndo.length&&p.editing,'上部再編集で新しいdraft履歴を開始');
+  p.selectedId=id;p._syncControls();const snapshot=core.layerSystem.createLayerRasterSnapshot(core.layerSystem.getActiveLayer());p._onAction('toggle-free');check(!q(p,'[data-action="draft-undo"]').disabled,'再編集内の操作もdraft Undo対象');q(p,'[data-action="draft-undo"]').click();const afterDraft=core.layerSystem.createLayerRasterSnapshot(core.layerSystem.getActiveLayer());check(JSON.stringify(core.layerSystem.getActiveLayer().layerData.panelLayout.tree)===preparedTree&&core.history.stack.length===preparedHistory+1&&snapshot.pixels.every((v,i)=>v===afterDraft.pixels[i]),'draft Undoは確定画素/recipe/Historyを変更しない');
+  q(p,'[data-output="paper"]').click();const undoCount=p._draftUndo.length;q(p,'[data-action="draft-undo"]').click();input(q(p,'[data-param="margin"]'),p.params.margin+1);check(p._draftUndo.length<=undoCount&&q(p,'[data-action="draft-redo"]').disabled,'分岐編集は古いredoを捨てる');
+  for(const [width,height] of [[1280,720],[360,640],[360,400]]){
+   frame.style.width=width+'px';frame.style.height=height+'px';win.dispatchEvent(new win.Event('resize'));await delay(30);
+   for(const name of ['panelLayout','balloon','lettering','focusLines','tone']){
+    let root,scroll;
+    if(name==='tone'){core.popupManager.show('quickAccess');const qa=core.popupManager.get('quickAccess');qa._switchTab('tone');root=qa.tonePanel.root;scroll=root.querySelector('.qa-tone-scroll');qa._clampCurrentPanelPosition({save:false});}
+    else{core.popupManager.show(name);const tool=core.popupManager.get(name);root=tool.popup;scroll=root.querySelector('.pl-body-scroll,.bl-body-scroll,.lettering-popup__body,.focus-lines-body-scroll');}
+    await delay(30);const bar=root.querySelector('.manga-edit-actions'),r=bar.getBoundingClientRect(),top=r.top;
+    check(r.width>0&&r.top>=0&&r.bottom<=height&&r.left>=0&&r.right<=width,'上部操作がviewport内 '+name+' '+width+'×'+height);
+    check(!root.querySelector(':scope > .pl-title')&&root.querySelectorAll('[data-action="apply"]').length===1,'重複タイトル/適用ボタンなし '+name);
+    if(scroll)scroll.scrollTop=scroll.scrollHeight;
+    check(near(bar.getBoundingClientRect().top,top),'設定scrollでも上部操作は固定 '+name);
+    const visibleButtons=[...bar.querySelectorAll('button')].filter(el=>!el.hidden);check(visibleButtons.every(el=>{const b=el.getBoundingClientRect();return b.left>=r.left-.5&&b.right<=r.right+.5&&el.scrollWidth<=el.clientWidth+1;}),'操作文字が横にはみ出さない '+name);
+   }
+  }
+  frame.src='../index.html';await delay(50);await ready();const restored=core.popupManager.get('lettering');check(restored.sizeSlots.values[2]===84,'実製品のreload後も登録サイズが復元');
+  check(typeof JSON.parse(win.localStorage.getItem('tegaki-lettering-ui-v1')).fontDetailsOpen==='boolean','既存UI設定を保存時に保持');
+  state.textContent='全件PASS';await showLetter();
+ }catch(error){state.textContent='FAIL';out.textContent+='FAIL '+error.message+'\n';console.error(error);}
+ finally{for(const [key,value] of Object.entries(prefs))value===null?win.localStorage.removeItem(key):win.localStorage.setItem(key,value);document.querySelector('#run').disabled=false;}
+};
+</script></html>

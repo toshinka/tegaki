@@ -1167,7 +1167,13 @@ export class PixelSelectionSystem {
             }
             const shapeEditor = this.areaTools?.shape;
             const polygonEditor = this.areaTools?.polygon;
-            if (polygonEditor?.isEditing?.() && this.toolActive && this.toolMode === 'shape-polygon'
+            if (event.key === 'Escape' && this.areaTools?.lassoErase?.hasActiveDrag()) {
+                this.areaTools.lassoErase.cancel();
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
+            if (polygonEditor?.isEditing?.() && this.toolActive && ['shape-polygon', 'erase-polygon'].includes(this.toolMode)
                 && !event.ctrlKey && !event.metaKey && !event.altKey) {
                 if (event.key === 'Enter') {
                     polygonEditor.commit();
@@ -1363,7 +1369,9 @@ export class PixelSelectionSystem {
                 return;
             }
         }
-        if (this.cameraSystem?.isCanvasMoveMode?.()) return;
+        // Camera enters move mode on its bubble pointerdown. Selection capture
+        // must yield to Space before that first event, not only after mode starts.
+        if (this.cameraSystem?.spacePressed || this.cameraSystem?.isCanvasMoveMode?.()) return;
         if (!this.transformPreviewCaptureMode && this.layerSystem?.vKeyPressed) return;
         const target = this._getActiveSelectionTarget();
         if (!target) return;
@@ -1434,7 +1442,7 @@ export class PixelSelectionSystem {
     }
 
     _handlePointerMove(event) {
-        if (this.toolActive && (this.toolMode === 'shape-rect' || this.toolMode === 'shape-ellipse' || this.toolMode === 'shape-polygon')) {
+        if (this.toolActive && ['shape-rect', 'shape-ellipse', 'shape-polygon', 'erase-polygon'].includes(this.toolMode)) {
             this.areaTools?.shape?.hover?.(event);
             this.areaTools?.polygon?.hover?.(event);
         }
@@ -1926,6 +1934,7 @@ export class PixelSelectionSystem {
         this.areaTools.renderMask(this.state?.mask ? this._getSelectionContext() : null);
         this.areaTools.shape?.render?.();
         this.areaTools.polygon?.render?.();
+        this.areaTools.lassoErase?.render?.();
         this.areaTools.border?.render?.();
         this._watchMaskOverlay();
     }

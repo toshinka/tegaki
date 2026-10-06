@@ -34,6 +34,11 @@
 #lettering-popup > :not(.lettering-popup__body) { flex-shrink: 0; }
 #lettering-popup .lettering-popup__body { flex: 1 1 auto; min-height: 40px; overflow-y: auto; overscroll-behavior: contain; padding-right: 3px; }
 #lettering-popup .lettering-popup__commit { border-top: 1px solid var(--futaba-light-medium); margin-top: 6px; padding-top: 3px; }
+#lettering-popup .manga-edit-actions.lettering-popup__commit { border-top: 0; margin-top: 0; padding-top: 3px; }
+#lettering-popup .lettering-size-slots { margin: 5px 0 8px; }
+#lettering-popup .lettering-size-slots__title { display: flex; align-items: center; justify-content: space-between; gap: 4px; font-size: 10px; margin-bottom: 4px; }
+#lettering-popup .lettering-size-slots__title small { font-size: 9px; color: var(--futaba-light-maroon); }
+#lettering-popup .lettering-size-slots__row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
 #lettering-popup .lettering-popup__shortcut { margin: 5px 0 0; font-size: 9px; }
 
 #lettering-popup *,

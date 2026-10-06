@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rive 多関節ワークベンチ</title>
+  <style>
+    :root { color-scheme: light; --ink:#3c2023; --muted:#735b5e; --paper:#fffaf7; --card:#fff; --line:#d8b9af; --accent:#9b2942; --accent-soft:#f5dce0; --good:#236b4c; --bad:#a32338; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#f2e8e1; color:var(--ink); font:14px/1.45 system-ui, -apple-system, "Yu Gothic", sans-serif; }
+    main { width:min(1220px,100%); margin:0 auto; padding:14px; }
+    h1 { margin:0; font-size:20px; }
+    h2 { margin:0 0 8px; font-size:15px; }
+    p { margin:6px 0; }
+    button, input, select { font:inherit; }
+    button { border:1px solid #a4787c; border-radius:5px; padding:6px 9px; background:#fff; color:var(--ink); cursor:pointer; }
+    button:hover:not(:disabled), button.selected { border-color:var(--accent); background:var(--accent-soft); }
+    button:disabled, input:disabled { cursor:not-allowed; opacity:.55; }
+    input[type=number], input[type=range] { width:100%; }
+    input[type=number] { border:1px solid var(--line); border-radius:4px; padding:5px; background:#fff; }
+    .topbar { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    .topbar .hint { color:var(--muted); max-width:720px; }
+    .workbench-grid { display:grid; grid-template-columns:minmax(0,1.12fr) minmax(300px,.88fr); gap:12px; align-items:start; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px; min-width:0; box-shadow:0 1px 2px #5a31300d; }
+    .preview-card { min-width:0; }
+    .preview-stage { position:relative; width:100%; min-height:230px; display:grid; place-items:center; padding:10px; background:repeating-conic-gradient(#eadbd5 0 25%,#fff5ef 0 50%) 50%/20px 20px; border:1px solid var(--line); }
+    .preview-inner { position:relative; width:min(100%,720px); line-height:0; }
+    #preview { display:block; width:100%; height:auto; max-width:100%; image-rendering:auto; background:transparent; }
+    [data-chain-placement-mode="true"] #preview { visibility:hidden; }
+    #chain-overlay { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+    #chain-overlay image { opacity:.16; pointer-events:none; }
+    .chain-bone-line { stroke:#8e2942; stroke-width:2; vector-effect:non-scaling-stroke; pointer-events:stroke; }
+    .chain-joint { fill:#fff7f0; stroke:#8e2942; stroke-width:2; cursor:pointer; vector-effect:non-scaling-stroke; }
+    .chain-joint.selected, .chain-warp.selected { fill:#ffd35c; stroke:#782035; }
+    .chain-joint-label { fill:#57252d; font:11px sans-serif; }
+    .chain-warp { fill:#2c7c9e; stroke:#f8ffff; stroke-width:1.3; opacity:.8; cursor:pointer; vector-effect:non-scaling-stroke; }
+    .chain-warp.selected { fill:#f19a2a; }
+    #chain-warp-layer { pointer-events:all; }
+    .toolbar, .button-row, .field-row, .tabs { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+    .toolbar { margin:8px 0 0; }
+    .toolbar label, .field { display:grid; gap:3px; min-width:85px; flex:1 1 100px; }
+    .small { font-size:12px; color:var(--muted); }
+    .section-title { margin:0 0 6px; font-weight:700; color:#632f35; }
+    .controls { display:grid; gap:10px; }
+    .controls section { border-top:1px solid #ecd9d2; padding-top:9px; }
+    .controls section:first-child { border-top:0; padding-top:0; }
+    .selection-list { display:flex; flex-wrap:wrap; gap:4px; max-height:92px; overflow:auto; }
+    .selection-list button { padding:3px 6px; font-size:12px; }
+    #chain-point-list button { min-width:28px; }
+    .draft-actions { display:flex; gap:7px; align-items:center; }
+    #chain-apply { background:#f7d7d9; border-color:#9b2942; font-weight:700; }
+    #chain-discard { background:#fff5ef; }
+    [data-status-kind=error], .status-error { color:var(--bad); }
+    [data-status-kind=ready], .status-ready { color:var(--good); }
+    .status { min-height:22px; font-weight:600; }
+    .diagnostics { margin-top:12px; display:grid; gap:7px; }
+    .diagnostics pre { margin:0; max-height:300px; overflow:auto; padding:8px; border-radius:4px; background:#291b1d; color:#ffece5; font:11px/1.35 ui-monospace,Consolas,monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .diagnostics details { border-top:1px solid #ecd9d2; padding-top:8px; }
+    .danger { color:var(--bad); }
+    @media (max-width:760px) { .workbench-grid { grid-template-columns:1fr; } .topbar { display:block; } .preview-stage { min-height:180px; } main { padding:8px; } }
+  </style>
+</head>
+<body>
+  <main id="rive-workbench" data-editor-status="loading" data-testid="rive-workbench">
+    <div class="topbar">
+      <div>
+        <h1>多関節RIG</h1>
+        <p class="hint">姿勢を設定して適用し、スライダーで動きを確認します。未適用の変更は保存や画像追加に含まれません。</p>
+      </div>
+      <div class="small">元画像上の配置 / 動きの結果</div>
+    </div>
+
+    <div class="workbench-grid">
+      <section class="card preview-card" aria-label="native preview">
+        <h2>動きのプレビューと元画像上の配置</h2>
+        <div class="preview-stage">
+          <div class="preview-inner" id="preview-stage">
+            <canvas id="preview" width="320" height="200" aria-label="Rive native 1x preview" data-testid="rive-workbench-preview"></canvas>
+            <svg id="chain-overlay" viewBox="0 0 320 200" preserveAspectRatio="xMidYMid meet" role="group" aria-label="chain authoring overlay" data-testid="rive-chain-overlay">
+              <image id="chain-source-image" x="0" y="0" width="320" height="200" preserveAspectRatio="none" aria-hidden="true"></image>
+              <g id="chain-warp-layer" data-testid="rive-chain-warp-layer" aria-label="45点warp目標"></g>
+              <g id="chain-joint-layer" data-testid="rive-chain-joint-layer" aria-label="関節配置"></g>
+            </svg>
+          </div>
+        </div>
+        <div class="toolbar">
+          <label>PNG素材 <input id="image-input" type="file" accept="image/png" data-testid="rive-chain-image-input"></label>
+          <button id="chain-placement" type="button" aria-pressed="false" data-testid="rive-chain-placement">配置モードをON</button>
+          <button id="pixel-inspect" type="button" data-testid="rive-chain-pixel-inspect">描画を検査</button>
+        </div>
+        <p class="small">配置モードでは元画像上の関節と変形点を動かします。「適用」でプレビューに反映します。</p>
+        <div class="diagnostics" aria-label="pixel report">
+          <details data-testid="rive-chain-pixel-details"><summary>描画検査details</summary><pre id="pixel-report" data-testid="rive-chain-pixel-report">未検査（「描画を検査」をクリックしてください）</pre></details>
+        </div>
+      </section>
+
+      <aside class="card controls" aria-label="chain authoring controls">
+        <section>
+          <p class="section-title">関節の初期配置</p>
+          <div class="button-row">
+            <button id="chain-preset-arm" type="button" data-chain-preset="arm3" data-testid="rive-chain-preset-arm">腕3関節</button>
+            <button id="chain-preset-snake" type="button" data-chain-preset="snake6" data-testid="rive-chain-preset-snake">ヘビ6関節</button>
+            <label class="field">関節数
+              <select id="chain-count" data-testid="rive-chain-count"><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select>
+            </label>
+          </div>
+        </section>
+
+        <section>
+          <p class="section-title">選択関節</p>
+          <div id="chain-joint-list" class="selection-list" aria-label="関節選択" data-testid="rive-chain-joint-list"></div>
+          <div class="field-row">
+            <label class="field">X（原PNG px）<input id="chain-joint-x" type="number" step="0.001" data-testid="rive-chain-joint-x"></label>
+            <label class="field">Y（原PNG px）<input id="chain-joint-y" type="number" step="0.001" data-testid="rive-chain-joint-y"></label>
+            <label class="field">終点角（度）<input id="chain-angle" type="number" min="-90" max="90" step="0.001" data-testid="rive-chain-angle"></label>
+          </div>
+          <p class="small">関節を選び、元画像上の位置と終点角を設定します。</p>
+        </section>
+
+        <section>
+          <p class="section-title">45点メッシュ</p>
+          <div id="chain-point-list" class="selection-list" aria-label="mesh点選択" data-testid="rive-chain-point-list"></div>
+          <div class="field-row">
+            <label class="field">終点ΔX（原PNG px）<input id="chain-warp-x" type="number" step="0.001" data-testid="rive-chain-warp-x"></label>
+            <label class="field">終点ΔY（原PNG px）<input id="chain-warp-y" type="number" step="0.001" data-testid="rive-chain-warp-y"></label>
+          </div>
+          <p class="small">メッシュは9列×5行です。選択点を終点で移動する量を入力します。</p>
+        </section>
+
+        <section>
+          <p class="section-title">選択点の追従配分</p>
+          <div class="field-row">
+            <label class="field">骨A<input id="chain-weight-a" type="number" min="0" max="7" step="1" data-testid="rive-chain-weight-a"></label>
+            <label class="field">骨B<input id="chain-weight-b" type="number" min="0" max="7" step="1" data-testid="rive-chain-weight-b"></label>
+            <label class="field">mix 0〜255<input id="chain-weight-mix" type="number" min="0" max="255" step="1" data-testid="rive-chain-weight-mix"></label>
+          </div>
+          <p class="small">骨への追従配分を入力します。骨Bへの配分は0〜255です。</p>
+        </section>
+
+        <section>
+          <p class="section-title">未適用の変更</p>
+          <div class="draft-actions">
+            <button id="chain-apply" type="button" data-testid="rive-chain-apply">適用</button>
+            <button id="chain-discard" type="button" data-testid="rive-chain-discard">変更を戻す</button>
+          </div>
+          <p id="chain-draft-status" class="small" role="status" aria-live="polite" data-testid="rive-chain-draft-status">確定chainを表示中です。</p>
+        </section>
+
+        <section>
+          <p class="section-title">ポーズ</p>
+          <div class="button-row">
+            <button id="playback-start" type="button" data-testid="rive-chain-start">先頭</button>
+            <button id="playback-play" type="button" data-testid="rive-chain-play">再生</button>
+            <button id="playback-pause" type="button" data-testid="rive-chain-pause">停止</button>
+            <button id="playback-end" type="button" data-testid="rive-chain-end">終点</button>
+            <label><input id="playback-loop" type="checkbox" data-testid="rive-chain-loop"> ループ</label>
+          </div>
+          <label>ポーズ <input id="progress" type="range" min="0" max="1" step="0.001" value="0" data-testid="rive-chain-progress"></label>
+          <output id="progress-value" data-testid="rive-chain-progress-value">0.00</output>
+          <output id="playback-status" class="small" data-testid="rive-chain-playback-state">idle / 0.00</output>
+        </section>
+
+        <section>
+          <p class="section-title">保存と画像</p>
+          <div class="button-row">
+            <button id="save" type="button" data-testid="rive-chain-save">保存</button>
+            <button id="reopen" type="button" data-testid="rive-chain-reopen">再読込</button>
+            <button id="cancel" type="button" data-testid="rive-chain-cancel">取消</button>
+            <button id="save-frame" type="button" data-testid="rive-chain-save-frame">PNG保存</button>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <p id="status" class="card status" role="status" aria-live="polite" data-editor-status="loading" data-testid="rive-chain-status">読み込み中…</p>
+    <section class="card diagnostics" aria-label="AI snapshot">
+      <details data-testid="rive-chain-snapshot-details"><summary>AI snapshot（nonceは表示しません）</summary><pre id="snapshot" data-testid="rive-chain-snapshot">{}</pre></details>
+    </section>
+  </main>
+  <script type="module" src="/workbench.js"></script>
+</body>
+</html>

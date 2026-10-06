@@ -1,6 +1,6 @@
 /** Pure stroke conversion/linked topology and free transforms. Browser input is separate. */
 import assert from 'node:assert/strict';
-import { panelSplitFromStroke, transformFreePanel } from '../system/panel-layout-gestures.js';
+import { panelSplitFromStroke, transformFreePanel, snapFreePanelPoint, snapFreePanelMove } from '../system/panel-layout-gestures.js';
 import { buildPresetById, resolvePanelLayout, splitPanel, findNode, toggleFreePanel, sanitizePanelLayoutData } from '../system/panel-layout.js';
 const quad=[{x:0,y:0},{x:200,y:0},{x:200,y:300},{x:0,y:300}],near=(a,b)=>assert(Math.abs(a-b)<1e-8);
 let cut=panelSplitFromStroke(quad,{x:5,y:90},{x:195,y:120});assert(cut.ok);assert.equal(cut.dir,'h');near(cut.ratio,.35);near(cut.slant,-2/19);
@@ -17,3 +17,22 @@ const center=q=>q.reduce((c,p)=>({x:c.x+p.x/4,y:c.y+p.y/4}),{x:0,y:0});near(cent
 assert(sanitizePanelLayoutData({tree:changed}));assert.equal(transformFreePanel(tree,id,{scale:0}),tree);assert.equal(transformFreePanel(tree,id,{rotation:NaN}),tree);
 assert.equal(transformFreePanel(tree,id,{scale:.0001}),tree);assert.deepEqual(findNode(tree,id).quad,before);
 console.log('PASS panel stroke/snap/rejection/topology/free transform/immutability');
+const neighbor = { panels: [{ id: 'neighbor', quad, deleted: false }] };
+let result = snapFreePanelPoint(neighbor, 'free', { x: 214, y: 180 }, { gapV: 12 });
+near(result.point.x, 212); near(result.point.y, 180); assert.equal(result.guides.length, 1);
+result = snapFreePanelPoint(neighbor, 'free', { x: 202, y: 450 });
+near(result.point.x, 200); assert(result.guides[0][1].y > 450, 'edge extends past the neighbor');
+result = snapFreePanelPoint(neighbor, 'free', { x: 213, y: 322 }, { gapV: 12, gapH: 20 });
+near(result.point.x, 212); near(result.point.y, 320); assert.equal(result.guides.length, 2);
+assert.deepEqual(snapFreePanelPoint(neighbor, 'neighbor', { x: 201, y: 100 }).guides, []);
+assert.deepEqual(snapFreePanelPoint({ panels: [{ ...neighbor.panels[0], deleted: true }] }, 'free', { x: 201, y: 100 }).guides, []);
+assert.deepEqual(snapFreePanelPoint(neighbor, 'free', { x: 240, y: 100 }).guides, []);
+const rotated = { panels: [{ id: 'other', quad: quad.map(p => ({ x: (p.x - p.y) / Math.SQRT2, y: (p.x + p.y) / Math.SQRT2 })) }] };
+result = snapFreePanelPoint(rotated, 'free', { x: 142, y: 142 });
+near(result.point.x + result.point.y, 200 * Math.SQRT2); assert(result.guides.length);
+const moved = snapFreePanelMove(neighbor, 'free', quad, { x: 214, y: 400 }, { gapV: 12 });
+near(moved.delta.x, 212); near(moved.delta.y, 400); assert(moved.guides.length);
+const twoAxes = snapFreePanelMove(neighbor, 'free', quad, { x: 212, y: 318 }, { gapV: 12, gapH: 20 });
+near(twoAxes.delta.x, 212); near(twoAxes.delta.y, 320); assert.equal(twoAxes.guides.length, 2);
+assert.deepEqual(quad, [{x:0,y:0},{x:200,y:0},{x:200,y:300},{x:0,y:300}]);
+console.log('PASS free panel edge extension/default gutters/intersection/rotation/body translation/immutability');

@@ -1,13 +1,15 @@
 /**
- * ROLE: WP-029 の固定 PNG/source template、制約、snapshot の純粋な authoring model。
+ * ROLE: legacy PNG/sourceとWP-039 chain sourceを接続するauthoring model/PNG境界/snapshot。
  * AUTHORITY: source と image が編集正本。`.riv` は公式 CLI の派生物で、製品 schema は所有しない。
- * INVARIANTS: RGBA PNG の境界、rest 30°/end -90..90°、実寸 4 vertex/2 triangle mesh を維持する。
- * RELATED: advanced/rive-editor/server.mjs、weight-model.mjs、build/verify-rive-editor-model.mjs、WP-034 card。
+ * INVARIANTS: RGBA PNG の境界、rest 30°/end -90..90°、既存quad source bytes、grid3の8 outline+1 centerを維持する。
+ * RELATED: server.mjs、chain-model.mjs、weight-model.mjs、mesh-profile.mjs、pivot-model.mjs、WP-039 card。
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { assertPivot } from './pivot-model.mjs';
+import { createChainSource, parseChainSource } from './chain-model.mjs';
 import {
     DEFAULT_END_WEIGHTS,
     assertEndWeights,
@@ -15,6 +17,20 @@ import {
     decodeWeightRecords,
     encodeWeightRecords,
 } from './weight-model.mjs';
+import {
+    MESH_PROFILES,
+    assertMeshProfile,
+    assertMeshWeights,
+    assertProfileTriangles,
+    assertProfileVertices,
+    assertTriangleIndices,
+    createProfileVertices,
+    decodeProfileWeightRecords,
+    encodeProfileWeightRecords,
+    getMeshProfileDefinition,
+    gridWeightsFromQuad,
+    triangleIndexBytesForProfile,
+} from './mesh-profile.mjs';
 
 export const SNAPSHOT_SCHEMA = 'tegaki.rive-editor.state.v1';
 export const MODEL_SCHEMA = 'tegaki.rive-editor.model.v1';
@@ -252,7 +268,7 @@ export function createRiveYaml(width, height) {
     return `name: tegaki_rive_editor\nmain: RiveEditorProof\nartboard:\n  width: ${width}\n  height: ${height}\n  background: "#00000000"\nlogs:\n  file: build/rive.log\n  problems: build/problems.log\n`;
 }
 
-export function createSource({ width, height, angle = LIMITS.restAngle, meshWeights = DEFAULT_END_WEIGHTS }) {
+function createQuadSource({ width, height, angle = LIMITS.restAngle, meshWeights = DEFAULT_END_WEIGHTS, pivot }) {
     const safeAngle = assertAngle(angle);
     if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) throw new Error('Image dimensions are required.');
     const safeWeights = assertEndWeights(meshWeights);
@@ -261,7 +277,8 @@ export function createSource({ width, height, angle = LIMITS.restAngle, meshWeig
         const record = weightRecords.find(entry => entry.name === name);
         return `<Weight values="${record.values}" indices="${record.indices}"/>`;
     };
-    const rootX = 0;
+    const safePivot = assertPivot(pivot, width, height);
+    const rootX = safePivot.x - width / 2;
     const centerX = width * 0.5;
     const centerY = height * 0.5;
     const halfWidth = width * 0.5;
@@ -271,7 +288,7 @@ export function createSource({ width, height, angle = LIMITS.restAngle, meshWeig
     const end = formatNumber(radians(safeAngle));
     return `<Rive version="1" kind="fragment">
     <Artboard width="${width}" height="${height}" styleId="0:5" name="RiveEditorProof" id="0:2">
-        <RootBone x="${formatNumber(rootX)}" y="${formatNumber(centerY)}" length="${formatNumber(boneLength)}" rotation="0" name="Root" id="0:40">
+        <RootBone x="${formatNumber(rootX)}" y="${formatNumber(safePivot.y)}" length="${formatNumber(boneLength)}" rotation="0" name="Root" id="0:40">
             <Bone length="${formatNumber(boneLength)}" rotation="${rest}" name="End" id="0:41"/>
         </RootBone>
 
@@ -290,8 +307,8 @@ export function createSource({ width, height, angle = LIMITS.restAngle, meshWeig
                     ${weightTag('BottomLeft')}
                 </ContourMeshVertex>
                 <Skin tx="0" ty="0" name="Skin">
-                    <Tendon boneId="0:40" tx="-${formatNumber(halfWidth)}" ty="0" name="RootTendon"/>
-                    <Tendon boneId="0:41" xx="0.8660254" xy="0.5" yx="-0.5" yy="0.8660254" tx="0" ty="0" name="EndTendon"/>
+                    <Tendon boneId="0:40" tx="${formatNumber(safePivot.x - width)}" ty="${formatNumber(safePivot.y - halfHeight)}" name="RootTendon"/>
+                    <Tendon boneId="0:41" xx="0.8660254" xy="0.5" yx="-0.5" yy="0.8660254" tx="${formatNumber(safePivot.x - halfWidth)}" ty="${formatNumber(safePivot.y - halfHeight)}" name="EndTendon"/>
                 </Skin>
             </Mesh>
         </Image>
@@ -312,17 +329,139 @@ export function createSource({ width, height, angle = LIMITS.restAngle, meshWeig
 `;
 }
 
+function createGridSource({ width, height, angle = LIMITS.restAngle, meshWeights, pivot }) {
+    const safeAngle = assertAngle(angle);
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) throw new Error('Image dimensions are required.');
+    const safeWeights = assertMeshWeights(MESH_PROFILES.grid3, meshWeights);
+    const weightRecords = new Map(encodeProfileWeightRecords(MESH_PROFILES.grid3, safeWeights).map(record => [record.name, record]));
+    const weightTag = name => {
+        const record = weightRecords.get(name);
+        return `<Weight values="${record.values}" indices="${record.indices}"/>`;
+    };
+    const safePivot = assertPivot(pivot, width, height);
+    const rootX = safePivot.x - width / 2;
+    const centerX = width * 0.5;
+    const centerY = height * 0.5;
+    const halfWidth = width * 0.5;
+    const halfHeight = height * 0.5;
+    const boneLength = width * 0.5;
+    const rest = formatNumber(radians(LIMITS.restAngle));
+    const end = formatNumber(radians(safeAngle));
+    const vertices = createProfileVertices(MESH_PROFILES.grid3, width, height, safeWeights);
+    const vertexTags = vertices.map(vertex => `                <${vertex.kind} x="${formatNumber(vertex.x)}" y="${formatNumber(vertex.y)}" u="${formatNumber(vertex.u)}" v="${formatNumber(vertex.v)}" name="${vertex.name}">
+                    ${weightTag(vertex.name)}
+                </${vertex.kind}>`).join('\n');
+    return `<Rive version="1" kind="fragment">
+    <Artboard width="${width}" height="${height}" styleId="0:5" name="RiveEditorProof" id="0:2">
+        <RootBone x="${formatNumber(rootX)}" y="${formatNumber(safePivot.y)}" length="${formatNumber(boneLength)}" rotation="0" name="Root" id="0:40">
+            <Bone length="${formatNumber(boneLength)}" rotation="${rest}" name="End" id="0:41"/>
+        </RootBone>
+
+        <Image x="${formatNumber(centerX)}" y="${formatNumber(centerY)}" originX="0.5" originY="0.5" assetId="0:60" name="RiggedMark" id="0:20">
+            <Mesh triangleIndexBytes="${triangleIndexBytesForProfile(MESH_PROFILES.grid3)}" name="GridMesh3" id="0:21">
+${vertexTags}
+                <Skin tx="0" ty="0" name="Skin">
+                    <Tendon boneId="0:40" tx="${formatNumber(safePivot.x - width)}" ty="${formatNumber(safePivot.y - halfHeight)}" name="RootTendon"/>
+                    <Tendon boneId="0:41" xx="0.8660254" xy="0.5" yx="-0.5" yy="0.8660254" tx="${formatNumber(safePivot.x - halfWidth)}" ty="${formatNumber(safePivot.y - halfHeight)}" name="EndTendon"/>
+                </Skin>
+            </Mesh>
+        </Image>
+
+        <LinearAnimation fps="60" duration="60" loopValue="oneShot" name="EndPose" id="0:6">
+            <KeyedObject objectId="0:41">
+                <KeyedProperty propertyKey="15">
+                    <KeyFrameDouble value="${rest}" interpolationType="linear" frame="0"/>
+                    <KeyFrameDouble value="${end}" interpolationType="linear" frame="60"/>
+                </KeyedProperty>
+            </KeyedObject>
+        </LinearAnimation>
+        <LayoutComponentStyle name="Artboard Style" id="0:5"/>
+    </Artboard>
+
+    <ImageAsset file="fixture.png" name="Rigged mark" id="0:60"/>
+</Rive>
+`;
+}
+
+export function createSource(options = {}) {
+    if (Object.hasOwn(options, 'chain')) return createChainSource(options);
+    const requestedProfile = Object.hasOwn(options, 'profile')
+        ? options.profile
+        : Object.hasOwn(options, 'meshProfile') ? options.meshProfile : undefined;
+    const profile = assertMeshProfile(requestedProfile);
+    if (profile === MESH_PROFILES.quad) return createQuadSource(options);
+    const meshWeights = options.meshWeights === undefined
+        ? gridWeightsFromQuad(DEFAULT_END_WEIGHTS)
+        : options.meshWeights;
+    return createGridSource({ ...options, meshWeights });
+}
+
+function singleTagAttributes(text, name) {
+    const tags = [...text.matchAll(new RegExp(`<${name}\\b([^>]*)>`, 'g'))];
+    if (tags.length !== 1) return null;
+    const remainder = tags[0][1].replace(/([A-Za-z][A-Za-z0-9]*)="([^"]*)"/g, '').trim();
+    if (remainder !== '' && remainder !== '/') return null;
+    const attributes = {};
+    for (const match of tags[0][1].matchAll(/([A-Za-z][A-Za-z0-9]*)="([^"]*)"/g)) {
+        if (Object.hasOwn(attributes, match[1])) return null;
+        attributes[match[1]] = match[2];
+    }
+    return attributes;
+}
+
+function numericAttribute(attributes, name, fallback) {
+    const value = attributes?.[name];
+    if (value === undefined) return fallback;
+    if (!/^-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/.test(value)) return Number.NaN;
+    return Number(value);
+}
+
+function onlyAttributes(attributes, names) {
+    return attributes && Object.keys(attributes).every(name => names.includes(name));
+}
+
 export function parseSourceMetadata(source) {
     const text = String(source || '');
+    if (text.includes('name="ChainGrid"')) return parseChainSource(text);
     const artboard = text.match(/<Artboard width="([0-9.]+)" height="([0-9.]+)"[^>]*name="RiveEditorProof"/);
     const frames = [...text.matchAll(/<KeyFrameDouble value="([^\"]+)" interpolationType="linear" frame="(0|60)"\/>/g)];
-    const vertexMatches = [...text.matchAll(/<ContourMeshVertex\s+x="(-?[0-9.]+)"\s+y="(-?[0-9.]+)"\s+u="([0-9.]+)"\s+v="([0-9.]+)"\s+name="([A-Za-z]+)">\s*<Weight\s+values="([0-9]+)"\s+indices="([0-9]+)"\/>\s*<\/ContourMeshVertex>/g)];
-    const vertices = [...text.matchAll(/<ContourMeshVertex\b/g)];
     const endFrame = frames.find(frame => frame[2] === '60');
     const startFrame = frames.find(frame => frame[2] === '0');
     const image = text.match(/<Image\s+x="(-?[0-9.]+)"\s+y="(-?[0-9.]+)"/);
     const root = text.match(/<RootBone\s+x="(-?[0-9.]+)"\s+y="(-?[0-9.]+)"\s+length="(-?[0-9.]+)"/);
-    if (!artboard || !startFrame || !endFrame || vertices.length !== 4 || vertexMatches.length !== 4 || !image || !root || !text.includes('triangleIndexBytes="AAECAAID"')) return null;
+    const rootAttributes = singleTagAttributes(text, 'RootBone');
+    const endAttributes = singleTagAttributes(text, 'Bone');
+    const rootBlock = text.match(/<RootBone\b[^>]*>\s*<Bone\b[^>]*\/>\s*<\/RootBone>/);
+    const imageBlock = text.match(/<Image\b[^>]*>\s*<Mesh\b[^>]*>([\s\S]*?)<\/Mesh>\s*<\/Image>/);
+    const imageAttributes = singleTagAttributes(text, 'Image');
+    const skinAttributes = singleTagAttributes(text, 'Skin');
+    const tendonTags = [...text.matchAll(/<Tendon\b[^>]*>/g)];
+    const rootTendon = singleTagAttributes(tendonTags.filter(tag => /name="RootTendon"/.test(tag[0])).map(tag => tag[0]).join(''), 'Tendon');
+    const endTendon = singleTagAttributes(tendonTags.filter(tag => /name="EndTendon"/.test(tag[0])).map(tag => tag[0]).join(''), 'Tendon');
+    const meshMatches = [...text.matchAll(/<Mesh\s+triangleIndexBytes="([^"]+)"\s+name="([^"]+)"\s+id="[^"]+">([\s\S]*?)<\/Mesh>/g)];
+    if (!artboard || !startFrame || !endFrame || frames.length !== 2 || !image || !root || meshMatches.length !== 1
+        || !rootBlock || !imageBlock || !imageAttributes || !skinAttributes || tendonTags.length !== 2 || !rootTendon || !endTendon
+        || !onlyAttributes(rootAttributes, ['x', 'y', 'length', 'rotation', 'name', 'id'])
+        || !onlyAttributes(endAttributes, ['length', 'rotation', 'name', 'id'])) return null;
+    const meshMatch = meshMatches[0];
+    const meshName = meshMatch[2];
+    const profile = meshName === 'QuadMesh'
+        ? MESH_PROFILES.quad
+        : meshName === 'GridMesh3' ? MESH_PROFILES.grid3 : null;
+    if (!profile) return null;
+    const definition = getMeshProfileDefinition(profile);
+    const meshText = meshMatch[3];
+    const skinBlock = meshText.match(/<Skin\b[^>]*>\s*(<Tendon\b[^>]*\/>)\s*(<Tendon\b[^>]*\/>)\s*<\/Skin>/);
+    if (imageBlock[1] !== meshText || !skinBlock
+        || !/name="RootTendon"/.test(skinBlock[1]) || !/name="EndTendon"/.test(skinBlock[2])) return null;
+    const vertexTagCount = [...meshText.matchAll(/<(?:ContourMeshVertex|MeshVertex)\b/g)].length;
+    const weightTagCount = [...meshText.matchAll(/<Weight\b/g)].length;
+    const vertexMatches = [...meshText.matchAll(/<(ContourMeshVertex|MeshVertex)\s+x="(-?[0-9.]+)"\s+y="(-?[0-9.]+)"\s+u="([0-9.]+)"\s+v="([0-9.]+)"\s+name="([A-Za-z][A-Za-z0-9_-]*)">\s*<Weight\s+values="([0-9]+)"\s+indices="([0-9]+)"\/>\s*<\/\1>/g)];
+    if (vertexTagCount !== definition.vertexNames.length
+        || vertexMatches.length !== definition.vertexNames.length
+        || weightTagCount !== definition.vertexNames.length) return null;
+    const remainingChildren = vertexMatches.reduce((children, vertex) => children.replace(vertex[0], ''), meshText).trim();
+    if (remainingChildren !== skinBlock[0]) return null;
     const width = Number(artboard[1]);
     const height = Number(artboard[2]);
     const restAngle = degrees(Number(startFrame[1]));
@@ -332,20 +471,57 @@ export function parseSourceMetadata(source) {
     const rootX = Number(root[1]);
     const rootY = Number(root[2]);
     const boneLength = Number(root[3]);
-    const meshX = vertexMatches.map(vertex => Number(vertex[1]));
-    const meshY = vertexMatches.map(vertex => Number(vertex[2]));
+    let pivot;
+    try {
+        pivot = assertPivot({ x: rootX + width / 2, y: rootY }, width, height);
+        assertAngle(angle);
+    } catch {
+        return null;
+    }
+    const near = (value, expected) => Number.isFinite(value) && Math.abs(value - expected) <= 1e-6;
+    const number = numericAttribute;
+    if (!near(rootX, pivot.x - width / 2) || !near(rootY, pivot.y)
+        || !near(boneLength, width / 2) || !near(number(rootAttributes, 'rotation', 0), 0)
+        || rootAttributes.name !== 'Root' || rootAttributes.id !== '0:40'
+        || endAttributes.name !== 'End' || endAttributes.id !== '0:41'
+        || !near(number(endAttributes, 'length'), width / 2)
+        || !near(number(endAttributes, 'x', 0), 0) || !near(number(endAttributes, 'y', 0), 0)
+        || !near(number(endAttributes, 'rotation'), radians(LIMITS.restAngle))
+        || !near(Number(startFrame[1]), radians(LIMITS.restAngle))
+        || !near(imageX, width / 2) || !near(imageY, height / 2)
+        || !near(number(skinAttributes, 'tx', 0), 0) || !near(number(skinAttributes, 'ty', 0), 0)
+        || !near(number(skinAttributes, 'xx', 1), 1) || !near(number(skinAttributes, 'xy', 0), 0)
+        || !near(number(skinAttributes, 'yx', 0), 0) || !near(number(skinAttributes, 'yy', 1), 1)
+        || rootTendon.boneId !== '0:40' || endTendon.boneId !== '0:41'
+        || !near(number(rootTendon, 'tx'), pivot.x - width) || !near(number(rootTendon, 'ty'), pivot.y - height / 2)
+        || !near(number(rootTendon, 'xx', 1), 1) || !near(number(rootTendon, 'xy', 0), 0)
+        || !near(number(rootTendon, 'yx', 0), 0) || !near(number(rootTendon, 'yy', 1), 1)
+        || !near(number(endTendon, 'tx'), pivot.x - width / 2) || !near(number(endTendon, 'ty'), pivot.y - height / 2)
+        || !near(number(endTendon, 'xx'), 0.8660254) || !near(number(endTendon, 'xy'), 0.5)
+        || !near(number(endTendon, 'yx'), -0.5) || !near(number(endTendon, 'yy'), 0.8660254)) return null;
+    const meshX = vertexMatches.map(vertex => Number(vertex[2]));
+    const meshY = vertexMatches.map(vertex => Number(vertex[3]));
     let meshWeights;
     try {
-        const expectedUv = [[0, 0], [1, 0], [1, 1], [0, 1]];
         const records = vertexMatches.map((vertex, index) => {
-            const uv = [Number(vertex[3]), Number(vertex[4])];
-            if (vertex[5] !== ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'][index]
-                || uv[0] !== expectedUv[index][0] || uv[1] !== expectedUv[index][1]) {
-                throw new Error('Unsupported source vertex order or UV.');
-            }
-            return { name: vertex[5], values: Number(vertex[6]), indices: Number(vertex[7]) };
+            return { name: vertex[6], values: Number(vertex[7]), indices: Number(vertex[8]) };
         });
-        meshWeights = decodeWeightRecords(records);
+        const parsedVertices = vertexMatches.map(vertex => ({
+            kind: vertex[1],
+            x: Number(vertex[2]),
+            y: Number(vertex[3]),
+            u: Number(vertex[4]),
+            v: Number(vertex[5]),
+            name: vertex[6],
+            endWeight: 0,
+        }));
+        meshWeights = profile === MESH_PROFILES.quad
+            ? decodeWeightRecords(records)
+            : decodeProfileWeightRecords(profile, records);
+        parsedVertices.forEach((vertex, index) => { vertex.endWeight = meshWeights[index]; });
+        assertProfileVertices(profile, parsedVertices, width, height);
+        assertTriangleIndices(profile, meshMatch[1]);
+        assertProfileTriangles(profile, definition.triangles, definition.uvs);
     } catch {
         return null;
     }
@@ -359,21 +535,32 @@ export function parseSourceMetadata(source) {
     return {
         width,
         height,
+        rigMode: 'legacy',
+        chain: null,
         restAngle,
         angle,
-        vertices: vertices.length,
-        triangles: 2,
+        meshProfile: profile,
+        vertexCount: definition.vertexNames.length,
+        triangleCount: definition.triangles.length,
+        vertices: definition.vertexNames.length,
+        triangles: definition.triangles.length,
         imageX,
         imageY,
         rootX,
         rootY,
         boneLength,
+        pivot,
+        centerAtRotationPivot: profile === MESH_PROFILES.grid3 && pivot.x === width / 2 && pivot.y === height / 2,
         meshBounds,
         meshWeights,
     };
 }
 
 export function makeSnapshot(state) {
+    const sourceInfo = state.currentSource ? parseSourceMetadata(state.currentSource) : null;
+    const meshProfile = sourceInfo?.meshProfile || state.meshProfile || null;
+    const sourceWeights = sourceInfo?.rigMode === 'chain' ? null : sourceInfo?.meshWeights
+        || (state.meshWeights ? assertMeshWeights(meshProfile || MESH_PROFILES.quad, state.meshWeights) : null);
     return {
         schema: SNAPSHOT_SCHEMA,
         status: state.status,
@@ -385,11 +572,18 @@ export function makeSnapshot(state) {
             width: state.image.width,
             height: state.image.height,
         } : null,
-        angle: state.angle,
+        angle: sourceInfo?.rigMode === 'chain' ? sourceInfo.angle : state.angle,
         progress: state.progress,
         dirty: state.dirty === true,
         reason: state.reason || null,
-        meshWeights: state.meshWeights ? cloneEndWeights(state.meshWeights) : null,
+        meshProfile,
+        rigMode: sourceInfo?.rigMode || 'legacy',
+        chain: sourceInfo?.chain || null,
+        pivot: sourceInfo?.pivot ? { ...sourceInfo.pivot } : null,
+        centerAtRotationPivot: sourceInfo?.centerAtRotationPivot === true,
+        vertexCount: sourceInfo?.vertexCount ?? state.vertexCount ?? null,
+        triangleCount: sourceInfo?.triangleCount ?? state.triangleCount ?? null,
+        meshWeights: sourceWeights ? [...sourceWeights] : null,
         weightEditPhase: state.weightEditPhase || 'idle',
         weightDraft: state.weightDraft ? {
             endWeights: state.weightDraft.endWeights ? cloneEndWeights(state.weightDraft.endWeights) : null,

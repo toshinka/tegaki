@@ -7,13 +7,32 @@
 - Owner: 製品思想、優先順位、重大なUX/保存互換判断、最終制作受入、Git push。
 - Local Commander（このプロジェクトでOwnerが指定する司令チャット）: live checkout照合、scope確定、作業割当、競合防止、結果統合、差分/証拠の監査。通常SOL中、重大判断の整理はSOL高を使う。
 - Web Subcommander（Ownerが指定するWeb GPT SOL）: Ownerとの会話から目的・制作条件を整理し、外部調査、設計候補、反証、依頼Card案をLocal Commanderへ返す。実装割当・live checkout判断・closeを独立して行わない。就任入口は[Web Subcommander Card](ai/WEB_SUBCOMMANDER_CARD.md)。
+- dot（Ownerが指定する継続管理）: 既存担当のcompact状態と承認済みCardを読み、必要な継続連絡をLocal Commanderへ返す。初回はread-only接続確認。直接実装割当・新規担当作成・共有docs更新・closeは行わず、監視をheartbeatと二重起動しない。[dot就任カード](ai/DOT_COORDINATOR_CARD.md)が初期導線。
 - Architecture review（明示召喚時のAstra等）: live code照合、重大判断点の整理、限定された設計レビュー（常任のプロジェクトマネージャーや既定の実装者ではない）。
-- Implementer / Investigator（Luna / Gemini等）: 確定Cardの対象fileと契約内で限定された実装・調査・検証・報告。
+- Implementer / Investigator（SOL6.1 / Luna / Gemini等）: 確定Cardの対象fileと契約内で限定された実装・調査・検証・報告。
 - Reviewer: 指定領域の調査・反証・検証。報告を根拠なしに採用しない。
 
 同一file/同じmodelを複数workerで同時変更しない。独立したread-only調査は並列化できる。
 
+### RIGの複数agent運用（Owner追加承認、2026-10-05）
+
+OwnerはLUNA以外のagent利用を明示承認。司令がCard/設計/統合を所有し、SOL6.1中〜高へ複雑なmoduleの限定実装・接点調査・独立監査、LUNA MAXへ確定Sliceの実装を割り当てる。Geminiは外部棚卸し等の必要がある場合だけ受渡しCardを用意する。モデル名だけで完了や採用を判断しない。
+
+独立した責務を2〜3担当に分けることを目安とし、同じfileへのwriteは直列にする。共通controller・source生成・server保存へ接続する前にexact files/ownerをCardで確定する。調査agentはread-only、実装agentは限定write、結果を司令が監査する。担当の追加は常設チャット増設や全履歴の複製を目的にせず、compact確認の10〜15分間隔と無変化時の無通知を維持する。個別Cardの停止境界、process所有、保存/描画正本を継承し、未確定の次Cardは自動実行しない。dotの初回接続確認・新規タスク制限は別契約のまま。
+
+PC接続によるlocal実装と、別途設定するCodex Cloud環境は別の実行場所。現行dirty/Windows固定toolchain/native Browser検証はlocalを継続し、cloudへ自動同期したものと仮定しない。GitHub案内やcloud調査結果だけでlocal現在地を更新しない。
+
 ### 漫画文字とRIG proofの並行導線
+
+WP-039（Owner多関節/parameter/warp道具化、2026-10-06）は新detached workbenchと2〜8骨/45点meshを一つの制作区切りで実装。SOL backendはchain-model/model/server、LUNA UIは新workbench/controllerだけを所有、司令は契約/共有案内/統合/代表native保存と通常Raster監査。旧editor/controllersと共通Project/History/renderer/漫画/fontを保持。source+PNG正本、既存EndPose native補間、frame protocolを維持する。engine網羅再試験は行わず新しいauthoring接続と一代表制作操作を検証。live18729/18842はworker操作禁止、司令のowned identity/未保存/saved再照合後だけ配信更新する。exact filesとAPIはWP039、現在地はSTATUS。
+
+WP-038（Ownerシームレス制作続行、2026-10-05）は原PNG上のEnd回転中心配置と一枚素材の土台一巡。backend SOL6.1高はpivot-model/model/serverと専用verifier、UI LUNA MAXはpivot-editor/editor.js/htmlと中央注記接点、司令は契約/共有文書/native/host監査を所有。exact filesはCard、同file並列write無し。workerはlive18729/5174を変更せず独立cacheで実装し、司令がowned identity/未保存保全付き配信更新だけを判断する。製品buildは統合後司令が一回実行。dot接続は前提にせず、確定Sliceは制作受入待ちで止めない。限定土台の技術完了または独立進行不能HOLDで大きな区切りとして返す。
+
+WP-037（Owner続行、2026-10-05）はeditor.html内のweight-row数値欄配置だけ。LUNAはlocal CSSと限定report/cache、司令はCard/文書/実Browser監査を所有。JS/model/runtime/保存/共通CSS/漫画/fontはread-only。workerは18729/5174の停止・再起動・API mutationをしない。CSS配信にserver再起動は不要。初回10分以後、以後10〜15分のcompact確認。Ownerの編集・制作レビュー待ちで止めない。
+
+WP-036（Ownerロングラン続行、2026-10-05）はeditor-local素材上の点選択/追従可視化。exact filesは同Card、LUNA単独write、司令は契約/文書/監査。runtime/evaluator/保存/共通filesはread-only、workerは18729/5174を変更せず専用18838/独立cacheで実装検証。司令は報告後に未保存保全付き配信更新を限定判断。初回10分以後、実測に応じ10〜15分、長処理20分まで。Ownerの編集操作・制作レビューは待たない。
+
+WP-035（Owner実装続行、2026-10-05）は旧quadを保持する9点grid source/native（A）→追従UI/server接続（B）。exact filesは同Card、LUNA単独write、司令は契約/文書/監査。Aは稼働editorとsaved/sessionへmutationせず専用cacheで実行。BはA監査後に明示割当。漫画/font/共通renderer/Project/History/Vite/packageは双方read-only。進捗は初回10分後、以後実測に応じ10〜15分、長い既知処理は20分まで。Ownerレビュー待ちで次の確定実装を止めない。
 
 WP-034（Owner就寝中ロングラン、2026-10-05）はeditor-local四隅weight→既存EndPose再生のA/B。LUNAはCardのmodel/controller/editor/server接続/verifier/fixture/reportを単独所有。司令はCard/STATUS RIG/登録/案内/監査、worker検証中同companionへmutation無し。開始main/e0f353ed、漫画index/focus-lines/QTP dirty保持、共通Layer/Project/History/renderer/Vite/packageは双方read-only。A監査後にBを同担当へ割当。重大保存/描画仕様は自動実装しない。
 

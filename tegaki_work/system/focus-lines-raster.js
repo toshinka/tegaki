@@ -40,14 +40,29 @@ function rasterizeBody(ctx, body, options) {
 }
 
 export function rasterizeFocusLines(polygons, options = {}) {
-    const width = Math.max(1, Math.round(options.width || 1));
-    const height = Math.max(1, Math.round(options.height || 1));
+    let width = Math.max(1, Math.round(options.width || 1));
+    let height = Math.max(1, Math.round(options.height || 1));
     if (typeof document === 'undefined') return { ok: false, reason: 'Canvas2Dを利用できません' };
-    const body = polygons && !Array.isArray(polygons) && Array.isArray(polygons.outer)
+    const flash = polygons?.kind === 'tapered' && Array.isArray(polygons.polygons) ? polygons : null;
+    const body = !flash && polygons && !Array.isArray(polygons) && Array.isArray(polygons.outer)
         ? polygons
         : polygons?.body && Array.isArray(polygons.body.outer) ? polygons.body : null;
-    if (!body && !polygons?.length) return { ok: false, reason: '線がありません' };
+    if (!flash && !body && !polygons?.length) return { ok: false, reason: '線がありません' };
 
+    let x = 0, y = 0;
+    // A local uni must not allocate a whole 7k page. Outside-fill is explicitly
+    // a page effect and keeps full Canvas bounds; all legacy rasters stay exact.
+    if (flash && flash.fill !== 'outside') {
+        const points = [...flash.polygons.flat(), ...flash.boundary, ...flash.opening];
+        if (!points.length || points.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y))) return {ok:false,reason:'線の範囲が不正です'};
+        const pad = Math.ceil(flash.ellipse === 'outline' ? flash.ellipseWidth / 2 : 0) + 2;
+        x = Math.max(0,Math.floor(Math.min(...points.map(p=>p.x))-pad));
+        y = Math.max(0,Math.floor(Math.min(...points.map(p=>p.y))-pad));
+        const right=Math.min(width,Math.ceil(Math.max(...points.map(p=>p.x))+pad));
+        const bottom=Math.min(height,Math.ceil(Math.max(...points.map(p=>p.y))+pad));
+        width=right-x; height=bottom-y;
+        if (width < 1 || height < 1) return {ok:false,reason:'Canvas内に線がありません'};
+    }
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -55,7 +70,26 @@ export function rasterizeFocusLines(polygons, options = {}) {
     if (!ctx) return { ok: false, reason: 'Canvas2Dを利用できません' };
 
     ctx.clearRect(0, 0, width, height);
-    if (body) {
+    ctx.translate(-x,-y);
+    if (flash) {
+        const color = HEX.test(options.color || '') ? options.color : '#800000';
+        if (flash.fill !== 'none') {
+            ctx.beginPath();
+            if (flash.fill === 'outside') ctx.rect(0,0,width,height);
+            addContour(ctx, flash.boundary);
+            ctx.fillStyle = color; ctx.fill(flash.fill === 'outside' ? 'evenodd' : 'nonzero');
+        }
+        ctx.fillStyle = color;
+        // Use the exact same ordered contours as the SVG, in the same paint order.
+        ctx.beginPath();
+        for (const poly of flash.polygons) addContour(ctx,poly);
+        ctx.fill();
+        if (flash.ellipse !== 'none') {
+            ctx.beginPath(); addContour(ctx,flash.opening);
+            if (flash.ellipse === 'fill') { ctx.fillStyle = flash.paperColor; ctx.fill(); }
+            else { ctx.strokeStyle = color; ctx.lineWidth = flash.ellipseWidth; ctx.lineJoin='round'; ctx.stroke(); }
+        }
+    } else if (body) {
         ctx.beginPath();
         if (!rasterizeBody(ctx, body, options)) return { ok: false, reason: '輪郭がありません' };
     } else {
@@ -68,5 +102,5 @@ export function rasterizeFocusLines(polygons, options = {}) {
         }
     }
     const image = ctx.getImageData(0, 0, width, height);
-    return { ok: true, width, height, pixels: image.data, rasterBounds: { x: 0, y: 0, width, height } };
+    return { ok: true, width, height, pixels: image.data, rasterBounds: { x, y, width, height } };
 }

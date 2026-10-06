@@ -12,6 +12,9 @@ for (const [tool, slot] of Object.entries({ pen: 'pen', eraser: 'eraser', 'airbr
     assert.equal(slotOfTool(tool), slot, tool);
 }
 assert.equal(slotOfTool('eyedropper'), null);
+assert.equal(slotOfTool('erase-polygon'), 'eraser');
+assert.equal(slotOfTool('erase-lasso'), 'eraser');
+assert.deepEqual(getSlot('eraser').members.map(m => m.id), ['erase-polygon', 'erase-lasso']);
 // バケツ枠は 普通/消し/グラデ の三つ(規格違いにならない)
 assert.deepEqual(getSlot('bucket').members.map(m => m.id), ['fill', 'eraser-fill', 'gradient', 'border']);
 assert.deepEqual(getSlot('shape').members.map(m => m.id), ['lasso-fill', 'shape-rect', 'shape-ellipse', 'shape-polygon']);

@@ -14,11 +14,14 @@
  * モデル
  *   中心 center、内側の楕円(rx, ry)=線が入らない「抜け」。count本の線を中心の周りへ配る。
  *   direction 'in'  : 外側が太く中心側へ尖る(集中線)。taper=1で完全に尖る。
+ *   flash(optional) : 新規の両端taper線列。旧ray/body evaluatorとは分離。
  *   direction 'out' : 内側(楕円の縁)が太く外へ尖る(ウニフラ)。outerを有限にして使う。
  *   outer: 0 = キャンバスの最遠隅を越えるまで伸ばす / >0 = 中心からの長さ(px)。
  *   乱数は seed のみから決まる(同じseedなら同じ絵)。
  * ============================================================================
  */
+
+import { normalizeFocusFlash } from './focus-flash-geometry.js';
 
 export const FOCUS_LINES_DEFAULT_COLOR = '#800000'; // futaba-maroon
 
@@ -82,7 +85,8 @@ export function normalizeFocusLinesParams(raw, canvas = { width: 400, height: 40
     const cy = Number(src.center?.y);
     // 中心がキャンバスから極端に離れた値は捨てる(キャンバス寸法の4倍まで)
     const centerOk = Number.isFinite(cx) && Number.isFinite(cy) && Math.abs(cx) <= w * 4 && Math.abs(cy) <= h * 4;
-    const body = normalizeFocusLinesBody(src.body);
+    const flash = normalizeFocusFlash(src.flash);
+    const body = flash ? null : normalizeFocusLinesBody(src.body);
     const countMin = body ? FOCUS_BODY_LIMITS.count.min : L.count.min;
     const widthMin = clamp(src.widthMin ?? d.widthMin, L.width.min, L.width.max);
     const widthMax = clamp(src.widthMax ?? d.widthMax, L.width.min, L.width.max);
@@ -107,6 +111,7 @@ export function normalizeFocusLinesParams(raw, canvas = { width: 400, height: 40
         params.body = body;
         params.count = Math.min(FOCUS_BODY_LIMITS.count.max, params.count);
     }
+    if (flash) params.flash = flash;
     return params;
 }
 

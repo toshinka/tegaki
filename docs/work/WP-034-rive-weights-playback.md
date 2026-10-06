@@ -1,6 +1,6 @@
 # WP-034 — 新RIG四隅ウェイトと再生
 
-状態: HOLD / 実編集経路の更新前server占有（manifestの既存語彙ではBLOCKED）。A実装・限定修正監査済み、実UI/保存/host監査は未、B未割当。Ownerの2026-10-05「就寝、やれる実装をロングランで」に基づく。開始main/e0f353ed90d839d2b6785cca2e5c6221e8b73c44。漫画index/focus-lines/QTP dirty保持、WP033保存修正維持。本Cardの範囲でのみ続行する。
+状態: VERIFIED / A・B限定技術監査成立、OWNER ACCEPTANCE PENDING。A実UI適用/保存/再build・新instance/通常host・実Projectに加え、更新serverでB実再生/停止/同progress native画素と通常Raster受渡しを監査済み。開始main/e0f353ed90d839d2b6785cca2e5c6221e8b73c44、再開時main/4760db9c。WP033保存修正維持。現行checkpointはSTATUS、根拠・未測定は司令監査。未確定Cardへ進めない。
 
 READ: AGENTS→STATUS→TECHNICAL→本Card→DEVELOPMENT並行導線→対象header。固定CLI1.3.0 `rive docs --search Weight` / `rive docs rigging` がpacked Weightの根拠。補足は[公式Weight実装](https://github.com/rive-app/rive-runtime/blob/master/src/bones/weight.cpp)。masterは可変参考であり、固定SDKで実CLI/nativeを測る。
 
@@ -45,7 +45,7 @@ Slice BはAの司令監査後に同担当へ明示割当。追加WRITE: `advance
 
 ## Tasks
 
-今の割当はAのみ。重複責務/event/testidをrg、固定CLI docs確認。既存saved bundleは専用cacheに一回backupし上書きしない。BはA監査後の司令依頼まで実行しない。Owner就寝中なので制作レビューを要求せず司令が実動作まで確認する。
+今の割当は確定B（A司令監査成立後の明示依頼）。重複責務/event/testidをrg、既存runtime.seek/操作境界へ薄く接続。既存saved bundleは専用cacheに一回backupし上書きしない。Owner制作レビューを要求せず司令が実動作まで確認する。現在18729はOwner起動の同installation PID43016をreuse、停止しない。static新routeは起動時固定表なので、更新前serverへ新moduleを試し続けない。既存profile配信を確認し、更新serverが必要なら具体的差を報告する。並行cache mutationとなる第二serverや無断停止で回避しない。実Browser未実施でもcontroller/static/buildを完了し、未測定を明記する。
 
 ## Acceptance
 
@@ -54,6 +54,8 @@ A: default旧source/画素一致、中間weightsの公式inspect期待値、56°
 B: native再生の進行/停止/終点、scrub/編集排他、破棄RAF0、frame/save前停止、同progress native一致。static/mock/Browser/Owner/性能を分ける。
 
 ## Verification
+
+再開時の共有runtime境界: Ownerはsceneを制作中ではないと明示。漫画側最新turnは集中線の調査/改修計画、現行CardもRIG read-onlyと照合。司令がAの18729/API/Saveを単独検証中、他担当の製品tab/processを操作しない。専用product18834/一時tabを使用。serverは同installation PID43016をreuseし停止しない。saved既存bundleと検証開始時snapshotを専用cacheに保全し、完了時は開始の保存内容/default weightsと90°未保存状態へ可能な限り通常APIで復元する。sourceHash/buildIdが予期せず変わった場合は並行mutationとして止まり、他者変更を巻き戻さない。共有STATUS/manifestの他lead行は再読して限定patch。
 
 syntax、関連rig-editor verifier、harness/diff/build。CLI verify/once/inspect実ログ/packed値、固定hash/version、native画素をreportへ。限定verifierは実関数/取消/compile数等の意味ある境界、全旧RIG比較不要。
 
@@ -64,6 +66,22 @@ syntax、関連rig-editor verifier、harness/diff/build。CLI verify/once/inspec
 SDK/CLI/runtime/evaluator本体patch、第二version/platform/backend、system install/PATH、login/cloud/publish/CLI再配布、新Project/History/save/renderer/SOURCE authority、旧RIG移行、骨追加/多PNG/自由mesh topology/IK/物理/Timeline、他project/他者process停止、commit/push禁止。固定SDKで成立しなければ根拠付きHOLD、他backendへ継続しない。未確定Cardへ拡大しない。
 
 ## Completion
+
+2026-10-05: Owner再起動後に配信HOLD解消。通常入口lazy起動→新module200/hash一致→独立編集画面の実Play/Loop/Pause/終端1を確認。終端native画素は明示終端操作と一致、停止中間progressの二回採取も一致。weight draft/PNG保存が再生を停止し、draft中の操作拒否を確認。再生中のserver snapshot/saved/CLI log/artifact件数不変とtick readback無しのsource監査を区別。実host56°/progress1の透明native1x追加→Raster/History各一件→元絵不変→UndoRedo→実Project Raster/Export画素差0。試験後は通常取消でsaved56°/progress0/dirty false、saved4files hash維持。own検証server正常終了後、通常5174から更新editor/native readyを確認。48 checks/製品build/harness成功。二重iframeの全編集click・全停止境界のtrusted操作・性能・液タブ・Owner制作受入はUNVERIFIED。360px再生欄は収まり、既存全ページoverflowは残る。詳細は[司令監査](../ai/WP-034-rive-weights-playback-audit.md)。下記配信HOLDは解消前の履歴。
+
+2026-10-05 09:01 JST: B修正後の司令実controller再実行で終端runtime/controllerとも1、seeks[0,0.99,1]、旧callback後の新RAF所有保持/pause pending0を確認。限定verifier48 checks・固定cache gate PASS、overlay追従配線確認。担当syntax/weights/model/bone/buildと司令harness90 docs/342 links/diff検査PASS。runtime/model/共通authority変更無し、SDK patch0、server変更はstatic一件だけ。B実配信はOwner/reuse18729 PID43016で新module404、通常終了可否の回答未着。無断停止/第二cache共有serverを行わず、具体的HOLDとして監視PAUSED。再開は起動元の通常終了とport/cache空き確認→更新server→B native進行/停止/編集排他/同progress画素/通常host受渡しの限定監査。5174停止やOwner制作レビューは不要。採用/最終受入/push未。
+
+### B司令監査追補（2026-10-05 08:46 JST）
+
+初回B completed後、pure42 checksだけでは捉えない二件を実controllerで再現。確定B exact files内の修正を同LUNAへ返す。
+
+- clock0→990→1000msでは最後のRAFが30fps間隔未満となりseekをskip、controller ended/progress1なのにruntime progress0.99。終了時は実nativeを必ずprogress1へ揃え、失敗をendedと表示しない。通常tick上限を維持し、終端同期は明示terminalとして扱う。verifierは最後のseek/runtime progressとsnapshotが一致する近接終端ケースを追加。
+- stop→start後に旧RAF callbackを呼ぶと、世代判定より前のrafId=nullにより新RAF所有権を失い、pause後もpending一件残る。旧世代callbackは現行rafIdを変更しない。cancel/restart→旧callback→pause/disposeで新RAFまで取消し、pending0/新chain一本を確認。
+- onPlaybackStateでnative姿勢が進む際、骨overlayの投影も既存boneController.refreshで追従する（最大10Hzと停止時、PNG/readback/API0を維持）。停止した画素とoverlayの位置が違うままにならないよう、配線と実測層を区別する。
+
+18729の新 `/playback-controller.js` は司令の限定GETで404、Owner/reuse PID43016のまま。無断停止/第二cache共有serverを行わず、まずこの修正のstatic/controller/buildを完了する。配信復帰は司令が別途段取りを返す。初報completedを修正完了/native Browser PASSにしない。
+
+2026-10-05 08:10 JST: A技術確認済み、B割当へ。実UIで56°/四隅[128,64,192,32]適用→Save→公式再build→旧tab破棄→新native instanceのRGBA一致、PNG hash一致。PNG差替え・数値/直接骨編集のweights保持、API不正weights五件/壊れたPNG拒否とCLI log/artifacts/良好scene不変、取消再現を実測。通常入口から新Raster/History各一件、元絵不変、UndoRedo、実ProjectManager.loadProject後Raster/Export差0。saved source/PNG/rivを開始時hashへ通常APIで復元、90°/progress1/dirty true/native画素も復元。own18834正常終了、reuse18729/5174停止無し。詳細と未測定は司令監査。下記旧HOLDは再起動前の履歴。
 
 ### A司令監査追補（2026-10-04 16:35 UTC以後）
 

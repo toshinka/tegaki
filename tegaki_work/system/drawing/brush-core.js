@@ -39,6 +39,7 @@ import { generateAdaptiveInterpolationPoints } from './realtime-stroke-sampling.
 import { CurveInterpolator } from './curve-interpolator.js';
 import { AirbrushDabRenderer } from './airbrush-dab-renderer.js';
 import { computeNibAngles } from './nib-angle.js';
+import { renderLassoPaintPreview } from './lasso-paint-preview.js';
 
 const AIRBRUSH_BUILDUP_POLL_MS = 8;
 
@@ -531,11 +532,15 @@ export class BrushCore {
             }
         }
 
-        this.strokeRenderer.renderPreview(
-            [{ x: localX, y: localY, pressure: processedPressure }],
-            settings,
-            this.previewGraphics
-        );
+        if (currentMode === 'lasso-fill') {
+            this._renderLassoPreview([{ x: localX, y: localY }], settings);
+        } else {
+            this.strokeRenderer.renderPreview(
+                [{ x: localX, y: localY, pressure: processedPressure }],
+                settings,
+                this.previewGraphics
+            );
+        }
 
         if (currentMode === 'airbrush' || currentMode === 'airbrush-erase') {
             // pointerdown直後の筆圧0をdab化すると、線頭に孤立した点が残る。
@@ -1435,30 +1440,11 @@ export class BrushCore {
     }
 
     _renderLassoPreview(points, settings) {
-        if (!this.previewGraphics || points.length < 2) return;
-
-        this.previewGraphics.clear();
-        this.previewGraphics.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length; i++) {
-            this.previewGraphics.lineTo(points[i].x, points[i].y);
-        }
-
-        // 始点と終点を結ぶガイド線（点線が理想だが一旦実線で）
-        this.previewGraphics.lineTo(points[0].x, points[0].y);
-
-        this.previewGraphics.stroke({
-            width: 1.5,
-            color: settings.color,
-            alpha: 0.6,
-            cap: 'round',
-            join: 'round'
-        });
-
-        // 塗りプレビュー（非常に薄く）
-        this.previewGraphics.fill({
-            color: settings.color,
-            alpha: 0.15
-        });
+        if (!this.previewGraphics) return;
+        const area = window.pixelSelectionSystem?.areaTools;
+        const options = area?.getOptions?.()?.shape || {};
+        const colors = area?.getColors?.() || { background: this.layerManager?.config?.canvas?.backgroundColor ?? 0 };
+        renderLassoPaintPreview(this.previewGraphics, points, options, colors, settings);
     }
 
     _renderRealtimeSegmentIfNeeded(mode, localX, localY, pressure, force = false) {

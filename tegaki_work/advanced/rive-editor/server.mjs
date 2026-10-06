@@ -1,8 +1,8 @@
 /**
- * ROLE: WP-029 専用 loopback server、公式 CLI build、source+image bundle の保存/復元。
+ * ROLE: legacy/chain authoringを公式CLIでbuildするloopback server、source+PNG保存/復元。
  * AUTHORITY: dedicated cache と startup nonce のみ。Project/History/Canvas の正本は所有しない。
  * INVARIANTS: 127.0.0.1:18729、Origin+nonce mutation gate、saved bundle 破損時は fallback しない、health は installation/pid を識別する。
- * RELATED: advanced/rive-editor/model.mjs、weight-model.mjs、run-editor.ps1、editor.js、WP-034 card。
+ * RELATED: model.mjs、chain-model.mjs、workbench.js、legacy editor.js、run-editor.ps1、WP-039 card。
  */
 import http from 'node:http';
 import fs from 'node:fs';
@@ -10,6 +10,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { assertPivot, scalePivot } from './pivot-model.mjs';
+import { assertChain, resizeChain } from './chain-model.mjs';
 import {
     LIMITS,
     assertAngle,
@@ -29,6 +31,12 @@ import {
     assertEndWeights,
     cloneEndWeights,
 } from './weight-model.mjs';
+import {
+    MESH_PROFILES,
+    assertMeshProfile,
+    assertMeshWeights,
+    convertMeshWeights,
+} from './mesh-profile.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WORK = path.resolve(HERE, '..', '..');
@@ -155,10 +163,10 @@ function buildCandidate(source, imagePath) {
     const sourceInfo = parseSourceMetadata(source);
     if (!imageInfo.ok) return { ok: false, phase: 'asset', output: `PNG rejected: ${imageInfo.reason}` };
     const tolerance = 1e-6;
-    const fullMesh = sourceInfo && Math.abs(sourceInfo.imageX - imageInfo.width / 2) <= tolerance
+    const fullMesh = sourceInfo?.rigMode === 'chain' || sourceInfo && Math.abs(sourceInfo.imageX - imageInfo.width / 2) <= tolerance
         && Math.abs(sourceInfo.imageY - imageInfo.height / 2) <= tolerance
-        && Math.abs(sourceInfo.rootX) <= tolerance
-        && Math.abs(sourceInfo.rootY - imageInfo.height / 2) <= tolerance
+        && Math.abs(sourceInfo.rootX - (sourceInfo.pivot.x - imageInfo.width / 2)) <= tolerance
+        && Math.abs(sourceInfo.rootY - sourceInfo.pivot.y) <= tolerance
         && Math.abs(sourceInfo.boneLength - imageInfo.width / 2) <= tolerance
         && Math.abs(sourceInfo.meshBounds.minX + imageInfo.width / 2) <= tolerance
         && Math.abs(sourceInfo.meshBounds.maxX - imageInfo.width / 2) <= tolerance
@@ -193,6 +201,7 @@ const state = {
     image: null,
     angle: LIMITS.restAngle,
     progress: 0,
+    meshProfile: MESH_PROFILES.quad,
     meshWeights: cloneEndWeights(DEFAULT_END_WEIGHTS),
     dirty: false,
     reason: 'startup',
@@ -216,7 +225,8 @@ function promote(candidate, reason, dirty = true) {
     state.currentSource = candidate.source;
     state.currentImagePath = imagePath;
     state.currentRiv = rivPath;
-    state.meshWeights = cloneEndWeights(candidate.sourceInfo.meshWeights);
+    state.meshProfile = candidate.sourceInfo.rigMode === 'chain' ? candidate.sourceInfo.meshProfile : assertMeshProfile(candidate.sourceInfo.meshProfile);
+    state.meshWeights = candidate.sourceInfo.rigMode === 'chain' ? null : assertMeshWeights(state.meshProfile, candidate.sourceInfo.meshWeights);
     state.image = {
         name: state.image?.name || fixtureInfo.name,
         width: candidate.imageInfo.width,
@@ -235,9 +245,10 @@ function setError(reason, error) {
 }
 
 function publicState() {
+    const snapshot = makeSnapshot(state);
     return {
         ok: true,
-        snapshot: makeSnapshot(state),
+        snapshot,
         status: state.status,
         error: state.error,
         artifactUrl: state.currentRiv ? `/artifact/current.riv?build=${encodeURIComponent(state.buildId)}` : null,
@@ -384,14 +395,23 @@ function authorizeMutation(req, res, pathname) {
 
 function staticRoute(res, pathname) {
     const table = {
-        '/': [path.join(HERE, 'editor.html'), 'text/html; charset=utf-8'],
+        '/': [path.join(HERE, 'workbench.html'), 'text/html; charset=utf-8'],
+        '/workbench.html': [path.join(HERE, 'workbench.html'), 'text/html; charset=utf-8'],
+        '/workbench.js': [path.join(HERE, 'workbench.js'), 'text/javascript; charset=utf-8'],
+        '/chain-controller.js': [path.join(HERE, 'chain-controller.js'), 'text/javascript; charset=utf-8'],
+        '/chain-model.mjs': [path.join(HERE, 'chain-model.mjs'), 'text/javascript; charset=utf-8'],
         '/editor.html': [path.join(HERE, 'editor.html'), 'text/html; charset=utf-8'],
         '/editor.js': [path.join(HERE, 'editor.js'), 'text/javascript; charset=utf-8'],
         '/runtime.js': [path.join(HERE, 'runtime.js'), 'text/javascript; charset=utf-8'],
         '/bone-editor.js': [path.join(HERE, 'bone-editor.js'), 'text/javascript; charset=utf-8'],
         '/bone-projection.mjs': [path.join(HERE, 'bone-projection.mjs'), 'text/javascript; charset=utf-8'],
         '/weight-model.mjs': [path.join(HERE, 'weight-model.mjs'), 'text/javascript; charset=utf-8'],
+        '/mesh-profile.mjs': [path.join(HERE, 'mesh-profile.mjs'), 'text/javascript; charset=utf-8'],
+        '/pivot-model.mjs': [path.join(HERE, 'pivot-model.mjs'), 'text/javascript; charset=utf-8'],
+        '/pivot-editor.js': [path.join(HERE, 'pivot-editor.js'), 'text/javascript; charset=utf-8'],
         '/weight-editor.js': [path.join(HERE, 'weight-editor.js'), 'text/javascript; charset=utf-8'],
+        '/influence-map.js': [path.join(HERE, 'influence-map.js'), 'text/javascript; charset=utf-8'],
+        '/playback-controller.js': [path.join(HERE, 'playback-controller.js'), 'text/javascript; charset=utf-8'],
         '/runtime/canvas_advanced.mjs': [path.join(RUNTIME, 'canvas_advanced.mjs'), 'text/javascript; charset=utf-8'],
         '/runtime/rive.wasm': [path.join(RUNTIME, 'rive.wasm'), 'application/wasm'],
         '/runtime/rive_fallback.wasm': [path.join(RUNTIME, 'rive_fallback.wasm'), 'application/wasm'],
@@ -400,6 +420,11 @@ function staticRoute(res, pathname) {
     if (!target) return false;
     file(res, target[0], target[1]);
     return true;
+}
+
+function isInputRejectedError(error) {
+    const message = String(error?.message || '');
+    return /^(Angle must|Progress must|Pivot |Chain |End weights|Packed weight|Unknown mesh profile|quad mesh weight|grid3 mesh weight)/u.test(message);
 }
 
 function initialBuild() {
@@ -454,7 +479,12 @@ const server = http.createServer(async (req, res) => {
             const name = sanitizeImageName(url.searchParams.get('name') || 'image.png');
             const uploadPath = path.join(CACHE, 'incoming-image.png');
             fs.writeFileSync(uploadPath, image);
-            const source = createSource({ width: info.width, height: info.height, angle: state.angle, meshWeights: state.meshWeights });
+            const sourceInfo = parseSourceMetadata(state.currentSource);
+            if (!sourceInfo) throw new Error('Current source does not pass the editor contract.');
+            const source = sourceInfo.rigMode === 'chain'
+                ? createSource({ width: info.width, height: info.height, chain: resizeChain(sourceInfo.chain, sourceInfo.width, sourceInfo.height, info.width, info.height) })
+                : createSource({ width: info.width, height: info.height, angle: state.angle, meshProfile: state.meshProfile, meshWeights: state.meshWeights,
+                    pivot: scalePivot(sourceInfo.pivot, sourceInfo.width, sourceInfo.height, info.width, info.height) });
             const candidate = buildCandidate(source, uploadPath);
             if (!candidate.ok) return json(res, 422, { ok: false, error: 'image-build-rejected', phase: candidate.phase, message: candidate.output.slice(-500) });
             state.image = { name, width: info.width, height: info.height };
@@ -464,13 +494,33 @@ const server = http.createServer(async (req, res) => {
         }
         if (req.method === 'POST' && pathname === '/api/compile') {
             const body = parseJson(await readBody(req, LIMITS.maxControlBytes));
+            if (!state.image) return json(res, 409, { ok: false, error: 'no-image', message: 'Load a PNG before compiling.' });
+            const currentInfo = parseSourceMetadata(state.currentSource);
+            if (Object.hasOwn(body, 'chain')) {
+                const chain = assertChain(body.chain, state.image.width, state.image.height);
+                const progress = assertProgress(body.progress ?? 0);
+                const candidate = buildCandidate(createSource({ width: state.image.width, height: state.image.height, chain }), state.currentImagePath);
+                if (!candidate.ok) return json(res, 422, { ok: false, error: 'compile-rejected', phase: candidate.phase, message: candidate.output.slice(-500) });
+                promote(candidate, 'compile-chain', true);
+                state.progress = progress;
+                return json(res, 200, clientState());
+            }
+            if (currentInfo?.rigMode === 'chain') return json(res, 409, { ok: false, error: 'chain-required', message: 'Compile the current chain; legacy controls cannot replace it.' });
             const angle = assertAngle(body.angle);
             const progress = assertProgress(body.progress ?? 0);
-            const meshWeights = Object.prototype.hasOwnProperty.call(body, 'weights')
-                ? assertEndWeights(body.weights)
-                : cloneEndWeights(state.meshWeights);
+            const hasProfile = Object.prototype.hasOwnProperty.call(body, 'profile');
+            const profile = assertMeshProfile(hasProfile ? body.profile : state.meshProfile);
+            const hasWeights = Object.prototype.hasOwnProperty.call(body, 'weights');
+            const meshWeights = hasWeights
+                ? profile === MESH_PROFILES.quad ? assertEndWeights(body.weights) : assertMeshWeights(profile, body.weights)
+                : profile === state.meshProfile
+                    ? assertMeshWeights(profile, state.meshWeights)
+                    : convertMeshWeights(state.meshWeights, state.meshProfile, profile);
             if (!state.image) return json(res, 409, { ok: false, error: 'no-image', message: 'Load a PNG before compiling.' });
-            const candidate = buildCandidate(createSource({ width: state.image.width, height: state.image.height, angle, meshWeights }), state.currentImagePath);
+            const sourceInfo = parseSourceMetadata(state.currentSource);
+            if (!sourceInfo) throw new Error('Current source does not pass the editor contract.');
+            const pivot = assertPivot(body.pivot === undefined ? sourceInfo.pivot : body.pivot, state.image.width, state.image.height);
+            const candidate = buildCandidate(createSource({ width: state.image.width, height: state.image.height, angle, meshProfile: profile, meshWeights, pivot }), state.currentImagePath);
             if (!candidate.ok) return json(res, 422, { ok: false, error: 'compile-rejected', phase: candidate.phase, message: candidate.output.slice(-500) });
             promote(candidate, 'compile', true);
             state.progress = progress;
@@ -511,10 +561,7 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
         if (error?.code === 'BODY_TOO_LARGE') return json(res, 413, { ok: false, error: 'body-too-large', message: error.message });
         if (error?.code === 'SAVED_STATE_REJECTED') return json(res, 409, { ok: false, error: 'saved-state-rejected', message: error.message });
-        if (error?.message?.startsWith('Angle must')
-            || error?.message?.startsWith('Progress must')
-            || error?.message?.startsWith('End weights')
-            || error?.message?.startsWith('Packed weight')) {
+        if (isInputRejectedError(error)) {
             return json(res, 400, { ok: false, error: 'input-rejected', message: error.message });
         }
         return json(res, 500, { ok: false, error: 'server-error', message: String(error?.message || error) });

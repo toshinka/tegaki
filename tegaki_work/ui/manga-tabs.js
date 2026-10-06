@@ -12,7 +12,7 @@
  */
 
 import { createPillTabs } from './pill-tabs.js';
-import { registerMangaInputRoot, setMangaInputPrimary } from './manga-input-focus.js';
+import { registerMangaInputRoot, setMangaInputPrimary, toggleMangaCanvasMode, beginMangaCanvasEditing } from './manga-input-focus.js';
 
 /** 並び順がタブ順。popupNameはPopupManager登録名、popupIdはDOMのid。新しいツールはここへ1行足す。 */
 export const MANGA_TABS = Object.freeze([
@@ -88,12 +88,18 @@ export function mountMangaTabs(host, currentId) {
             if (id !== currentId) switchMangaTab(id);
         }
     });
-    host.replaceChildren(tabs);
+    const mode = document.createElement('button');
+    mode.type = 'button'; mode.className = 'manga-canvas-mode';
+    mode.dataset.mangaCanvasMode = '';
+    mode.setAttribute('aria-label', 'Canvasの漫画編集と描画を切り替え');
+    mode.addEventListener('click', toggleMangaCanvasMode);
+    host.replaceChildren(tabs, mode);
     return tabs;
 }
 
 /** popupを開いた時に最後のタブを記録する(サイドバーが次回同じタブを開くため)。 */
 export function noteMangaTabShown(id) {
+    beginMangaCanvasEditing();
     const tab = MANGA_TABS.find(item => item.id === id);
     const popup = tab && document.getElementById(tab.popupId);
     if (popup) popup.dataset.mangaTransition = switchingTo === id ? 'instant' : 'open';

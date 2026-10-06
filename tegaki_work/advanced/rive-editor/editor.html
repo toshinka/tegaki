@@ -33,8 +33,8 @@
     #rive-bone-end:active { cursor: grabbing; }
     .controls, .diagnostics { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--light-maroon); background: var(--cream); min-width: 0; }
     label { display: grid; gap: 3px; font-weight: 650; }
-    input[type="number"], input[type="file"], button { font: inherit; color: var(--maroon); background: var(--paper); border: 1px solid var(--light-maroon); border-radius: 4px; padding: 6px 7px; }
-    input[type="number"], input[type="file"] { min-width: 0; width: 100%; }
+    input[type="number"], input[type="file"], select, button { font: inherit; color: var(--maroon); background: var(--paper); border: 1px solid var(--light-maroon); border-radius: 4px; padding: 6px 7px; }
+    input[type="number"], input[type="file"], select { min-width: 0; width: 100%; }
     input[type="range"] { accent-color: var(--orange); width: 100%; }
     button { cursor: pointer; text-align: left; }
     button:hover, button:focus-visible { border-color: var(--orange); outline: 2px solid color-mix(in srgb, var(--orange) 40%, transparent); outline-offset: 1px; }
@@ -42,14 +42,57 @@
     .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .button-row button { text-align: center; }
     .weight-editor { display: grid; gap: 6px; min-width: 0; padding-top: 4px; border-top: 1px solid rgba(128,0,0,.22); }
+    .mesh-profile-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .mesh-profile-row label { font-size: 11px; }
     .weight-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; min-width: 0; }
+    .weight-editor[data-profile="grid3"] .weight-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .weight-editor[data-profile="grid3"] .weight-row > span { grid-template-columns: minmax(0, 1fr); }
+    .weight-editor[data-profile="grid3"] .weight-row output { white-space: normal; }
+    .weight-editor [hidden] { display: none !important; }
+    .weight-row[hidden] { display: none !important; }
     .weight-row { min-width: 0; font-size: 11px; }
-    .weight-row > span { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; align-items: center; min-width: 0; }
-    .weight-row output { white-space: nowrap; font-size: 10px; color: var(--light-maroon); }
+    .weight-row > span { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; align-items: start; min-width: 0; }
+    .weight-row input[type="number"] { min-width: 64px; }
+    .weight-row output { min-width: 0; white-space: normal; overflow-wrap: anywhere; line-height: 1.2; font-size: 10px; color: var(--light-maroon); }
     .weight-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; min-width: 0; }
     .weight-presets button { padding: 5px 3px; text-align: center; font-size: 11px; }
     .weight-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .weight-actions button { text-align: center; }
+    .influence-map { display: grid; gap: 6px; min-width: 0; padding-top: 6px; border-top: 1px solid rgba(128,0,0,.22); }
+    .influence-map-viewport { width: min(100%, 360px); max-width: 100%; margin: 0 auto; min-width: 0; overflow: hidden; }
+    #influence-map-svg { display: block; width: 100%; max-width: 100%; height: auto; overflow: hidden; border: 1px solid var(--light-maroon); background: rgba(255,255,255,.4); }
+    #influence-map-svg[hidden] { display: none !important; }
+    .influence-map-point-label, .influence-map-point-value { fill: var(--paper); font: 9px/1 system-ui, sans-serif; paint-order: stroke; stroke: var(--maroon); stroke-width: 2px; }
+    .influence-map-point-label { font-size: 8px; }
+    .influence-map-point-value { font-size: 7px; }
+    .influence-map-buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; min-width: 0; }
+    .influence-map-buttons button { min-width: 0; padding: 4px 3px; font-size: 10px; overflow-wrap: anywhere; }
+    .influence-map-buttons button[data-selected="true"] { border-color: var(--orange); background: #fff0d8; }
+    .influence-map-buttons button[hidden] { display: none !important; }
+    .influence-map-point-value { display: block; color: var(--light-maroon); font-size: 10px; }
+    .influence-map-legend { display: flex; flex-wrap: wrap; gap: 6px; font-size: 10px; color: var(--light-maroon); }
+    .influence-map-legend .legend-end { color: var(--orange); }
+    .influence-map-legend .legend-root { color: var(--maroon); }
+    .influence-map-end { color: var(--orange); }
+    .influence-map-root { color: var(--maroon); }
+    #influence-map-selection { min-width: 0; overflow-wrap: anywhere; font: 11px ui-monospace, monospace; }
+    #influence-map-status { min-height: 1.5em; font-size: 10px; }
+    .pivot-editor { display: grid; gap: 6px; min-width: 0; padding-top: 6px; border-top: 1px solid rgba(128,0,0,.22); }
+    .pivot-editor-coordinates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; min-width: 0; }
+    .pivot-editor-coordinates label { min-width: 0; font-size: 11px; }
+    .pivot-editor-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; min-width: 0; }
+    .pivot-editor-actions button { min-width: 0; padding: 5px 3px; text-align: center; font-size: 11px; }
+    #pivot-editor-layer { pointer-events: none; }
+    #pivot-editor-placement-surface { fill: transparent; pointer-events: none; }
+    #pivot-editor-marker { fill: #fff0d8; stroke: var(--orange); stroke-width: 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+    #pivot-editor-marker-label { fill: var(--paper); font: 9px/1 system-ui, sans-serif; paint-order: stroke; stroke: var(--maroon); stroke-width: 2px; pointer-events: none; }
+    #pivot-editor-layer[data-placement-mode="true"] #pivot-editor-placement-surface { pointer-events: all; cursor: crosshair; }
+    #pivot-editor-layer[hidden] { display: none !important; }
+    .playback-editor { display: grid; gap: 6px; min-width: 0; padding-top: 4px; border-top: 1px solid rgba(128,0,0,.22); }
+    .playback-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; min-width: 0; }
+    .playback-actions button { min-width: 0; padding: 5px 3px; text-align: center; font-size: 11px; }
+    .playback-meta { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; min-width: 0; }
+    .playback-meta output { min-width: 0; overflow-wrap: anywhere; font: 11px ui-monospace, monospace; }
     .section-title { margin: 2px 0 0; font-size: 12px; color: var(--light-maroon); }
     [role="status"] { min-height: 2.5em; padding: 6px; border-left: 3px solid var(--orange); background: rgba(255,255,255,.45); }
     .status-error { border-left-color: var(--red) !important; color: var(--red); }
@@ -87,21 +130,44 @@
         <label>スクラブ <output id="progress-value">0.00</output>
           <input id="progress" type="range" min="0" max="1" step="0.01" value="0" data-testid="rive-progress">
         </label>
-        <section id="weight-editor" class="weight-editor" aria-label="四隅の骨への追従" data-testid="rive-weight-editor">
-          <p class="section-title">四隅の骨への追従</p>
+        <section id="weight-editor" class="weight-editor" aria-label="四隅の骨への追従 / メッシュ: 四隅 / 9点" data-testid="rive-weight-editor">
+          <p class="section-title">メッシュ: 四隅 / 9点</p>
+          <div class="mesh-profile-row">
+            <label for="mesh-profile">メッシュ
+              <select id="mesh-profile" data-testid="rive-mesh-profile" aria-label="メッシュ: 四隅 / 9点">
+                <option value="quad">四隅</option>
+                <option value="grid3">9点</option>
+              </select>
+            </label>
+          </div>
           <p class="hint">Endへ追従 %（Rootは補数）</p>
           <div class="weight-grid">
-            <label class="weight-row">TopLeft
-              <span><input id="weight-TopLeft" type="number" min="0" max="100" step="0.1" value="0" aria-label="Endへ追従 %" data-rive-weight="TopLeft" data-testid="rive-weight-TopLeft"><output data-rive-root="TopLeft">End 0% / Root 100%</output></span>
+            <label class="weight-row" data-profile-vertex="quad grid3">TopLeft
+              <span><input id="weight-TopLeft" type="number" min="0" max="100" step="0.1" value="0" aria-label="Endへ追従 %" data-rive-weight="TopLeft" data-rive-source-index="0" data-testid="rive-weight-TopLeft"><output data-rive-root="TopLeft">End 0% / Root 100%</output></span>
             </label>
-            <label class="weight-row">TopRight
-              <span><input id="weight-TopRight" type="number" min="0" max="100" step="0.1" value="100" aria-label="Endへ追従 %" data-rive-weight="TopRight" data-testid="rive-weight-TopRight"><output data-rive-root="TopRight">End 100% / Root 0%</output></span>
+            <label class="weight-row" data-profile-vertex="grid3">TopCenter
+              <span><input id="weight-TopCenter" type="number" min="0" max="100" step="0.1" value="50" aria-label="Endへ追従 %" data-rive-weight="TopCenter" data-rive-source-index="1" data-testid="rive-weight-TopCenter"><output data-rive-root="TopCenter">End 50% / Root 50%</output></span>
             </label>
-            <label class="weight-row">BottomRight
-              <span><input id="weight-BottomRight" type="number" min="0" max="100" step="0.1" value="100" aria-label="Endへ追従 %" data-rive-weight="BottomRight" data-testid="rive-weight-BottomRight"><output data-rive-root="BottomRight">End 100% / Root 0%</output></span>
+            <label class="weight-row" data-profile-vertex="quad grid3">TopRight
+              <span><input id="weight-TopRight" type="number" min="0" max="100" step="0.1" value="100" aria-label="Endへ追従 %" data-rive-weight="TopRight" data-rive-source-index="2" data-testid="rive-weight-TopRight"><output data-rive-root="TopRight">End 100% / Root 0%</output></span>
             </label>
-            <label class="weight-row">BottomLeft
-              <span><input id="weight-BottomLeft" type="number" min="0" max="100" step="0.1" value="0" aria-label="Endへ追従 %" data-rive-weight="BottomLeft" data-testid="rive-weight-BottomLeft"><output data-rive-root="BottomLeft">End 0% / Root 100%</output></span>
+            <label class="weight-row" data-profile-vertex="grid3">MiddleLeft
+              <span><input id="weight-MiddleLeft" type="number" min="0" max="100" step="0.1" value="0" aria-label="Endへ追従 %" data-rive-weight="MiddleLeft" data-rive-source-index="7" data-testid="rive-weight-MiddleLeft"><output data-rive-root="MiddleLeft">End 0% / Root 100%</output></span>
+            </label>
+            <label class="weight-row" data-profile-vertex="grid3">Center
+              <span><input id="weight-Center" type="number" min="0" max="100" step="0.1" value="50" aria-label="Endへ追従 %" data-rive-weight="Center" data-rive-source-index="8" data-testid="rive-weight-Center"><output data-rive-root="Center">End 50% / Root 50%</output></span>
+            </label>
+            <label class="weight-row" data-profile-vertex="grid3">MiddleRight
+              <span><input id="weight-MiddleRight" type="number" min="0" max="100" step="0.1" value="100" aria-label="Endへ追従 %" data-rive-weight="MiddleRight" data-rive-source-index="3" data-testid="rive-weight-MiddleRight"><output data-rive-root="MiddleRight">End 100% / Root 0%</output></span>
+            </label>
+            <label class="weight-row" data-profile-vertex="grid3">BottomLeft
+              <span><input id="weight-BottomLeft" type="number" min="0" max="100" step="0.1" value="0" aria-label="Endへ追従 %" data-rive-weight="BottomLeft" data-rive-source-index="6" data-testid="rive-weight-BottomLeft"><output data-rive-root="BottomLeft">End 0% / Root 100%</output></span>
+            </label>
+            <label class="weight-row" data-profile-vertex="grid3">BottomCenter
+              <span><input id="weight-BottomCenter" type="number" min="0" max="100" step="0.1" value="50" aria-label="Endへ追従 %" data-rive-weight="BottomCenter" data-rive-source-index="5" data-testid="rive-weight-BottomCenter"><output data-rive-root="BottomCenter">End 50% / Root 50%</output></span>
+            </label>
+            <label class="weight-row" data-profile-vertex="quad grid3">BottomRight
+              <span><input id="weight-BottomRight" type="number" min="0" max="100" step="0.1" value="100" aria-label="Endへ追従 %" data-rive-weight="BottomRight" data-rive-source-index="4" data-testid="rive-weight-BottomRight"><output data-rive-root="BottomRight">End 100% / Root 0%</output></span>
             </label>
           </div>
           <div class="weight-presets" aria-label="追従率プリセット">
@@ -114,7 +180,75 @@
             <button id="weight-apply" type="button" data-testid="rive-weight-apply">適用</button>
             <button id="weight-discard" type="button" data-testid="rive-weight-discard">変更を戻す</button>
           </div>
-          <p class="hint">入力とプリセットは一時 draft です。適用で一度だけ公式CLIへ渡し、変更を戻すで確認済みの値へ戻します。</p>
+          <p class="hint">入力とプリセットは未適用の一時 draft です。適用で一度だけ公式CLIへ渡し、変更を戻すで確認済みの値へ戻します。native previewは適用前の確認済み状態です。</p>
+          <p class="hint" data-grid3-only hidden>中央は現在の骨の回転中心にあるため、中央の追従だけでは見た目は変わりません。</p>
+        </section>
+        <section id="influence-map" class="influence-map" aria-label="素材上の点（変形前）" data-testid="rive-influence-map" data-selection-space="source-uv">
+          <p class="section-title">素材上の点（変形前）</p>
+          <div class="influence-map-viewport">
+            <svg id="influence-map-svg" viewBox="0 0 320 200" role="group" aria-label="変形前の素材上の点案内図" data-testid="rive-influence-map-svg">
+              <image id="influence-map-image" x="0" y="0" width="320" height="200" preserveAspectRatio="none" aria-hidden="true"></image>
+              <g id="influence-map-points" aria-label="変形前の素材上の点"></g>
+              <g id="pivot-editor-layer" aria-label="回転中心の配置" data-testid="rive-pivot-layer" hidden>
+                <rect id="pivot-editor-placement-surface" x="0" y="0" width="320" height="200" aria-label="画像上で回転中心を配置" data-testid="rive-pivot-placement-surface"></rect>
+                <circle id="pivot-editor-marker" cx="160" cy="100" r="8" aria-hidden="true" data-testid="rive-pivot-marker"></circle>
+                <text id="pivot-editor-marker-label" x="160" y="90" text-anchor="middle" aria-hidden="true">回転中心</text>
+              </g>
+            </svg>
+          </div>
+          <p id="influence-map-status" class="hint" role="status" aria-live="polite">画像を読み込むと変形前の素材上の点を表示します。</p>
+          <output id="influence-map-selection" data-testid="rive-influence-selection">未選択</output>
+          <div id="influence-map-buttons" class="influence-map-buttons" role="group" aria-label="影響点の選択">
+            <button type="button" data-influence-point="TopLeft" data-testid="rive-influence-TopLeft"><span data-influence-label>左上 / TopLeft</span><span class="influence-map-point-value" data-influence-value><span class="influence-map-end" data-influence-end>End 未確定</span> / <span class="influence-map-root" data-influence-root>Root 未確定</span></span></button>
+            <button type="button" data-influence-point="TopCenter" data-testid="rive-influence-TopCenter"><span data-influence-label>上中央 / TopCenter</span><span class="influence-map-point-value" data-influence-value><span class="influence-map-end" data-influence-end>End 未確定</span> / <span class="influence-map-root" data-influence-root>Root 未確定</span></span></button>
+            <button type="button" data-influence-point="TopRight" data-testid="rive-influence-TopRight"><span data-influence-label>右上 / TopRight</span><span class="influence-map-point-value" data-influence-value><span class="influence-map-end" data-influence-end>End 未確定</span> / <span class="influence-map-root" data-influence-root>Root 未確定</span></span></button>
+            <button type="button" data-influence-point="MiddleLeft" data-testid="rive-influence-MiddleLeft"><span data-influence-label>左中央 / MiddleLeft</span><span class="influence-map-point-value" data-influence-value><span class="influence-map-end" data-influence-end>End 未確定</span> / <span class="influence-map-root" data-influence-root>Root 未確定</span></span></button>
+            <button type="button" data-influence-point="Center" data-testid="rive-influence-Center"><span data-influence-label>中央 / Center</span><span class="influence-map-point-value" data-influence-value><span class="influence-map-end" data-influence-end>End 未確定</span> / <span class="influence-map-root" data-influence-root>Root 未確定</span></span></button>
+            <button type="button" data-influence-point="MiddleRight" data-testid="rive-influence-MiddleRight"><span data-influence-label>右中央 / MiddleRight</span><span class="influence-map-point-value" data-influence-value><span class="influence-map-end" data-influence-end>End 未確定</span> / <span class="influence-map-root" data-influence-root>Root 未確定</span></span></button>
+            <button type="button" data-influence-point="BottomLeft" data-testid="rive-influence-BottomLeft"><span data-influence-label>左下 / BottomLeft</span><span class="influence-map-point-value" data-influence-value><span class="influence-map-end" data-influence-end>End 未確定</span> / <span class="influence-map-root" data-influence-root>Root 未確定</span></span></button>
+            <button type="button" data-influence-point="BottomCenter" data-testid="rive-influence-BottomCenter"><span data-influence-label>下中央 / BottomCenter</span><span class="influence-map-point-value" data-influence-value><span class="influence-map-end" data-influence-end>End 未確定</span> / <span class="influence-map-root" data-influence-root>Root 未確定</span></span></button>
+            <button type="button" data-influence-point="BottomRight" data-testid="rive-influence-BottomRight"><span data-influence-label>右下 / BottomRight</span><span class="influence-map-point-value" data-influence-value><span class="influence-map-end" data-influence-end>End 未確定</span> / <span class="influence-map-root" data-influence-root>Root 未確定</span></span></button>
+          </div>
+          <div class="influence-map-legend" aria-label="影響率の凡例">
+            <span class="legend-end">End（橙）</span>
+            <span class="legend-root">Root（えんじ）</span>
+            <span>数値はEnd% / Root%</span>
+          </div>
+          <p class="hint">点は変形前の素材上の固定位置です。選択は入力へ移動しますが、選択だけではdraft・compile・保存・Historyを開始しません。未適用draftは案内図に反映され、native previewは適用前の確認済み状態です。</p>
+        </section>
+        <section id="pivot-editor" class="pivot-editor" aria-label="原PNG上の回転中心" data-testid="rive-pivot-editor" data-edit-phase="idle" data-placement-mode="false">
+          <p class="section-title">回転中心（原PNG）</p>
+          <div class="pivot-editor-coordinates">
+            <label for="pivot-x">X（pixel）
+              <input id="pivot-x" type="number" min="0" step="0.001" inputmode="decimal" aria-label="回転中心 X pixel" data-testid="rive-pivot-x">
+            </label>
+            <label for="pivot-y">Y（pixel）
+              <input id="pivot-y" type="number" min="0" step="0.001" inputmode="decimal" aria-label="回転中心 Y pixel" data-testid="rive-pivot-y">
+            </label>
+          </div>
+          <div class="pivot-editor-actions" role="group" aria-label="回転中心操作">
+            <button id="pivot-mode" type="button" aria-pressed="false" data-testid="rive-pivot-mode">配置モード: OFF</button>
+            <button id="pivot-center" type="button" data-testid="rive-pivot-center">中央へ戻す</button>
+            <button id="pivot-apply" type="button" data-testid="rive-pivot-apply">適用</button>
+            <button id="pivot-discard" type="button" data-testid="rive-pivot-discard">変更を戻す</button>
+          </div>
+          <output id="pivot-status" role="status" aria-live="polite" data-testid="rive-pivot-status">確認済みの回転中心を表示中です。</output>
+          <p class="hint">数値入力と配置clickは一時draftです。適用までnative/source/build/保存は変わりません。配置markerはPNG/native frameへ混入しません。</p>
+        </section>
+        <section id="playback-editor" class="playback-editor" aria-label="native playback" data-testid="rive-playback-editor">
+          <p class="section-title">native playback</p>
+          <div class="playback-actions" role="group" aria-label="再生操作">
+            <button id="playback-play" type="button" data-testid="rive-play">再生</button>
+            <button id="playback-pause" type="button" data-testid="rive-pause">一時停止</button>
+            <button id="playback-start" type="button" data-testid="rive-start">先頭</button>
+            <button id="playback-end" type="button" data-testid="rive-end">終端</button>
+          </div>
+          <div class="playback-meta">
+            <label><input id="playback-loop" type="checkbox" data-testid="rive-loop"> ループ</label>
+            <output id="playback-status" data-testid="rive-playback-state" aria-live="polite">idle / 0.00</output>
+          </div>
+          <p class="hint">再生中はnative seekだけを更新します。保存・編集・scrub・frame要求を行うと停止して同じ進行度をnative frameへ反映します。</p>
+          <output id="playback-progress" data-testid="rive-playback-progress" hidden>0.00</output>
         </section>
         <p class="section-title">保存</p>
         <div class="button-row">

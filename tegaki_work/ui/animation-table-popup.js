@@ -9,6 +9,9 @@
  *   Timeline wheelは通常時を移動だけ、Shift時を生成許可付き移動として明示的に渡す。
  * CAF編集境界: animation working Layerは選択中Clipの表示・入力adapterであり、Tableを閉じても
  *   同じClipを編集中なら有効。Popup visibilityをselection可否や座標変換の条件にしない。
+ * 初回入口: Table openはUIだけ。AnimationCanvasWorkflowの明示開始で通常Projectを
+ *   既存Albumへ保存し、Project-load境界で新しい履歴へ移して既存CAF seedを使う。
+ *   静止画コピーはCAF sourceの通常Projectを保存するだけで、原アニメを変更しない。
  * Folder Part / root Bone編集境界: Canvas overlayとpointer gestureはdisplay/runtime adapterだけを所有し、
  *   static定義はClipAsset.rigDefinition、Frame PoseはClipInstance.rigMotionへ集約する。
  *   Folder Part trackは既存Project互換の保存schemaとして残すが、現行RIG/Motionの主操作はBoneへ一本化する。
@@ -47,6 +50,7 @@
 import { Container, Graphics, Matrix, Mesh, MeshGeometry, RenderTexture, Sprite, Texture } from 'pixi.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import { historyManager } from '../system/history.js';
+import { AnimationCanvasWorkflow } from './animation-canvas-workflow.js';
 import { TimelineModel, ClipAssetModel, DrawingSnapshotModel } from '../system/animation/animation-data-model.js';
 import {
     applyDirectionalTransformDrag,
@@ -961,6 +965,10 @@ export class AnimationTablePopup {
             const content = this.panel.querySelector('.anim-table-content');
             const state = this._bottomDockState || 'compact';
             const chrome = this._getBottomDockChromeHeight();
+            if (this.canvasWorkflow?.awaiting) {
+                this._setBottomDockHeight(Math.ceil(header.getBoundingClientRect().height + 8));
+                return;
+            }
             const bounds = this._getBottomDockHeightBounds(chrome);
             // Timeline structure (Lane add/remove, child rows) reaches this path through render();
             // AUTO height is recomputed here every time and never cached.
@@ -20171,6 +20179,9 @@ export class AnimationTablePopup {
 
     render() {
         if (!this.panel || !this.isVisible) return;
+        this.canvasWorkflow?.sync();
+        // Opening the Table is UI-only. Only explicit Start imports normal artwork.
+        if (this.canvasWorkflow?.awaiting) { this._queueBottomDockLayout(); return; }
         this._queueBottomDockLayout();
         this.panel.style.setProperty('--anim-cell-width', `${this.timelineCellWidth}px`);
         this.panel.style.setProperty('--anim-cel-inset', '6px');
@@ -20183,10 +20194,7 @@ export class AnimationTablePopup {
         const activeIndex = this.layerSystem?.getActiveLayerIndex() || 0;
         this.model.syncWithLayers(layers, activeIndex);
 
-        // Phase 4z5: 初回表示時に既存描画をClipAsset化
-        if (!this.initialClipAssetSeeded) {
-            this._ensureInitialClipAssetSeed();
-        }
+        // Existing animation projects are restored by ProjectManager, never by opening UI.
 
         const trackList = this.panel.querySelector('.anim-track-list');
         const timelineGrid = this.panel.querySelector('.anim-timeline-grid');
@@ -21606,6 +21614,7 @@ export class AnimationTablePopup {
             e.stopPropagation();
         });
         
+        this.canvasWorkflow = new AnimationCanvasWorkflow(this);
         this._setupPanelEvents();
     }
 

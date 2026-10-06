@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * ファイル名: system/polygon-shape-tool.js
- * 責務: 選択入力経路上の一時多角形編集と、閉じた輪郭の確定
+ * 責務: 選択入力経路上の一時多角形編集と、閉じた輪郭の描画/領域消し
  * 依存: system/closed-shape-paint.js, system/pixel-selection-system.js(座標/overlay所有), ui/feedback-toast.js
  * 被依存: system/selection-area-tools.js
  * 公開API: PolygonShapeEditor
@@ -56,6 +56,7 @@ export class PolygonShapeEditor {
         this.parts = null;
         this._cursor = '';
         this._maxToastShown = false;
+        this.erase = false;
     }
 
     get system() {
@@ -129,6 +130,7 @@ export class PolygonShapeEditor {
             if (this.points.length >= MIN_POINTS) this.commit();
             else this.cancel();
         }
+        if (!this.points.length) this.erase = this.system.toolMode === 'erase-polygon';
         this.layer = target.layer;
         const point = this._toLocal(event, this.layer);
         if (!point) return false;
@@ -292,21 +294,32 @@ export class PolygonShapeEditor {
         }
         const layer = this.layer;
         const points = normalized.points;
-        this.drag = null;
-        this.points = [];
-        this.layer = null;
-        this.render();
-        return this._bake(layer, points);
+        if (!this._bake(layer, points)) return false;
+        // Bake/readback uses offscreen targets. Refresh the existing stage before
+        // removing its SVG cover, so the handoff never exposes a stale/blank frame.
+        try {
+            this.system.layerSystem.flushFolderComposites?.();
+            this.system.layerSystem.app?.render?.();
+        } finally {
+            this.drag = null;
+            this.points = [];
+            this.layer = null;
+            this.render();
+        }
+        return true;
     }
 
     _paintOptions() {
         const options = this.areaTools.options.shape || {};
         const colors = this.areaTools.getColors();
-        const widthValue = options.width ?? Number(window.brushSettings?.getSize?.());
+        const widthValue = this.erase ? Number(window.brushSettings?.getSize?.())
+            : options.width ?? Number(window.brushSettings?.getSize?.());
         return {
             width: Number.isFinite(Number(widthValue)) && Number(widthValue) > 0 ? Number(widthValue) : 4,
             join: options.join === 'round' ? 'round' : 'miter',
-            paint: resolveClosedShapePaint(options, colors, { legacyMode: 'same' }),
+            paint: this.erase ? { mode: 'erase', fillRgb: options.erasePolygonMode === 'fill' ? [255, 255, 255] : null,
+                strokeRgb: options.erasePolygonMode === 'fill' ? null : [255, 255, 255] }
+                : resolveClosedShapePaint(options, colors, { legacyMode: 'same' }),
             opacity: Number.isFinite(Number(window.brushSettings?.getOpacity?.()))
                 ? Math.max(0, Math.min(1, Number(window.brushSettings.getOpacity())))
                 : 1
@@ -316,7 +329,7 @@ export class PolygonShapeEditor {
     _bake(layer, points) {
         if (!layer) return false;
         const options = this._paintOptions();
-        const strokePolygons = strokePolygonsForPoints(points, { width: options.width, join: options.join });
+        const strokePolygons = options.paint.strokeRgb ? strokePolygonsForPoints(points, { width: options.width, join: options.join }) : [];
         const result = paintClosedShapeToLayer({
             system: this.system,
             layerSystem: this.system.layerSystem,
@@ -325,10 +338,12 @@ export class PolygonShapeEditor {
             strokePolygons,
             paint: options.paint,
             opacity: options.opacity,
-            source: 'shape-polygon',
-            historyName: 'shape-polygon',
+            blendMode: this.erase ? 'erase' : 'normal',
+            source: this.erase ? 'erase-polygon' : 'shape-polygon',
+            historyName: this.erase ? 'erase-polygon' : 'shape-polygon',
             meta: { kind: 'polygon', pointCount: points.length, width: options.width, paint: options.paint.mode }
         });
+        if (this.erase && !result.ok && ['empty-selection', 'outside-canvas'].includes(result.reason)) return true;
         if (!result.ok) {
             if (result.reason === 'outside-canvas') showFeedbackToast('キャンバスの外です');
             else if (result.reason === 'bounds-limit') showFeedbackToast('描画範囲を広げられません（サイズ上限）');
@@ -396,14 +411,14 @@ export class PolygonShapeEditor {
         const options = this._paintOptions();
         const contourPath = this._pathForPoints(this.points, true);
         parts.fill.setAttribute('d', contourPath);
-        parts.fill.style.display = options.paint.fillRgb && this.points.length >= MIN_POINTS ? '' : 'none';
+        parts.fill.style.display = !this.erase && options.paint.fillRgb && this.points.length >= MIN_POINTS ? '' : 'none';
         parts.fill.style.fill = options.paint.fillRgb ? `rgb(${options.paint.fillRgb.join(',')})` : 'none';
         parts.paint.style.opacity = String(options.opacity);
         parts.fill.style.fillOpacity = '1';
 
         const strokePolygons = strokePolygonsForPoints(this.points, { width: options.width, join: options.join });
         parts.preview.setAttribute('d', strokePolygons.map(polygon => this._pathForPoints(polygon, true)).join(''));
-        parts.preview.style.fill = `rgb(${options.paint.strokeRgb.join(',')})`;
+        parts.preview.style.fill = !this.erase && options.paint.strokeRgb ? `rgb(${options.paint.strokeRgb.join(',')})` : 'none';
         parts.preview.style.fillOpacity = '1';
 
         const appendGuide = this.drag?.type === 'append' && this.points.length

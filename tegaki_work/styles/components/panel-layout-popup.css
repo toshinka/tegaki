@@ -9,10 +9,36 @@
 #panel-layout-popup .pl-fixed-footer { border-top: 1px solid var(--ui-border-float); padding-top: 4px; }
 #panel-layout-popup .pl-fixed-footer .pl-footer { margin: 4px 0 0; }
 #panel-layout-popup .pl-selected-status { font-size: 11px; min-height: 16px; }
+/* Template-first structure is explicit in the markup; no detached control moves. */
+#panel-layout-popup { max-width: calc(100vw - 16px); }
+#panel-layout-popup .pl-details { border-bottom: 1px solid var(--ui-border-float); margin-bottom: 5px; padding-bottom: 3px; }
+#panel-layout-popup .pl-details > summary { padding: 4px 0; font-weight: 700; cursor: pointer; }
+#panel-layout-popup .pl-details[open] > summary { margin-bottom: 4px; }
+#panel-layout-popup .pl-canvas-size { float: right; font-size: 10px; font-weight: 400; }
+#panel-layout-popup .pl-body-scroll .pl-template-group .pl-presets { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); }
+#panel-layout-popup .pl-body-scroll .pl-template-group .pl-preset { flex-direction: column; width: 100%; height: 46px; gap: 1px; font-size: 8px; }
+#panel-layout-popup .pl-body-scroll .pl-template-group .pl-preset svg { width: 19px; height: 28px; }
+#panel-layout-popup .pl-output-row .pl-label { flex-basis: 28px; }
+#panel-layout-popup .pl-output-row .pl-chips { flex: 1; }
+#panel-layout-popup .pl-output-row .pl-chip { flex: 1; white-space: normal; height: auto; min-height: 24px; min-width: 0; line-height: 1.2; overflow-wrap: anywhere; padding: 2px 4px; }
+#panel-layout-popup .pl-selected-status { margin: 5px 0; }
 .panel-layout-overlay:is(.is-splitting,.is-object-control) .pl-ov-hit,
 .panel-layout-overlay .pl-ov-hit.is-free-selected { pointer-events: all; }
 .panel-layout-overlay:is(.is-camera,.is-transform) :is(.pl-ov-hit,.pl-ov-cut-hit,.pl-ov-handle) { pointer-events: none; }
 .panel-layout-overlay .pl-ov-cut-preview { stroke: var(--active-border); stroke-width: 2; stroke-dasharray: 5 3; pointer-events: none; }
+.panel-layout-overlay .pl-ov-snap-guide { stroke: var(--active-border); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+/* Shared fixed workflow rows. Tool-specific handlers and disabled state stay intact. */
+.manga-edit-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; padding: 3px 0 6px; border-bottom: 1px solid var(--ui-border-float); }
+.manga-edit-actions__entry, .manga-edit-actions__commit { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.manga-edit-actions :is(.pl-btn, .pl-chip) { min-width: 0; white-space: normal; line-height: 1.2; min-height: 24px; }
+.manga-edit-actions .manga-edit-actions__icon { flex: 0 0 26px; width: 26px; padding: 3px; }
+.manga-edit-actions__icon svg { display: block; width: 16px; height: 16px; margin: auto; }
+.manga-edit-actions__status { flex: 0 1 auto; font-size: 9px; color: var(--active-border); }
+.manga-edit-actions__status:empty { display: none; }
+:is(#panel-layout-popup, #balloon-popup, #lettering-popup, #focus-lines-popup, #quick-access-popup) .manga-edit-actions__entry > .pl-btn { flex: 1; }
+:is(#panel-layout-popup, #balloon-popup, #lettering-popup, #focus-lines-popup, #quick-access-popup) .manga-edit-actions__entry > .manga-edit-actions__icon { flex: 0 0 26px; }
+:is(#panel-layout-popup, #balloon-popup, #lettering-popup, #focus-lines-popup, #quick-access-popup) .manga-edit-actions__commit > .pl-btn { flex: 1 1 0; }
+:is(#panel-layout-popup, #balloon-popup, #lettering-popup, #focus-lines-popup, #quick-access-popup) .manga-edit-actions__status { color: var(--active-border); font-size: 9px; }
 :is(#panel-layout-popup, #balloon-popup, #lettering-popup, #focus-lines-popup).show[data-manga-transition="instant"] { animation: none; }
 /* Input target marker keeps geometry/glass unchanged. Orange is the shared active color. */
 [data-manga-input-root].show.is-manga-input-primary { outline: 2px solid var(--active-border); outline-offset: 1px; }
@@ -240,7 +266,7 @@
     fill: none;
     stroke: transparent;
     stroke-width: 12;
-    pointer-events: stroke;
+    pointer-events: all;
     cursor: pointer;
 }
 
@@ -448,6 +474,13 @@
 /* 漫画ツールのタブ行（ui/manga-tabs.js）。閉じるボタンと重ならないよう右を空ける */
 .manga-tabs-host { margin: 0 30px 6px 0; }
 .manga-tabs-host:empty { display: none; }
+.pl-preview-actions { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin: 4px 0; font-size: 10px; }
+.pl-preview-actions .pl-btn { padding: 2px 8px; min-height: 22px; }
+.manga-tabs-host { display: flex; align-items: center; gap: 4px; }
+.manga-tabs-host > .pill-tabs { flex: 1; min-width: 0; }
+.manga-canvas-mode { flex: 0 0 auto; padding: 2px 4px; min-width: 28px; border: 1px solid var(--ui-border-float); border-radius: 6px; color: var(--futaba-maroon); background: transparent; font-size: 10px; cursor: pointer; }
+.manga-canvas-mode[aria-pressed="true"] { border-color: var(--active-border); background: var(--active-border); color: var(--futaba-background); }
+:is(.panel-layout-overlay,.balloon-overlay,.lettering-overlay,.focus-lines-overlay).is-manga-drawing * { pointer-events: none !important; }
 
 /* ===== 吹き出しのキャンバス重ね表示（ui/balloon-overlay.js）===== */
 .balloon-overlay {
@@ -915,6 +948,11 @@
     :is(#balloon-font-comparison, #font-library-window) .pl-font-tree { max-height: 150px; }
     :is(#balloon-font-comparison, #font-library-window) .pl-font-comparison__cards { max-height: 300px; }
 }
+
+.manga-panel-target { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11px; }
+.manga-panel-target[hidden] { display: none; }
+.manga-panel-target .pl-select { flex: 1; min-width: 0; height: 24px; padding: 0 5px; font: inherit; color: var(--futaba-maroon); background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 5px; }
+.manga-panel-target__hint { color: var(--futaba-light-maroon); font-size: 10px; }
 
 /* Each page has its own scroll regions, including short/narrow viewports. */
 :is(#balloon-font-comparison, #font-library-window) .pl-font-comparison__header,

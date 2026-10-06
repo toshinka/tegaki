@@ -1,0 +1,58 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>WP030 トーン再編集と常設GUI</title>
+<style>body{background:#ffffee;color:#800000;font:12px system-ui}iframe{width:1280px;height:720px;border:1px solid #b8706b}pre{white-space:pre-wrap}</style>
+<button id="run" disabled>トーン再編集を検証</button><button id="inspect" disabled>トーンを表示</button><span id="state">製品起動中</span><pre id="output"></pre><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+const frame=document.querySelector('#product'),out=document.querySelector('#output'),state=document.querySelector('#state');
+const delay=ms=>new Promise(r=>setTimeout(r,ms)),check=(ok,label)=>{if(!ok)throw Error(label);out.textContent+='PASS '+label+'\n';};
+let core;for(let i=0;i<200;i++){core=frame.contentWindow?.coreEngine;if(core?.layerSystem&&core.popupManager)break;await delay(100);}
+const win=frame.contentWindow,ls=core.layerSystem,qa=core.popupManager.get('quickAccess');
+core.popupManager.show('quickAccess');qa._switchTab('tone');const tone=qa.tonePanel;
+const equal=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
+const image=()=>{const c=core.exportManager.renderToCanvas({transparent:true});return [...c.getContext('2d').getImageData(0,0,c.width,c.height).data];};
+const realm=v=>win.JSON.parse(JSON.stringify(v));
+const blank=()=>{const px=new Uint8ClampedArray(400*400*4);for(let y=70;y<300;y++)for(let x=80;x<320;x++)px.set([128,0,0,255],(y*400+x)*4);return ls.createRasterLayerFromSnapshot({width:400,height:400,pixels:px,rasterBounds:{x:0,y:0,width:400,height:400},paths:[],pathsData:[]},{name:'トーン範囲',source:'fixture'}).layer;};
+const select=layer=>ls.setActiveLayer(ls.getLayerIndex(layer));
+const input=(key,value)=>{const el=tone.root.querySelector(`[data-field="${key}"]`);el.value=value;el.dispatchEvent(new win.Event('input',{bubbles:true}));};
+const onCanvas=()=>core.app.renderer.extract.pixels({target:ls.currentFrameContainer}).pixels;
+state.textContent='検証可能';document.querySelectorAll('button').forEach(b=>b.disabled=false);
+document.querySelector('#run').onclick=async()=>{
+ const prefs=Object.fromEntries(['tegaki-tone-v1','tegaki-tone-slots-v1','tegaki-tone-colors-v1','tegaki-qa-tab'].map(k=>[k,win.localStorage.getItem(k)]));
+ state.textContent='実行中';out.textContent='';document.querySelector('#run').disabled=true;
+ try {
+  core.popupManager.hideAll();ls.getLayers().forEach((l,i)=>{if(!l.layerData.isBackground&&l.layerData.visible)ls.toggleLayerVisibility(i);});
+  const area=blank();select(area);core.popupManager.show('quickAccess');qa._switchTab('tone');
+  tone._onAction('reset');tone.params={...tone.params,color:'#ffffee',clipToLayer:true};tone.root.querySelector('[data-tone-slot="2"]').click();tone._setParams({...tone.params,color:'#ffffee',clipToLayer:true});
+  let history=core.history.stack.length;const result=tone.apply(),layer=ls.getActiveLayer();check(result.ok&&core.history.stack.length===history+1,'範囲にclipしたトーンを一Historyで追加');
+  const pixels=ls.createLayerRasterSnapshot(layer).pixels.slice(),committed=image(),committedProject=await core.projectManager.exportProject();
+  tone.loadFromActiveLayer();input('density','.7');await delay(80);
+  check(tone.display.layer===layer&&layer.layerData.layerSprite.renderable===false,'再編集は元Spriteを隠してdraftだけ表示');
+  check(tone.display.sprite.mask===layer.layerData.clippingMaskSprite,'draftにも元Layerと同じclipを適用');
+  const live=[...onCanvas()];check(!equal(live,committed),'濃度調整は確定前にCanvasへ反映');
+  check(equal([...ls.createLayerRasterSnapshot(layer).pixels],[...pixels]),'編集中も元Raster画素を変更しない');
+  check(equal(committed,image()),'編集中のPNGは確定画素だけ・draft混入ゼロ');
+  check(layer.layerData.layerSprite.renderable===false&&tone.display.sprite.renderable,'PNG capture後は再編集表示に戻る');
+  const project=await core.projectManager.exportProject();check(project.layers.find(l=>l.id===layer.layerData.id).imageData===committedProject.layers.find(l=>l.id===layer.layerData.id).imageData,'実Projectにもdraft画素が混入しない');
+  qa._switchTab('pen');check(layer.layerData.layerSprite.renderable&&tone.display.sprite===null,'tabを閉じると元トーンに復帰');
+  qa._switchTab('tone');tone.loadFromActiveLayer();input('density','.7');await delay(60);history=core.history.stack.length;tone.update();
+  check(core.history.stack.length===history+1&&layer.layerData.layerSprite.renderable,'更新は一History・元Spriteへ復帰');
+  const updated=image();check(!equal(updated,committed),'更新後は新しいトーン画素');check(equal(live,[...onCanvas()]),'編集表示と更新後のCanvas画素一致・重複なし');
+  core.history.undo();check(equal(image(),committed),'トーン更新Undoの画素完全一致');core.history.redo();check(equal(image(),updated),'トーン更新Redoの画素完全一致');
+  tone.loadFromActiveLayer();input('density','.2');await delay(60);select(area);check(layer.layerData.layerSprite.renderable&&tone.display.sprite===null,'選択先の変更でも元トーンを復帰');
+  select(layer);tone.loadFromActiveLayer();input('density','.2');await delay(60);qa.hide();check(layer.layerData.layerSprite.renderable&&tone.display.sprite===null,'popupを閉じると元トーンを復帰');
+  qa.show();qa._switchTab('tone');tone.loadFromActiveLayer();input('density','.2');await delay(60);core.history.undo();check(layer.layerData.layerSprite.renderable&&tone.display.sprite===null,'外部Undoでもdraftを破棄');core.history.redo();
+  tone.loadFromActiveLayer();input('density','.2');await delay(60);await core.projectManager.loadProject(realm(project));check(equal(image(),committed),'再編集中に実Projectを読込・確定PNG画素差ゼロ');
+  qa.show();qa._switchTab('tone');const transformed=ls.getActiveLayer();transformed.position.set(8,12);transformed.rotation=.08;transformed.alpha=.6;transformed.layerData.opacity=.6;tone.loadFromActiveLayer();input('density','.5');await delay(60);const transformedLive=[...onCanvas()];tone.update();check(equal(transformedLive,[...onCanvas()]),'移動・回転・Opacityでもdraftと更新画素一致');transformed.position.set(0,0);transformed.rotation=0;transformed.alpha=1;transformed.layerData.opacity=1;qa.show();qa._switchTab('tone');tone.root.querySelector('[data-tone-slot="3"]').click();check(tone.params.density===.5&&tone.root.querySelector('[data-tone-slot="3"]').textContent==='50','網点を濃度だけで一列に配置');
+  tone._renameSlot(0,tone.root.querySelector('[data-tone-slot="0"]'));let name=tone.root.querySelector('.qa-tone-density-row input');name.value='自分の網点';name.dispatchEvent(new win.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));check(tone.root.querySelector('[data-tone-slot="0"]').textContent==='自分の網点','定型枠の改名を維持');tone._resetSlot(0);
+  tone.loadFromActiveLayer();input('density','.5');await delay(60);
+  for(const [width,height]of [[1280,720],[360,640],[360,400]]){
+   frame.style.width=width+'px';frame.style.height=height+'px';win.dispatchEvent(new win.Event('resize'));qa.show();qa._switchTab('tone');await delay(80);qa._clampCurrentPanelPosition({save:false});
+   const sc=tone.root.querySelector('.qa-tone-scroll'),fixed=[tone.root.querySelector('[data-action="apply"]'),tone.elements.updateBtn,tone.elements.canvas];const before=fixed.map(el=>el.getBoundingClientRect().top);sc.scrollTop=sc.scrollHeight;
+   check(fixed.every((el,i)=>Math.abs(el.getBoundingClientRect().top-before[i])<1),'設定をscrollしても適用・更新と見本が固定 '+width+'x'+height);
+   check(fixed.every(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.left>=0&&r.right<=width&&r.top>=0&&r.bottom<=height;})&&sc.clientHeight>20,'適用・更新と見本と設定欄がviewport内 '+width+'x'+height);
+  }
+  state.textContent='PASS';
+ }catch(e){state.textContent='FAIL '+e.message;out.textContent+=e.stack;}
+ finally{tone._endEditing();for(const[k,v]of Object.entries(prefs)){if(v===null)win.localStorage.removeItem(k);else win.localStorage.setItem(k,v);}document.querySelector('#run').disabled=false;}
+};
+document.querySelector('#inspect').onclick=async()=>{frame.style.width='1280px';frame.style.height='720px';out.hidden=true;win.dispatchEvent(new win.Event('resize'));core.popupManager.hideAll();const area=blank();select(area);qa.show();qa._switchTab('tone');qa._applySharedPosition(100,80);tone.root.querySelector('.qa-tone-scroll').scrollTop=0;tone._onAction('reset');tone._setParams({...tone.params,color:'#ffffee'});tone.apply();tone.loadFromActiveLayer();input('density','.5');};
+</script></html>

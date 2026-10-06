@@ -6,6 +6,14 @@
 
 漫画制作の操作を小さくまとまったGUIへ整える。既存の通常Raster・再編集recipe・History・font libraryを維持し、保留候補を依存順に進める。
 
+## Owner follow-up — 漫画原稿プリセット（2026-10-05）
+
+Owner明示指示により、`ui/resize-popup.js`の「漫画原稿」presetだけを4960×7016から2150×3035へ変更。名称を保持し、tooltipをB5/300dpi相当・全面RGBAバッファ約26MBへ更新。既存大原稿をresizeせず、手動入力上限・Canvas resize transaction・Project/History/renderer契約を維持。`build/verify-canvas-size-presets.mjs`のpreset期待値だけ追従し、大原稿のsafe-pixel budget検証は保持。
+
+TECHNICAL COMPLETE / OWNER REVIEW。JS syntax、canvas-size-presets/resize-direct-framing/resize-direct-ui-adapter、font-publication、production build PASS。独立した実Chromeの製品tabで表示・選択2150/3035・適用後Canvas寸法・Undo400×400・Redo2150×3035と一Historyを確認。ビルド成果は一時出力後に除去。描画速度・液タブの制作受入は未測定、commit/pushなし。
+
+遅延調査はread-only。`brush-core.js`にstroke開始時の全面GPU baseline copy、Layer寸法のmask、対応GPUでrgba16float、同寸法のlive-tip composite、条件付きpen-upの入り抜き/ヒゲ/角ペン追従再構築がある。patch Historyのidle readbackとtexture poolは既に実装。今回の実機症状の支配原因は未計測。局所化とlive/final一致を改善候補とし、アプリ化・描画engine変更はこのpreset変更へ混ぜない。
+
 ## Sequence
 
 | 順 | 範囲 | 理由・検証 |
@@ -19,7 +27,377 @@
 
 将来の自由手描き輪郭、形の個人preset、コマ外clipは候補として保持する。全将来機能を最初のSliceへ混ぜない。
 
-## Current slice — 図形の線/内側色・多角形・Canvas集中線
+## Current slice — 再編集の元表示とコマへの素材配置（2026-10-05）
+
+Owner追加指示: 再編集中の元の形を薄く残し、二重のCanvasを避ける。白コマを土台にclippingした内容Folderへ吹き出し/文字/集中線を配置できる入口を共用する。新しい白コマ出力は枠・内容Folder（内描画Raster）・白で生成し、既存コマは明示素材追加時だけ必要な内容Folderを作る。既存の手動clipped Folderは白へのclip先を照合して再利用する。
+
+lead WRITE: capture-safe preview registryの表示alpha拡張、4漫画toolの再編集lifecycleと確定後の重複preview解除、通常Layerへの素材配置helper/UI、通常Folderの明示相対配置、既存白コマ生成、関連検証/Card/STATUS。既存Folder/parentId/clip mode/panelLayout recipeだけを使い保存schemaを増やさない。既存Normal History commandを一操作へまとめ、CAF追加経路・制作stroke・他WPへ広げない。元の表示は20%を目安とするruntime-only ghost、採取/Project/Exportは元の確定画素と属性を保持する。
+
+Acceptance: 4toolの再編集元が半透明、更新/初期化/閉/取消/外部変更で復帰、Folder合成・PNG/Project採取にghostが混入しない。3toolの共通配置先選択、Canvas選択の従来追加、白コマへの内容Folder/素材追加・適切なZ順・clip・一History/UndoRedo/Project往復、旧コマ/手動Folder再利用、非同期対象切替/欠損時拒否。syntax/build/関連suite/実Browser・狭幅とOwner制作受入を区別。commit/pushなし。
+
+### Result — TECHNICAL COMPLETE / OWNER REVIEW
+
+4漫画toolの再編集元はruntime Sprite表示だけ20%へ。コマは白/枠だけを薄くし、内容の絵を保持する。閉じる/取消/初期化/更新/外部変更/Undoで元表示へ戻す。既存のcapture-safe registryが元のalphaとrenderableを復帰し、入れ子の合成採取も最外の採取が終わるまで確定表示を保つ。LayerDataのopacity、確定画素、History、Projectを変更しない。トーンの元表示抑制は既存仕様のまま。吹き出し/文字の確定後は素材previewを止め、Guide/hitは保持して確定clip結果を見せる。
+
+new `ui/manga-panel-target.js` は通常Canvasの3素材toolへ共通の「配置先」選択を提供する。コマ内の選択Layerから初期候補を推定し、明示選択をtab間で共用。更新は元Layerの場所を保ち、新規追加だけが選択コマへ入る。新しい「白コマ＋クリッピング」は枠/内容Folder（内描画Raster）/白を一Historyで生成。内容Folderだけを白へclipし、文字→吹き出し→効果→内描画を標準のZ順にする。既存の白コマは明示素材追加時だけ内容Folderを作り、旧内描画を画素不変で収納しclipをFolderへ引き継ぐ。白をclip元に持つ手動Folderは名称によらず再利用。生成/収納/clip変更を既存Normal History commandの一操作へまとめる。
+
+実Browserで明示相対配置の最下端挿入がfree reorderの境界判定へ流れてFolderから外れる不具合を確認。`LayerSystem._applyLayerNearLayerInFolder` は明示した親を保持し、既存の子孫block整列とmask更新だけを行う。自由並べ替えの出入り判定は保持。非同期文字preview開始時に配置先tokenを捕捉し、処理中に対象を変えた時は変更なしで拒否する。helperは既存panelLayout metadataから白コマを照合し、新たな保存fieldやセリフノートの保存modelを作らない。将来のノート側は同じ配置処理を呼べる。
+
+- JS syntax 11 files、editable-lettering 9 / balloon 5 / focus-lines 3 / tone 1 / panel-layout 2 / folder-composite 2 / history 6 / project 11、font-publication、production build PASS。harnessは96 documents / 369 links。開始時の他WP依存状態は並行更新で解消し、WP030の旧anchorはPrevious sliceへ追従して再確認。
+- 実Browser `build/wp030-manga-panel-target-browser.html` **51 checks PASS**。4tool ghost、白/枠/文字/吹き出しの確定PNG、Project採取・往復、閉/取消/初期化/編集中Undo、3tool共通選択、Canvas追加、旧内描画の画素保持、手動/入れ子Folder再利用、Z順/clip、一History/UndoRedo、非同期変更拒否、入れ子採取を確認。
+- 既存Browser回帰: 複数しっぽ/コマ操作 **52**、密ウニ **42**、トーン **27**、Folder/縦書き/漫画入力 **40**、Animation入口/素材追加/静止画コピー **30 checks PASS**。旧「元を非表示」「内描画個別clip」の期待だけ新仕様へ追従。
+- 実プルダウンのCanvas→コマ1、実適用/再編集、文字の実入力とコマ収納、密ウニpresetからの収納を確認。1280×720と360×640で確認し、狭幅の4toolは各固定ボタン/配置先の実DOM境界を測定。確認画像 `wp030-ghost-panel-wide.png` / `wp030-ghost-panel-narrow.png`、検証ログと境界JSONはworkspace外のローカル成果。
+
+main/4760db9c16f2、既存差分と他WP保持。Owner制作受入、液タブ、大原稿/多Layerでの性能は未確認。対象選択は「白コマ＋クリッピング」で生成した通常コマのみ。手作りRasterからの任意コマ認識、CAF recipe再編集、セリフノート自体は当Slice外。補助previewは任意入口として保持し、別Canvasを増設しない。commit/pushなし。
+
+## Design estimate — 稲妻・連続ウニ（2026-10-05、実装未着手）
+
+Owner依頼は設計見積もりのみ。「集中線の見本から稲妻を選ぶ」「大小のウニを配置し、必要なら稲光で接続する」を候補とする。以下は提案であり、採用済み仕様・実装Card・制作受入ではない。現在のSliceや他WPを進めず、製品codeは変更しない。
+
+### 結論と範囲比較
+
+集中線パネル内の派生toolとして実現可能。ただし現在のpresetは一つの中心・楕円のparamsを差し替える入口であり、preset定数を追加するだけでは複数配置と接続を作れない。ウニのpure geometryを部品として使い、複数点と接続線を評価する別のgeometryを同じ適用/更新の入口へ渡す構成を推奨する。
+
+| 案 | 操作と出力 | 難度 | 開発工数の概算 |
+|---|---|---|---|
+| A: 大小の連続ウニ、接続は手描き | 範囲内に3〜5個を配置し、個別の位置・寸法を調整。一つの効果Layerへ適用。接続は別Layerへ描く | 小〜中 | 1〜2作業日 |
+| B: 走路に沿うウニ＋自動接続 | 始終点と途中点で走路を指定。その周辺に大小のウニを配し、太さを変えた折れ線で接続。接続OFFでAとしても使う | 中、推奨 | 合計3〜5作業日 |
+| C: 広い範囲へ自動分岐・複数走路 | 分岐の編集、密集/交差の回避、分岐ごとの強弱まで制御 | 大 | 合計1〜2週間以上 |
+
+各工数は同じ既存基盤から着手する場合の目安で、B/CはAへの追加日数ではない。限定的な技術検証・Browser操作・保存往復を含む通常の開発工数換算。実測や納期保証ではなく、制作表現の修正回数・液タブの受入・大原稿の性能調整は別に見積もる。特にCは求める絵の範囲が未確定のため幅が大きい。
+
+### 推奨する初版B
+
+- 新しい大分類tabは増やさず、集中線/密ウニ/荒ウニと同じ見本群から「稲妻」を選ぶ。選択直後から中央に使える見本とorange Guideを出す。
+- 最短動線は見本選択→Canvas上で始終点をdrag→上部の適用。途中点は必要な時だけ追加/移動する。走路の指定中は既存漫画入力gateでpenへ流さず、Space/Vの既存優先を守る。
+- 初期候補は一本の走路、3〜5個の大小の発光点。位置は走路沿いの順序を守り、横ずれ・間隔・寸法を有界に揺らす。Canvas全面への無作為配置と、任意の点を近い順につなぐ方式は初版へ入れない。これは交差と意図しない配置の手直しを減らすための設計判断。
+- 常用controlは発光点の個数、大きさ、接続線の太さ、乱れ、接続ON/OFF、二色/交換。発光点のトゲ本数と長さの揺れ、横ずれ等は詳細へ。発光点の個数と一本のウニの線数を同じ「本数」にしない。小さい発光点でも150本を無条件に固定せず、寸法と密度に合う初期値を制作見本で調整する。
+- 発光点は既存両端taperのウニを流用し、基本は中心も効果色で塗る。接続線は同色の角張った帯を新規生成し、線の太さと折れの大きさを別々に扱う。継ぎ目が透ける/太い塊になる/鋭角が異常に伸びる例を確認する。必ず同じpure geometryからCanvas previewと確定Rasterを描く。
+- 白フラは作品のCanvas色slotから開始できる。UIのcreamは使わない。効果周囲は透明、背景を暗くする指定は別の明示操作。既存ウニの「外ベタ」を各発光点で繰り返すと、後の点が前の点や接続線を覆うためそのまま反復しない。必要なら背景を一回だけ塗り、効果全体の形を重ねる。
+- 位置/太さの調整だけで全乱数を再抽選しない。全体seedから発光点と区間ごとに安定した乱数を導き、「別の形」で明示再抽選する。追加/削除による既存点の扱いは実装Cardで定める。
+- 一つの効果Layer、一回の適用/更新History。既存のコマ配置先とwhiteへのclipping、再編集元20%表示、固定上部actionを共用。通常Canvasで再編集でき、CAFは既存通り新規焼き込みだけ。手描き接続は別Layerへ置き、生成効果の更新で消さない。
+
+### 流用・追加と実装前の境界
+
+流用できるものは `system/focus-flash-geometry.js` の決定的なウニ、`system/focus-lines-presets.js` の寸法比率/見本入口、`ui/focus-lines-popup.js` の適用/更新、`ui/manga-panel-target.js` の収納/clip、既存表示専用ghost。追加は複数点/走路のpure geometry、そのGuideと選択/drag、複合geometryを描くSVG/局所Rasterの入口。現行 `focus-lines-raster.js` は単一flashを判定するため、複数flashを渡すだけでは動かない。
+
+再編集には走路・発光点・接続の設定を保持する必要がある。現行 `normalizeFocusLinesParams` / `sanitizeFocusLinesData` は未知paramsを落とすため、通常Rasterのoptional recipe拡張を次の実装Cardで明示する。新しいProject正本、Project schema version変更、CAF recipe、Layer階層/History/renderer authorityの変更は候補に含めない。旧集中線/ウニrecipeの幾何を保持する。
+
+初版の検証は400×400、2150×3035、4960×7016での大小と局所Raster bounds、同じseedの再現、始終点一致、短い/折れた/重なる走路、白/色交換、継ぎ目・鋭角、Guide dragと描画抑止、狭幅の上部action、コマclip、一History/UndoRedo、実Project保存再読込、確定PNGとpreviewの形、再編集元の復帰。技術PASSと漫画の制作受入を分ける。全自動で人物を避ける配置、自然放電の再現、分岐editorは後段。
+
+推奨順はAの複数ウニを部品として整える→同じtoolへBの接続ON/OFFを追加する。Aだけで止めても手描き接続の時短として使用でき、Bへ進む時も別toolを作り直さずに済む設計とする。
+
+## Previous slice — 制作時のフォルダ順序・縦書き・Canvas選択（2026-10-05）
+
+Ownerの制作フィードバックによる不具合修正。通常Canvasの文字FolderをコマFolderへ入れる/吹き出し上へ移す操作で子孫が旧Z位置に残る、縦書き改行が左→右、コマ内クリックが描画へ通ることを対象とする。補助プレビューは保持し、削除/復活をその場へ置く。新たなサブウィンドウは入力の修正後に必要性を判断する。
+
+lead WRITE: `system/layer-system.js` の通常Folder配置/既存History復元とclipping派生表示、new `system/normal-layer-clipping-alpha.js`、`system/lettering-font-engine.js` の日本語列順、`ui/manga-input-focus.js` / `manga-tabs.js` のruntime編集/描画切替、コマpopup/overlayとCSS、関連限定検証。当Sliceは通常Layerを対象としCAF内部Layer/保存schema/renderer authority/既存stroke terminal/他WPを変更しない。Pixi公式scene/container skillを既存責務内で参照。
+
+Acceptance: 閉じたFolder/入れ子Folderの移動と他Folderへの出し入れで子孫Z順を維持、一History/UndoRedo/Project画素往復。文字Folder→吹き出し→コマベースのclipを表示/書出しで確認。縦書きは通常/文字別/サイズprofileで右→左、横書き不変。4漫画tabで初期Canvas編集時はpen/fill/選択塗りへ流れず、明示描画と閉じた後は通常入力、Space/Vは既存操作へ譲る。コマ本体クリック選択と補助preview削除/復活、1280×720/360×640。syntax/関連suite/build/harness/実Browserを分離して記録。制作受入とpushはOwner。
+
+### Result — TECHNICAL COMPLETE / OWNER REVIEW
+
+通常FolderはPixiの兄弟として置く既存構造を保持し、論理子孫を含む描画順のblockとして移す。閉じた/入れ子Folder、別Folder内への移動と取り出しを同じ処理へ集約。通常並べ替えのUndoは既存placement snapshotで階層・子孫順・active Layerを戻す。一回の操作に一Historyを維持する。
+
+clipping元を生のRaster alphaだけで評価していたため、文字Folderがclip先の吹き出しの未clip領域まで表示されていた。表示派生helperで元自身と祖先Folderの既存clipを合成し、文字Folder→吹き出し→コマベースの制限を継承する。mask再利用keyへ依存Layerとclip modeを含め、元の更新で追従する。既存mask texture/renderer/Project保存を使用し、保存用の新しいalpha正本は作らない。
+
+日本語縦書きは改行ごとに右→左へ列を進める。通常の実書体、文字別属性/書体、サイズprofileを同じ向きへ揃え、横書きは保持。既に確定したRaster画素は変更せず、再編集→更新で修正後の列順を反映する。
+
+4漫画tabの初期Canvas入力は「編集」。共通headerの小型橙buttonで「描画」へ明示切替でき、再open/tab選択時は編集へ戻る。コマ内部を選択面とし、裸のCanvas入力もpen/fill/選択塗りへ渡さない。Space/Camera・global V/Transformは従来どおり優先する。描画時はoverlayのhitを譲り、閉じた後は通常入力へ戻る。補助previewは保持し、選択コマの削除/復活を直上へ併設する。入力を直した上で別窓の必要性を判断するため、今回サブウィンドウは追加しない。
+
+- syntax、editable-lettering 9 / folder-composite 2 / panel-layout 2 / Project 11 / History 6 / animation 36 / drawing 7、font-publication、production build、harness check（94 documents / 362 links）PASS。
+- 実Browser `build/wp030-manga-layer-repair-browser.html` **40 checks PASS**。通常LayerSystemの移動/入れ子/一History/UndoRedo/Project画素、連鎖clipと半透明Folder・PNG合成、実書体の縦3列、4tab×pen/fill/lasso-fill拒否、明示描画と閉じた後の入力、preview削除/復活を検証。操作はfixtureの既存製品API/pointer eventから実行。
+- 回帰: manga-input **25 checks**、manga-gestures **52 checks PASS**。Camera/Space/V/文字用V、Ctrl操作、分割と実Canvas hit判定、Project/PNG/UndoRedo、360×640/400の固定actionを確認。初回回帰で古いCSSの`pointer-events:stroke`が内部選択を上書きすることを実hit判定で発見し、基底hitを`all`へ修正。
+- Native Browser inputではコマ内部クリックで2→3へ選択変更しHistory 11のまま、previewの削除→復活、共通buttonの編集→描画→編集を確認。1280×720/360×640で共通tab/切替/固定適用が画面内。小型切替は狭幅で約30×20px。ログ `wp030-manga-layer-repair-checks.txt` / `wp030-manga-input-regression.txt` / `wp030-manga-gestures-regression.txt`、画像 `wp030-manga-layer-repair-wide.png` / `wp030-manga-layer-repair-narrow.png` はworkspace外のローカル成果。
+
+main/4760db9c16f2、既存漫画/QTP/Rive差分を保持、commit/pushなし。CAF内部配置、複数のclipped祖先Folderが重なる全組合せ、空sourceのinverse clip、液タブ、大原稿のmask性能、Owner制作受入は今回未検証。通常Canvasの報告された制作経路を修正し、保存/History/rendererの所有と既存stroke terminalを維持する。
+
+## Previous slice — 漫画とアニメの明示入口・素材追加・静止画コピー（2026-10-05）
+
+Owner承認: テーブル表示とCAF化を分離し、通常Canvasのコピーを残して明示開始。漫画の不可操作を適用前に表示し、文字/集中線/吹き出しの新規Rasterを選択CAFへ追加。CAF素材を静止画Projectとして既存アルバムへコピーし、原アニメを維持する。完全な再編集recipe往復、コマのCAF構築、現在FrameのMotion/RIGを焼いたコピーは後段。
+
+lead WRITE: `ui/animation-table-popup.js` の入口/既存CAF追加terminal、限定workflow/helper、`ui/album-popup.js` の既存normal Project変換とコピー入口、漫画popup/文字adapterの対象判断、関連CSS/Browser fixture/Card/STATUS。並列writeなし。通常LayerとCAFのHistoryを混同せず、CAFは既存DrawingSnapshot/internal Layer/asset Historyを使用。Project schema/renderer/production stroke/他WP不変。共有CAFへの追加は同じAssetの全Clipへ効くことをUIで明示。開始前コピーの保存失敗/対象変更/復元失敗時はfail closed。
+
+Acceptance: 初回open/closeでLayer画素/recipe/HistoryとCAF数が不変。明示開始前にnormal Projectコピーがアルバムへ保存され、既存CAF再open/Project reloadは開始待ちへ戻らない。CAF文字/集中線/吹き出し追加は一asset History、UndoRedo/Project往復/共有CAFと別Assetへの影響、処理中CAF切替拒否を確認。再編集/コマ/トーンの制限を先に表示。静止画コピーは通常Raster/Folder/opacity/blend/clipping/boundsを保持しanimation=null、元CAF/History不変、既存loadProjectで通常Canvasとして開ける。1280×720/360×640の入口・主操作、syntax/build/関連suite/harness/実Browser。制作受入はOwner、commit/pushなし。
+
+### Result — TECHNICAL COMPLETE / OWNER REVIEW
+
+`animation-canvas-workflow.js`が初回の明示入口とコピー導線を所有。Table open/closeはnormal Layer/recipe/Historyを変更せず、開始時だけ既存Albumへnormal Projectを保存し、既存loadProject境界で履歴を分離してCAF seedへ委譲する。開始前コピーの保存失敗/対象変更ではCAF化しない。開始復元失敗は保存済みnormal Projectへ戻す。新しいmode/backup/保存schemaを作らない。開始待ちはCanvasを圧迫しないheader寸法のdockで、開始/閉じるを直接表示する。
+
+`caf-manga-target.js`が選択Clip/Asset/model tokenと追加可否を共用し、文字・吹き出し・集中線の既存renderer出力を新規DrawingSnapshot/internal Rasterへ追加。表示用Layer capacityの増設は既存Raster追加と同じ`isApplying`区間とし、一asset Historyだけを記録する。通常`layer-create`commandを二重に残さない。CAF recipe保存・更新・再編集は許可しない。文字system adapterへはpopupからcallbacksを注入し、system→UI importを作らない。コマ/トーンも固定action領域で通常Canvas専用と表示し、normalへ戻るとcontrolsを復帰する。
+
+Albumの既存CAF→normal Project変換をコピーにも共用。CAFの上→下をnormal Projectの下→上へ変換し、Folder/opacity/blend/inverse clip/raster boundsを保持する。画像欠損は部分保存しない。元CAFとHistoryは変更せず、新しく保存したコピーだけを選択・表示し、既存の通常Projectロードを即使用可能にする。元Animation Projectの保存は既存Project保存経路のまま。SOURCEコピーなのでMotion/RIG評価やCAFのrecipe再編集往復は含まない。
+
+- syntax 10 files、editable-lettering 9 / balloon 5 / focus-lines 3 / panel-layout 2 / tone 1 / project 11 / animation 36、font-publication、production build PASS。NodeからTableを読む既存検証を維持するためCSSはmain stylesheetから読み込む。
+- 実Browser `build/wp030-animation-manga-browser.html` **30 checks PASS**。open/close、保存/開始復元/CAF追加復元失敗、既存asset History/UndoRedo/共有Clip/別CAF不変、実3renderer、非同期対象切替/描画中拒否、normal recipe回帰、実Project往復、copy属性/レイヤー順とコピーの選択を確認。ログはworkspace外の `wp030-animation-manga-checks.txt`。
+- 実ボタンから明示開始→漫画tab→CAF密ウニ追加→静止画コピー→Albumの通常Projectロードを確認。1280×720/360×640で入口の開始・閉じるとCAF追加/制限表示が画面内に収まる。画像はworkspace外の `wp030-animation-entry-wide.png` / `wp030-animation-entry-narrow.png` / `wp030-manga-caf-wide.png` / `wp030-manga-caf-narrow.png`。
+
+初回の一括patchは自動承認レビューが変更範囲と未検証rollbackを理由に拒否。補助file/独立Browser proofで失敗復元・一History・Projectコピーを先に実証し、その後限定して製品接続。working capacity生成を単なるrecording suppressionへ入れると既存createLayerのdoが実行されないため、既存Raster adapterと同じ区間へ修正した。通常Project loadが用意する空の作業Layerは今回変更せず、コピーされたsource IDsのZ順を確認する。
+
+main/4760db9c16f2、既存差分と他WP保持。制作受入/液タブ/大原稿でのコピー保存性能/全画素のCAFとnormal合成一致は未確認。完全なモード往復、コマ/トーンのCAF編集、recipe往復、Motion/RIGを含む現在Frameの取り出しは後段。commit/pushなし。
+
+## Previous slice — QTP図形一行化と投げ縄の表示（2026-10-05）
+
+Owner追加指示: 図形の線/塗りと内側色の2段を一行へ。塗りON/OFFは共有バケツSVG、同色/指定色は色付き●/◯、内側色変更は区別したスポイトSVG、輪郭とCanvas色リセットは小型化。消し投げ縄は作品Canvas色を主体とする可視guide。点滅/丸い角で確定形を見誤らない。
+
+lead WRITE: `ui/shape-paint-controls.js` / `ui/ui-icons.js` / QTP色同期とCSS、`system/lasso-erase-tool.js`とguide CSS、BrushCoreの投げ縄previewだけと表示専用helper、既存Browser fixture、当Card/STATUS。既存の設定key・明示輪郭OFF・色/点列/確定terminal/選択mask/UndoRedoを維持。新しい保存・History・renderer authorityなし、production pen/eraser stroke・他WPを変更しない。
+
+Acceptance: 1280×720/360×640/400で全設定が一行、SVGのみでもtitle/ARIA/keyboardで意味を確認できる。同色は描画色へ追従、指定色pickerとCanvas色resetが直接使える。消しguideはCanvas色と対比色の連続二色線、角は採取点の折れ線を維持し色が一致する面でも可視。投げ縄塗りpreviewは既存確定と同じ色/輪郭geometryを表示し、編集中はRaster/History/Exportを変えない。取消/確定、輪郭OFF、Camera/Space、既存図形35と領域消し40の回帰、syntax/build/harness/実Browserを確認。制作受入はOwner、commit/pushなし。
+
+### Result — TECHNICAL COMPLETE / OWNER REVIEW
+
+図形設定は塗りON/OFFのバケツ、輪郭、描画色に追従する●/指定色◯、内側色picker、Canvas色resetを一行へ。バケツONはfillで差別化し、輪郭とresetを22×24pxへ縮小。従来の色radioと設定keyを使い、SVGだけでもtitle/ARIA/native keyboardで意味と状態を保持。内側pickerは同色中から直接指定色へ移れ、主線色を変えない。共有icon registryへ既存スポイトと区別した内側色pickerの創作SVGを追加。
+
+消し投げ縄は同じ採取点の折れ線へ、作品Canvas色の1.5px coreと明暗に応じた対比色の3px haloを重ねる。連続線/miterで面塗り・点滅・角の丸めをなくし、背景色と同じ面をまたいでも縁が見える。per-moveの画素readbackや新blend engineを使わず、Guideは表示だけ。投げ縄塗りのpreviewを表示専用 `system/drawing/lasso-paint-preview.js` へ分離し、指定色/Canvas色/輪郭OFF/SIZEと既存closed-shapeの輪郭polygon計算を参照。以前の薄い描画色・round角の表示を置換し、確定terminal/点の記録/Historyを変更しない。
+
+- JS syntax 6 files、area-tools 5 / drawing 7 / tool-slots 1、font-publication、production build、harness（92 documents / 350 links）、scoped diff-check PASS。
+- 実Browser `build/wp030-area-erase-browser.html` **61 checks PASS**。前回40に、バケツ切替・色dot同期・pickerの主線色不変・一行bounds、実Graphics描画の鋭角/内側色と同じ点列の確定後一致、輪郭OFF/線のみ/内側Opacity、明暗2背景のGuide/角/非点滅/取消を追加。Project/PNG/UndoRedo/Camera/Spaceの回帰を保持。
+- `build/wp030-shape-paint-browser.html` **35 checks PASS**。旧action radioだけを新SVG toggle経由へ追従し、描画・保存・point・表示受渡しの既存確認を保持。
+- Native mouseでバケツOFF→実SpaceキーでONを確認。消しGuideのfixture capture表示を、同じ画面の暗色/Canvas色面の両方で視覚確認。`wp030-qtp-one-row.jpg` / `wp030-lasso-erase-contrast.jpg` / `wp030-qtp-one-row-checks.txt` はworkspace外のローカル検証成果。
+
+main/4760db9c16f2、他WP/既存差分保持。通常Rasterの消去範囲、保存/History/rendererの所有とproduction pen/eraser strokeは不変。液タブの操作感・大原稿での長い投げ縄preview性能・全画素のpreview/確定一致・Owner制作受入は未確認。commit/pushなし。
+
+### Owner follow-up — 図形設定を仲間スロット寸法へ（2026-10-05）
+
+Owner追加指示: 上のスロット位へ小型化。色の選択は橙枠の移動でもよく、SVGのONは小さい橙面＋抜き色で見分ける。WRITEは `styles/components/quick-access-popup.css` の図形設定行と当Card/STATUSだけ。既存DOM/ARIA/title/色選択と保存設定・消しの文字switchは保持する。
+
+TECHNICAL COMPLETE / OWNER REVIEW。図形設定を既存QTP寸法tokenと6列幅へ揃え、実Browserで上の仲間と各設定セルは19×19px、SVG11×11px、行124×19pxを確認。塗り/輪郭とCanvas色追従のONはorange面とcream icon、●/◯は色を保持して選択枠を移す。coarse-pointerでは既存tokenの24px/14pxへ追従するが、液タブ実操作は未確認。
+
+- 実Browserの既存領域消し61 checks PASS（1280×720/360×640/360×400の一行boundsを含む）。NativeバケツclickでOFF→SpaceでON、同色→指定色の選択移動を確認。
+- tool-slots、font-publication、production build、harness/diff-check PASS。CSSだけの変更。確認画像 `wp030-qtp-compact-controls.jpg` と結果 `wp030-qtp-compact-checks.txt` はworkspace外のローカル成果。
+- 他WP/既存差分を保持、commit/pushなし。制作受入はOwnerへ返す。
+
+## Previous slice — 投げ縄の輪郭と領域消し（2026-10-05）
+
+Owner明示指示: 投げ縄塗りはCanvas色を初期の内側色とし、Canvas色リセットを共有SVGで同じ行へ。輪郭線ありを既定とし、なしも選択可能。消しゴムの仲間へ多角形消しと投げ縄領域消しを追加する。
+
+lead WRITE: shape-paint-controls/QTP/tool-slotsと関連CSS、AreaToolController/PixelSelectionSystemの既存capture入口、polygon editorと限定lasso erase editor、既存closed-shape CPU compositorのerase合成、lasso fillの輪郭指定、関連verifier/Browser fixture、当Card/STATUS。並列writeなし、既存差分を保持。背景色で覆わずalphaをeraseし、通常Rasterの既存snapshot/Historyへ一回だけ確定。Background/Folder/Animation working layerは既存closed-shape端末の対応範囲へ広げない。Project schema/保存正本/production stroke/renderer/他WP変更なし。
+
+Acceptance: 内側のswitch・色・SVG resetを一行に収め、輪郭ON/OFFを独立保持。旧UIが自動OFFにした設定はONへ移し、新UIで明示OFFにした選択はreloadで保持。消しゴム棚/順送りに2種、点追加/移動/始点・Enter確定と手描きの離筆確定、Esc/cancel、選択mask/Camera/Space/Vを維持。RGBA透明化・部分Opacity・範囲外不変・空操作のHistoryなし・UndoRedo・実Project/PNG往復、狭幅のboundsを実Browserで確認。syntax/関連suite/build/harnessとOwner制作受入を区別。commit/pushなし。
+
+### Result — TECHNICAL COMPLETE / OWNER REVIEW
+
+投げ縄塗りの内側色は共有switch・色・`rotateCcw` SVGのCanvas色リセットを一行へ集約。初期値は作品Background色を参照する指定色＋輪郭ON。輪郭は独立したSVG switchでOFFにもでき、新しい明示OFFはreloadで保持する。旧UIが塗り選択時に自動保存したOFFだけをONへ移す。UI設定key、共有icon registry、6列のpreset棚を保持する。
+
+消しゴム棚へ「多角線消し」「投げ縄塗り消し」を追加。多角線消しは既存の点編集・始点/Enter確定を使い、SIZE幅の「線のみ」を初期値とし「領域」も選択できる。投げ縄塗り消しは囲んで離筆すると内側を消す。専用capture editorは既存closed-shape端末へalpha eraseを渡すだけで、通常Rasterのsnapshot/Historyを共用する。部分Opacity、選択mask、空操作のHistoryなし、既存Raster範囲の維持を確認。未確定の投げ縄はEsc/pointer cancel/tool・Layer切替で取消。capture入口のSpace優先も修正し、最初のSpace＋dragをCameraへ渡す。
+
+- JS syntax、area-tools 5 / tool-slots 1 / drawing 7 / Project 11、font-publication、production build、harness check（92 documents / 349 links）PASS。
+- 実Browser: `build/wp030-area-erase-browser.html` **40 checks PASS**。Canvas色/輪郭ON・旧設定移行・明示OFF復元、通常DrawingEngineの投げ縄塗り、2種の消しゴム、実RGBA/部分Opacity/選択mask/UndoRedo/空操作、Camera回転・Space移動、実Project/PNG往復、1280×720・360×640/400の一行boundsを確認。
+- 回帰: `build/wp030-shape-paint-browser.html` **35 checks PASS**。矩形/楕円/多角形/投げ縄の塗りと線、輪郭OFF、点編集、安定した表示受渡し、保存画素と狭幅を確認。
+- Native: 多角線消しを3点→Enterで確定し、線の透明化と内側の絵の保持を確認。領域モードの三角形消去とCtrl+Z / Ctrl+Shift+Z、実reloadで輪郭OFF保持→ON切替も確認。投げ縄領域消しのcaptureはBrowser fixtureのpointer eventで検証し、native手描き操作と区別する。検証画像 `wp030-lasso-canvas-reset-final.jpg` / `wp030-area-erase-native.jpg`、記録 `wp030-area-erase-checks.txt` はworkspace外のローカル成果。
+
+main/4760db9c16f2、既存漫画/原稿preset/WP034/WP035差分を保持。Background/Folder/Animation working layerの領域消しは対象外。Project schema/History/rendererの所有・production strokeは変更なし。液タブの手描き操作感・大原稿性能・Owner制作受入は未確認、agent commit/pushなし。
+
+## Previous slice — 上部操作とフリーコマの吸着（2026-10-05）
+
+Owner明示指示: トーンの重複titleを除き再編集/初期化も固定上部へ。漫画のコマ/吹き出し/文字/集中線も適用・更新・再編集・初期化を上部へ移す。コマの出力ラベルを収め、フリーコマへ隣辺の延長/既定間隔の吸着と編集のundo/redo SVGを付ける。文字「書式」へ6枠のサイズ登録、クリック呼出しと既存基本サイズsliderによる選択枠編集。GUIの意見を既存設計文書へ蓄積し、固定正本へ昇格させない。
+
+lead WRITE: 5 popup/UI（tone/panel-layout/balloon/lettering/focus-lines）、共有UI action mount helper、文字サイズUI helper、各CSS、panel-layout-gesturesのpure吸着、panel-layout-overlayのguide、関連fixture/verifier、当Card/STATUS/既存GUI設計メモ。既存差分を保持し同file並列writeしない。Project/保存recipe/確定History/renderer/原稿サイズ/他WPは変更しない。コマundo/redoは適用前のruntime draftだけ、文字サイズ枠は既存UI設定keyのみ。
+
+Acceptance: 1280×720・360×640/400で上部操作固定、footer二重ボタンなし、出力文字に横overflowなし。再編集→移動→更新/新規→適用と既存取消/CtrlEnter/History/Projectを維持。フリー頂点/本体の移動で隣辺・間隔吸着、Alt解除/回転Camera倍率の画面6px閾値、undo/redoに確定画素/History変化なし。サイズ6枠のクリック・slider/number/wheel更新とreload、読込/新規操作では枠上書きなし。syntax/関連suite/build/harness、実BrowserとOwner制作受入を区別。commit/pushなし。
+
+### Result — TECHNICAL COMPLETE / OWNER REVIEW
+
+共有 `ui/manga-edit-actions.js` が既存の各toolボタンを固定上部へ移し、重複titleと空のfooterを除去。再編集→初期化/新規/取消→出力（コマ）→新規適用/更新の配置と短いorange状態表示を共用する。確定handler・busy guard・取消・CtrlEnterは各toolのまま。白コマ＋クリッピングは狭幅で折り返す。文字サイズ6枠は `ui/lettering-size-slots.js` に分離し、クリック呼出し、上の基本サイズslider/数値/wheelで選択枠を上書き。既存UI prefsへmergeし、font情報の開閉設定を保持。新規/再編集/取消では選択だけ解除し、登録値を保持する。
+
+フリーコマの吸着は `system/panel-layout-gestures.js` のpure関数。隣コマの辺の延長、外向きに既定gapV/gapHを空けた平行線、その交点へ画面6px以内で吸着。全体移動は四辺を保持する一つの平行移動補正で、2本のGuideが揃う位置を優先。Alt解除、Camera90°/倍率換算、橙Guideを実装。SVGの戻す/進めるは最大60件のruntime draftだけ。確定/再編集読込/初期化で区切り、分岐編集でredoを捨てる。確定Raster/recipe/Historyは変更しない。
+
+- syntax、panel-layout 2 / editable-lettering 9 / tone 1 / balloon 5 / focus-lines 3 / Project 11、font-publicationとproduction build PASS。
+- 実Browser: 新 `build/wp030-manga-top-actions-browser.html` 84 checks。5パネル×1280×720/360×640/360×400の固定・横overflow・ボタン単一、登録枠のslider/数値/wheel・実reload、読込時保持、フリー角/本体/Alt/Camera回転の吸着、SVG undo/redoと確定画素/recipe/History不変を確認。
+- 回帰: コマ/複数しっぽ52、トーン27、密ウニ42、文字compact41 checks。更新/UndoRedo/実Project/PNG一致、狭幅の主要操作を確認。fixtureの合成eventとnative操作を区別する。
+- Native: 通常製品入口でサイズ枠click→実wheel64→65→上部適用→再編集→Canvas中心drag→CtrlEnter更新/close、History 1→2を確認。GUI意見は[既存設計メモ](../ai/2026-10-04-manga-panel-workflow-design.md#gui実用メモ2026-10-05)へ追記。確認画像 `wp030-top-actions-lettering.jpg` はworkspace外のローカル検証成果。
+
+main/4760db9c16f2、既存漫画/原稿preset/WP034/WP035差分を保持。Project schema/保存authority/renderer/確定History契約不変。液タブの操作感・大原稿の調整性能・Owner制作受入は未確認、commit/pushなし。
+
+## Previous slice — トーン再編集とQTP図形の操作整理（2026-10-05）
+
+Ownerの実用フィードバック: トーン再編集で元確定画素とdraftを重複表示しない。網点の濃度を同一行へまとめ、見本/適用/更新を常設、sliderは共有色へ。投げ縄/図形は線と塗りの選択、内側同色/指定色の選択を分ける。多角形の点を着色し、確定時の暗転を調査して除く。
+
+WRITE ownershipはleadのみ: `ui/tone-panel.js`, 新規表示専用tone draft helper, `ui/quick-access-popup.js`, `ui/shape-paint-controls.js`, `styles/components/quick-access-popup.css`, `styles/main.css`のpolygon表示、`system/polygon-shape-tool.js`, `system/closed-shape-paint.js`, `system/drawing/fill-tool.js`の投げ縄outline指定、`system/selection-area-tools.js`のUI設定、既存capture-safe preview registry、対象verifier/Browser fixture、当Card/STATUSの漫画段落。Pixi sprite/mask/captureの現在の契約に従う。Project schema、確定Raster/History authority、RIG/他WPの差分は変更しない。
+
+Acceptance: 元toneを表示だけ隠し、新draftは既存のclip/変形/opacityへ追従。hide/tab切替/外部変更/Undoで復帰し、編集中のPNG/実Projectの確定画素は変化ゼロ。update一History/UndoRedo。presetの改名/保存枠を維持し、1280×720・360×640/400で見本と確定常設。投げ縄同色/指定色の塗りと線、矩形/楕円/多角形、点移動/確定/Undo、暗転の実Browser観測。syntax/関連suite/build/harness、技術確認とOwner制作受入を区別。commit/pushなし。
+
+### Result — TECHNICAL COMPLETE / OWNER REVIEW
+
+- トーン再編集は表示専用 `ui/tone-draft-display.js` のSpriteへ置換。元Spriteのrenderableだけを隠し、clip/mask・親Layerの移動/回転/Opacityを共有する。既存capture-safe registryへ一時Sprite除外を追加し、PNG captureでは確定済み画素を表示、finallyでdraftへ戻す。update/外部content・History/選択先変更/Project読込/tab・popup hideで表示を復帰する。確定Raster/Project/Historyの保存正本は変更しない。
+- 見本・適用・更新は固定、設定だけscroll。網点5濃度を1行、他5枠は2列へ。改名・上書き保存は既存枠のまま。rangeはQTP共有色。投げ縄は線/塗りと同色/指定色を2段のradio switchに分離し、指定色の塗りも輪郭なし。矩形/楕円/多角形はSIZE輪郭と内側色を共用。多角形は始点を橙・他点を薄茶、guideの面着色を除去し、確定画素を既存stageへ描いてからSVGを外す。
+- 実Chromium: `build/wp030-tone-draft-browser.html` **27 checks PASS**。PNG/実Projectにdraft混入なし、更新前後の表示画素差ゼロ、clip/移動/回転/Opacity、UndoRedo・hide/外部Undo/Project読込、改名、1280×720・360×640/400で固定見本・適用・更新を確認。`build/wp030-shape-paint-browser.html` **35 checks PASS**。投げ縄同色/指定色/線・切替保持、図形、着色点、移動/確定/Undo、実Project/PNG往復、確定stage受渡しと直後6frameで背景暗転なし。native mouseで線/塗り切替、点作成・drag・Enter、網点呼出し・濃度wheel 30→35%・scroll中の更新を確認。
+- JS syntax 11 files、area-tools 5/tone 1/tool-slots 1、editable-lettering-layer/numeric-field、production build、harness check（90 documents/342 links）PASS。共有preview registryのcapture復帰をpure検証へ追加。従来のliteral 6-column棚を保持。大原稿での継続調整性能、液タブ、Owner制作受入は未測定/未受入。main/4760db9c、既存・並行WP034差分保持、agent commit/pushなし。
+
+## Previous slice — Guideの復帰とテンプレからのコマ制作（2026-10-05）
+
+Ownerの実用フィードバックに基づく限定follow-up。新規/範囲配置中の集中線Guideを常設し、復帰/初期化を区別する。帯の深さは既存0.05〜1の評価式を変えず上限3へ拡張する。コマはテンプレ選択→Canvas分割/調整→出力・適用の順に整える。出力方式は固定footer、テンプレは初期open、数値設定と選択コマの詳細は開閉group。`append(null)`由来の不要文字を除く。
+
+WRITE ownershipはleadのみ: `ui/focus-lines-popup.js`, `ui/focus-lines-overlay.js`, `system/focus-flash-geometry.js`, focus用CSS/検証、`ui/panel-layout-popup.js`, `styles/components/panel-layout-popup.css`, 対象Browser fixture、当Card/STATUSの漫画段落。公式調査agentはread-only。共有Layer/Project/History/renderer/Canvas resize/RIG正本、保存済みコマtreeとflashの既存範囲の出力は変更しない。原稿用の基本枠/裁ち落とし・個人template保存・Canvas変更は調査して別Sliceの契約案へ。テンプレは既存9種を見える入口へ戻す。
+
+Acceptance: preset選択時/範囲指定中の3handle実入力、Guide復帰/初期化、depth>1の有限geometry/出力、コマtemplate可視/null文字なし/出力常設、既存Canvas分割/修飾操作/追加更新/Project/Undo、1280×720・360×640/400のfooterと主要入口。syntax/関連suite/harness/build、実Browserで確認。技術確認とOwner制作受入を区別、commit/pushなし。
+
+### Guide・コマ制作動線の結果
+
+TECHNICAL COMPLETE / OWNER REVIEW。配置surfaceの後に3handleを描画し、preset選択直後/範囲配置中も直接操作できる。handle操作は範囲配置を解除してpenへ透過。「Guideを戻す」は形/数値を保持（中心が作品Canvas外なら中央へ復帰）、「初期化」は新規標準へ戻し確定Layerを変更しない。深さは300%まで、新旧の同じ0.05〜1入力の式は不変。「詳細」を「ばらつき」へ改称。
+
+コマは9種の小見本/コマ数を初期openで提示し、Canvas寸法をpx表示。余白/間隔/線色と選択コマ/境界の詳細は独立した開閉group。分割の主ボタン、出力方式/追加/更新は常設。DOMを別paneへ動かしてから再検索する二段構築を撤去し、`append(null)`による文字混入を除く。summaryをpopup dragの除外対象に加え、native clickで開閉できる。コマをCanvas端へ伸ばす既存操作は「端まで伸ばす」と表記。
+
+- 実Chromium: `wp030-manga-gestures-browser.html` 52 checks、`wp030-dense-flash-browser.html` 42 checks、`wp030-focus-body-browser.html` 26 checks PASS。template/Guide/初期化/深さ200%のProject往復/実SVGとRaster形状/追加更新/UndoRedo/既存clipと修飾操作/1280×720・360×640/400の確定可視。fixtureのgestureは合成event。
+- 通常製品tabでもnative center drag（範囲配置中→解除、screen中心640,358→668,378）、200%直接入力→Canvas範囲drag、summary native clickでopenを確認。CSSの共通`:is` selectorと詳細用ruleのspecificity競合を補正し9見本が一列。画像 `wp030-guide-depth-final.png` / `wp030-template-workflow-final.png` はworkspace外の検証成果。
+- syntax、focus suite3＋pure flash、panel suite2、numeric-field、harness 90 documents/342 links、production build PASS。従来のexternalization/chunk-size warning保持。main/4760db9c、並行WP034等の差分を保持、agent commit/pushなし。液タブ/制作評価はOwner未受入。
+
+### コマの後続設計 — 調査済み、未実装
+
+公式資料7ページに限定したread-only agent調査と現行codeで判断。CSPは新規作成時のtemplate指定と既存Canvasへの貼付けを持ち、基本枠があればそこへ配置する。[公式の読込方法](https://support.clip-studio.com/ja-jp/faq/articles/20210080)。MediBangは原稿の外枠・重要情報の内枠・塗り足しを区別する。[原稿用紙設定](https://medibangpaint.com/use/2015/12/setting-draft/)。テンプレ先行で最初の判断量を減らせるという判断はTegakiへの推論であり、全作家の使用実態を断定しない。
+
+| 順 | 次の限定Slice案 | GUIと維持条件 |
+|---|---|---|
+| 1 | コマ数別のtemplate追加 | 1/2/3/4/5/6以上を一つの絞り込みから選び、小見本一覧へ。template選択→同じCanvas編集→同じ出力footer。小規模の現状9種は全表示、数が増えた時に分類を追加する |
+| 2 | 自作template登録/再利用 | 現行UI設定のtree/params/色/出力方式と登録時Canvas寸法を、名前と見本付きのlocal UI libraryへ。作品画素/Project全体を含めない。初期は同寸法で再利用。free quadは絶対座標なので、異なる寸法の伸縮は一律の無言補正にしない。登録/削除・容量/書出しの契約を次Cardで確定 |
+| 3 | 原稿サイズ/枠のprofile | 400×400/1700×2400/4960×7016のCanvas pxと、コマ配置の基本枠、印刷の仕上がり/塗り足しを分離。pxだけで判型/印刷品質を断定しない。Canvas変更は既存resize transaction経由の明示操作、CAF/HistoryやProject authorityを独自追加しない。通常コマのratio treeとfree quadの扱いを先に固定 |
+
+個人templateは[CSP素材登録](https://help.clip-studio.com/ja-jp/manual_jp/630_material/自作の素材を登録する【PRO__47_EX】.htm)、[MediBang雛型再利用](https://medibangpaint.com/use/2023/04/mangatutorialforbeginners17/)を参照。前者の独立素材登録と後者のProject雛型を同じ保存仕様として混ぜず、Tegakiでは小さいコマ配置の再利用を先行する。これら後続のschema/resize実装は本Sliceに含めていない。
+
+## Previous slice — 両端を払う密ウニと制作動線（2026-10-05）
+
+Ownerの追加指示により実装へ進む。目的は「ウニを選択した時点で使える形」と、塗り/反転/基本調整まで迷わない導線。新規ウニは150本、両端taperの線列。旧ray/bodyの評価式と欠損recipeの出力を保持する。
+
+- 新optional v1 params `flash={kind:'tapered',depth,fill:'none'|'inside'|'outside',paperColor,ellipse:'none'|'fill'|'outline',ellipseWidth}`。中心の楕円を帯の基準にしdepthは短径比、幅は作品px。内/外ベタは帯中央の楕円まで同じ線色で塗る。外ベタはCanvas全面へ明示適用、透明中抜きと背景色塗りを区別。追加楕円は内側の安全領域へ紙色fillまたは輪郭線。作品Background色をUIで解決してrecipeへhex保存、外部font/Project/renderer正本は不変。
+- 完成形の小見本→Canvas配置/中心と縦横handle→本数/太さ/帯の深さ→固定footer適用。3preset（集中線/密ウニ/荒ウニ）、新規の寸法は短径に比例。150本を初期値とし100〜600本も直接編集。色二slot/交換、塗りなし/中ベタ/外ベタと楕円を同じcontext。詳細のみ開閉。旧外枠/二重枠は旧recipe再編集を維持する入口に残す。
+- previewは出力濃度、guide/編集中のorange表示で区別。既存確定Layerとdraftの重複は表示のみ抑制する既存境界を使い、Export/Project/Historyの確定画素を変更しない。新規確定後はdraftを非表示にし、次の明示編集で再表示。通常pen/Space/global Vの入力優先を保持。
+- 今回はコマ/選択clipの新機構、連続stamp、人物輪郭、破線/soft、稲妻、個人preset、ネーム/union/Vector Layerへ拡張しない。外塗りは明示Canvas全面と表示する。
+
+WRITE ownership: LUNA5.6 max workerはnew `system/focus-flash-geometry.js`, `system/focus-lines-presets.js`, `build/verify-focus-flash.mjs`だけ。pure決定的geometry/正規化helper/preset比率/旧非依存の検証を担当。leadは `system/focus-lines.js`, `system/focus-lines-raster.js`, `ui/focus-lines-popup.js`, `ui/focus-lines-overlay.js`, `styles/components/focus-lines-editor.css`, new `build/verify-focus-lines-flash-integration.mjs`, new/既存focus Browser fixture, 当Card/STATUSを所有。Layer/Project/History/renderer/Vite/RIG/package/共通登録はread-only、同file並列writeなし。workerは他担当の差分を戻さない。worker完了後はpure fileのwriteをleadへ返し、安全楕円の縦横比を保つ限定補正をleadが行う。
+
+Acceptance: 400/1700×2400/4960×7016の形比率、両端細/中央太・150本・seed再現/悪値有界、旧geometry不変、SVGとPNGの同一geometry/塗り順、二色/反転/楕円、追加/再編集/UndoRedo/実ProjectとPNG、Camera投影/Space、1280×720と360×640の主要操作/固定footer。syntax/関連verifier/build/harnessを実行。技術/Browser/Owner制作受入は分離、pushはOwner。
+
+### 密ウニ・制作動線の結果（2026-10-05）
+
+TECHNICAL COMPLETE / OWNER REVIEW。新規の集中線/密ウニ/荒ウニを完成形のSVG小見本から選ぶ。ウニは両端が点・中央が太い150本の線列、内外の長さに独立した有界揺らぎ、seed/線番号による再現。短辺比率の寸法と線幅、縦横の直接handle/範囲drag、基本数値を常設。中ベタ/外ベタ/なし、線と作品Background色の二slot/交換、内側の安全楕円を下地色塗りまたは輪郭線として追加。普通の集中線にも二slotの入口がある（第二色はUI設定、選んだ線色だけrecipeへ）。外ベタは明示Canvas全面、他はeffect周囲に絞ったRaster確保。保存済みray/bodyの幾何は旧HEADのgolden hashと一致、新flashのみoptional v1属性。
+
+半透明MAROONの旧共有CSSによる色上書きを除き、SVGと確定rasterは同じgeometry/色/塗り順。表示専用の既存capture-safe registryで再編集元を抑制し、Export/Project/snapshotは確定画素を採取。確定/hide/外部content変更/UndoRedoで表示を復帰。編集中UndoRedoはdraftを解除して復元recipeへ同期する。配置はpresetから範囲dragで入り、完了後はpenへ透過。Space/global Vを優先。主要確定は固定footer。px数値は比率で生じた小数を保持して表示2桁、wheelは従来の操作単位。
+
+- 実Chromium `build/wp030-dense-flash-browser.html`: 36 checks PASS。150本/同一基本領域/範囲drag、crop/中外ベタ/二色交換/追加楕円/Background黒0/wheel、実SVGと確定Rasterのalpha形状差が全160k pixelsの0.25%未満、7k原稿でも局所effectだけの確保、通常Raster一History、実Project load/全PNG一致、再編集元の表示抑制中Export、更新/UndoRedo/編集中Undo/hide復帰/Space、1280×720・360×640で基本操作scroll不要/固定確定。
+- 旧 `build/wp030-focus-body-browser.html`: 26 checks PASS。旧5preset/方向/外枠/二重枠/透明中央、zoom枠線幅/回転Canvas clip、旧recipe/実Project/PNG/更新Undo、wheel/Space、1280/360幅と360×400 footerを保持。fixture gestureは合成eventと区別する。
+- 通常製品tabの実button/native入力でも、密ウニ選択→Canvas範囲drag→解除、数値wheel150→151、本数150へpreset復帰、短い数値表示を確認。画像 `wp030-dense-flash-final.png` はworkspace外の検証成果。hidden iframeのviewport往復直後はGPU表示とSVG更新の時差があり、制作画像は通常製品tabで採取した。液タブ/制作表現のOwner受入へ広げない。
+- syntax、focus suite3＋new pure flash1、Project11、balloon5、numeric-field、harness check（90 documents/342 links/25 proposals/25 packages）、production build（1017 modules）、対象diff-check PASS。既存externalization/chunk-size warning保持。font原本のGit/build追加ゼロ。
+
+main/4760db9c、既存docs/並行WP034 RIG差分を保持。agent commit/pushなし。コマ/選択clipの新連携、個人preset/連続配置、人物輪郭、破線/soft、稲妻は次の独立Slice。制作受入はOwner。
+
+## Investigation — 集中線・フラッシュの制作動線を再設計（調査のみ）
+
+### Owner follow-up — 完成形と速さからの見直し（2026-10-05）
+
+状態: **DESIGN REVIEW / 製品実装なし**。Ownerの最新指示は、過去の個別要望へ追従する前に「漫画で何が作れるべきか／それを素早く作れるか」で集中線とウニを見直すこと。前Sliceの保存・操作の技術PASSは漫画表現の制作受入ではなく、今回の実用フィードバックを優先する。調査baselineはmain/4760db9c、開始clean。製品file、Project/History、RIG、別projectは変更しない。
+
+調査分担: LUNA6 maxが公式toolの限定比較、SOL6.1 highが作画者本人の制作工程・摩擦を調査。leadが現行source・pure geometryを監査して設計をまとめる。独立read-only、file writeなし、完了通知だけを受け、重複する進捗巡回はしない。稲妻の自動線、ネーム、自由部品union、正式Vector Layerは今回の実装対象にしない。
+
+### 現行の使いにくさの根拠
+
+| 観測 | 現行sourceで確認した状態 | 設計上の影響 |
+|---|---|---|
+| 選んですぐ使えるウニにならない | `focus-lines.js` のflashは48本・太さ10〜34px・outer260px・外向きの片端taper。閉輪郭bodyは谷/先端の交互polygon、ringはその縮小コピー | 手描きウニの「内外を払う線の密な帯」と、叫びのギザ枠が混在。本数変更だけでは形の違いを解消できない |
+| 原稿sizeで初期形状が壊れる | 同じflashをdefaultへpatchするpure実測: 400×400は線長中央値166.36px。1700×2400は48本中47本が2px未満、4961×7016は48本全部が2px未満（中央値はいずれも約1px） | innerはCanvas比率、outer/線幅は固定pxなので逆転する。工程0で直す。実製品の漫画原稿presetは4960×7016であり、4961は近傍検証値 |
+| 普通の集中線もsize基準が混在 | defaultのinnerは短辺22%、幅は1〜5px固定、count120、outerは最遠隅まで伸びる | ウニと違い線長は潰れないが、大原稿を同じ表示寸法へ縮小すると線だけ細くなる。新規presetの線幅/密度と保存済みabsolute値を分ける |
+| 本数まで辿り着く前に迷う | FIELDSのcount/width/taperはvariance context。形/線では結果に大きく効く数値を触れない | 頻出調整を同じ画面へ常設。詳細の整理と、主要操作を隠すことを分ける |
+| 仕上がりを確定前に判断しにくい | CSSはray opacity0.72、body0.62を固定。再編集元Layerの通常画素とdraft overlayの併置もsource上残る | 通常は出力どおりの不透明度。編集中は文字/橙のguideで表す。元Layerとdraftの二重表示を防ぐ |
+| 大原稿で無駄な確保がある | rasterizeFocusLinesは小さなウニでもCanvas全面のRGBAを生成。UIのinner上限1200/outer2400もengine4000/8000と違う | 小さなeffectは有界boundsで確定。全面effectだけ必要範囲を確保。上限は意味と実測を揃える |
+| コマclipがまだ前提になっていない | focus applyにはclip設定がなく、tone-panelには通常Rasterへのclip適用経路がある | 見えているpreviewにも同じclipを適用し、対象を表示する。toneの処理をそのままコピーせずHistory/配置を照合する |
+
+実測はproduction pure関数 `defaultFocusLinesParams → flash patch → buildFocusLines` をNodeで実行したもの。新たなBrowser制作操作、印刷品質、速度benchを実施した結果ではない。
+
+### 公式toolと作画者の制作工程
+
+2026-10-05に一次資料を確認。toolの機能表と、本人が示した制作工程を分けた。
+
+| 一次資料 | 確認できたこと | Tegakiでの判断 |
+|---|---|---|
+| [CSP公式・流線/集中線](https://help.clip-studio.com/ja-jp/manual_jp/540_comic/%E6%B5%81%E7%B7%9A%E3%83%BB%E9%9B%86%E4%B8%AD%E7%B7%9A%E3%80%90PRO__47_EX%E3%80%91.htm)、[フキダシ/フラッシュ](https://help.clip-studio.com/ja-jp/manual_jp/540_comic/%E3%83%95%E3%82%AD%E3%83%80%E3%82%B7%E3%80%90PRO__47_EX%E3%80%91.htm) | 種類を選んでCanvasをドラッグして生成、後から中心/形状を編集。フラッシュは集中線Layer | 完成形を先に選ぶ入口と、Canvas配置/後調整を主にする |
+| [MediBang公式・集中線](https://medibangpaint.com/use/2019/10/concentrated-line-tool/)、[ibisPaint公式・漫画機能](https://ibispaint.com/lecture/index.jsp?no=185) | 選択範囲/コマを先に指定し、中心や線を調整して確定。MediBangは編集previewが選択外にも出るが、確定時に削る | Tegakiはclip結果をpreviewにも反映する方が完成を判断しやすい、と推論。既存UIを模倣する必然性はない |
+| みうらあきの制作メイキング [工程⑤](https://tips.clip-studio.com/ja-jp/articles/1479)、[工程⑦](https://tips.clip-studio.com/ja-jp/articles/1481) | 素材を配置/縮小、選択範囲へ集中線、制作途中でウニ素材を2回配置し個別変形。内側白塗りを追加して背景を隠す | preset配置、複数配置、下地の塗りは実際のページ制作工程にある。講座原稿の工程であり全作家の習慣ではない |
+| [佐原未来執筆・CSP公式の集中線実践](https://tips.clip-studio.com/ja-jp/articles/1444) | 雛形を作る→配置→成形。顔に被る部分を制御点で逃がす、別領域をmask、白線の重ね、定規で描き足す | 楕円の速い作成を先に完成し、人物向けの局所輪郭調整/選択clipを後段に用意。本文末尾の作者名を確認 |
+| [平井太朗/heytaroh・フラッシュのコツ](https://tips.clip-studio.com/ja-jp/articles/9382) | 小さな生成で破綻する例と、大きく作って縮小する回避、調整済みLayerの素材化、ウニの複数重ねを説明 | 原稿環境とeffect寸法に合う初期値、個人preset、連続配置を重視。記事内のfolder合成mode説明は矛盾があり、そのまま実装仕様にしない |
+| [櫻木リト・本人のアナログ作画/練習記録](https://note.com/sakuragirito1023/n/nfcb0a8eb011e) | 3楕円を目安に中間から外へ/内へ払い、出発点を合わせた菱形状の線を並べる。過去の投稿作品も掲載 | 密なウニの基本は、外向き三角形の輪だけではない。太い中間帯と、内外別々の細い端を持たせる |
+
+素材販売者の宣伝だけを実作業の声として数えない。自動toolを使い、素材化し、定規で手を加える併用は確認できた。一方「プロの多くが自動toolを避ける」という割合は不明。破線/柔らかいウニや連続stampの一般的な使用頻度も今回の限定調査では確定していない。
+
+### 作れるべき完成形
+
+| 完成形 | 基本の構造/最初の状態 | 優先 |
+|---|---|---|
+| 普通の集中線（まばら/密/太い） | 内向きtaper、中央は透明、外は対象コマ/Canvas端へ。外向きも同じ場所から変更可能 | P0 |
+| 密なウニ（細かい/強弱/荒い） | 中間が太く内外の端を払う多数の線。中央/外側の輪郭の揺れと太さを別々に制御 | P0 |
+| 中ベタのフラッシュ | 中央の塗りと外向きspike。塗り色と線色は二slotで指定 | P0 |
+| 白/下地色のフラッシュ | 同じ形状へslot交換。必要時のみ対象範囲を他slotで塗り、局所stampなら外側は透明 | P0〜P1（clip/塗りscope） |
+| 叫びのギザ枠、二重ギザ枠 | 閉じたstroke輪郭。現行bodyはこの用途として保持し、密なウニと明示的に分ける | 既存維持 |
+| 二連/多連ウニ、寸法/本数を変えた連続配置 | 一つずつ形/seedを変え、白/下地の塗りを含めて重ねる。連結線は手描き可能 | P2 |
+| 人物に沿う集中線/ウニ | 基準の内側輪郭を少点で調整、選択maskで顔/身体を保護。中心は別に保持 | P3 |
+| 破線、柔らかい線、複数band、稲妻 | 前3系統の品質と制作受入後に派生。稲妻の走路自動化は別task | 後段 |
+
+新規入口のpreset案は6見本: 基本集中/細い集中/太い集中/ウニ標準/ウニ荒め/中ベタ。白フラは二slot交換で作り、色違いを形のpresetとして増殖させない。ギザ枠は別見本群へ残す。名称・数・初期密度はOwnerの制作評価で調整する。
+
+### 推奨GUIと作業フロー
+
+**見本を選ぶ → Canvasで囲む/置く → 密度・太さ・帯の深さを少し直す → 確定**を主にする。
+
+1. 上部へ2行程度の小見本付きpreset。見本は実evaluatorから作り、名前だけ/装飾iconだけにしない。大きな第二preview canvasは復活させない。
+2. その下に色2slot（線/塗り）と交換、内側=透明/下地色/描画色、適用範囲=Canvas/選択/クリップ先を集約。選べないscopeは理由付きでdisabledにする。
+3. Canvasはドラッグで外形boundsを指定。楕円の横長/縦長はそのままgestureから得る。中心移動とinner/outer handlesが直接触れ、初期形はgestureの大きさへfitする。クリック配置は最後のboundsを基準にする。
+4. 同じ基本画面に「密度」「太さ」「帯の深さ/線の長さ」と「別の形（seed変更）」を常設。密度は本数も併記、wheel/直接数値入力対応。片端/両端と内外方向は完成形に合う既定を選び、同じ場所で変更できる。
+5. 自由な輪郭、個別の入り/抜き、角度/長さjitter、正確な座標は詳細へ。現在の3tabを主要操作の分断に使わない。Basic常設＋詳細の開閉を推奨し、詳細が増えた段階でだけ内部tabを設ける。
+6. footerは固定、橙で「新規を編集中」/「レイヤーを再編集中」。適用/更新、取消、再編集が同じ場所。確定後はdraftを消し、必要なら「次を配置」で新規draftにする。再編集元とdraftの二重表示を避ける。
+
+操作目標（最初の形/色が合う状態）: tool open後、**見本選択1回＋Canvas drag1回＋適用1回**で単独ウニ。白フラはslot交換/対象内塗りの指定が追加。常用presetなら前回の選択を使い、形の数値調整を必須にしない。人物を避ける局所修正は追加操作として測る。これは設計上の目標で、計測済みの速度ではない。
+
+### 色・下地・clip・previewの判断
+
+- 二slotは描画色（初期maroon）と**作品CanvasのBackground色**を初期値にする。CSSの `--futaba-background` / UIのcreamを読み取らない。黒0も有効。自由色は従来のpickerで変更できる。
+- 新規配置中はBackground参照を追従させ、確定時には解決済み色をrecipeへ固定。後でBackgroundが変わっても保存作品の色を勝手に変えない。再編集中の色も保持し「現在の背景色を使う」は明示操作にする。
+- 内側が透明なら下の絵が見える。下地色で塗る場合は不透明な色で絵を隠す。白い線、白い内部、透明抜きは別々の指定。
+- 外側まで暗くする反転フラは**「対象範囲をslot色で塗る」**を明示ONにする。局所ウニのpreset選択でCanvas全面を自動塗りしない。指定コマ/選択scopeならその範囲だけ。通常レイヤーへclipする場合も下地と線を同じclipへ入れる。
+- 初期は未設定scopeをCanvasと表示。前段のコマtool選択や通常clipの所有者を検証できた場合にだけ対象を使い、無関係な直下layerへ黙ってclipしない。既存clipのparent/orderと1Historyのredoを先に固定する。
+- **出力どおりの色/不透明度のpreviewを既定**とする。橙guideとpanelの編集statusでdraftを示す。線そのものを固定半透明にしない。「下絵を透かして調整」は任意の補助表示であり、作品opacityへ保存しない。
+- 出力の全図を見たい時はguideを一時非表示にする。Camera zoom/flip/rotateの投影とclipも一致させる。元Layerの一時display抑制は既存文字editorの境界を参考にし、Export/Project/snapshotは元の確定画素を使う。二つ目の浮動確定popupは増やさない。
+
+### 解像度と多様性
+
+推奨は**配置範囲に応じて形状/線幅を組み立てるpreset**。400/1700/7000用の固定数値表だけでは、同じ紙面内の大小のコマと小さな吹き出しに対応できない。
+
+- 参照は指定effect bounds（または対象コマ）とし、Canvas全体は未配置時の初期boundsだけに使う。幅/内外band/抜けは基準寸法への比率、確定時は作品pxへ解決する。
+- 密度/本数は完成図の印象と連動させる。出力解像度を17.5倍にしたから本数も17.5倍にする方式にはしない。縦長/横長でも帯の見え方を比較してcalibrateする。
+- 同一比率で配置した400×400、1700×2400、4960×7016を比較し、別々の固定presetを操作者に選ばせず形を保つ。高解像度から縮小した出力と、小解像度の直接出力を見比べる。1px線の可読性は別check。
+- 乱数は単なる全field独立randomにせず、細い線の集合/太いアクセント/局所の線長揺れを役割別にする。整った/荒いは完成shapeのpresetで選べるようにする。
+- seedは現在のdrag/resize中は固定、明示「別の形」または次の配置時だけ変更。count変更時の揺れは急な全再配置を避ける設計を試験する。レシピ再読込は同じseedから再現する。
+- 個人presetは既存UI設定へ形状比率/密度/色方針を保存する候補。Projectやfont管理に第二のpreset正本を追加しない。
+
+### コードの責務と互換方針（仮設計）
+
+既存のpure幾何、SVG表示、確定raster、通常Layer/Historyの分離は使える。UI全体の作り直しや新rendererを必要条件にしない。
+
+| 責務 | 現行/変更候補file | 限定する内容 |
+|---|---|---|
+| 正規化・recipe互換 | `system/focus-lines.js` | 旧recipeは旧evaluatorで同じ形を保つ。新ウニを識別するoptional項目と上限は実装Cardで決める。schema versionを独自に上げない |
+| presetの完成形・寸法解決 | 候補 `system/focus-lines-presets.js` | 完成形id、ratio、UI label、target bounds→解決値。旧absolute presetを新規用に再定義しても旧保存dataへpatchしない |
+| 両端taper/band geometry | 候補 `system/focus-flash-geometry.js` | DOM/Pixi依存なし。inner/middle/outer、細線/強線、seedと揺れ。旧ray/bodyと責務を分ける |
+| Canvas表示・gesture | `ui/focus-lines-overlay.js`、`ui/focus-lines-popup.js` | 同じgeometryでpreview、中心/内外/新規bounds入力。Camera/Space/global Vを優先し、通常penの入力を横取りしない |
+| 確定画素・paint範囲 | `system/focus-lines-raster.js` | 同じgeometry、線/内側/外側paint、target clip、small effectのbounds。全面RGBAを毎drag作らない |
+| 追加/更新/取消・History | 候補 `system/focus-lines-layer-adapter.js` | popupのapply/updateを限定分離。通常Raster/optional再編集情報/画素guard、clip/orderを一Historyで扱う。generic command busを作らない |
+| GUI/色・preset選択 | popup + `styles/components/focus-lines-editor.css` | common部品/semantic tokens。カメラ投影・UI位置・runtime previewをrecipeへ保存しない |
+
+新fileは責務が明確になる場合だけ作る。既存fileの小helperに収まる仕事まで分割しない。headerにauthority/invariants/関連入口を記し、将来のAIが旧系/新系・保存/preview・presetを見分けられる配置にする。正式なファイル所有・境界は次の実装Cardで発行する。
+
+### 実装順と受入条件
+
+| 順 | Slice | 必須の確認/止めどころ |
+|---|---|---|
+| 0 | 現行rayの寸法/preview/scopeの修正 | 400/1700/4960で線が潰れない、旧recipe画素不変、元Layerの二重表示なし。不透明な見本で工程1の品質を判断できる |
+| 1 | ウニ標準・荒め・中ベタのgeometryとpreset | 添付の系統を初期選択で識別できる。両端が細い、密な帯/強弱/縦横の多様性。seed再現。presetだけで制作可能になるまで局所点/特殊線へ進めない |
+| 2 | 小見本・基本調整常設・Canvas drag・二slot | 見本→drag→適用の3操作で配置。数値tab探索不要、密度/太さ/wheel/seed、色交換/内側塗り、1280×720/360×640固定footer |
+| 3 | コマ/選択clipと対象内塗り | preview/確定scope一致、人物/コマ外へ漏れない、clip parent/order保持、追加/再編集/UndoRedo/Project/PNG。同時に有界rasterで高原稿の確保量を測る |
+| 4 | 個人presetと連続配置 | 再openでpreset利用、次の配置は新seed、数/寸法に程よい差。各placementをUndoできる。初期は個別Layerで既存再編集を保ち、複数objectの新保存schemaを要求しない |
+| 5 | 人物の周りの少点輪郭、破線/柔らかい派生 | innerの部分修正で顔を逃がす、編集前後の品質/seed保持。選択maskで足りる制作を先に評価。稲妻の自動走路は別Card |
+
+制作受入の最小場面: (a)普通の集中線を1コマへ、(b)セリフ用の縦長の密ウニ、(c)暗いコマへ下地色のフラッシュ、(d)人物の顔へ線を入れない配置、(e)大小3つのフラッシュを続けて配置。完成形を見るまでのclick/tab/scroll、調整の往復、previewと確定の差を記録する。Node/pure/保存PASSだけで「使える」を承認しない。
+
+次の限定着手は0〜1の「原稿寸法に合う初期値＋実用ウニの形」を推奨する。今回作った二種類の線列比較はworkspace外の模式図であり、製品実装/品質受入とは別。製品実装はOwnerの次の指示後、各Sliceの確定Cardで行う。
+
+## Previous slice — 図形の線/内側色・多角形・Canvas集中線
 
 ### Owner follow-up — 図形の線/内側色・多角形・Canvas集中線（2026-10-05）
 

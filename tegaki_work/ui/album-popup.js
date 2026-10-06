@@ -866,13 +866,13 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
         }
     }
 
-    _captureActiveCafData() {
+    _captureActiveCafData({ force = true } = {}) {
         const table = this._getAnimationTable();
         const model = table?.model;
         const asset = table?.selectedAssetId ? model?.getClipAsset?.(table.selectedAssetId) : null;
         if (!table || !model || !asset) return null;
 
-        table._saveSelectedClipFromWorkingLayers?.({ force: true });
+        table._saveSelectedClipFromWorkingLayers?.({ force });
 
         const snapshotIds = new Set();
         if (asset.drawingSnapshotId) snapshotIds.add(asset.drawingSnapshotId);
@@ -1086,6 +1086,41 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
 
     async saveCurrentSnapshot() {
         await this._saveSnapshot();
+    }
+
+    /** Save a detached normal Project copy without loading it or changing the live document. */
+    async saveProjectCopy(projectData, thumbnail = null) {
+        if (!projectData || projectData.animation) throw new Error('通常Canvasのコピーを確認できません');
+        await this._storageReady;
+        thumbnail ||= await this._captureCurrentThumbnail();
+        if (!thumbnail) throw new Error('コピーのサムネイルを作成できません');
+        const snapshot = { id: Date.now(), timestamp: Date.now(), order: this.snapshots.length,
+            thumbnail, currentFrame: null, frameStates: [], projectData: structuredClone(projectData) };
+        if (!await this._confirmLargeSnapshotAlbumSave(snapshot)) throw new Error('コピーを保存せず操作を取り消しました');
+        const summary = await albumStorage.putSnapshot(snapshot);
+        this.snapshots.push(summary); this._renderGallery(); this._updateStorageStatus();
+        return { snapshotId: snapshot.id };
+    }
+
+    async saveActiveCafAsNormalCopy() {
+        const data = this._captureActiveCafData({ force: false });
+        if (!data) throw new Error('コピーするCAF素材を選択してください');
+        const project = this._buildNormalProjectFromActiveCafData(data);
+        if (!project) throw new Error('CAF素材のレイヤーを取り出せません');
+        return this.saveProjectCopy(project, this._createActiveCafThumbnail(data));
+    }
+
+    /** Reveal only the new copy so the existing Load Project action is immediately usable. */
+    async showProjectCopy(snapshotId) {
+        await this.show();
+        await this._switchAlbumMode('snapshots');
+        this.selectedSnapshotIds.clear();
+        this._setSelectionMode(true);
+        this._toggleSnapshotSelection(snapshotId);
+        this._updateToolbarState(); this._renderGallery();
+        const card = [...document.querySelectorAll('#albumGallery .album-card[data-id]')]
+            .find(element => element.dataset.id === String(snapshotId));
+        card?.scrollIntoView({ block: 'nearest' });
     }
 
     async _captureSnapshot() {
@@ -1497,11 +1532,8 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
         }
     }
 
-    async _loadActiveCafDataAsNormalProject(activeCafData) {
-        if (!activeCafData?.asset || !window.projectManager?.loadProject) {
-            alert('通常Projectとして開けるCAFデータがありません。');
-            return false;
-        }
+    _buildNormalProjectFromActiveCafData(activeCafData) {
+        if (!activeCafData?.asset) return null;
 
         const width = Math.max(1, Math.round(activeCafData.canvas?.width || window.TEGAKI_CONFIG?.canvas?.width || 400));
         const height = Math.max(1, Math.round(activeCafData.canvas?.height || window.TEGAKI_CONFIG?.canvas?.height || 400));
@@ -1510,7 +1542,8 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
         const validIds = new Set();
         const projectLayers = [];
 
-        sourceLayers.forEach(layer => {
+        // CAF internals are top-to-bottom; normal Project / LayerSystem are bottom-to-top.
+        sourceLayers.slice().reverse().forEach(layer => {
             if (!layer || layer.isBackground) return;
             if (layer.type === 'folder') {
                 validIds.add(layer.id);
@@ -1522,6 +1555,8 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
                     blendMode: layer.blendMode || 'normal',
                     isFolder: true,
                     folderExpanded: layer.folderExpanded !== false,
+                    clipping: layer.clipping === true,
+                    clippingMode: layer.clippingMode || (layer.clipping === true ? 'normal' : 'none'),
                     children: [],
                     parentId: layer.parentLayerId || null
                 });
@@ -1530,7 +1565,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
 
             const snapshot = snapshots.get(layer.drawingSnapshotId);
             const canvas = this._createSnapshotCanvas(snapshot);
-            if (!canvas) return;
+            if (!canvas) throw new Error('CAFの画像が欠けているため静止画コピーを保存できません');
             validIds.add(layer.id);
             projectLayers.push({
                 id: layer.id,
@@ -1540,7 +1575,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
                 blendMode: layer.blendMode || 'normal',
                 parentId: layer.parentLayerId || null,
                 clipping: layer.clipping === true,
-                clippingMode: layer.clipping === true ? 'normal' : 'none',
+                clippingMode: layer.clippingMode || (layer.clipping === true ? 'normal' : 'none'),
                 rasterBounds: snapshot.rasterBounds || {
                     x: 0,
                     y: 0,
@@ -1555,6 +1590,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             if (!layer.isFolder) return;
             layer.children = sourceLayers
                 .filter(candidate => candidate?.parentLayerId === layer.id && validIds.has(candidate.id))
+                .slice().reverse()
                 .map(candidate => candidate.id);
         });
 
@@ -1563,7 +1599,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             app: 'tegaki',
             canvas: { width, height },
             background: {
-                color: window.TEGAKI_CONFIG?.canvas?.backgroundColor || 0xf0e0d6,
+                color: window.TEGAKI_CONFIG?.canvas?.backgroundColor ?? 0xf0e0d6,
                 visible: true
             },
             layers: projectLayers,
@@ -1571,6 +1607,14 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:
             animationState: null
         };
 
+        return projectData;
+    }
+
+    async _loadActiveCafDataAsNormalProject(activeCafData) {
+        const projectData = this._buildNormalProjectFromActiveCafData(activeCafData);
+        if (!projectData || !window.projectManager?.loadProject) {
+            alert('通常Projectとして開けるCAFデータがありません。'); return false;
+        }
         await window.projectManager.loadProject(projectData);
         return true;
     }

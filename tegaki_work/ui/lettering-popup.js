@@ -5,16 +5,19 @@
  *       whole placementを編集し、previewをLetteringOverlayへ渡す。
  * 依存: lettering-model.js, lettering-vector-renderer.js, editable-curve-geometry.js,
  *   ui/lettering-overlay.js, ui/font-tree.js, ui/font-comparison.js,
- *   ui/popup-drag-helper.js, system/font-library.js
+ *   ui/popup-drag-helper.js, system/font-library.js, ui/manga-edit-actions.js, ui/lettering-size-slots.js
  * 被依存: core PopupManager / manga tab registration (lead-owned)
  * 公開API: LetteringPopup
  * 保存/History: layerAdapterへ委譲。Project/History/Raster実装を持たない。
+ * GUI: 再編集/新規/取消/確定は固定上部。書式のサイズ6枠は既存UI prefsだけ。
  * グローバル登録: なし。mount時に新しいwindow APIを追加しない。
  * 実装状態: WP-025/027/028 UI slice
  * ============================================================================
  */
 
 import { coordinateSystem } from '../coordinate-system.js';
+import { cafMangaTarget, appendMangaRaster, restoreMangaTargetControls, syncMangaTargetControls } from './caf-manga-target.js';
+import { MangaPanelTarget } from './manga-panel-target.js';
 import { TegakiEventBus } from '../system/event-bus.js';
 import {
     curveSegments,
@@ -35,6 +38,8 @@ import { FontLibraryManagement } from './font-library-management.js';
 import { FontTree } from './font-tree.js';
 import { LetteringOverlay } from './lettering-overlay.js';
 import { mountMangaTabs, noteMangaTabShown } from './manga-tabs.js';
+import { mountMangaEditActions } from './manga-edit-actions.js';
+import { LetteringSizeSlots } from './lettering-size-slots.js';
 import { isMangaInputPrimary } from './manga-input-focus.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { attachNumericField } from './numeric-field.js';
@@ -145,6 +150,10 @@ export class LetteringPopup {
     constructor(dependencies = {}) {
         this.layerSystem = dependencies.layerSystem || null;
         this.layerAdapter = dependencies.layerAdapter || {};
+        this.layerAdapter.cafTarget = () => cafMangaTarget(this.layerSystem);
+        this.layerAdapter.cafAppend = (raster, name, token) => appendMangaRaster(this.layerSystem, raster, name, 'lettering', token);
+        this.layerAdapter.normalTarget = () => this.panelTarget?.token();
+        this.layerAdapter.normalAppend = (raster, options, token) => this.panelTarget.create(raster, options, 'lettering', token);
         this.eventBus = dependencies.eventBus || TegakiEventBus;
         this.fonts = dependencies.fontLibrary || fontLibrary;
         this.coordSystem = dependencies.coordinateSystem || coordinateSystem;
@@ -225,6 +234,7 @@ export class LetteringPopup {
                 return this.isVisible ? {
                 params: this.params,
                 result: this._lastValid?.result || null,
+                previewVisible: !this._previewSuspended && (!this.editing?.layerId || this._paramsTouched),
                 mode: this.mode,
                 characterSelection: this.characterSelection,
                 spacePressed: this._spacePressed,
@@ -240,6 +250,20 @@ export class LetteringPopup {
             if (this.isVisible) this._syncControls();
         };
         this.eventBus?.on?.('layer:activated', this._layerListener);
+        this._sourceChanged = payload => {
+            if (this.editing?.layerId && payload?.layerId === this.editing.layerId && !String(payload.source || '').startsWith('lettering-')) {
+                this._paramsTouched = false;
+                this.layerAdapter.endPreview();
+            }
+        };
+        this._sourceHistory = payload => {
+            if (['undo', 'redo', 'clear'].includes(payload?.action)) {
+                this._paramsTouched = false;
+                this.layerAdapter.endPreview();
+            }
+        };
+        this.eventBus?.on?.('layer:content-changed', this._sourceChanged);
+        this.eventBus?.on?.('history:changed', this._sourceHistory);
         this._offFonts = typeof this.fonts?.onChange === 'function'
             ? this.fonts.onChange(() => { void this._refreshFontData(); })
             : null;
@@ -413,6 +437,11 @@ export class LetteringPopup {
             return panel;
         });
         panels[0].append(root.querySelector('.lettering-popup__field-grid'), colorRow);
+        const sizeSlotsHost = document.createElement('div');
+        sizeSlotsHost.className = 'lettering-size-slots';
+        panels[0].prepend(sizeSlotsHost);
+        this.sizeSlots = new LetteringSizeSlots({ host: sizeSlotsHost, storageKey: UI_STORAGE_KEY,
+            onSelect: fontSize => this._setParams({ ...this.params, fontSize }) });
         colorRow.querySelector('.pl-label').textContent = '第一 / 第二フチの色';
         const placementTarget = document.createElement('div');
         placementTarget.className = 'pl-row lettering-popup__placement-targets';
@@ -494,6 +523,10 @@ export class LetteringPopup {
         footer.append(root.querySelector('[data-role="error-status"]'));
         root.querySelectorAll(':scope > .pl-footer, :scope > .lettering-popup__shortcut').forEach(el => footer.append(el));
         root.append(footer);
+
+        this.actions = mountMangaEditActions(root, { before: common, resetAction: 'new', error: root.querySelector('[data-role="error-status"]') });
+        this.panelTarget = new MangaPanelTarget({ root, layerSystem: this.layerSystem, history: this.layerAdapter.history });
+        this.actions.classList.add('lettering-popup__commit');
 
         const q = (selector) => this.popup.querySelector(selector);
         this.elements = {
@@ -682,7 +715,7 @@ export class LetteringPopup {
             this._renderFontDetails();
         });
         this.elements.fontCard.addEventListener('toggle', () => {
-            try { localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({ fontDetailsOpen: this.elements.fontCard.open })); } catch (error) {}
+            try { const prefs = JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || '{}'); localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({ ...prefs, fontDetailsOpen: this.elements.fontCard.open })); } catch (error) {}
             this._renderFontDetails();
         });
         this.elements.fontFavorite.addEventListener('change', async event => {
@@ -814,6 +847,7 @@ export class LetteringPopup {
         const value = finite(raw, key === 'endFontSize' ? 0 : 0);
         if (key === 'endFontSize') this._setParams({ ...this.params, endFontSize: value > 0 ? value : null });
         else if (key in this.params) this._setParams({ ...this.params, [key]: value });
+        if (key === 'fontSize') this.sizeSlots?.updateFromControl(this.params.fontSize);
     }
 
     _setPlacementField(key, raw) {
@@ -1087,7 +1121,7 @@ export class LetteringPopup {
     }
 
     _syncPreviewSource() {
-        if (this.isVisible && this.editing?.layerId && this._lastValid?.result?.ok) {
+        if (this.isVisible && this._paramsTouched && this.editing?.layerId && this._lastValid?.result?.ok) {
             this.layerAdapter.beginPreview?.(this.editing.layerId);
         } else this.layerAdapter.endPreview?.();
     }
@@ -1171,6 +1205,7 @@ export class LetteringPopup {
     }
 
     _syncControls() {
+        restoreMangaTargetControls(this.popup);
         if (!this.popup) return;
         const p = this.params;
         const setValue = (selector, value) => {
@@ -1231,7 +1266,7 @@ export class LetteringPopup {
         this.elements.gridEnabled.checked = this.grid.enabled;
         setValue('[data-role="grid-size"]', this.grid.size);
         this.elements.snap.checked = this.snap;
-        this.elements.editStatus.textContent = this.editing ? '文字レイヤーを再編集中' : '新規文字';
+        this.elements.editStatus.textContent = this.editing ? '— 再編集中' : '';
         const apply = this.popup.querySelector('[data-action="apply"]');
         const update = this.popup.querySelector('[data-action="update"]');
         apply.textContent = this.editing ? '別レイヤーに追加' : '新規レイヤーに追加';
@@ -1252,6 +1287,8 @@ export class LetteringPopup {
             row.querySelector('output').textContent = `${Number((p.fontSize * (profile?.[key] ?? 1)).toFixed(1))}px`;
         });
         this._syncCharacterControls();
+        syncMangaTargetControls(this.popup, this.layerSystem, 'lettering');
+        this.panelTarget?.sync();
     }
 
     _press(button, on) {
@@ -1977,21 +2014,23 @@ export class LetteringPopup {
     commitAndClose() { return this._commit(!!this.editing?.layerId, true); }
 
     async apply() {
+        const target = this.panelTarget.token();
         const rendered = await this._flushCurrent();
         if (!rendered) return { ok: false, reason: this.elements.errorStatus?.textContent || '文字を描画できません' };
         const committedRevision = this._paramsRevision;
         const params = clone(this.params);
-        const result = await this.layerAdapter?.apply?.(params);
+        const result = await this.layerAdapter?.apply?.(params, target);
         if (!result?.ok) {
             this._setStatus(result?.reason || '文字を追加できませんでした', 'error');
             return result || { ok: false };
         }
-        this.editing = { layerId: result.layerId || null };
+        this.editing = result.caf ? null : { layerId: result.layerId || null };
         this._curveEntryInitialized = true;
         const changedDuringCommit = committedRevision !== this._paramsRevision;
         this._sessionBaseline = clone(params);
         if (!changedDuringCommit) this._sessionUndo = [];
-        this._paramsTouched = false;
+        this._paramsTouched = changedDuringCommit;
+        if (result.caf && !changedDuringCommit) { this._previewSuspended = true; this.layerAdapter.endPreview?.(); }
         this._setStatus(changedDuringCommit
             ? '追加済みです。適用中に変えた入力は「更新」で反映してください'
             : '文字を追加しました', changedDuringCommit ? 'error' : 'success');
@@ -2017,6 +2056,8 @@ export class LetteringPopup {
         const changedDuringCommit = committedRevision !== this._paramsRevision;
         this._sessionBaseline = clone(params);
         if (!changedDuringCommit) this._sessionUndo = [];
+        this._paramsTouched = changedDuringCommit;
+        if (!changedDuringCommit) this.layerAdapter.endPreview?.();
         this._setStatus(changedDuringCommit
             ? '更新済みです。適用中に変えた入力はもう一度「更新」してください'
             : '文字Layerを更新しました', changedDuringCommit ? 'error' : 'success');
@@ -2032,6 +2073,7 @@ export class LetteringPopup {
             return result || { ok: false };
         }
         this._endDrag({ cancel: true });
+        this.sizeSlots?.clearSelection();
         this.activeTab = 'whole'; this.mode = 'whole'; this.characterSelection = null;
         this._informationFontValue = ''; this._fontTarget = 'whole'; this._profileChoice = null; this._outwardPreset = false;
         this.params = normalizeLetteringParams(result.params, this._canvasSize());
@@ -2053,6 +2095,7 @@ export class LetteringPopup {
     }
 
     newSession() {
+        this.sizeSlots?.clearSelection();
         this.layerAdapter.endPreview?.();
         this._endDrag({ cancel: true });
         const previousFont = this.params || {};
@@ -2097,6 +2140,7 @@ export class LetteringPopup {
     }
 
     async cancel() {
+        this.sizeSlots?.clearSelection();
         this.layerAdapter.endPreview?.();
         this._endDrag({ cancel: true });
         clearTimeout(this._previewTimer);
@@ -2194,6 +2238,8 @@ export class LetteringPopup {
         this.popupDragCleanup = null;
         this._offFonts?.();
         this.eventBus?.off?.('layer:activated', this._layerListener);
+        this.eventBus?.off?.('layer:content-changed', this._sourceChanged);
+        this.eventBus?.off?.('history:changed', this._sourceHistory);
         this.fontManagement?.destroy();
         this.fontComparison?.destroy?.();
         // FontComparison mounts its fixed host beside the popup; remove that

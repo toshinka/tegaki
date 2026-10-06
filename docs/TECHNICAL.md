@@ -47,6 +47,10 @@ RIG刷新の進め方（Owner承認、2026-10-03）: 旧系は既存作品用の
 
 ## History / Project
 
+漫画とAnimationの入口（[WP-030](work/WP-030-manga-tools-follow-through.md)）: Table open/closeは通常CanvasをCAFへ変換しない。明示開始で通常Projectのコピーを既存Albumへ保存し、既存loadProject境界で新しい文書履歴へ移してCAF seedを行う。通常Canvasの旧commandをCAF working Layerへ流用しない。開始前コピーの保存失敗はCAF化せず、開始処理失敗は通常Projectへ復元する。
+
+文字・吹き出し・集中線のCAF追加は新規の焼き込みRasterだけを既存DrawingSnapshot/internal Layerとasset Historyへ渡す。再編集recipeをCAF schemaへ追加しない。共有Assetの全Clipへ反映するためUIで明示し、非同期処理中の対象変更は拒否する。静止画コピーは選択CAFのSOURCEレイヤーを通常Projectとして既存Albumへ保存するだけで、原アニメを変更しない。Motion/RIGの現在Frame評価やrecipe往復は含まない。
+
 - command契約は`{ name, do, undo, byteSize?, meta? }`。件数/メモリ上限と線形Undo順を保つ。
 - SOURCE/CAF/ANIMATEでmutation正本とterminalを明示。入場/選択だけでKEYやHistoryを増やさない。
 - 保存時encodeとruntime/History TypedArrayを分離し、旧Projectの読込互換を維持する。

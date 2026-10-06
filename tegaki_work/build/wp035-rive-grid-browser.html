@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WP035 Rive grid3 native fixture</title>
+  <style>
+    :root { color-scheme: light; font: 13px/1.45 system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 12px; color: #800000; background: #ffffee; }
+    main { width: min(100%, 980px); margin: 0 auto; }
+    h1 { margin: 0 0 8px; font-size: 18px; }
+    .instructions, .receipt, .visual { padding: 9px; margin-top: 8px; border: 1px solid #d4a8a0; background: #f0e0d6; }
+    .controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+    label { display: grid; gap: 4px; min-width: 0; font-weight: 650; }
+    input[type=file], button { min-width: 0; font: inherit; color: #800000; background: #ffffee; border: 1px solid #9c3835; border-radius: 4px; padding: 6px; }
+    button { cursor: pointer; text-align: center; }
+    button:hover, button:focus-visible { outline: 2px solid #ff8c42; outline-offset: 1px; }
+    #status { display: block; min-height: 2em; margin-top: 8px; padding: 6px; border-left: 3px solid #ff8c42; background: rgba(255,255,255,.55); }
+    #mesh, #native-canvas { display: block; width: min(100%, 640px); height: auto; border: 1px solid #9c3835; background: #fff; }
+    .screens { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+    .screens figure { margin: 0; min-width: 0; }
+    .screens img { display: block; width: 100%; min-height: 90px; object-fit: contain; border: 1px solid #9c3835; background: #fff; }
+    figcaption { margin-top: 3px; font-size: 11px; }
+    pre { max-height: 240px; margin: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.35 ui-monospace, monospace; background: #ffffee; padding: 7px; }
+    code { font-family: ui-monospace, monospace; }
+    @media (max-width: 720px) { .controls, .screens { grid-template-columns: minmax(0, 1fr); } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>WP035 — grid3 native receipt fixture</h1>
+    <section class="instructions">
+      <strong>trusted操作:</strong> verifierが生成した <code>default-progress1.png</code>、<code>mixed-progress1.png</code>、<code>reload-progress1.png</code>、または対応する <code>.riv</code> を手動で選び、native CLIの表示結果とgrid3の構造を確認します。このfixtureは製品server、保存、session、APIへ接続せず、入力イベントを生成しません。
+    </section>
+    <section class="controls" aria-label="WP035 native files">
+      <label>default native PNG<input id="default-png" type="file" accept="image/png"></label>
+      <label>mixed native PNG<input id="mixed-png" type="file" accept="image/png"></label>
+      <label>reload native PNG<input id="reload-png" type="file" accept="image/png"></label>
+      <label>default native .riv<input id="default-riv" type="file" accept=".riv,application/octet-stream"></label>
+      <label>mixed native .riv<input id="mixed-riv" type="file" accept=".riv,application/octet-stream"></label>
+      <label>reload native .riv<input id="reload-riv" type="file" accept=".riv,application/octet-stream"></label>
+      <button id="open" data-testid="wp035-grid-open" type="button">選択したnative画像を表示</button>
+      <button id="inspect" data-testid="wp035-grid-inspect" type="button">receiptを確認</button>
+      <button id="inspect-native" data-testid="wp035-grid-native-inspect" type="button">.rivをnative runtimeで検証</button>
+    </section>
+    <span id="status" role="status">native receipt選択待ち</span>
+    <section class="visual" aria-label="grid3 topology">
+      <strong>grid3 topology preview</strong>
+      <canvas id="mesh" width="640" height="400" aria-label="grid3 eight outline vertices and center"></canvas>
+      <pre id="topology"></pre>
+    </section>
+    <section class="visual" aria-label="native runtime render">
+      <strong>RiveNativeRuntime render（CLI screenshotとは別のnative Web receipt）</strong>
+      <canvas id="native-canvas" width="320" height="200" aria-label="Rive native runtime render"></canvas>
+      <pre id="native-output" data-testid="wp035-grid-native-output">native .riv未検証です。</pre>
+    </section>
+    <section class="receipt" aria-label="native screenshots">
+      <strong>native CLI screenshot</strong>
+      <div class="screens">
+        <figure><img id="default-view" alt="default native progress 1 screenshot"><figcaption>default / progress 1</figcaption></figure>
+        <figure><img id="mixed-view" alt="mixed native progress 1 screenshot"><figcaption>mixed / progress 1</figcaption></figure>
+        <figure><img id="reload-view" alt="reload native progress 1 screenshot"><figcaption>reload / progress 1</figcaption></figure>
+      </div>
+    </section>
+    <pre id="output" data-testid="wp035-grid-output"></pre>
+  </main>
+  <script type="module">
+    // ROLE: Visible WP-035 fixture. User file selection and button clicks are trusted operations.
+    // TRUST: This page never dispatches input, pointer, keyboard, or product API events.
+    // NATIVE: .riv inspection uses the existing RiveNativeRuntime load/render/dispose lifecycle.
+    import { RiveNativeRuntime, imageMetrics } from '/runtime.js';
+    const vertices = [
+      ['TopLeft', 0, 0], ['TopCenter', .5, 0], ['TopRight', 1, 0], ['MiddleRight', 1, .5],
+      ['BottomRight', 1, 1], ['BottomCenter', .5, 1], ['BottomLeft', 0, 1], ['MiddleLeft', 0, .5], ['Center', .5, .5],
+    ];
+    const triangles = [[0,1,8],[1,2,8],[2,3,8],[3,4,8],[4,5,8],[5,6,8],[6,7,8],[7,0,8]];
+    const weights = [0,128,255,255,255,128,0,0,128];
+    const output = document.querySelector('#output');
+    const nativeOutput = document.querySelector('#native-output');
+    const nativeCanvas = document.querySelector('#native-canvas');
+    const status = document.querySelector('#status');
+    const selected = new Map();
+    const log = value => { output.textContent += `${String(value)}\n`; };
+    const hash = async file => {
+      const bytes = await file.arrayBuffer();
+      const digest = await crypto.subtle.digest('SHA-256', bytes);
+      return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    };
+    const rgbaSha256 = async bytes => {
+      const digest = await crypto.subtle.digest('SHA-256', bytes);
+      return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    };
+    const transparentPixels = imageData => {
+      let count = 0;
+      for (let index = 3; index < imageData.data.length; index += 4) if (imageData.data[index] === 0) count += 1;
+      return count;
+    };
+    const setImage = (inputId, imageId, label) => {
+      const input = document.querySelector(`#${inputId}`);
+      input.addEventListener('change', async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        selected.set(label, file);
+        document.querySelector(`#${imageId}`).src = URL.createObjectURL(file);
+        status.textContent = `${label} native PNGを選択しました。receiptを確認できます`;
+        log(`${label}: ${file.name} (${file.size} bytes, SHA-256 ${await hash(file)})`);
+      });
+    };
+    setImage('default-png', 'default-view', 'default');
+    setImage('mixed-png', 'mixed-view', 'mixed');
+    setImage('reload-png', 'reload-view', 'reload');
+    const setRiv = (inputId, label) => {
+      document.querySelector(`#${inputId}`).addEventListener('change', async event => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        selected.set(`${label}Riv`, file);
+        status.textContent = `${label} ${file.name} を選択しました。native runtimeで検証できます`;
+        log(`${label} .riv: ${file.name} (${file.size} bytes, SHA-256 ${await hash(file)})`);
+      });
+    };
+    setRiv('default-riv', 'default');
+    setRiv('mixed-riv', 'mixed');
+    setRiv('reload-riv', 'reload');
+    document.querySelector('#open').addEventListener('click', () => {
+      const names = [...selected.keys()].join(', ') || 'none';
+      status.textContent = `選択済み: ${names}。画像はnative CLI生成物です`;
+      log('trusted file selection display completed; no product/server mutation was requested.');
+    });
+    document.querySelector('#inspect').addEventListener('click', () => {
+      log(JSON.stringify({ meshProfile: 'grid3', vertexCount: 9, triangleCount: 8, triangleIndexBytes: 'AAEIAQIIAgMIAwQIBAUIBQYIBgcIBwAI', weights, vertices, triangles }, null, 2));
+      status.textContent = 'grid3 receiptを記録しました。別directory rebuildの同一性と画素差を確認してください';
+    });
+    async function inspectNativeRiv(label, file) {
+      if (!file) return { label, status: 'missing' };
+      const objectUrl = URL.createObjectURL(file);
+      // runtime.js appends a cache query; keep it after a fragment so the blob URL still resolves.
+      const artifactUrl = `${objectUrl}#wp035-native`;
+      const runtime = new RiveNativeRuntime(nativeCanvas);
+      try {
+        await runtime.load(artifactUrl, 320, 200);
+        const frame = runtime.render(1);
+        const pixels = frame.pixels || runtime.context.getImageData(0, 0, runtime.width, runtime.height);
+        const metrics = imageMetrics(pixels);
+        const artifactSha256 = await hash(file);
+        const receipt = {
+          label,
+          status: 'PASS',
+          width: frame.width,
+          height: frame.height,
+          progress: frame.progress,
+          artifactSha256,
+          nativeSha256: artifactSha256,
+          rgbaSha256: await rgbaSha256(pixels.data),
+          transparentPixels: transparentPixels(pixels),
+          alphaPixels: metrics.alphaPixels,
+          bbox: metrics.bbox,
+        };
+        runtime.dispose();
+        receipt.disposed = runtime.disposed === true;
+        return receipt;
+      } catch (error) {
+        runtime.dispose();
+        return { label, status: 'UNVERIFIED', error: error?.message || String(error), disposed: runtime.disposed === true };
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+    document.querySelector('#inspect-native').addEventListener('click', async () => {
+      const entries = [
+        ['default', selected.get('defaultRiv')],
+        ['mixed', selected.get('mixedRiv')],
+        ['reload', selected.get('reloadRiv')],
+      ];
+      nativeOutput.textContent = 'RiveNativeRuntimeで読み込み中…';
+      const receipts = [];
+      for (const [label, file] of entries) receipts.push(await inspectNativeRiv(label, file));
+      const byLabel = label => receipts.find(receipt => receipt.label === label);
+      const defaultReceipt = byLabel('default');
+      const mixedReceipt = byLabel('mixed');
+      const reloadReceipt = byLabel('reload');
+      const comparison = {
+        defaultMixedNativeDifferent: Boolean(defaultReceipt?.nativeSha256 && mixedReceipt?.nativeSha256 && defaultReceipt.nativeSha256 !== mixedReceipt.nativeSha256),
+        mixedReloadNativeSame: Boolean(mixedReceipt?.nativeSha256 && reloadReceipt?.nativeSha256 && mixedReceipt.nativeSha256 === reloadReceipt.nativeSha256),
+        defaultMixedRgbaDifferent: Boolean(defaultReceipt?.rgbaSha256 && mixedReceipt?.rgbaSha256 && defaultReceipt.rgbaSha256 !== mixedReceipt.rgbaSha256),
+        mixedReloadRgbaSame: Boolean(mixedReceipt?.rgbaSha256 && reloadReceipt?.rgbaSha256 && mixedReceipt.rgbaSha256 === reloadReceipt.rgbaSha256),
+        mixedReloadTransparentSame: Boolean(mixedReceipt?.transparentPixels !== undefined && mixedReceipt?.transparentPixels === reloadReceipt?.transparentPixels),
+      };
+      const report = { schema: 'tegaki.rive-editor.wp035.native-web-receipt.v1', runtime: 'RiveNativeRuntime', receipts, comparison };
+      nativeOutput.textContent = JSON.stringify(report, null, 2);
+      log(JSON.stringify(report));
+      status.textContent = receipts.some(receipt => receipt.status === 'UNVERIFIED')
+        ? 'native Web receiptは未検証のartifactがあります。'
+        : 'native Web receiptを記録しました。CLI screenshotとは別にRGBAと透明画素を比較しています。';
+    });
+    const canvas = document.querySelector('#mesh');
+    const context = canvas.getContext('2d');
+    const points = vertices.map(([, u, v]) => ({ x: 55 + u * 530, y: 35 + v * 330 }));
+    context.fillStyle = '#fff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = '#800000';
+    context.lineWidth = 2;
+    triangles.forEach(([a, b, c]) => {
+      context.beginPath();
+      context.moveTo(points[a].x, points[a].y);
+      context.lineTo(points[b].x, points[b].y);
+      context.lineTo(points[c].x, points[c].y);
+      context.closePath();
+      context.stroke();
+    });
+    points.forEach((point, index) => {
+      context.beginPath();
+      context.fillStyle = index === 8 ? '#ff8c42' : '#ffffee';
+      context.strokeStyle = '#800000';
+      context.arc(point.x, point.y, index === 8 ? 8 : 6, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+      context.fillStyle = '#800000';
+      context.font = '12px system-ui';
+      context.fillText(vertices[index][0], point.x + 8, point.y - 8);
+    });
+    document.querySelector('#topology').textContent = JSON.stringify({ meshProfile: 'grid3', vertices, triangles, weights }, null, 2);
+  </script>
+</body>
+</html>

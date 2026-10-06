@@ -50,8 +50,8 @@
     pointer-events: none;
     vector-effect: non-scaling-stroke;
 }
-.focus-lines-overlay .fl-ov-lines { opacity: 0.72; }
-.focus-lines-overlay .fl-ov-body { opacity: 0.62; }
+.focus-lines-overlay .fl-ov-lines { opacity: 1; }
+.focus-lines-overlay .fl-ov-body { opacity: 1; }
 .focus-lines-overlay .fl-ov-hole {
     fill: none;
     stroke: var(--active-border);
@@ -79,3 +79,22 @@
     #focus-lines-popup .pl-btn,
     #focus-lines-popup .pl-chip { min-height: 38px; font-size: 12px; }
 }
+
+/* Completion-first controls: density/weight/depth stay together across contexts. */
+#focus-lines-popup .fl-presets { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; }
+#focus-lines-popup .fl-preset { display:flex; flex-direction:column; align-items:center; height:auto; min-height:72px; padding:3px; gap:2px; font-size:11px; }
+#focus-lines-popup .fl-preset svg { flex:0 0 48px; width:100%; height:48px; overflow:hidden; border-radius:3px; }
+#focus-lines-popup .fl-preset[aria-pressed="true"],
+#focus-lines-popup [data-action="place"][aria-pressed="true"] { outline:1px solid var(--active-border); }
+#focus-lines-popup .fl-common { border-bottom:1px solid var(--ui-border-float); margin-bottom:5px; padding-bottom:2px; }
+#focus-lines-popup .focus-lines-context-tabs { margin:4px 0 7px; }
+#focus-lines-popup .fl-colors .pl-label { flex-basis:66px; }
+#focus-lines-popup .pl-color { width:30px; height:25px; }
+#focus-lines-popup .pl-select { flex:1; min-width:0; height:27px; color:inherit; border:1px solid var(--ui-border-float); background:var(--ui-surface-float); border-radius:5px; }
+#focus-lines-popup .fl-scope-hint { text-align:left; }
+#focus-lines-popup .fl-legacy { margin-top:6px; }
+#focus-lines-popup .fl-legacy summary { cursor:pointer; padding:4px 0; }
+#focus-lines-popup .fl-legacy .pl-chips { flex-wrap:wrap; margin:4px 0; }
+#focus-lines-popup .pl-edit-status { color:var(--active-border); }
+.focus-lines-overlay .fl-ov-place-hit { pointer-events:all; cursor:crosshair; }
+.focus-lines-overlay:is(.is-camera,.is-transform) .fl-ov-place-hit { pointer-events:none; }

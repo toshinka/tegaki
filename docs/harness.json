@@ -8,6 +8,7 @@
     "docs/ROADMAP.md", "docs/AUDIT.md", "docs/DOCUMENT_REGISTER.md",
     "docs/ai/ASTRA_OPERATING_RULES.md",
     "docs/ai/WEB_SUBCOMMANDER_CARD.md",
+    "docs/ai/DOT_COORDINATOR_CARD.md",
     "docs/ai/2026-10-03-navigation-audit.md",
     "docs/ai/INOCHI2D_EDIT_ROUNDTRIP_CAPABILITY.md",
     "docs/ai/2026-10-03-rig-backend-implementation-proposal.md",
@@ -20,6 +21,20 @@
     "docs/work/WP-032-rive-direct-bone-edit.md",
     "docs/work/WP-033-raster-project-alpha-roundtrip.md",
     "docs/work/WP-034-rive-weights-playback.md",
+    "docs/work/WP-035-rive-grid-mesh-editing.md",
+    "docs/work/WP-036-rive-influence-map.md",
+    "docs/work/WP-037-rive-weight-readability.md",
+    "docs/work/WP-039-rive-multijoint-workbench.md",
+    "docs/ai/WP-039-rive-multijoint-audit.md",
+    "docs/ai/WP-039-rive-chain-backend-result.md",
+    "docs/ai/WP-039-rive-chain-ui-result.md",
+    "docs/work/WP-038-rive-pivot-authoring.md",
+    "docs/ai/WP-038-rive-pivot-audit.md",
+    "docs/ai/WP-038-rive-pivot-backend-result.md",
+    "docs/ai/WP-038-rive-pivot-ui-result.md",
+    "docs/ai/WP-037-rive-weight-readability-audit.md",
+    "docs/ai/WP-036-rive-influence-audit.md",
+    "docs/ai/WP-035-rive-grid-audit.md",
     "docs/ai/WP-034-rive-weights-playback-result.md",
     "docs/ai/WP-034-rive-weights-playback-audit.md",
     "docs/ai/WP-033-raster-project-alpha-result.md",
@@ -89,7 +104,7 @@
         "tegaki_work/system/layer-system.js"
       ],
       "patterns": [
-        "^verify-folder-composite"
+        "^verify-folder-composite", "^verify-normal-layer-clipping-alpha"
       ]
     },
     "editable-lettering": {
@@ -249,7 +264,7 @@
     "rig-editor": {
       "architecture": "docs/ARCHITECTURE.md",
       "entrypoints": ["tegaki_work/ui/rive-editor-entry.js", "tegaki_work/ui/right-workspace-frame.js"],
-      "patterns": ["^verify-rive-editor-", "^verify-rive-bone-editor"]
+      "patterns": ["^verify-rive-editor-", "^verify-rive-bone-editor", "^verify-rive-pivot-", "^verify-rive-chain-"]
     },
     "warp": {
       "architecture": "docs/ARCHITECTURE.md",
@@ -297,6 +312,11 @@
     {"id":"WP-031","document":"docs/work/WP-031-rive-editor-operational-entry.md","status":"VERIFIED","dependsOn":[]},
     {"id":"WP-032","document":"docs/work/WP-032-rive-direct-bone-edit.md","status":"VERIFIED","dependsOn":[]},
     {"id":"WP-033","document":"docs/work/WP-033-raster-project-alpha-roundtrip.md","status":"VERIFIED","dependsOn":[]},
-    {"id":"WP-034","document":"docs/work/WP-034-rive-weights-playback.md","status":"BLOCKED","dependsOn":[]}
+    {"id":"WP-034","document":"docs/work/WP-034-rive-weights-playback.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-035","document":"docs/work/WP-035-rive-grid-mesh-editing.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-036","document":"docs/work/WP-036-rive-influence-map.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-037","document":"docs/work/WP-037-rive-weight-readability.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-038","document":"docs/work/WP-038-rive-pivot-authoring.md","status":"VERIFIED","dependsOn":[]},
+    {"id":"WP-039","document":"docs/work/WP-039-rive-multijoint-workbench.md","status":"VERIFIED","dependsOn":["WP-038"]}
   ]
 }

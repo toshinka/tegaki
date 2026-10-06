@@ -548,7 +548,7 @@ export class FillTool {
         const requestedPaint = normalizePaintMode(shapeOptions.paint, 'legacy');
 
         // 投げ縄の明示paintだけ共有CPU終端を使う。欠損/legacyは従来GPU塗りを保持する。
-        if (requestedPaint !== 'legacy') {
+        if (requestedPaint !== 'legacy' || shapeOptions.lassoOutline === true) {
             const backgroundLayer = layerManager.getLayers?.()?.find(entry => entry.layerData?.isBackground);
             const backgroundColor = Number.isFinite(backgroundLayer?.layerData?.backgroundColor)
                 ? backgroundLayer.layerData.backgroundColor
@@ -559,6 +559,7 @@ export class FillTool {
             const paint = resolveClosedShapePaint({
                 ...shapeOptions,
                 paint: requestedPaint,
+                outline: shapeOptions.lassoOutline !== false,
                 strokeColor: color,
                 backgroundColor
             }, { main: color, background: backgroundColor }, { legacyMode: 'same' });

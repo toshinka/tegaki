@@ -10,13 +10,14 @@
  * イベント発火: popup:shown, popup:hidden, layer:content-changed
  * 保存: 編集中の木はlocalStorage(UI設定)。確定したLayerは通常Raster Layerで、再編集用に
  *   layerData.panelLayout(optional・sanitize済み)を持つ。画素は派生物で、更新で再生成する。
- * 編集: WP030 Canvas直線/斜線分割・Ctrl対象操作・Space/Transform優先。compact context/固定footer。
+ * 編集: WP030 Canvas分割・フリー吸着・draft undo/redo。template-first / 開閉group / 出力と確定の固定上部。
  * 検証: build/wp030-manga-gestures-browser.html、verify-panel-layout-gestures.mjs。
  * 実装状態: ✅実装（WP-010 / WP-030）
  * ============================================================================
  */
 
 import { TegakiEventBus } from '../system/event-bus.js';
+import { restoreMangaTargetControls, syncMangaTargetControls } from './caf-manga-target.js';
 import { historyManager } from '../system/history.js';
 import {
     PANEL_DEFAULT_LINE_COLOR,
@@ -53,9 +54,12 @@ import { PanelLayoutOverlay } from './panel-layout-overlay.js';
 import { mountMangaTabs, noteMangaTabShown } from './manga-tabs.js';
 import { attachNumericField } from './numeric-field.js';
 import { attachMangaCanvasNavigation } from './manga-canvas-navigation.js';
-import { panelSplitFromStroke, transformFreePanel } from '../system/panel-layout-gestures.js';
+import { panelSplitFromStroke, transformFreePanel, snapFreePanelPoint, snapFreePanelMove } from '../system/panel-layout-gestures.js';
 import { attachPopupDrag, mountPopupAtOverlayRoot } from './popup-drag-helper.js';
 import { showFeedbackToast } from './feedback-toast.js';
+import { mountMangaEditActions } from './manga-edit-actions.js';
+import { UI_ICONS } from './ui-icons.js';
+import { ghostMangaPreviewSource, restoreLetteringPreviewSource } from '../system/lettering-preview-display.js';
 
 const STORAGE_KEY = 'tegaki-panel-layout-v1';
 const POPUP_ID = 'panel-layout-popup';
@@ -77,7 +81,7 @@ const BLEED_SIDES = Object.freeze([
 
 const OUTPUT_MODES = Object.freeze([
     { id: 'lines', label: '枠線のみ', title: '枠線Layerだけを追加' },
-    { id: 'paper', label: '白コマ＋クリッピング', title: '白コマ / コマ内描画(クリッピング) / 枠線 の3Layerを追加。コマの外へ描いてもはみ出さない' }
+    { id: 'paper', label: '白コマ＋クリッピング', title: '白コマ / 内容フォルダ(クリッピング・内描画Raster) / 枠線を追加。文字や吹き出しも内容へ収納' }
 ]);
 
 function newGroupId() {
@@ -102,13 +106,15 @@ export class PanelLayoutPopup {
         this.tree = buildPresetById('grid4');
         this.selectedId = null;
         this.editing = null; // { groupId } 再編集中の枠Layer群
+        this.draftActive = true;
+        this.previewSources = [];
         this.drag = null; // { type, id, index, toPoint, pointerId, cleanup }
         this.hoverSplitId = null;
         this.resolved = null;
         this.scale = 1;
-        this.context = 'split';
         this.splitMode = false;
         this.cutPreview = null;
+        this.snapGuides = [];
 
         this.overlay = new PanelLayoutOverlay({
             eventBus: this.eventBus,
@@ -119,11 +125,20 @@ export class PanelLayoutPopup {
                 hoverSplitId: this.hoverSplitId,
                 dragSplitId: this.drag?.type === 'split' ? this.drag.id : null,
                 cutPreview: this.cutPreview,
+                snapGuides: this.snapGuides,
                 splitMode: this.splitMode
             } : null
         });
         this._layerListener = () => this._syncControls();
         this.eventBus?.on?.('layer:activated', this._layerListener);
+        this._sourceChanged = payload => {
+            if (this.previewSources.some(layer => layer.layerData?.id === payload?.layerId) && !String(payload?.source || '').startsWith('panel-layout')) {
+                this._endPreview(); this.draftActive = false;
+            }
+        };
+        this._sourceHistory = payload => { if (['undo', 'redo', 'clear'].includes(payload?.action)) { this._endPreview(); this.draftActive = false; } };
+        this.eventBus?.on?.('layer:content-changed', this._sourceChanged);
+        this.eventBus?.on?.('history:changed', this._sourceHistory);
         this._navigation = attachMangaCanvasNavigation({ isVisible: () => this.isVisible, getSvg: () => this.overlay.svg,
             onSpace: space => { this._spacePressed = space; this.endDrag(); this.cutPreview = null; this.overlay.schedule(); },
             onObjectWheel: event => this._onObjectWheel(event) });
@@ -131,6 +146,7 @@ export class PanelLayoutPopup {
         window.addEventListener('resize', this._resizeListener);
 
         this._restore();
+        this._resetDraftHistory();
         this._ensurePopupElement();
     }
 
@@ -195,7 +211,7 @@ export class PanelLayoutPopup {
         this._build();
         // プレビューcanvasとrangeはpopup移動ではなく自前のpointer操作を優先する。
         this.popupDragCleanup = attachPopupDrag(popup, {
-            interactiveSelector: 'button, input, select, textarea, a, canvas, .pl-value, .popup-close-btn, .ui-close-button'
+            interactiveSelector: 'button, input, select, textarea, a, summary, canvas, .pl-value, .popup-close-btn, .ui-close-button'
         });
     }
 
@@ -205,7 +221,7 @@ export class PanelLayoutPopup {
             : `<button class="ui-close-button ui-close-button--medium popup-close-btn" data-action="close-popup" data-target="${POPUP_ID}" type="button">${window.UI_ICONS?.close || '×'}</button>`;
 
         const presetButtons = PANEL_PRESETS.map(p =>
-            `<button type="button" class="pl-preset" data-preset="${p.id}" title="${p.label}" aria-label="${p.label}">${this._presetThumb(p.id)}</button>`
+            `<button type="button" class="pl-preset" data-preset="${p.id}" title="${p.label}" aria-label="${p.label}">${this._presetThumb(p.id)}<span>${p.rows.flat(Infinity).length}コマ</span></button>`
         ).join('');
         const sliders = SLIDERS.map(s => `
             <label class="pl-row"${s.hint ? ` title="${s.hint}"` : ''}>
@@ -224,75 +240,101 @@ export class PanelLayoutPopup {
             ${closeBtn}
             <div class="manga-tabs-host" data-role="manga-tabs"></div>
             <div class="pl-title">コマ割り <span class="pl-edit-status" data-role="edit-status"></span></div>
-            <div class="pl-presets" role="group" aria-label="プリセット">${presetButtons}</div>
-            <canvas class="pl-preview" width="${PREVIEW_MAX.width}" height="${PREVIEW_MAX.height}" aria-label="コマ割りプレビュー"></canvas>
-            <div class="pl-hint">コマ/線/頂点をドラッグ（Altで吸着オフ）。番号は右上から</div>
-            <label class="pl-row pl-check">
-                <input type="checkbox" data-role="overlay-toggle">
-                <span>キャンバス上に重ねて表示・操作する</span>
-            </label>
-            <div class="pl-actions" role="group" aria-label="選択コマの操作">
-                <button type="button" class="pl-btn" data-action="split-h" title="選択コマを上下に分割">上下に分割</button>
-                <button type="button" class="pl-btn" data-action="split-v" title="選択コマを左右に分割">左右に分割</button>
-                <button type="button" class="pl-btn" data-action="remove" title="選択コマを消して隣のコマが広がる">結合</button>
-                <button type="button" class="pl-btn" data-action="toggle-delete" data-role="delete-btn" title="選択コマを描かず空白にする（番号も飛ぶ）。もう一度押すと復活">削除</button>
-            </div>
-            <div class="pl-actions" role="group" aria-label="全体の操作">
-                <button type="button" class="pl-btn" data-action="add-free" title="選択コマの上に、他のコマへ影響しないフリーコマ（コマ内コマ）を重ねる">コマ内コマ</button>
-                <button type="button" class="pl-btn" data-action="toggle-free" data-role="free-btn" title="選択コマを他のコマの追従から切り離して自由に動かす（もう一度で元の領域へ戻す）">フリー化</button>
-                <button type="button" class="pl-btn" data-action="align" title="わずかなズレを整える（小さな傾き・素直な分割比・ほぼ同じ位置の線を揃える）">整列</button>
-                <button type="button" class="pl-btn" data-action="reset-outer" title="外周の頂点を元の矩形へ戻す">外周を戻す</button>
-            </div>
-            <div class="pl-split-group" data-role="split-group">
-                <label class="pl-row">
-                    <span class="pl-label">傾き</span>
-                    <input type="range" class="pl-range" data-split="slant" min="${PANEL_LAYOUT_LIMITS.slant.min}" max="${PANEL_LAYOUT_LIMITS.slant.max}" step="0.005">
-                    <span class="pl-value" data-value-for="slant"></span>
-                </label>
-                <label class="pl-row">
-                    <span class="pl-label">この線の間隔</span>
-                    <input type="range" class="pl-range" data-split="gap" min="${PANEL_LAYOUT_LIMITS.gap.min}" max="${PANEL_LAYOUT_LIMITS.gap.max}" step="1">
-                    <span class="pl-value" data-value-for="splitGap"></span>
-                </label>
-                <button type="button" class="pl-btn pl-btn--small" data-action="reset-split-gap">全体の間隔に戻す</button>
-            </div>
-            <div class="pl-panel-group" data-role="panel-group">
-                <label class="pl-row">
-                    <span class="pl-label">このコマの線</span>
-                    <input type="range" class="pl-range" data-panel="lineWidth" min="${PANEL_LAYOUT_LIMITS.lineWidth.min}" max="${PANEL_LAYOUT_LIMITS.lineWidth.max}" step="0.5">
-                    <span class="pl-value" data-value-for="panelLineWidth"></span>
-                </label>
-                <div class="pl-row">
-                    <span class="pl-label">裁ち落とし</span>
-                    <span class="pl-chips">${bleeds}</span>
+            <div class="pl-body-scroll ui-scrollbar">
+                <details class="pl-details pl-template-group" open>
+                    <summary>テンプレートから始める <span class="pl-canvas-size" data-role="canvas-size"></span></summary>
+                    <div class="pl-presets" role="group" aria-label="プリセット">${presetButtons}</div>
+                </details>
+                <details class="pl-details" data-role="page-settings">
+                    <summary>余白・間隔・線と色</summary>
+                    ${sliders}
+                    <div class="pl-row">
+                        <span class="pl-label">線の色</span>
+                        <input type="color" class="pl-color" data-color="line" value="${this.color}">
+                        <span class="pl-label pl-label--inline" data-role="paper-label">コマの下地</span>
+                        <input type="color" class="pl-color" data-color="paper" value="${this.paperColor}">
+                    </div>
+                </details>
+                <div class="pl-selected-status" data-role="selected-status" role="status"></div>
+                <div class="pl-actions" role="group" aria-label="キャンバス操作">
+                    <button type="button" class="pl-btn" data-panel-tool="select">選択・調整</button>
+                    <button type="button" class="pl-btn" data-panel-tool="cut" title="コマを横切る線をドラッグ。Shiftで水平・垂直、SpaceでCamera">線で分割</button>
                 </div>
-                <div class="pl-row">
-                    <button type="button" class="pl-btn pl-btn--small" data-action="reset-panel-line">線を全体に合わせる</button>
+                <div class="pl-actions" role="group" aria-label="分割">
+                    <button type="button" class="pl-btn" data-action="split-h" title="選択コマを上下に分割">上下に分割</button>
+                    <button type="button" class="pl-btn" data-action="split-v" title="選択コマを左右に分割">左右に分割</button>
                 </div>
+                <details class="pl-details" data-role="selection-settings">
+                    <summary>選択コマ・境界の詳細</summary>
+                    <div class="pl-actions" role="group" aria-label="選択コマの操作">
+                        <button type="button" class="pl-btn" data-action="remove" title="選択コマを消して隣のコマが広がる">結合</button>
+                        <button type="button" class="pl-btn" data-action="toggle-delete" data-role="delete-btn" title="選択コマを描かず空白にする（番号も飛ぶ）。もう一度押すと復活">削除</button>
+                    </div>
+                    <div class="pl-actions" role="group" aria-label="全体の操作">
+                        <button type="button" class="pl-btn" data-action="add-free" title="選択コマの上に、他のコマへ影響しないフリーコマ（コマ内コマ）を重ねる">コマ内コマ</button>
+                        <button type="button" class="pl-btn" data-action="toggle-free" data-role="free-btn" title="選択コマを他のコマの追従から切り離して自由に動かす（もう一度で元の領域へ戻す）">フリー化</button>
+                        <button type="button" class="pl-btn" data-action="align" title="わずかなズレを整える（小さな傾き・素直な分割比・ほぼ同じ位置の線を揃える）">整列</button>
+                        <button type="button" class="pl-btn" data-action="reset-outer" title="外周の頂点を元の矩形へ戻す">外周を戻す</button>
+                    </div>
+                    <div class="pl-split-group" data-role="split-group">
+                        <label class="pl-row">
+                            <span class="pl-label">傾き</span>
+                            <input type="range" class="pl-range" data-split="slant" min="${PANEL_LAYOUT_LIMITS.slant.min}" max="${PANEL_LAYOUT_LIMITS.slant.max}" step="0.005">
+                            <span class="pl-value" data-value-for="slant"></span>
+                        </label>
+                        <label class="pl-row">
+                            <span class="pl-label">この線の間隔</span>
+                            <input type="range" class="pl-range" data-split="gap" min="${PANEL_LAYOUT_LIMITS.gap.min}" max="${PANEL_LAYOUT_LIMITS.gap.max}" step="1">
+                            <span class="pl-value" data-value-for="splitGap"></span>
+                        </label>
+                        <button type="button" class="pl-btn pl-btn--small" data-action="reset-split-gap">全体の間隔に戻す</button>
+                    </div>
+                    <div class="pl-panel-group" data-role="panel-group">
+                        <label class="pl-row">
+                            <span class="pl-label">このコマの線</span>
+                            <input type="range" class="pl-range" data-panel="lineWidth" min="${PANEL_LAYOUT_LIMITS.lineWidth.min}" max="${PANEL_LAYOUT_LIMITS.lineWidth.max}" step="0.5">
+                            <span class="pl-value" data-value-for="panelLineWidth"></span>
+                        </label>
+                        <div class="pl-row">
+                            <span class="pl-label" title="このコマをCanvasの端まで伸ばす。印刷用の塗り足し幅ではありません">端まで伸ばす</span>
+                            <span class="pl-chips">${bleeds}</span>
+                        </div>
+                        <div class="pl-row">
+                            <button type="button" class="pl-btn pl-btn--small" data-action="reset-panel-line">線を全体に合わせる</button>
+                        </div>
+                    </div>
+                </details>
+                <details class="pl-details" data-role="preview-settings">
+                    <summary>補助プレビュー</summary>
+                    <div class="pl-preview-actions"><span>コマを選択・頂点で調整</span><button type="button" class="pl-btn" data-action="toggle-delete" data-role="preview-delete-btn">削除</button></div>
+                    <canvas class="pl-preview" width="${PREVIEW_MAX.width}" height="${PREVIEW_MAX.height}" aria-label="コマ割りプレビュー"></canvas>
+                    <label class="pl-row pl-check">
+                        <input type="checkbox" data-role="overlay-toggle">
+                        <span>キャンバス上にGuideを表示する</span>
+                    </label>
+                </details>
             </div>
-            <div class="pl-sep"></div>
-            ${sliders}
-            <div class="pl-row">
-                <span class="pl-label">線の色</span>
-                <input type="color" class="pl-color" data-color="line" value="${this.color}">
-                <span class="pl-label pl-label--inline" data-role="paper-label">コマの白</span>
-                <input type="color" class="pl-color" data-color="paper" value="${this.paperColor}">
+            <div class="pl-hint" title="連動コマはCtrl+ドラッグで親境界移動、Ctrl+wheelで分割比、Ctrl+Shift+wheelで傾き。フリーコマは移動・中心拡縮・回転。">Space: Camera / Ctrl: 対象操作 / Shift: 傾き・回転 / Alt: 吸着解除</div>
+            <div class="pl-fixed-footer">
+                <div class="pl-row pl-output-row">
+                    <span class="pl-label">出力</span>
+                    <span class="pl-chips">${outputs}</span>
+                </div>
+                <div class="pl-footer">
+                    <button type="button" class="pl-btn" data-action="reset">リセット</button>
+                    <button type="button" class="pl-btn" data-action="load-active" title="選択中のコマ枠Layerから木を読み込んで再編集">レイヤーから再編集</button>
+                </div>
+                <div class="pl-footer">
+                    <button type="button" class="pl-btn pl-btn--primary" data-action="update" data-role="update-btn" title="再編集中のコマ枠Layerを置き換え（Undo 1回で戻る）" hidden>既存のコマ枠を更新</button>
+                    <button type="button" class="pl-btn pl-btn--primary" data-action="apply" title="新規Layerとして追加（Undo 1回で戻る）">新規レイヤーに適用</button>
+                </div>
+                <div class="pl-warning" data-role="warning" hidden>間隔や余白が大きすぎて潰れたコマがあります</div>
             </div>
-            <div class="pl-row">
-                <span class="pl-label">出力</span>
-                <span class="pl-chips">${outputs}</span>
-            </div>
-            <div class="pl-footer">
-                <button type="button" class="pl-btn" data-action="reset">リセット</button>
-                <button type="button" class="pl-btn" data-action="load-active" title="選択中のコマ枠Layerから木を読み込んで再編集">レイヤーから再編集</button>
-            </div>
-            <div class="pl-footer">
-                <button type="button" class="pl-btn pl-btn--primary" data-action="update" data-role="update-btn" title="再編集中のコマ枠Layerを置き換え（Undo 1回で戻る）" hidden>既存のコマ枠を更新</button>
-                <button type="button" class="pl-btn pl-btn--primary" data-action="apply" title="新規Layerとして追加（Undo 1回で戻る）">新規レイヤーに適用</button>
-            </div>
-            <div class="pl-warning" data-role="warning" hidden>間隔や余白が大きすぎて潰れたコマがあります</div>
         `;
 
+        this.actions = mountMangaEditActions(this.popup, { before: this.popup.querySelector('.pl-title'),
+            aux: this.popup.querySelector('.pl-output-row'), error: this.popup.querySelector('[data-role="warning"]') });
+        this.actions.querySelector('.manga-edit-actions__entry').insertAdjacentHTML('beforeend', `<button type="button" class="pl-btn manga-edit-actions__icon" data-action="draft-undo" title="適用前のコマ編集を1つ戻す" aria-label="コマ編集を戻す">${UI_ICONS.rotateCcw}</button><button type="button" class="pl-btn manga-edit-actions__icon" data-action="draft-redo" title="戻したコマ編集をやり直す" aria-label="コマ編集をやり直す">${UI_ICONS.rotateCw}</button>`);
         const q = (sel) => this.popup.querySelector(sel);
         this.elements = {
             canvas: q('.pl-preview'),
@@ -309,7 +351,6 @@ export class PanelLayoutPopup {
             freeBtn: q('[data-role="free-btn"]')
         };
         this._bind();
-        this._arrangeContexts();
         this._syncControls();
         this._redraw();
     }
@@ -323,48 +364,19 @@ export class PanelLayoutPopup {
         return `<svg viewBox="0 0 100 130" width="22" height="28" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round" aria-hidden="true">${polys}</svg>`;
     }
 
-    /** Reuse the bound controls; context and layout do not duplicate their data adapters. */
-    _arrangeContexts() {
-        const root = this.popup, nav = document.createElement('div');
-        nav.className = 'pl-context-tabs'; nav.setAttribute('role', 'tablist'); nav.setAttribute('aria-label', 'コマ編集');
-        nav.innerHTML = [['panel','コマ'],['split','分割'],['page','全体']].map(([key,label]) => `<button type="button" class="pl-chip" role="tab" data-panel-context="${key}">${label}</button>`).join('');
-        const selected = document.createElement('div'); selected.className = 'pl-selected-status'; selected.dataset.role = 'selected-status'; selected.setAttribute('role','status');
-        const tool = document.createElement('div'); tool.className = 'pl-actions';
-        tool.innerHTML = '<button type="button" class="pl-btn" data-panel-tool="select">選択・調整</button><button type="button" class="pl-btn" data-panel-tool="cut" title="コマを横切る線をドラッグ。Shiftで水平・垂直、SpaceでCamera">線で分割</button>';
-        const body = document.createElement('div'); body.className = 'pl-body-scroll ui-scrollbar';
-        const panes = Object.fromEntries(['panel','split','page'].map(key => { const pane=document.createElement('section');pane.dataset.panelPane=key;pane.setAttribute('role','tabpanel');body.append(pane);return [key,pane]; }));
-        const splitActions = root.querySelector('[data-action="split-h"]').parentElement;
-        const panelActions = document.createElement('div'); panelActions.className='pl-actions';
-        panelActions.append(root.querySelector('[data-action="remove"]'),root.querySelector('[data-action="toggle-delete"]'));
-        panes.panel.append(panelActions,root.querySelector('[data-action="add-free"]').parentElement,this.elements.panelGroup);
-        panes.split.append(splitActions,this.elements.splitGroup);
-        const preset = document.createElement('details'); preset.className='pl-details'; preset.innerHTML='<summary>プリセット</summary>'; preset.append(root.querySelector('.pl-presets'));
-        const pageActions = document.createElement('div'); pageActions.className='pl-actions'; pageActions.append(root.querySelector('[data-action="align"]'),root.querySelector('[data-action="reset-outer"]'));
-        panes.page.append(preset,pageActions);
-        root.querySelectorAll('[data-param]').forEach(input=>panes.page.append(input.closest('.pl-row')));
-        panes.page.append(root.querySelector('[data-color="line"]').closest('.pl-row'),root.querySelector('[data-output]').closest('.pl-row'));
-        const preview=document.createElement('details');preview.className='pl-details';preview.innerHTML='<summary>コマ割りプレビュー</summary>';preview.append(this.elements.canvas);panes.page.append(preview,this.elements.overlayToggle.closest('.pl-row'));
-        const hint=document.createElement('div');hint.className='pl-hint';hint.textContent='Space: Camera / Ctrl: 対象操作 / Shift: 傾き・回転 / Alt: 吸着解除';hint.title='連動コマはCtrl+ドラッグで親境界移動、Ctrl+wheelで分割比、Ctrl+Shift+wheelで傾き。フリーコマは移動・中心拡縮・回転。';
-        const footer=document.createElement('div');footer.className='pl-fixed-footer';
-        root.querySelectorAll(':scope > .pl-footer').forEach(node=>footer.append(node));footer.append(this.elements.warning);
-        root.querySelectorAll(':scope > .pl-hint,:scope > .pl-sep').forEach(node=>node.remove());
-        root.append(selected,tool,nav,body,hint,footer);
-        nav.querySelectorAll('button').forEach(button=>button.addEventListener('click',()=>{this.context=button.dataset.panelContext;this._syncControls();}));
-        tool.querySelectorAll('button').forEach(button=>button.addEventListener('click',()=>{
-            this.endDrag();this.splitMode=button.dataset.panelTool==='cut';this.cutPreview=null;
-            if(this.splitMode){this.showOverlay=true;this.elements.overlayToggle.checked=true;this._syncOverlayVisibility();this.context='split';}
-            this._syncControls();this.overlay.schedule();
-        }));
-    }
-
     // ------------------------------------------------------------ 操作
 
     _bind() {
         const root = this.popup;
         root.querySelectorAll('[data-preset]').forEach(btn => btn.addEventListener('click', () => {
             this.tree = buildPresetById(btn.dataset.preset);
-            this.selectedId = null;
-            this._changed();
+            this.selectedId = resolvePanelLayout(this.tree, this._canvasSize(), this.params).panels[0]?.id || null;
+            this.endDrag(); this.splitMode = false; this.cutPreview = null; this.showOverlay = true;
+            this._syncOverlayVisibility(); this._changed();
+        }));
+        root.querySelectorAll('[data-panel-tool]').forEach(button => button.addEventListener('click', () => {
+            this.endDrag(); this.splitMode = button.dataset.panelTool === 'cut'; this.cutPreview = null;
+            this.showOverlay = true; this._syncOverlayVisibility(); this._syncControls(); this.overlay.schedule();
         }));
         root.querySelectorAll('input[data-param]').forEach(input => input.addEventListener('input', () => {
             this.params = normalizePanelLayoutParams({ ...this.params, [input.dataset.param]: Number(input.value) });
@@ -432,10 +444,14 @@ export class PanelLayoutPopup {
     }
 
     _onAction(action) {
-        if (action === 'reset') {
+        if (action === 'draft-undo' || action === 'draft-redo') {
+            this._stepDraft(action === 'draft-redo');
+        } else if (action === 'reset') {
+            this.endDrag();
             this.tree = buildPresetById('single');
             this.selectedId = null;
             this.editing = null;
+            this._resetDraftHistory();
             this._changed();
         } else if (action === 'apply') {
             this.apply();
@@ -509,9 +525,43 @@ export class PanelLayoutPopup {
     }
 
     _changed() {
+        this.draftActive = true;
+        this._recordDraft();
         this._persist();
-        this._syncControls();
         this._redraw();
+        this._syncControls();
+    }
+
+    // Runtime draft only. Committed Layer/Project History remains owned by apply/update.
+    _captureDraft() {
+        return { data: JSON.stringify({ tree: this.tree, params: this.params, color: this.color,
+            paperColor: this.paperColor, outputMode: this.outputMode }), selectedId: this.selectedId };
+    }
+
+    _resetDraftHistory() {
+        this._draftUndo = []; this._draftRedo = []; this._draftCurrent = this._captureDraft();
+    }
+
+    _recordDraft() {
+        const next = this._captureDraft();
+        if (next.data !== this._draftCurrent?.data) {
+            if (this._draftCurrent) this._draftUndo.push(this._draftCurrent);
+            if (this._draftUndo.length > 60) this._draftUndo.shift();
+            this._draftRedo = [];
+        }
+        this._draftCurrent = next;
+    }
+
+    _stepDraft(redo) {
+        this.endDrag();
+        const source = redo ? this._draftRedo : this._draftUndo, target = redo ? this._draftUndo : this._draftRedo;
+        const snapshot = source.pop();
+        if (!snapshot) return;
+        target.push(this._captureDraft());
+        Object.assign(this, JSON.parse(snapshot.data), { selectedId: snapshot.selectedId });
+        this._draftCurrent = snapshot;
+        this.cutPreview = null;
+        this._persist(); this._redraw(); this._syncControls();
     }
 
     _activePanelLayout() {
@@ -520,9 +570,8 @@ export class PanelLayoutPopup {
     }
 
     _syncControls() {
+        restoreMangaTargetControls(this.popup);
         if (!this.popup || !this.elements.canvas) return;
-        this.popup.querySelectorAll('[data-panel-pane]').forEach(pane=>pane.hidden=pane.dataset.panelPane!==this.context);
-        this.popup.querySelectorAll('[data-panel-context]').forEach(button=>{const on=button.dataset.panelContext===this.context;button.setAttribute('aria-selected',String(on));button.classList.toggle('is-selected',on);});
         this.popup.querySelectorAll('[data-panel-tool]').forEach(button=>{const on=(button.dataset.panelTool==='cut')===this.splitMode;button.setAttribute('aria-pressed',String(on));button.classList.toggle('is-selected',on);});
         const status=this.popup.querySelector('[data-role="selected-status"]');
         if(status){const node=findNode(this.tree,this.selectedId);status.textContent=node?.kind==='panel'?`選択コマ ${this.resolved?.panels.find(p=>p.id===node.id)?.number||''} — ${node.free?'フリー':'連動'}${this.splitMode?' / 線で分割':''}`:this.splitMode?'コマを横切る線をドラッグ':'キャンバスでコマを選択';}
@@ -562,10 +611,18 @@ export class PanelLayoutPopup {
         this.elements.paperColor.hidden = !paper;
         this.elements.overlayToggle.checked = this.showOverlay;
         this.elements.deleteBtn.textContent = panel?.deleted === true ? '復活' : '削除';
+        const previewDelete = this.popup.querySelector('[data-role="preview-delete-btn"]');
+        previewDelete.textContent = this.elements.deleteBtn.textContent;
+        previewDelete.disabled = !panel || this.elements.deleteBtn.disabled;
         this.elements.freeBtn.textContent = panel?.free === true ? 'フリー解除' : 'フリー化';
         this.elements.editStatus.textContent = this.editing ? '— 再編集中' : '';
         this.elements.updateBtn.hidden = !this.editing;
         this.elements.loadBtn.disabled = !this._activePanelLayout();
+        syncMangaTargetControls(this.popup, this.layerSystem, 'panel-layout');
+        this.popup.querySelector('[data-action="draft-undo"]').disabled = !this._draftUndo.length;
+        this.popup.querySelector('[data-action="draft-redo"]').disabled = !this._draftRedo.length;
+        this.popup.querySelector('[data-color="line"]').value = this.color;
+        this.elements.paperColor.value = this.paperColor;
         // range の塗り量(webkitはtrackの進行部を持たないので、CSS変数でグラデーションを描く)
         this.popup.querySelectorAll('.pl-range').forEach((input) => {
             const min = Number(input.min);
@@ -587,7 +644,7 @@ export class PanelLayoutPopup {
 
     // ------------------------------------------------------------ 共通ドラッグ(プレビュー/キャンバス上)
 
-    _beginDrag(target, event, toPoint) {
+    _beginDrag(target, event, toPoint, snapTolerance = () => 6 / Math.max(this.scale, .2)) {
         if(this._spacePressed)return;
         const selected=this.resolved?.panels.find(p=>p.id===target.id),start=toPoint(event);
         const transformActive=window.coreEngine?.cameraSystem?.vKeyPressed;
@@ -630,6 +687,7 @@ export class PanelLayoutPopup {
         window.addEventListener('pointercancel', up);
         this.drag = {
             ...target,
+            snapTolerance,
             pointerId: event.pointerId,
             cleanup: () => {
                 window.removeEventListener('pointermove', move);
@@ -648,33 +706,44 @@ export class PanelLayoutPopup {
         if (!this.drag) return;
         this.drag.cleanup?.();
         this.drag = null;
+        this.snapGuides = [];
+        this._recordDraft();
+        this._syncControls();
     }
 
     _applyDrag(pt, noSnap = false) {
         const drag = this.drag;
         if (!drag || !this.resolved) return;
+        this.snapGuides = [];
+        const tolerance = drag.snapTolerance?.() ?? 6 / Math.max(this.scale, .2);
         if(drag.type==='cut'){
             drag.endPoint=pt;this.cutPreview=panelSplitFromStroke(drag.quad,drag.startPoint,pt,{snap:drag.snap});
             this.overlay.schedule();return;
         }else if(drag.type==='linked-move'){
             const at={x:drag.anchor.x+pt.x-drag.startPoint.x,y:drag.anchor.y+pt.y-drag.startPoint.y};
-            const ratio=dragSplitRatio(drag.startResolved,drag.id,noSnap?at:snapSplitPoint(drag.startResolved,drag.id,at,6/Math.max(this.scale,.2)));
+            const ratio=dragSplitRatio(drag.startResolved,drag.id,noSnap?at:snapSplitPoint(drag.startResolved,drag.id,at,tolerance));
             this.tree=updateSplit(drag.startTree,drag.id,{ratio});
         }else if (drag.type === 'split') {
-            const target = noSnap ? pt : snapSplitPoint(this.resolved, drag.id, pt, 6 / Math.max(this.scale, 0.2));
+            const target = noSnap ? pt : snapSplitPoint(this.resolved, drag.id, pt, tolerance);
             const ratio = dragSplitRatio(this.resolved, drag.id, target);
             if (ratio !== null) this.tree = updateSplit(this.tree, drag.id, { ratio });
         } else if (drag.type === 'corner') {
-            this.tree = dragPanelCorner(this.tree, this.resolved, drag.id, drag.index, pt);
+            const result = !noSnap && findNode(this.tree, drag.id)?.free
+                ? snapFreePanelPoint(this.resolved, drag.id, pt, { ...this.params, tolerance }) : { point: pt, guides: [] };
+            this.snapGuides = result.guides;
+            this.tree = dragPanelCorner(this.tree, this.resolved, drag.id, drag.index, result.point);
         } else if (drag.type === 'move') {
-            this.tree = moveFreePanel(this.tree, drag.id, drag.startQuad, pt.x - drag.startPoint.x, pt.y - drag.startPoint.y);
+            const delta = { x: pt.x - drag.startPoint.x, y: pt.y - drag.startPoint.y };
+            const result = noSnap ? { delta, guides: [] } : snapFreePanelMove(this.resolved, drag.id, drag.startQuad, delta, { ...this.params, tolerance });
+            this.snapGuides = result.guides;
+            this.tree = moveFreePanel(this.tree, drag.id, drag.startQuad, result.delta.x, result.delta.y);
         }
         this._persist();
         this._redraw();
     }
 
     _onOverlayPointerDown(target, event) {
-        this._beginDrag(target, event, (e) => this.overlay.clientToCanvas(e.clientX, e.clientY));
+        this._beginDrag(target, event, (e) => this.overlay.clientToCanvas(e.clientX, e.clientY), () => 6 * this.overlay.canvasPerScreenPixel());
     }
 
     _finishCut(event) {
@@ -747,6 +816,7 @@ export class PanelLayoutPopup {
     }
 
     _redraw() {
+        this._syncPreviewSources();
         const canvasEl = this.elements.canvas;
         if (!canvasEl) return;
         const size = this._canvasSize();
@@ -754,6 +824,7 @@ export class PanelLayoutPopup {
         canvasEl.width = Math.max(1, Math.round(size.width * this.scale));
         canvasEl.height = Math.max(1, Math.round(size.height * this.scale));
         this.resolved = resolvePanelLayout(this.tree, size, this.params);
+        this.popup.querySelector('[data-role="canvas-size"]').textContent = `${size.width}×${size.height}px`;
         this.elements.warning.hidden = this.resolved.valid;
 
         const ctx = canvasEl.getContext('2d');
@@ -834,6 +905,19 @@ export class PanelLayoutPopup {
 
     // ------------------------------------------------------------ 確定
 
+    _endPreview() {
+        this.previewSources.forEach(restoreLetteringPreviewSource);
+        this.previewSources = [];
+    }
+
+    _syncPreviewSources() {
+        const layers = this.isVisible && this.showOverlay && this.draftActive && this.editing
+            ? this.layerSystem.getLayers().filter(layer => layer.layerData?.panelLayout?.groupId === this.editing.groupId
+                && ['paper', 'lines'].includes(layer.layerData.panelLayout.role)) : [];
+        for (const layer of this.previewSources) if (!layers.includes(layer)) restoreLetteringPreviewSource(layer);
+        this.previewSources = layers.filter(layer => ghostMangaPreviewSource(layer, () => this.layerSystem._folderCompositor?.markDirty?.()));
+    }
+
     _layoutMeta(role, groupId, panelId = null) {
         return sanitizePanelLayoutData({
             groupId,
@@ -904,7 +988,7 @@ export class PanelLayoutPopup {
     }
 
     /**
-     * 1コマ分の `コマN` フォルダ(コマN枠 / コマN内描画[クリッピング] / コマN白)を作る。
+     * 1コマ分の `コマN` フォルダ(枠 / 内容[白へのclip・内描画Raster] / 白)を作る。
      * 記録したhistory commandの数を返す(呼び出し側でまとめて1回のUndoにする)。
      */
     _createPanelSet(panel, resolved, groupId) {
@@ -925,16 +1009,6 @@ export class PanelLayoutPopup {
             count += 1;
             const layerId = created.layer.layerData.id;
             ids.push(layerId);
-            if (role === 'inner') {
-                this._setClipping(layerId, 'normal');
-                this.history.record({
-                    name: 'panel-layout-clipping',
-                    do: () => this._setClipping(layerId, 'normal'),
-                    undo: () => this._setClipping(layerId, 'none'),
-                    meta: { type: 'panel-layout-clipping', layerId }
-                });
-                count += 1;
-            }
         }
         const folder = this.layerSystem.createFolder?.(label);
         if (folder?.layer?.layerData) {
@@ -944,7 +1018,19 @@ export class PanelLayoutPopup {
             for (const id of ids) {
                 if (this.layerSystem.moveLayerIntoFolder(id, folderId)) count += 1;
             }
+            const content = this.layerSystem.createFolder?.('内容');
+            if (!content?.layer) return { count, error: '内容フォルダを作成できません' };
+            count++;
+            const contentId = content.layer.layerData.id;
+            if (!this.layerSystem.moveLayerNearLayerInFolder(contentId, ids[0], 'before')) return { count, error: '内容フォルダを配置できません' };
+            count++;
+            if (!this.layerSystem.setLayerClippingMode(this.layerSystem.getLayerIndex(content.layer), 'normal')) return { count, error: '白コマへclipできません' };
+            count++;
+            if (!this.layerSystem.moveLayerIntoFolder(ids[1], contentId)) return { count, error: '内描画を収納できません' };
+            count++;
             this.layerSystem.refreshClippingMasks?.();
+        } else {
+            return { count, error: 'コマフォルダを作成できません' };
         }
         return { count };
     }
@@ -958,7 +1044,7 @@ export class PanelLayoutPopup {
         let failure = null;
 
         if (this.outputMode === 'paper') {
-            // コマごとに1フォルダ(コマ1 / コマ2 …)。それぞれが 枠 / 内描画(クリッピング) / 白 を持つ。
+            // コマごとに枠・白と、白へclipする内容Folderを生成する。
             for (const panel of this._creationOrder(resolved)) {
                 const result = this._createPanelSet(panel, resolved, groupId);
                 recorded += result.count;
@@ -982,6 +1068,8 @@ export class PanelLayoutPopup {
             return { ok: false };
         }
         this.editing = { groupId };
+        this._endPreview(); this.draftActive = false;
+        this._resetDraftHistory();
         this._syncControls();
         showFeedbackToast(`コマ割りを追加しました（${this._creationOrder(resolved).length}コマ）`);
         return { ok: true, groupId, panelCount: resolved.panels.filter(p => !p.deleted).length };
@@ -993,6 +1081,7 @@ export class PanelLayoutPopup {
      */
     update() {
         if (!this.editing || !this._guard()) return { ok: false };
+        this._endPreview();
         const groupId = this.editing.groupId;
         const resolved = resolvePanelLayout(this.tree, this._canvasSize(), this.params);
         const members = this.layerSystem.getLayers().filter(l => l.layerData?.panelLayout?.groupId === groupId);
@@ -1065,6 +1154,9 @@ export class PanelLayoutPopup {
             recorded += 1;
         }
         if (recorded > 1) this.history.mergeLastCommands(recorded, 'panel-layout-update', { type: 'panel-layout-update', groupId });
+        this._resetDraftHistory();
+        this._syncControls();
+        this.draftActive = false;
         showFeedbackToast(`コマ枠を更新しました（${resolved.panels.filter(p => !p.deleted).length}コマ）`);
         return { ok: true, groupId };
     }
@@ -1097,11 +1189,13 @@ export class PanelLayoutPopup {
     }
 
     loadFromActiveLayer() {
+        if (!this._guard()) return { ok: false };
         const data = this._activePanelLayout();
         if (!data) {
             showFeedbackToast('選択中のレイヤーにコマ割り情報がありません');
             return { ok: false };
         }
+        this.endDrag();
         this.tree = data.tree;
         this.params = data.params;
         this.color = data.color;
@@ -1111,6 +1205,7 @@ export class PanelLayoutPopup {
         this.editing = data.groupId ? { groupId: data.groupId } : null;
         this.popup.querySelector('[data-color="line"]').value = this.color;
         this.elements.paperColor.value = this.paperColor;
+        this._resetDraftHistory();
         this._changed();
         showFeedbackToast('コマ割りを読み込みました。編集して「更新」できます');
         return { ok: true };
@@ -1136,6 +1231,7 @@ export class PanelLayoutPopup {
     }
 
     hide() {
+        this._endPreview();
         if (!this.popup) return;
         const wasVisible = this.isVisible === true;
         this.popup.classList.remove('show');
@@ -1156,6 +1252,9 @@ export class PanelLayoutPopup {
     }
 
     destroy() {
+        this._endPreview();
+        this.eventBus?.off?.('layer:content-changed', this._sourceChanged);
+        this.eventBus?.off?.('history:changed', this._sourceHistory);
         this.endDrag();
         this.popupDragCleanup?.();
         this.popupDragCleanup = null;

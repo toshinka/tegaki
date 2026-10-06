@@ -1,0 +1,149 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>WP030 投げ縄の輪郭と領域消し</title>
+<style>body{background:#ffffee;color:#800000;font:12px system-ui}iframe{width:1280px;height:720px;border:1px solid #b8706b}pre{white-space:pre-wrap}</style>
+<button id="run" disabled>領域消しを検証</button><button id="inspect" disabled>操作見本を表示</button><button id="guide" disabled>消しガイドを表示</button><button id="read" disabled>Native結果を読む</button><span id="state">製品起動中</span><pre id="output"></pre><iframe id="product" src="../index.html"></iframe>
+<script type="module">
+import { AreaToolController } from '../system/selection-area-tools.js';
+import { paintClosedShapeToLayer } from '../system/closed-shape-paint.js';
+import { Graphics, Rectangle } from 'pixi.js';
+import { renderLassoPaintPreview } from '../system/drawing/lasso-paint-preview.js';
+const frame=document.querySelector('#product'),out=document.querySelector('#output'),state=document.querySelector('#state');
+const delay=ms=>new Promise(r=>setTimeout(r,ms)),check=(ok,label)=>{if(!ok)throw Error(label);out.textContent+='PASS '+label+'\n';};
+let core;for(let i=0;i<200;i++){core=frame.contentWindow?.coreEngine;if(frame.contentWindow?.pixelSelectionSystem)break;await delay(100);}
+const win=frame.contentWindow,ps=win.pixelSelectionSystem,ls=core.layerSystem,area=ps.areaTools,canvas=core.app.canvas;
+core.popupManager.show('quickAccess');const qa=core.popupManager.get('quickAccess');
+const equal=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
+const realm=v=>win.JSON.parse(JSON.stringify(v));
+const at=(layer,x,y)=>{const s=ls.createLayerRasterSnapshot(layer),b=s.rasterBounds||{x:0,y:0};return [...s.pixels.slice(((y-b.y)*s.width+x-b.x)*4,((y-b.y)*s.width+x-b.x)*4+4)];};
+const image=()=>{const c=core.exportManager.renderToCanvas({transparent:true});return [...c.getContext('2d').getImageData(0,0,c.width,c.height).data];};
+const pointEvent=(type,layer,x,y,mods={})=>{const p=ps._layerPointToScreen(layer,x,y);canvas.dispatchEvent(new win.PointerEvent(type,{pointerId:71,pointerType:'mouse',button:0,buttons:type==='pointerup'?0:1,clientX:p.clientX,clientY:p.clientY,bubbles:true,cancelable:true,...mods}));};
+const click=(l,x,y)=>{pointEvent('pointerdown',l,x,y);pointEvent('pointerup',l,x,y);};
+const key=key=>{win.document.activeElement?.blur();win.document.body.dispatchEvent(new win.KeyboardEvent('keydown',{key,code:key,bubbles:true,cancelable:true}));};
+const polygon=(layer,points)=>{points.forEach(([x,y])=>click(layer,x,y));key('Enter');};
+const lasso=(layer,points)=>{pointEvent('pointerdown',layer,...points[0]);points.slice(1).forEach(p=>pointEvent('pointermove',layer,...p));pointEvent('pointerup',layer,...points[0]);};
+const square=[[100,100],[260,100],[260,240],[100,240]];
+async function colored({width=400,height=400,x=0,y=0,blank=false}={}){
+ const pixels=new Uint8ClampedArray(width*height*4);if(!blank)for(let i=0;i<pixels.length;i+=4)pixels.set([128,0,0,255],i);
+ const {layer}=ls.createRasterLayerFromSnapshot({width,height,pixels,rasterBounds:{x,y,width,height},paths:[],pathsData:[]},{name:'領域消し検証',source:'fixture'});
+ ls.setActiveLayer(ls.getLayerIndex(layer));await delay(25);return layer;
+}
+let nativeLayer;
+state.textContent='検証可能';document.querySelectorAll('button').forEach(b=>b.disabled=false);
+document.querySelector('#inspect').onclick=async()=>{
+ frame.style.width='1280px';frame.style.height='720px';win.dispatchEvent(new win.Event('resize'));out.hidden=true;core.popupManager.hideAll();
+ ls.getLayers().forEach((l,i)=>{if(!l.layerData.isBackground&&l.layerData.visible)ls.toggleLayerVisibility(i);});
+ nativeLayer=await colored();qa._applySharedPosition(870,95);core.popupManager.show('quickAccess');qa._switchTab('pen');
+ win.brushSettings.setOpacity(1);win.brushSettings.setSize(12);area.setOptions({shape:{paint:'custom',fillColor:null,lassoOutline:true,erasePolygonMode:'line'}});qa._switchTool('lasso-fill');
+ canvas.dataset.nativeReport='';
+};
+document.querySelector('#read').onclick=()=>{out.hidden=false;out.textContent=JSON.stringify({history:core.history.stack.length,center:at(nativeLayer,175,155),line:at(nativeLayer,125,135),points:area.polygon.getPoints(),tool:qa.currentTool,lassoActive:area.lassoErase.hasActiveDrag()},null,2);};
+document.querySelector('#guide').onclick=async()=>{
+ await document.querySelector('#inspect').onclick();
+ const snapshot=ls.createLayerRasterSnapshot(nativeLayer),paper=area.getColors().background;
+ for(let y=0;y<400;y++)for(let x=200;x<400;x++)snapshot.pixels.set([...paper,255],(y*400+x)*4);
+ ls.restoreLayerRasterSnapshot(snapshot);ls.app.render();qa._switchTool('erase-lasso');
+ pointEvent('pointerdown',nativeLayer,75,250);for(const[x,y]of [[140,105],[195,250],[250,80],[325,250]])pointEvent('pointermove',nativeLayer,x,y);
+};
+document.querySelector('#run').onclick=async()=>{
+ const original=area.getOptions(),prefs=win.localStorage.getItem('tegaki-area-tools-v1');out.hidden=false;out.textContent='';state.textContent='実行中';document.querySelector('#run').disabled=true;
+ try{
+  win.localStorage.removeItem('tegaki-area-tools-v1');let isolated=new AreaToolController({});
+  check(isolated.options.shape.paint==='custom'&&isolated.options.shape.fillColor===null&&isolated.options.shape.lassoOutline===true,'新規既定はCanvas色＋輪郭線あり');
+  win.localStorage.setItem('tegaki-area-tools-v1',JSON.stringify({shape:{paint:'custom',lassoOutline:false}}));isolated=new AreaToolController({});
+  check(isolated.options.shape.lassoOutline===true,'旧UIの自動OFFをONへ復帰');
+  win.localStorage.setItem('tegaki-area-tools-v1',JSON.stringify({shape:{lassoOutline:false,lassoOutlineUserSet:true}}));isolated=new AreaToolController({});
+  check(isolated.options.shape.lassoOutline===false,'新UIの明示OFFは再読込でも保持');
+  qa._switchTab('pen');qa._switchTool('lasso-fill');area.setOptions({shape:{paint:'custom',fillColor:null,lassoOutline:true}});win.brushSettings.setOpacity(1);
+  const host=qa.panel.querySelector('[data-role="shape-paint"]'),outline=host.querySelector('[data-outline]'),reset=host.querySelector('[data-background]');
+  check(outline.getAttribute('aria-pressed')==='true'&&reset.querySelector('svg')&&reset.textContent===''&&host.querySelector('[name="qa-shape-color"][value="custom"]').checked,'輪郭ONのSVGとCanvas色の一行リセット');
+  outline.click();check(area.options.shape.lassoOutline===false,'輪郭OFFは明示切替');
+  const radio=host.querySelector('[name="qa-shape-color"][value="same"]');radio.checked=true;radio.dispatchEvent(new win.Event('change',{bubbles:true}));
+  check(area.options.shape.lassoOutline===false,'同色へ替えても輪郭OFFを保持');reset.click();outline.click();
+  const bg=ls.getLayers().find(l=>l.layerData.isBackground),bgOriginal=bg.layerData.backgroundColor;ls.changeBackgroundLayerColor(ls.getLayerIndex(bg),bg.layerData.id,0x123456);
+  check(host.querySelector('input[type="color"]').value==='#123456','Canvas色はUIのcreamでなく作品背景色へ追従');ls.changeBackgroundLayerColor(ls.getLayerIndex(bg),bg.layerData.id,bgOriginal);
+  const fill=host.querySelector('[data-fill]'),picker=host.querySelector('.qa-shape-color-picker');
+  check(fill.querySelector('svg')&&picker.querySelector('.inner-color-drop')&&host.querySelector('[data-same-dot]').textContent==='●'&&host.querySelector('[data-custom-dot]').textContent==='◯','一行のバケツ・色dot・区別したpickerは共有SVGとARIA');
+  fill.click();check(area.options.shape.paint==='line'&&fill.getAttribute('aria-pressed')==='false'&&host.querySelector('input[type="color"]').disabled,'バケツOFFで線のみ・内側色は無効');fill.click();
+  check(area.options.shape.paint==='custom'&&area.options.shape.lassoOutline===true,'バケツONで指定色と輪郭の選択を維持');
+  radio.checked=true;radio.dispatchEvent(new win.Event('change',{bubbles:true}));win.brushSettings.setColor(0x224466);
+  check(win.getComputedStyle(host.querySelector('[data-same-dot]')).color==='rgb(34, 68, 102)','同色●は描画色変更へ追従');
+  const inner=host.querySelector('input[type="color"]');check(!inner.disabled,'同色からも内側色pickerを直接使える');inner.value='#abcdef';inner.dispatchEvent(new win.Event('input',{bubbles:true}));
+  check(area.options.shape.paint==='custom'&&area.options.shape.fillColor==='#abcdef'&&win.brushSettings.getColor()===0x224466,'pickerは指定色だけを変更し主線色は維持');
+  reset.click();win.brushSettings.setColor(0x800000);check(area.options.shape.fillColor===null&&area.options.shape.paint==='custom','小型resetで作品Canvas色へ追従を復帰');
+  const sharp=[{x:80,y:240},{x:160,y:60},{x:180,y:240},{x:300,y:130},{x:320,y:280}];
+  const g=new Graphics(),renderer=core.app.renderer,settings={color:0x800000,size:24,opacity:1};
+  area.setOptions({shape:{paint:'custom',fillColor:'#abcdef',width:24,join:'miter',lassoOutline:true}});
+  renderLassoPaintPreview(g,sharp,area.options.shape,area.getColors(),settings);
+  const previewPixels=()=>{const t=renderer.generateTexture({target:g,frame:new Rectangle(0,0,400,400),resolution:1});const p=renderer.extract.pixels({target:t}).pixels;t.destroy(true);return p;};
+  let preview=previewPixels();const px=(p,x,y)=>[...p.slice((y*400+x)*4,(y*400+x)*4+4)];
+  check(equal(px(preview,160,45),[128,0,0,255])&&equal(px(preview,145,180),[171,205,239,255]),'投げ縄previewの鋭角miterと指定色が実描画される');
+  let previewLayer=await colored({blank:true}),previewHistory=core.history.stack.length,beforePreview=ls.createLayerRasterSnapshot(previewLayer).pixels.slice();
+  renderLassoPaintPreview(g,sharp,area.options.shape,area.getColors(),settings);
+  check(equal(beforePreview,ls.createLayerRasterSnapshot(previewLayer).pixels)&&core.history.stack.length===previewHistory,'投げ縄previewは確定RasterとHistoryを変えない');
+  await win.FillTool.performLassoFill(sharp,settings.color,1,previewLayer,ls,ls.createLayerRasterSnapshot(previewLayer));
+  check(equal(at(previewLayer,160,45),px(preview,160,45))&&equal(at(previewLayer,145,180),px(preview,145,180)),'鋭角と内側色は同じ点列の確定後も一致');
+  area.setOptions({shape:{lassoOutline:false}});renderLassoPaintPreview(g,sharp,area.options.shape,area.getColors(),settings);preview=previewPixels();
+  check(px(preview,160,45)[3]===0&&equal(px(preview,145,180),[171,205,239,255]),'輪郭OFF previewは外へ線を描かない');
+  area.setOptions({shape:{paint:'line'}});renderLassoPaintPreview(g,sharp,area.options.shape,area.getColors(),settings);preview=previewPixels();
+  check(px(preview,145,180)[3]===0&&px(preview,160,45)[3]===255,'線のみpreviewは内側透明と鋭角を保持');
+  area.setOptions({shape:{paint:'custom',fillColor:null,lassoOutline:true,width:10}});renderLassoPaintPreview(g,sharp,area.options.shape,area.getColors(),{...settings,opacity:.5});preview=previewPixels();
+  check(Math.abs(px(preview,145,180)[3]-128)<=1,'投げ縄previewの内側は設定Opacityを反映');g.destroy();
+  let layer=await colored({blank:true});await win.FillTool.performLassoFill(square.map(([x,y])=>({x,y})),0x800000,1,layer,ls,ls.createLayerRasterSnapshot(layer));
+  check(at(layer,99,150)[3]===255&&equal(at(layer,170,160),area.getColors().background.concat(255)),'既定の投げ縄はSIZE輪郭＋Canvas色の内側');
+  layer=await colored({blank:true});win.brushSettings.setSize(10);let gestureHistory=core.history.stack.length;
+  pointEvent('pointerdown',layer,100,100);await delay(30);for(const[x,y]of square.slice(1)){pointEvent('pointermove',layer,x,y);await delay(30);}pointEvent('pointerup',layer,100,100);
+  for(let i=0;i<50&&core.history.stack.length===gestureHistory;i++)await delay(20);
+  const strokePixels=ls.createLayerRasterSnapshot(layer).pixels;let outlinePixels=0;for(let i=0;i<strokePixels.length;i+=4)if(strokePixels[i]===128&&strokePixels[i+1]===0&&strokePixels[i+2]===0&&strokePixels[i+3]===255)outlinePixels++;
+  check(core.history.stack.length===gestureHistory+1&&outlinePixels>10&&equal(at(layer,170,160),area.getColors().background.concat(255)),'通常の投げ縄stroke入口も輪郭＋Canvas色・一History');
+  const members=qa._getSlotMembers('eraser');check(members.some(m=>m.id==='erase-polygon')&&members.some(m=>m.id==='erase-lasso')&&members.some(m=>m.preset),'消しゴム棚は従来の筆＋多角線消し＋投げ縄塗り消し');
+  qa._activateMember('eraser',members.find(m=>m.id==='erase-polygon'));check(qa.currentTool==='erase-polygon'&&ps.getToolMode()==='erase-polygon'&&qa._getActiveMemberId('eraser')==='erase-polygon','多角線消しの選択・active表示');
+  area.setOptions({shape:{erasePolygonMode:'line',width:2}});win.brushSettings.setSize(10);layer=await colored();let n=core.history.stack.length;
+  square.forEach(([x,y])=>click(layer,x,y));check(core.history.stack.length===n&&at(layer,100,160)[3]===255,'消しの多角点は確定前の画素を変えない');key('Enter');
+  check(core.history.stack.length===n+1&&at(layer,100,160)[3]===0&&at(layer,96,160)[3]===0&&at(layer,93,160)[3]===255&&at(layer,170,160)[3]===255,'多角線消しはSIZEの輪郭だけを透明化');
+  await core.history.undo();check(at(layer,100,160)[3]===255,'多角線消しUndo');await core.history.redo();check(at(layer,100,160)[3]===0,'多角線消しRedo');
+  area.setOptions({shape:{erasePolygonMode:'fill'}});layer=await colored();n=core.history.stack.length;polygon(layer,square);
+  check(core.history.stack.length===n+1&&equal(at(layer,170,160),[0,0,0,0])&&at(layer,50,50)[3]===255,'多角形の領域消し・範囲外不変・一History');
+  layer=await colored();win.brushSettings.setOpacity(.5);polygon(layer,square);check(equal(at(layer,170,160),[128,0,0,128]),'領域消し50%はRGBを保ちalphaを一回減らす');win.brushSettings.setOpacity(1);
+  layer=await colored();n=core.history.stack.length;click(layer,100,100);click(layer,250,100);key('Enter');key('Escape');check(core.history.stack.length===n&&at(layer,170,160)[3]===255,'3点未満・Escは消さない');
+  layer=await colored();square.forEach(([x,y])=>click(layer,x,y));pointEvent('pointerdown',layer,100,100);pointEvent('pointermove',layer,90,90);pointEvent('pointerup',layer,90,90);click(layer,90,90);check(!area.polygon.isEditing()&&at(layer,170,160)[3]===0,'点移動と始点クリックで領域消し確定');
+  qa._activateSlot('eraser',{cycle:true});check(qa.currentTool==='erase-lasso','消しゴム順送りで投げ縄へ');
+  for(const background of [0xffffee,0x800000]){
+   ls.changeBackgroundLayerColor(ls.getLayerIndex(bg),bg.layerData.id,background);layer=await colored();n=core.history.stack.length;
+   pointEvent('pointerdown',layer,100,240);pointEvent('pointermove',layer,160,60);pointEvent('pointermove',layer,190,240);
+   const path=area.lassoErase.path,halo=area.lassoErase.halo,style=win.getComputedStyle(path),haloStyle=win.getComputedStyle(halo),rgb=area.getColors().background;
+   check(style.stroke==='rgb('+rgb.join(', ')+')'&&style.stroke!==haloStyle.stroke,'消しguideはCanvas色主体＋対比色 '+background.toString(16));
+   check(path.getAttribute('d')===halo.getAttribute('d')&&!/[CQ]/.test(path.getAttribute('d'))&&style.strokeLinejoin==='miter'&&style.strokeDasharray==='none'&&style.fill==='none'&&style.animationName==='none','消しguideは同一の鋭角・連続線・面塗り/点滅なし '+background.toString(16));
+   check(at(layer,160,100)[3]===255&&core.history.stack.length===n,'消しguideだけでは絵とHistoryを変えない '+background.toString(16));key('Escape');
+   check(area.lassoErase.group.style.display==='none'&&!area.lassoErase.hasActiveDrag(),'Escで両色guideを一緒に除去 '+background.toString(16));
+  }ls.changeBackgroundLayerColor(ls.getLayerIndex(bg),bg.layerData.id,bgOriginal);
+  layer=await colored();n=core.history.stack.length;lasso(layer,square);check(core.history.stack.length===n+1&&equal(at(layer,170,160),[0,0,0,0])&&at(layer,50,50)[3]===255&&!area.lassoErase.hasActiveDrag(),'投げ縄は離筆で透明化・一History・範囲外不変');
+  await core.history.undo();check(at(layer,170,160)[3]===255,'投げ縄消しUndo');await core.history.redo();check(at(layer,170,160)[3]===0,'投げ縄消しRedo');
+  layer=await colored();win.brushSettings.setOpacity(.5);lasso(layer,square);check(equal(at(layer,170,160),[128,0,0,128]),'投げ縄消しのOpacity一回');win.brushSettings.setOpacity(1);
+  layer=await colored();n=core.history.stack.length;pointEvent('pointerdown',layer,100,100);pointEvent('pointermove',layer,260,100);pointEvent('pointercancel',layer,260,100);check(!area.lassoErase.hasActiveDrag()&&core.history.stack.length===n,'pointercancelで投げ縄を破棄');
+  pointEvent('pointerdown',layer,100,100);pointEvent('pointermove',layer,260,100);key('Escape');pointEvent('pointerup',layer,100,100);check(core.history.stack.length===n&&at(layer,170,160)[3]===255,'Escで投げ縄の消去なし');
+  pointEvent('pointerdown',layer,100,100);pointEvent('pointermove',layer,260,100);qa._switchTool('pen');check(!area.lassoErase.hasActiveDrag()&&core.history.stack.length===n,'別ツールへの切替は途中の囲いを破棄');qa._switchTool('erase-lasso');
+  layer=await colored({blank:true});n=core.history.stack.length;lasso(layer,square);check(core.history.stack.length===n,'透明領域の消去はHistoryなし');
+  layer=await colored({width:60,height:60,x:150,y:130});const beforeBounds=ls.createLayerRasterSnapshot(layer).rasterBounds;lasso(layer,square);check(equal(Object.values(beforeBounds),Object.values(ls.createLayerRasterSnapshot(layer).rasterBounds))&&at(layer,175,155)[3]===0,'有界Rasterの消しは範囲を拡張せずoffsetを正しく使う');
+  layer=await colored();const mask=new Uint8Array(160*140);for(let y=0;y<140;y++)mask.fill(1,y*160,y*160+80);ps.setMaskSelection(layer.layerData.id,{x:100,y:100,width:160,height:140},mask);lasso(layer,square);
+  check(at(layer,140,160)[3]===0&&at(layer,220,160)[3]===255,'投げ縄消しは既存の選択mask内だけ');ps.clearSelection('fixture');
+  layer=await colored();pointEvent('pointerdown',layer,100,100);await colored();n=core.history.stack.length;pointEvent('pointerup',layer,260,240);check(!area.lassoErase.hasActiveDrag()&&core.history.stack.length===n&&at(layer,170,160)[3]===255,'対象Layer変更で途中の投げ縄を取消');
+  n=core.history.stack.length;const rejected=area.lassoErase.pointerDown({clientX:100,clientY:100,pointerId:71},{kind:'layer',layer:bg});
+  const guard=paintClosedShapeToLayer({system:ps,layerSystem:ls,layer:bg,contours:[square.map(([x,y])=>({x,y}))],strokePolygons:[],paint:{fillRgb:[255,255,255]},blendMode:'erase'});
+  check(rejected===false&&guard.reason==='unsupported-layer'&&core.history.stack.length===n,'Backgroundは入力と確定端末で消去を拒否');
+  check(area.lassoErase.pointerDown({clientX:100,clientY:100,pointerId:71},{kind:'folder',layer:bg})===false,'Folderを直接領域消ししない');
+  win.brushSettings.setOpacity(0);layer=await colored();n=core.history.stack.length;lasso(layer,square);check(core.history.stack.length===n&&at(layer,170,160)[3]===255,'Opacityゼロの消去は画素とHistoryを変えない');win.brushSettings.setOpacity(1);
+  layer=await colored();n=core.history.stack.length;const camera=core.cameraSystem,position={x:camera.worldContainer.x,y:camera.worldContainer.y};
+  win.document.body.dispatchEvent(new win.KeyboardEvent('keydown',{code:'Space',key:' ',bubbles:true}));
+  const p=ps._layerPointToScreen(layer,170,160);for(const[type,dx,dy]of [['pointerdown',0,0],['pointermove',18,13],['pointerup',18,13]])canvas.dispatchEvent(new win.PointerEvent(type,{pointerId:73,pointerType:'mouse',button:0,buttons:type==='pointerup'?0:1,clientX:p.clientX+dx,clientY:p.clientY+dy,bubbles:true,cancelable:true}));
+  check(camera.worldContainer.x!==position.x&&core.history.stack.length===n&&!area.lassoErase.hasActiveDrag()&&at(layer,170,160)[3]===255,'Space+dragはCameraへ譲り消去しない');
+  win.document.body.dispatchEvent(new win.KeyboardEvent('keydown',{code:'ShiftLeft',key:'Shift',shiftKey:true,bubbles:true}));canvas.dispatchEvent(new win.WheelEvent('wheel',{deltaY:100,shiftKey:true,bubbles:true,cancelable:true}));
+  win.document.body.dispatchEvent(new win.KeyboardEvent('keyup',{code:'Space',key:' ',bubbles:true}));win.document.body.dispatchEvent(new win.KeyboardEvent('keyup',{code:'ShiftLeft',key:'Shift',bubbles:true}));
+  lasso(layer,square);check(at(layer,170,160)[3]===0&&at(layer,50,50)[3]===255,'Camera回転・移動後も投げ縄の座標が一致');
+  win.document.body.dispatchEvent(new win.KeyboardEvent('keydown',{code:'Space',key:' ',bubbles:true}));win.document.body.dispatchEvent(new win.KeyboardEvent('keydown',{code:'ShiftLeft',key:'Shift',shiftKey:true,bubbles:true}));canvas.dispatchEvent(new win.WheelEvent('wheel',{deltaY:-100,shiftKey:true,bubbles:true,cancelable:true}));win.document.body.dispatchEvent(new win.KeyboardEvent('keyup',{code:'Space',key:' ',bubbles:true}));win.document.body.dispatchEvent(new win.KeyboardEvent('keyup',{code:'ShiftLeft',key:'Shift',bubbles:true}));camera.pan(position.x-camera.worldContainer.x,position.y-camera.worldContainer.y);
+  layer=await colored();qa._switchTool('erase-polygon');area.setOptions({shape:{erasePolygonMode:'fill'}});polygon(layer,square);core.popupManager.hideAll();const png=image(),project=await core.projectManager.exportProject();await core.projectManager.loadProject(realm(project));check(equal(png,image()),'領域消しの実Project/PNG往復で画素差0');
+  core.popupManager.show('quickAccess');qa._switchTool('lasso-fill');area.setOptions({shape:{paint:'custom',fillColor:null}});
+  for(const[w,h]of [[1280,720],[360,640],[360,400]]){frame.style.width=w+'px';frame.style.height=h+'px';win.dispatchEvent(new win.Event('resize'));await delay(45);const row=host.querySelector('.qa-shape-paint-row'),r=row.getBoundingClientRect(),children=[...row.children].filter(e=>!e.hidden).map(e=>e.getBoundingClientRect());check(children.every(c=>c.left>=r.left-1&&c.right<=r.right+1&&Math.abs(c.top+c.height/2-r.top-r.height/2)<2)&&r.right<=w&&r.left>=0,'塗り・輪郭・内側switch・picker・SVG resetが一行・横overflowなし '+w+'×'+h);}
+  state.textContent='PASS';
+ }catch(e){state.textContent='FAIL '+e.message;out.textContent+=e.stack;}
+ finally{area.cancelActive();area.setOptions(original);if(prefs===null)win.localStorage.removeItem('tegaki-area-tools-v1');else win.localStorage.setItem('tegaki-area-tools-v1',prefs);document.querySelector('#run').disabled=false;}
+};
+</script></html>

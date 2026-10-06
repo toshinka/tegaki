@@ -3,18 +3,19 @@
  * ファイル名: ui/tone-panel.js
  * 責務: QTPの「トーン」タブ。トーンparamsを編集し、確定で通常Raster Layerを1件のHistoryで追加/更新する。
  *   確定時、選択中のLayerへクリッピングして貼る(範囲Layerを非破壊に保つ)。
- * 依存: system/tone-geometry.js, system/tone-raster.js, system/history.js, ui/numeric-field.js, ui/feedback-toast.js
+ * 依存: tone-geometry/raster, history, numeric-field, feedback-toast, tone-draft-display, manga-edit-actions
  * 被依存: ui/quick-access-popup.js
  * 公開API: TonePanel
  * イベント発火: layer:content-changed
- * 保存: 編集中のparams / プリセット6枠はlocalStorage(UI設定)。確定Layerは通常Raster Layerで、再編集用に
- *   layerData.tone(optional・sanitize済み)を持つ。画素は派生物で、更新で再生成する。
+ * 保存: 編集中のparams / プリセット10枠はlocalStorage(UI設定)。確定Layerは通常Raster Layerで、再編集用に
+ *   layerData.tone(optional・sanitize済み)を持つ。確定Raster画素を保存し、更新時にrecipeから再生成する。
  * 見た目: 部品のclassはコマ割りpopupと共通(styles/components/panel-layout-popup.css)。
  * 実装状態: ✅実装（WP-014）
  * ============================================================================
  */
 
 import { TegakiEventBus } from '../system/event-bus.js';
+import { restoreMangaTargetControls, syncMangaTargetControls } from './caf-manga-target.js';
 import { historyManager } from '../system/history.js';
 import {
     TONE_LIMITS,
@@ -26,6 +27,8 @@ import {
 import { rasterizeTone } from '../system/tone-raster.js';
 import { attachNumericField } from './numeric-field.js';
 import { showFeedbackToast } from './feedback-toast.js';
+import { ToneDraftDisplay } from './tone-draft-display.js';
+import { mountMangaEditActions } from './manga-edit-actions.js';
 
 const STORAGE_KEY = 'tegaki-tone-v1';
 const SLOTS_KEY = 'tegaki-tone-slots-v1';
@@ -60,7 +63,7 @@ function factoryPreset(index) {
     const f = TONE_FACTORY_PRESETS[index];
     return { name: f.name, params: normalizeToneParams({ ...defaultToneParams(), ...f.patch }) };
 }
-const PREVIEW = { width: 150, height: 96 };
+const PREVIEW = { width: 200, height: 64 };
 const PERCENT = { toDisplay: v => Math.round(v * 100), fromDisplay: v => v / 100, wheelStep: 0.05, unit: '%' };
 
 const FIELDS = Object.freeze([
@@ -87,8 +90,17 @@ export class TonePanel {
         this.layerName = 'トーン';
         this.selectedSlot = -1;
         this.editing = null; // { layerId }
-        this._layerListener = () => this._syncControls();
+        this.display = new ToneDraftDisplay(this.layerSystem);
+        this.visible = false;
+        this._draftFrame = null;
+        this._layerListener = () => {
+            if (this.editing && this.layerSystem.getActiveLayer?.()?.layerData?.id !== this.editing.layerId) this._endEditing();
+            this._syncControls();
+        };
         this.eventBus?.on?.('layer:activated', this._layerListener);
+        this._contentListener = () => { this._endEditing(); this._syncControls(); };
+        this._contentEvents = ['layer:content-changed', 'layer:deleted', 'layer:clipping-changed', 'layer:blend-mode-changed', 'history:changed', 'project:loaded', 'canvas:resized'];
+        this._contentEvents.forEach(name => this.eventBus?.on?.(name, this._contentListener));
         this._restore();
     }
 
@@ -133,9 +145,9 @@ export class TonePanel {
     mount(container) {
         this.root = container;
         container.classList.add('qa-tone-view');
-        const slots = this.slots.map((_, i) =>
-            `<button type="button" class="pl-chip qa-tone-slot-name" data-tone-slot="${i}" title="クリック=呼び出し / ダブルクリック=名前を変更"></button>`
-        ).join('');
+        const slotButton = i => `<button type="button" class="pl-chip qa-tone-slot-name" data-tone-slot="${i}" title="クリック=呼び出し / ダブルクリック=名前を変更"></button>`;
+        const slots = `<div class="qa-tone-density-row"><span>網点</span>${[0,1,2,3,4].map(slotButton).join('')}</div>
+            <div class="qa-tone-other-slots">${[5,6,7,8,9].map(slotButton).join('')}</div>`;
         const futaba = FUTABA_COLORS.map(c =>
             `<button type="button" class="qa-tone-swatch" data-swatch="${c.value}" style="--swatch:${c.value}" title="${c.label} ${c.value}" aria-label="${c.label}"></button>`
         ).join('');
@@ -155,6 +167,8 @@ export class TonePanel {
                 <button type="button" class="pl-btn pl-btn--primary" data-action="apply" title="選択レイヤーにクリップして新規追加（Undo 1回で戻る）">適用</button>
                 <button type="button" class="pl-btn pl-btn--primary" data-action="update" data-role="update-btn" title="再編集中のLayerを置き換え（Undo 1回で戻る）" hidden>更新</button>
             </div>
+            <canvas class="pl-preview qa-tone-preview" width="${PREVIEW.width}" height="${PREVIEW.height}" aria-label="トーンプレビュー"></canvas>
+            <div class="qa-tone-scroll">
             <label class="pl-row">
                 <span class="pl-label">名前</span>
                 <input type="text" class="qa-tone-name-input" data-role="layer-name" maxlength="${NAME_MAX + 8}" spellcheck="false">
@@ -165,7 +179,6 @@ export class TonePanel {
                 <button type="button" class="pl-btn" data-action="slot-reset" title="選んだ枠だけ定型に戻す">枠を戻す</button>
             </div>
             <div class="pl-chips" role="group" aria-label="形">${shapes}</div>
-            <canvas class="pl-preview qa-tone-preview" width="${PREVIEW.width}" height="${PREVIEW.height}" aria-label="トーンプレビュー"></canvas>
             ${rows}
             <label class="pl-row pl-check"><input type="checkbox" data-opt="gradient"><span>グラデーション</span></label>
             <label class="pl-row pl-check"><input type="checkbox" data-opt="crisp"><span>くっきり(二値)</span></label>
@@ -184,7 +197,9 @@ export class TonePanel {
                 <button type="button" class="pl-btn" data-action="reset">リセット</button>
                 <button type="button" class="pl-btn" data-action="load-active" title="選択中のトーンLayerから読み込んで再編集">再編集</button>
             </div>
+            </div>
         `;
+        mountMangaEditActions(container, { before: container.firstChild });
         const q = (sel) => container.querySelector(sel);
         this.elements = {
             canvas: q('.qa-tone-preview'),
@@ -298,7 +313,7 @@ export class TonePanel {
 
     _onAction(action) {
         if (action === 'reset') {
-            this.editing = null;
+            this._endEditing();
             this.layerName = 'トーン';
             this._setParams(defaultToneParams());
         } else if (action === 'main-color') {
@@ -325,6 +340,7 @@ export class TonePanel {
     }
 
     _syncControls() {
+        restoreMangaTargetControls(this.root);
         if (!this.root || !this.elements.canvas) return;
         for (const f of FIELDS) {
             const input = this.root.querySelector(`input[data-field="${f.key}"]`);
@@ -346,7 +362,10 @@ export class TonePanel {
         this.root.querySelectorAll('input[data-opt]').forEach(input => { input.checked = this.params[input.dataset.opt] === true; });
         this.root.querySelectorAll('[data-tone-slot]').forEach(btn => {
             const i = Number(btn.dataset.toneSlot);
-            btn.textContent = this._slot(i).name;
+            const name = this._slot(i).name;
+            btn.textContent = i < 5 && name === factoryPreset(i).name ? `${Math.round(this._slot(i).params.density * 100)}` : name;
+            btn.setAttribute('aria-label', name);
+            btn.title = `${name} / クリック=呼び出し / ダブルクリック=名前を変更`;
             btn.classList.toggle('is-filled', !!this.slots[i]);
             btn.setAttribute('aria-pressed', String(i === this.selectedSlot));
         });
@@ -364,17 +383,45 @@ export class TonePanel {
         this.elements.editStatus.textContent = this.editing ? '— 再編集中' : '';
         this.elements.updateBtn.hidden = !this.editing;
         this.elements.loadBtn.disabled = !this._activeTone();
+        syncMangaTargetControls(this.root, this.layerSystem, 'tone');
     }
 
     _redraw() {
         const canvas = this.elements.canvas;
         if (!canvas) return;
+        const background = this.layerSystem?.getLayers?.().find(layer => layer.layerData?.isBackground)?.layerData.backgroundColor;
+        if (Number.isFinite(background)) canvas.style.backgroundColor = `#${background.toString(16).padStart(6, '0')}`;
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const fill = { x: 0, y: 0, w: canvas.width, h: canvas.height };
         const raster = rasterizeTone(this.params, { width: canvas.width, height: canvas.height, fill, ref: fill });
         if (!raster.ok) return;
         ctx.putImageData(new ImageData(new Uint8ClampedArray(raster.pixels), raster.width, raster.height), 0, 0);
+        this._scheduleDraft();
+    }
+
+    _scheduleDraft() {
+        if (!this.visible || !this.editing || this._draftFrame !== null) return;
+        this._draftFrame = requestAnimationFrame(() => {
+            this._draftFrame = null;
+            const layer = this.layerSystem?.getActiveLayer?.();
+            if (!this.visible || layer?.layerData?.id !== this.editing?.layerId) return;
+            const raster = this._raster(this._clipOwner(layer));
+            if (!this.display.show(layer, raster)) this.elements.editStatus.textContent = `— 見本のみ: ${raster.reason || '表示不可'}`;
+        });
+    }
+
+    _endEditing() {
+        if (this._draftFrame !== null) cancelAnimationFrame(this._draftFrame);
+        this._draftFrame = null;
+        this.display.clear();
+        this.editing = null;
+    }
+
+    setVisible(visible) {
+        this.visible = visible === true;
+        if (!this.visible) this._endEditing();
+        else this.refresh();
     }
 
     // ------------------------------------------------------------ 確定
@@ -385,6 +432,7 @@ export class TonePanel {
     }
 
     _guard() {
+        if (this.history?.isApplying || this.history?.isRecordingSuppressed?.()) return false;
         if (!this.layerSystem?.createRasterLayerFromSnapshot) {
             showFeedbackToast('Raster Layerを作成できません');
             return false;
@@ -435,6 +483,7 @@ export class TonePanel {
 
     apply() {
         if (!this._guard()) return { ok: false };
+        this.display.clear();
         let area = this.layerSystem.getActiveLayer?.() || null;
         if (area?.layerData?.tone) area = this._clipOwner(area) || area; // トーンの上に重ねる時は元の範囲に合わせる
         const clip = this.params.clipToLayer === true && !!area && !area.layerData?.isBackground && !area.layerData?.isFolder;
@@ -500,6 +549,7 @@ export class TonePanel {
             showFeedbackToast(raster.reason);
             return { ok: false };
         }
+        this._endEditing();
         const before = this.layerSystem.createLayerRasterSnapshot(layer);
         const after = { ...before, width: raster.width, height: raster.height, pixels: raster.pixels, rasterBounds: raster.rasterBounds, paths: [], pathsData: [] };
         const metaBefore = layer.layerData.tone;
@@ -519,17 +569,22 @@ export class TonePanel {
             byteSize: (before.pixels?.byteLength || 0) + (after.pixels?.byteLength || 0),
             meta: { type: 'tone-update', layerId }
         });
+        this.editing = { layerId };
+        this._syncControls();
         showFeedbackToast('トーンを更新しました');
         return { ok: true, layerId };
     }
 
     loadFromActiveLayer() {
+        if (!this._guard()) return { ok: false };
         const data = this._activeTone();
         if (!data) {
             showFeedbackToast('選択中のレイヤーにトーンの情報がありません');
             return { ok: false };
         }
+        this._endEditing();
         this.editing = { layerId: this.layerSystem.getActiveLayer().layerData.id };
+        this.layerName = this.layerSystem.getActiveLayer().layerData.name || 'トーン';
         this._setParams(data.params);
         showFeedbackToast('トーンを読み込みました。編集して「更新」できます');
         return { ok: true };
@@ -541,7 +596,9 @@ export class TonePanel {
     }
 
     destroy() {
+        this._endEditing();
         this.eventBus?.off?.('layer:activated', this._layerListener);
+        this._contentEvents.forEach(name => this.eventBus?.off?.(name, this._contentListener));
         this._detachers?.forEach(fn => fn?.());
     }
 }

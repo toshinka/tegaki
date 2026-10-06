@@ -19,7 +19,7 @@ document.querySelector('#run').onclick=async()=>{
   check(primary()&&win.getComputedStyle(p.popup).outlineColor==='rgb(255, 140, 66)','showで漫画入力先の橙枠');
   p.elements.content.focus();check(primary(),'本文focusで漫画入力先');
   canvas.dispatchEvent(new win.PointerEvent('pointerdown',{pointerId:81,pointerType:'mouse',button:2,buttons:0,bubbles:true}));canvas.dispatchEvent(new win.PointerEvent('pointerup',{pointerId:81,pointerType:'mouse',button:2,buttons:0,bubbles:true}));
-  check(!primary()&&win.document.activeElement!==p.elements.content,'Canvasへ移動で枠解除・旧入力focus解除');
+  check(!primary()&&win.document.activeElement!==p.elements.content,'右クリックでCanvasへ移動・旧入力focus解除');
   q('[data-context="body"]').focus();check(primary(),'漫画のbutton focusで復帰');
   p._toggleFontComparison(true);p.fontComparison.refs.close.focus();check(primary(),'共通書体窓も漫画の編集対象');p._toggleFontComparison(false);
   q('[data-shape="double"]').click();q('[data-context="tail"]').click();q('[data-action="tail-add"]').click();

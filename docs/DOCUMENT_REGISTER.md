@@ -15,6 +15,22 @@
 
 ## 現行入口と互換入口
 
+- `docs/work/WP-039-rive-multijoint-workbench.md`: CURRENT。Owner多関節/parameter/warpの道具化。新detached workbench/chain sourceの契約、既存正本と通常Raster接点を維持。
+- `docs/ai/WP-039-rive-multijoint-audit.md`: REFERENCE EVIDENCE。実3骨/45点の編集・保存native再現と通常Raster/Undo/Project往復、成立範囲と未実装。現在地はSTATUS。
+- `docs/ai/WP-039-rive-chain-backend-result.md`: REFERENCE EVIDENCE。source/APIと固定CLIの限定結果。native受入は司令監査へ。
+- `docs/ai/WP-039-rive-chain-ui-result.md`: REFERENCE EVIDENCE。独立controller/workbenchとpure/static結果。実Browserは司令監査へ。
+
+- `docs/work/WP-038-rive-pivot-authoring.md`: CURRENT。一枚PNGのEnd回転中心配置/source保存再現/通常Raster受渡しまでの限定土台契約。source唯一正本、公式runtimeと既存Project/History/renderer境界を維持。
+- `docs/ai/WP-038-rive-pivot-audit.md`: REFERENCE EVIDENCE。契約反証と司令source/native/UI/hostの限定監査。Card/STATUSを上書きしない。
+- `docs/ai/WP-038-rive-pivot-backend-result.md`: REFERENCE EVIDENCE。source/bind/parser/API接続と固定CLI限定検証、native未実測範囲。司令監査と混同しない。
+- `docs/ai/WP-038-rive-pivot-ui-result.md`: REFERENCE EVIDENCE。独立pivot controller/GUI接続とpure/static検証。Browser受入は司令監査を参照。
+
+- `docs/work/WP-035-rive-grid-mesh-editing.md`: CURRENT。Owner続行の旧quad互換・9点grid source/native→追従UIの限定契約。保存/renderer正本維持。
+- `docs/work/WP-036-rive-influence-map.md`: CURRENT。素材の変形前4/9点選択・追従可視化の限定技術VERIFIED、Owner受入未。native evaluator/出力/保存正本を維持する契約。
+- `docs/work/WP-037-rive-weight-readability.md`: CURRENT。editor-local追従率数値欄の可読性をCSSだけで改善する限定契約。操作/raw/native/保存正本を維持。
+- `docs/ai/WP-037-rive-weight-readability-audit.md`: REFERENCE EVIDENCE。actual Browser各列寸法/raw/native・通常配信保全の限定監査。Card/STATUSを上書きしない。
+- `docs/ai/WP-036-rive-influence-audit.md`: REFERENCE EVIDENCE。source/実UI/native選択・未保存保全更新・通常host受渡しの限定監査。Card/STATUSを上書きしない。
+- `docs/ai/WP-035-rive-grid-audit.md`: REFERENCE EVIDENCE。司令の限定監査。Card/STATUSを上書きしない。
 - `docs/work/WP-034-rive-weights-playback.md`: CURRENT。Owner就寝中ロングラン。固定四隅の二骨weightと既存EndPose再生を二Sliceで実装、source/Project/rendererの正本境界を維持する。
 - `docs/ai/WP-034-rive-weights-playback-result.md`: REFERENCE EVIDENCE。担当の限定実装/検証結果。native/Browser/Ownerの未検証範囲を司令監査と区別する。
 - `docs/ai/WP-034-rive-weights-playback-audit.md`: REFERENCE EVIDENCE。司令の実controller境界監査、独立公式CLI/native評価、現行UI/hostの未検証範囲。
@@ -56,6 +72,7 @@
 - `docs/work/`: Work Package。登録済みpackageの機械的状態は`docs/harness.json`。未登録のWP-010〜018は対象CardとSTATUSで確認し、未登録を未実装と解釈しない。
 - `docs/ai/ASTRA_OPERATING_RULES.md`: CURRENT。Astra専用のworker運用規約。他workerへ自動適用しない。
 - `docs/ai/WEB_SUBCOMMANDER_CARD.md`: CURRENT REFERENCE。新規Webサブコマンダーの就任・読む順序・返却契約。役割権限はDEVELOPMENT、現在地はSTATUSが所有する。
+- `docs/ai/DOT_COORDINATOR_CARD.md`: CURRENT REFERENCE。dot継続管理の就任・既存司令への限定通信・初回read-only接続確認。実装Cardではなく、現在地はSTATUSが所有する。
 - `docs/ai/2026-10-03-navigation-audit.md`: REFERENCE。就任カード発行時の導線検査・修正範囲・残る文書課題。現在の実装指示ではない。
 - `docs/ai/INOCHI2D_EDIT_ROUNDTRIP_CAPABILITY.md`: REFERENCE。WP-019限定調査のSDK/API/runtime証拠。現在の実行契約はWP-019。
 - `docs/ai/2026-10-03-rig-backend-implementation-proposal.md`: REFERENCE。限定追加調査後のbackend導入・保存境界・次の一件の設計提案。採用/schema変更/実装の承認ではない。

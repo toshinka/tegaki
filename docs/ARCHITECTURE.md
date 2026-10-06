@@ -61,7 +61,9 @@ reparent、duplicate、deleteはAsset内部IDだけでなく全参照Clipの時�
 
 入口: [lettering-popup.js](../tegaki_work/ui/lettering-popup.js)、[lettering-layer-adapter.js](../tegaki_work/system/lettering-layer-adapter.js)。漫画の文字tabから通常Rasterへ追加/更新する。QTPに第二の文字入力を置かない。
 
-`editable-curve-geometry.js`と`lettering-model.js`は純計算・値の検証。FontLibraryのloaded実体を`lettering-font-engine.js`（HarfBuzz）へ渡し、`lettering-vector-renderer.js`が同じ輪郭から曲線/少点変形のSVG previewと最終1x画素を生成する。UI/previewは保存正本を持たない。通常Layerの画素とoptional再編集recipeをadapter/ProjectManagerで扱い、fingerprint/bounds不一致と外部transformを更新前に拒否する。正式Vector LayerとAnimeのmodelには接続していない。詳細は[WP-025](work/WP-025-editable-manga-lettering.md)。
+`editable-curve-geometry.js`と`lettering-model.js`は純計算・値の検証。FontLibraryのloaded実体を`lettering-font-engine.js`（HarfBuzz）へ渡し、`lettering-vector-renderer.js`が同じ輪郭から曲線/少点変形のSVG previewと最終1x画素を生成する。UI/previewは保存正本を持たない。通常Layerの画素とoptional再編集recipeをadapter/ProjectManagerで扱い、fingerprint/bounds不一致と外部transformを更新前に拒否する。正式Vector LayerとCAFの再編集recipeには接続していない。詳細は[WP-025](work/WP-025-editable-manga-lettering.md)。
+
+Animationとの共用入口は[animation-canvas-workflow.js](../tegaki_work/ui/animation-canvas-workflow.js)。Table表示と明示CAF seedを分離し、既存Album/Project-loadを使って開始前の文書を残す。文字・吹き出し・集中線の最終Rasterは[caf-manga-target.js](../tegaki_work/ui/caf-manga-target.js)で選択tokenを確認し、既存asset Historyへ追加する。文字adapterのCAFコールバックはpopupが注入し、systemからUIをimportしない。コマ・トーン・recipe再編集は通常Canvas専用。静止画コピーはAlbumの既存normal Project変換を共用し、元のアニメと評価Frameを変更しない。詳細は[WP-030](work/WP-030-manga-tools-follow-through.md)。
 
 ## Transform session
 

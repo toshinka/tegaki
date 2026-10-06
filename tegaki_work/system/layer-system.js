@@ -17,6 +17,7 @@ import { TEGAKI_CONFIG } from '../config.js';
 import { TegakiEventBus } from './event-bus.js';
 import { LayerModel } from './data-models.js';
 import { historyManager } from './history.js';
+import { createNormalClippingAlphaResolver } from './normal-layer-clipping-alpha.js';
 import { coordinateSystem } from '../coordinate-system.js';
 import { LayerTransform } from './layer-transform.js';
 import { resolveIntegerTranslation } from './raster-translation.js';
@@ -1116,7 +1117,13 @@ export class LayerSystem {
         if (newIndex === null) return false;
 
         this._moveLayerObjectToIndex(layer, newIndex);
-        this._finalizeLayerReorder(layer);
+        // This API explicitly chooses the reference's parent. Placing below
+        // its lowest child is still inside that Folder; free reorder's block
+        // boundary inference would incorrectly detach the new lowest sibling.
+        this.getLayers().filter(item => item.layerData?.isFolder)
+            .forEach(item => this._compactFolderChildren(item.layerData.id));
+        this.activeLayerIndex = this.getLayerIndex(layer);
+        this.refreshClippingMasks({ reuseMasks: true, source: 'layer-reorder' });
 
         this._emitLayerPlacementChanged({
             layerId,
@@ -1311,10 +1318,25 @@ export class LayerSystem {
         const clampedTarget = Math.max(0, Math.min(targetIndex, layers.length - 1));
         if (fromIndex === clampedTarget) return true;
 
-        this.currentFrameContainer.removeChild(layer);
-        this.currentFrameContainer.addChildAt(layer, clampedTarget);
+        const block = this._getLayerPlacementBlock(layer);
+        // Logical folders are siblings in Pixi. Move the complete post-order
+        // block, including nested folders, rather than only the empty header.
+        if (block.includes(layers[clampedTarget])) return true;
+        const removedBelowTarget = block.filter(child => child !== layer && layers.indexOf(child) < clampedTarget).length;
+        block.forEach(child => this.currentFrameContainer.removeChild(child));
+        const insertion = Math.min(clampedTarget - removedBelowTarget, this.currentFrameContainer.children.length);
+        block.forEach((child, offset) => this.currentFrameContainer.addChildAt(child, insertion + offset));
         this.activeLayerIndex = this.getLayerIndex(layer);
         return true;
+    }
+
+    _getLayerPlacementBlock(layer, seen = new Set()) {
+        if (!layer?.layerData || seen.has(layer)) return [];
+        seen.add(layer);
+        const children = layer.layerData.isFolder
+            ? this._getDirectFolderChildren(layer.layerData.id).flatMap(child => this._getLayerPlacementBlock(child, seen))
+            : [];
+        return [...children, layer];
     }
 
     _getDirectFolderChildren(folderId) {
@@ -1324,7 +1346,8 @@ export class LayerSystem {
     _getFolderBlockRange(folderId) {
         const layers = this.getLayers();
         const folderIndex = layers.findIndex(l => l.layerData?.id === folderId);
-        const childIndices = this._getDirectFolderChildren(folderId)
+        const folder = layers[folderIndex];
+        const childIndices = this._getLayerPlacementBlock(folder).filter(child => child !== folder)
             .map(child => layers.indexOf(child))
             .filter(index => index >= 0);
 
@@ -1342,8 +1365,7 @@ export class LayerSystem {
         const folder = this.getLayers().find(l => l.layerData?.id === folderId);
         if (!folder?.layerData?.isFolder) return;
 
-        const children = this._getDirectFolderChildren(folderId)
-            .sort((a, b) => this.getLayerIndex(a) - this.getLayerIndex(b));
+        const children = this._getLayerPlacementBlock(folder).filter(child => child !== folder);
         if (children.length === 0) return;
 
         for (const child of children) {
@@ -1399,6 +1421,7 @@ export class LayerSystem {
             .filter(l => l.layerData?.isFolder)
             .map(l => l.layerData.id);
         folderIds.forEach(id => this._compactFolderChildren(id));
+        this.activeLayerIndex = this.getLayerIndex(layer);
         // 並べ替え・出し入れでは画素は変わらないので、元が同じマスクは作り直さず再利用する
         this.refreshClippingMasks({ reuseMasks: true, source: 'layer-reorder' });
     }
@@ -2498,6 +2521,12 @@ export class LayerSystem {
             }
         }
 
+        const alphaResolver = createNormalClippingAlphaResolver({
+            layers, width: Math.max(1, Math.round(this.config.canvas.width)), height: Math.max(1, Math.round(this.config.canvas.height)),
+            getSources: owner => this._resolveClippingSourceLayers(owner, layers),
+            getSnapshot: source => this.createLayerRasterSnapshot(source),
+            isVisible: source => this._isLayerPersistentlyVisible(source, layers)
+        });
         for (const layer of layers) {
             const data = layer.layerData;
             const displayClippingMode = data?.animationDisplayClippingMode
@@ -2519,11 +2548,11 @@ export class LayerSystem {
                 continue;
             }
 
-            const sourceKey = sourceLayers.map(source => source.layerData?.id).filter(Boolean).join(',');
+            const sourceKey = alphaResolver.sourceKey(sourceLayers);
             const reused = reusable?.get(sourceKey)?.pop() || null;
             if (reused && diagnosticSample) diagnosticSample.reusedMaskCount = (diagnosticSample.reusedMaskCount || 0) + 1;
             const knownEmpty = !reused && this._emptyClippingMaskKeys.has(sourceKey);
-            const maskTexture = reused || (knownEmpty ? null : this._createBinaryClippingMaskTexture(sourceLayers));
+            const maskTexture = reused || (knownEmpty ? null : this._createBinaryClippingMaskTexture(sourceLayers, alphaResolver));
             if (!maskTexture && !knownEmpty) this._emptyClippingMaskKeys.add(sourceKey);
             if (!maskTexture) {
                 data.clippingDisplaySuppressed = true;
@@ -2561,7 +2590,7 @@ export class LayerSystem {
             }
             data.clippingMaskTexture = maskTexture;
             data.clippingMaskInverse = inverse;
-            data.effectiveClippingSourceId = sourceLayers.map(source => source.layerData?.id).filter(Boolean).join(',') || null;
+            data.effectiveClippingSourceId = sourceKey || null;
         }
         if (reusable) {
             for (const list of reusable.values()) {
@@ -2681,7 +2710,7 @@ export class LayerSystem {
         return sprite;
     }
 
-    _createBinaryClippingMaskTexture(sourceLayers) {
+    _createBinaryClippingMaskTexture(sourceLayers, alphaResolver = null) {
         if (!Array.isArray(sourceLayers) || !this.app?.renderer) return null;
         if (sourceLayers.length === 0) return null;
 
@@ -2690,28 +2719,13 @@ export class LayerSystem {
         const pixels = new Uint8ClampedArray(width * height * 4);
         let hasMaskPixel = false;
 
-        for (const rasterLayer of sourceLayers) {
-            const snapshot = this.createLayerRasterSnapshot(rasterLayer);
-            if (!snapshot?.pixels) continue;
-            const bounds = normalizeRasterBounds(snapshot.rasterBounds, {
-                width: snapshot.width,
-                height: snapshot.height
-            });
-            for (let y = 0; y < snapshot.height; y++) {
-                const targetY = bounds.y + y;
-                if (targetY < 0 || targetY >= height) continue;
-                for (let x = 0; x < snapshot.width; x++) {
-                    if (snapshot.pixels[(y * snapshot.width + x) * 4 + 3] === 0) continue;
-                    const targetX = bounds.x + x;
-                    if (targetX < 0 || targetX >= width) continue;
-                    const offset = (targetY * width + targetX) * 4;
-                    pixels[offset] = 255;
-                    pixels[offset + 1] = 255;
-                    pixels[offset + 2] = 255;
-                    pixels[offset + 3] = 255;
-                    hasMaskPixel = true;
-                }
-            }
+        alphaResolver ||= createNormalClippingAlphaResolver({layers:this.getLayers(),width,height,
+            getSources: owner => this._resolveClippingSourceLayers(owner),
+            getSnapshot: source => this.createLayerRasterSnapshot(source),
+            isVisible: source => this._isLayerPersistentlyVisible(source)});
+        const alpha = alphaResolver.union(sourceLayers);
+        for (let i=0;i<alpha.length;i++) if (alpha[i]) {
+            pixels.fill(255,i*4,i*4+4); hasMaskPixel=true;
         }
         if (!hasMaskPixel) return null;
 
@@ -5041,13 +5055,13 @@ export class LayerSystem {
         }
         try {
             const movedLayer = layers[fromIndex];
-            const oldActiveIndex = this.activeLayerIndex;
+            const beforeState = this._captureLayerPlacementState();
             if (historyManager && !historyManager.isApplying) {
                 const entry = {
                     name: 'layer-reorder',
                     do: () => {
                         const layers = this.getLayers();
-                        const layer = layers[fromIndex];
+                        const layer = layers.find(candidate => candidate.layerData?.id === movedLayer.layerData?.id);
                         this._moveLayerObjectToIndex(layer, toIndex);
                         this._finalizeLayerReorder(layer);
                         this._emitPanelUpdateRequest();
@@ -5058,9 +5072,7 @@ export class LayerSystem {
                     undo: () => {
                         const layers = this.getLayers();
                         const layer = layers.find(l => l.layerData?.id === movedLayer.layerData?.id);
-                        this._moveLayerObjectToIndex(layer, fromIndex);
-                        this._finalizeLayerReorder(layer);
-                        this.activeLayerIndex = oldActiveIndex;
+                        this._restoreLayerPlacementState(beforeState);
                         this._emitPanelUpdateRequest();
                         if (this.eventBus) {
                             this.eventBus.emit('layer:reordered', { fromIndex: toIndex, toIndex: fromIndex, activeIndex: this.activeLayerIndex, movedLayerId: layer.layerData?.id });

@@ -25,6 +25,8 @@ assert.deepEqual(resolveClosedShapePaint({ paint: 'line' }, { main, background }
 assert.deepEqual(resolveClosedShapePaint({ paint: 'same' }, { main, background }).fillRgb, main);
 assert.deepEqual(resolveClosedShapePaint({ paint: 'custom', fillColor: '#000000' }, { main, background }).fillRgb, [0, 0, 0]);
 assert.equal(resolveClosedShapePaint({ paint: 'custom', fillColor: null }, { main, background }).followsBackground, true);
+assert.equal(resolveClosedShapePaint({ paint: 'custom', fillColor: '#ffffff', outline: false }, { main, background }).strokeRgb, null, 'lasso specified fill can omit the outline');
+assert.deepEqual(resolveClosedShapePaint({ paint: 'line', outline: false }, { main, background }).strokeRgb, main, 'line mode always has a stroke');
 assert.deepEqual(resolveClosedShapePaint({ paint: 'legacy' }, { main, background }, { legacyMode: 'same' }).fillRgb, main);
 
 const triangle = [{ x: 2, y: 2 }, { x: 14, y: 2 }, { x: 8, y: 12 }];
@@ -70,5 +72,13 @@ blendClosedShapePixels(
 );
 assert.deepEqual([...selectedTarget.pixels], [255, 0, 0, 255, 0, 0, 0, 0]);
 
+const erased = { width: 2, height: 1, pixels: new Uint8ClampedArray([80, 40, 20, 255, 160, 90, 30, 128]) };
+const eraseSource = new Uint8ClampedArray([255, 255, 255, 255, 0, 0, 0, 128]);
+blendClosedShapePixels(erased, eraseSource, { x: 0, y: 0, width: 2, height: 1 }, .5, null, 'erase');
+assert.deepEqual([...erased.pixels], [80, 40, 20, 128, 160, 90, 30, 96], 'erase scales alpha once and keeps remaining RGB');
+blendClosedShapePixels(erased, eraseSource, { x: 0, y: 0, width: 2, height: 1 }, 1,
+    { bounds: { x: 0, y: 0, width: 2, height: 1 }, mask: new Uint8Array([1, 0]) }, 'erase');
+assert.deepEqual([...erased.pixels], [0, 0, 0, 0, 160, 90, 30, 96], 'erase clears transparent RGB and honors the selection mask');
+assert.equal(blendClosedShapePixels(erased, eraseSource, { x: 0, y: 0, width: 2, height: 1 }, 0, null, 'erase'), 0);
 console.log('verify-closed-shape-paint: PASS');
 

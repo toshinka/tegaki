@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {createNormalClippingAlphaResolver} from '../system/normal-layer-clipping-alpha.js';
+const layer=(id,parentId=null,clippingMode='none',isFolder=false)=>({layerData:{id,parentId,clippingMode,isFolder}});
+const base=layer('base'),bubble=layer('bubble',null,'normal'),folder=layer('text',null,'normal',true),text=layer('glyph','text'),nested=layer('nested','none','none',true),child=layer('child','nested');nested.layerData.parentId='text';
+const layers=[base,bubble,text,child,nested,folder],sources=new Map([[bubble,[base]],[folder,[bubble]]]);
+const snapshots=new Map([[base,[1,1,0,0]],[bubble,[0,1,1,1]],[text,[1,1,1,1]],[child,[1,1,1,1]]]);
+const make=()=>createNormalClippingAlphaResolver({layers,width:4,height:1,getSources:l=>sources.get(l)||[],isVisible:l=>l.layerData.visible!==false,getSnapshot:l=>{const a=snapshots.get(l)||[];return {width:4,height:1,rasterBounds:{x:0,y:0},pixels:new Uint8ClampedArray(a.flatMap(v=>[255,255,255,v*255]))};}});
+assert.deepEqual([...make().union([text])],[0,1,0,0],'text folder inherits clipped bubble alpha');
+assert.deepEqual([...make().union([child])],[0,1,0,0],'nested ancestors participate');
+let key=make().sourceKey([text]);assert.ok(key.split(',').includes('base'),'source key tracks base pixels for dirty invalidation');
+bubble.layerData.clippingMode='inverse';assert.deepEqual([...make().union([text])],[0,0,1,1]);assert.notEqual(make().sourceKey([text]),key,'mode changes invalidate reusable masks');
+base.layerData.visible=false;assert.deepEqual([...make().union([base])],[0,0,0,0]);base.layerData.visible=true;
+bubble.layerData.clippingMode='normal';sources.set(bubble,[text]);assert.deepEqual([...make().union([text])],[0,0,0,0],'cycles cannot expose unbounded alpha');
+console.log('normal clipping alpha: chained and nested masks, inverse, visibility, dependency keys and cycles PASS');

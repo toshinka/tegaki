@@ -353,6 +353,12 @@ for (let i = 0; i < wideView.getUint16(4, false); i++) {
     if (String.fromCharCode(...wideBytes.slice(offset,offset+4)) === 'hmtx') u16(wideView,wideView.getUint32(offset+8,false)+4,1000);
 }
 const mixedLibrary = { async ensureLoaded(id) { if(id==='missing') throw new Error('not-installed'); return {id,data:id==='wide'?wideBytes:bytes}; } };
+for (const extra of [{}, {characterStyles:[{start:2,end:3,fontId:'wide'}]}, {sizeProfile:{mode:'ends',start:1,mid:1.5,end:2}}]) {
+    const columns = await shapeLettering(params({text:'A\nA\nA',vertical:true,...extra}),{fontLibrary:mixedLibrary});
+    assert.equal(columns.ok,true,columns.reason);
+    assert.ok(columns.glyphs[0].x > columns.glyphs[1].x && columns.glyphs[1].x > columns.glyphs[2].x,'Japanese vertical paragraphs progress right to left');
+    assert.ok(columns.glyphs[0].lineX > columns.glyphs[1].lineX && columns.glyphs[1].lineX > columns.glyphs[2].lineX,'each vertical column retains its own baseline for transforms');
+}
 const plainThree = await shapeLettering(params({text:'AAA',characterStyles:[{start:1,end:2,color:'#00ff00'}]}),{fontLibrary:mixedLibrary});
 const mixedThree = await shapeLettering(params({text:'AAA',characterStyles:[{start:1,end:2,fontId:'wide',color:'#00ff00'}]}),{fontLibrary:mixedLibrary});
 assert.equal(mixedThree.ok,true,mixedThree.reason);

@@ -15,7 +15,7 @@ assert.equal(validateRasterSurfaceSize({ width: 9000, height: 100 }, { maxAxis: 
 
 // プリセットが3種追加され、上限が数値入力/プリセットで8192まで
 const popup = readFileSync(new URL('../ui/resize-popup.js', import.meta.url), 'utf8');
-for (const [w, h] of [[1200, 1200], [1700, 2400], [4960, 7016]]) {
+for (const [w, h] of [[1200, 1200], [1700, 2400], [2150, 3035]]) {
     assert.match(popup, new RegExp(`data-width="${w}" data-height="${h}"`), `preset ${w}x${h}`);
 }
 assert.match(popup, /ABSOLUTE_MAX_SIZE = canvasConfig\.absoluteMaxSize \|\| 8192/);

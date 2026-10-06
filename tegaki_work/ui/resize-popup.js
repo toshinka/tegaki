@@ -206,8 +206,8 @@ export class ResizePopup {
                         <button class="resize-preset-btn" data-width="1700" data-height="2400">
                             B5相当<br>1700×2400
                         </button>
-                        <button class="resize-preset-btn" data-width="4960" data-height="7016" title="A4 / 600dpi。1レイヤー約140MB。軽量化は書き出し時に原寸、描画中は縮小表示が目安">
-                            漫画原稿<br>4960×7016
+                        <button class="resize-preset-btn" data-width="2150" data-height="3035" title="B5 / 300dpi相当。全面RGBAバッファ1枚約26MB">
+                            漫画原稿<br>2150×3035
                         </button>
                     </div>
                     

@@ -452,7 +452,7 @@ export class LetteringOverlay {
             class: 'lettering-overlay__content',
             transform: `matrix(${matrix.a} ${matrix.b} ${matrix.c} ${matrix.d} ${matrix.e} ${matrix.f})`
         });
-        this._appendRendererPaths(content, result);
+        if (state.previewVisible !== false) this._appendRendererPaths(content, result);
         content.appendChild(svgElement('rect', { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, class: 'lettering-overlay__bounds' }));
         if (state.grid?.enabled) this._appendGrid(content, state.mode === 'envelope' ? envelopeBounds : bounds, state.grid.size);
         if (state.mode === 'curve') this._appendCurve(content, state, envelopeBounds);

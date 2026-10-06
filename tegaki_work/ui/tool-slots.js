@@ -30,7 +30,11 @@ function canonicalMemberId(id) {
  */
 export const TOOL_SLOTS = Object.freeze([
     { id: 'pen', label: 'ペン', kind: 'preset', tool: 'pen', presetTool: 'pen', elementId: 'qa-pen-tool', icon: 'pen', action: 'TOOL_PEN' },
-    { id: 'eraser', label: '消しゴム', kind: 'preset', tool: 'eraser', presetTool: 'eraser', elementId: 'qa-eraser-tool', icon: 'eraser', action: 'TOOL_ERASER' },
+    { id: 'eraser', label: '消しゴム', kind: 'preset', tool: 'eraser', presetTool: 'eraser', elementId: 'qa-eraser-tool', icon: 'eraser', action: 'TOOL_ERASER',
+        members: Object.freeze([
+            { id: 'erase-polygon', tool: 'erase-polygon', label: '多角線消し', icon: 'shapePolygon', erase: true },
+            { id: 'erase-lasso', tool: 'erase-lasso', label: '投げ縄塗り消し', icon: 'lasso', erase: true }
+        ]) },
     { id: 'airbrush', label: 'エアブラシ', kind: 'preset', tool: 'airbrush', presetTool: 'airbrush', elementId: 'qa-airbrush-tool', icon: 'airbrush', action: 'TOOL_AIRBRUSH_BLUR_TOGGLE' },
     {
         id: 'bucket', label: 'バケツ', kind: 'tools', tool: 'fill', elementId: 'qa-fill-tool', icon: 'fill', action: 'TOOL_FILL',
@@ -62,6 +66,8 @@ export const TOOL_SLOTS = Object.freeze([
 const TOOL_TO_SLOT = Object.freeze({
     pen: 'pen',
     eraser: 'eraser',
+    'erase-polygon': 'eraser',
+    'erase-lasso': 'eraser',
     airbrush: 'airbrush',
     'airbrush-erase': 'airbrush',
     blur: 'airbrush',

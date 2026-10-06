@@ -489,6 +489,8 @@ async function shapeImported(params, options) {
                     path: transformedPath,
                     x: horizontal ? penX + advanceValue * 0.5 : penX + finite(position.xOffset),
                     y: horizontal ? baselineY : -(penY + finite(position.yOffset) + advanceValue * 0.5),
+                    lineX: penX,
+                    lineBaselineY: baselineY,
                     advance,
                     cluster: info.cluster,
                     codePoint,
@@ -512,12 +514,12 @@ async function shapeImported(params, options) {
             } else {
                 lineIndex += 1;
                 penY = 0;
-                penX += lineHeightPx;
+                penX -= lineHeightPx;
             }
         }
         const fallbackBounds = horizontal
             ? { x: 0, y: 0, width: maxAdvance, height: Math.max(params.fontSize, lines.length * lineHeightPx) }
-            : { x: 0, y: 0, width: Math.max(params.fontSize, lines.length * lineHeightPx), height: maxAdvance };
+            : { x: -(lines.length - 1) * lineHeightPx, y: 0, width: Math.max(params.fontSize, lines.length * lineHeightPx), height: maxAdvance };
         const bounds = rawBounds || fallbackBounds;
         const measuredBounds = {
             x: Math.min(bounds.x, fallbackBounds.x),
@@ -531,7 +533,9 @@ async function shapeImported(params, options) {
             ...glyph,
             path: glyph.path ? translatePath(glyph.path, -centerX, -centerY) : '',
             x: glyph.x - centerX,
-            y: glyph.y - centerY
+            y: glyph.y - centerY,
+            lineX: glyph.lineX - centerX,
+            lineBaselineY: glyph.lineBaselineY - centerY
         }));
         const result = {
             ok: true,
@@ -646,7 +650,7 @@ async function shapeStyledImported(params, options) {
                 const totalNatural = group.glyphs.reduce((sum, item) => sum + (horizontal ? finite(item.position.xAdvance) : -finite(item.position.yAdvance)), 0);
                 const totalAdvance = Math.max(0, totalNatural) * sizeScale + (totalNatural !== 0 ? params.tracking : 0);
                 const baselineY = horizontal ? ascender + lineIndex * lineHeightPx : 0;
-                const lineX = horizontal ? 0 : lineIndex * lineHeightPx;
+                const lineX = horizontal ? 0 : -lineIndex * lineHeightPx;
                 let within = 0;
                 for (const item of group.glyphs) {
                     const position = item.position;
@@ -667,7 +671,7 @@ async function shapeStyledImported(params, options) {
             maxAdvance = Math.max(maxAdvance, pen);
         }
         const fallback = horizontal ? { x: 0, y: 0, width: maxAdvance, height: Math.max(params.fontSize, lines.length * lineHeightPx) }
-            : { x: 0, y: 0, width: Math.max(params.fontSize, lines.length * lineHeightPx), height: maxAdvance };
+            : { x: -(lines.length - 1) * lineHeightPx, y: 0, width: Math.max(params.fontSize, lines.length * lineHeightPx), height: maxAdvance };
         const bounds = unionBounds(fallback, rawBounds) || fallback;
         const centerX = bounds.x + bounds.width / 2, centerY = bounds.y + bounds.height / 2;
         const centered = glyphs.map(glyph => ({ ...glyph, path: glyph.path ? translatePath(glyph.path, -centerX, -centerY) : '',
